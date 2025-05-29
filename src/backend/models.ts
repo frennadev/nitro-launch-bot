@@ -4,7 +4,7 @@ import { Schema, model, type InferSchemaType, Types } from "mongoose";
 const userSchema = new Schema(
   {
     telegramId: { type: String, required: true, unique: true },
-    userName: { type: String },
+    userName: { type: String, required: true },
     firstName: { type: String },
     lastName: { type: String },
   },
@@ -15,6 +15,7 @@ const walletSchema = new Schema(
     user: { type: Types.ObjectId, ref: "User", required: true },
     publicKey: { type: String, required: true },
     privateKey: { type: String, required: true, select: false },
+    isDev: { type: String, required: true, default: false },
   },
   { timestamps: true },
 );
