@@ -3,6 +3,11 @@ import { session } from "grammy";
 import { conversations, createConversation } from "@grammyjs/conversations";
 import { connectDB } from "../backend/db";
 import { env } from "../config";
+import {
+  createUser,
+  getOrCreateDevWallet,
+  getUser,
+} from "../backend/functions";
 
 type SessionData = { step?: string };
 // type MyContext = FileFlavor<BotContext> & {
@@ -18,12 +23,41 @@ const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 
 /* --- Commands --------------------------------------------------------- */
 bot.command("start", async (ctx) => {
-  // check if the user exists
-  // else, create a new user
-  // proceed to send the mainMenu
+  let user = await getUser(ctx.chat.id.toString());
+  let isFirstTime = user === null;
+  if (isFirstTime) {
+    user = await createUser(
+      ctx.chat.first_name,
+      ctx.chat.last_name,
+      ctx.chat.username!,
+      ctx.chat.id.toString(),
+    );
+  }
+  const devWallet = await getOrCreateDevWallet(String(user?.id));
+  const welcomeMsg = `
+👋 *Welcome to Viper Bot*
+
+Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.  
+Here’s what you can do right from this chat:
+
+💳 *Your current dev wallet:*  
+\`${devWallet}\`
+
+To proceed, you can choose any of the actions below ⬇️
+`;
   await ctx.reply(
-    "Hey! Choose an action below ⬇️",
-    // { reply_markup: mainMenu }
+    welcomeMsg,
+    {
+      parse_mode: "MarkdownV2",
+      reply_markup: {
+        keyboard: [
+          [{ text: "Add wallet" }, { text: "Create Token" }],
+          [{ text: "Generate Wallets" }, { text: "my Tokens" }],
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: false,
+      },
+    }
   );
 });
 
@@ -39,4 +73,4 @@ bot.command("start", async (ctx) => {
 // bot.on("message", (ctx) => ctx.reply("🤖 I didn’t understand—try /start"));
 
 // /* --- Launch ----------------------------------------------------------- */
-export default bot
+export default bot;
