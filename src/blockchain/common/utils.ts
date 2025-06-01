@@ -14,5 +14,5 @@ export const generateKeypairs = (count: number) => {
 };
 
 export function secretKeyToKeypair(secretKey: string) {
-  return Keypair.fromSecretKey(bs58.decode(secretKey))
+  return Keypair.fromSecretKey(bs58.decode(secretKey));
 }

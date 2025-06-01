@@ -1,10 +1,13 @@
 import mongoose from "mongoose";
 import { connection } from "../blockchain/common/connection";
-import { generateKeypairs, secretKeyToKeypair } from "../blockchain/common/utils";
+import {
+  generateKeypairs,
+  secretKeyToKeypair,
+} from "../blockchain/common/utils";
 import { env } from "../config";
 import { TokenModel, UserModel, WalletModel, type User } from "./models";
 import {
-    decryptPrivateKey,
+  decryptPrivateKey,
   encryptPrivateKey,
   uploadFileToPinata,
   uploadJsonToPinata,
@@ -20,25 +23,27 @@ export const getUser = async (telegramId: String) => {
 };
 
 export const getTokensForUser = async (userId: string) => {
-    const result = await TokenModel.find({
-        user: userId
-    }).lean()
-    return result.map(token => ({
-        id: String(token._id),
-        address: token.tokenAddress,
-        name: token.name,
-        symbol: token.symbol,
-        description: token.description
-    }))
-}
+  const result = await TokenModel.find({
+    user: userId,
+  }).lean();
+  return result.map((token) => ({
+    id: String(token._id),
+    address: token.tokenAddress,
+    name: token.name,
+    symbol: token.symbol,
+    description: token.description,
+  }));
+};
 
 export const getUserToken = async (userId: string, tokenAddress: string) => {
-    const token = await TokenModel.findOne({
-        user: userId,
-        tokenAddress
-    }).populate(["launchData.devWallet"]).lean()
-    return token
-}
+  const token = await TokenModel.findOne({
+    user: userId,
+    tokenAddress,
+  })
+    .populate(["launchData.devWallet"])
+    .lean();
+  return token;
+};
 
 export const createUser = async (
   firstName: string | undefined,
@@ -143,99 +148,115 @@ export const createToken = async (
   return token;
 };
 
-export const preLaunchChecks = async (funderWallet: string, devWallet: string, buyAmount: number, devBuy: number, walletCount: number) => {
-    let success = true
-    const funderKeypair = secretKeyToKeypair(funderWallet)
-    const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet))
+export const preLaunchChecks = async (
+  funderWallet: string,
+  devWallet: string,
+  buyAmount: number,
+  devBuy: number,
+  walletCount: number,
+) => {
+  let success = true;
+  const funderKeypair = secretKeyToKeypair(funderWallet);
+  const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet));
 
-    // expectations
-    const expectedFunderBalance = buyAmount + (walletCount * 0.05)
-    const expectedDevBalance = 0.5 + (devBuy * 0.05)
+  // expectations
+  const expectedFunderBalance = buyAmount + walletCount * 0.05;
+  const expectedDevBalance = 0.5 + devBuy * 0.05;
 
-    // balances
-    const funderBalance = await connection.getBalance(funderKeypair.publicKey)
-    const devBalance = await connection.getBalance(devKeypair.publicKey)
+  // balances
+  const funderBalance = await connection.getBalance(funderKeypair.publicKey);
+  const devBalance = await connection.getBalance(devKeypair.publicKey);
 
-    let message = "PreLaunch Checks:"
-    if (funderBalance < expectedFunderBalance) {
-        message += `\nFunder balance too low. Expected ${expectedFunderBalance} SOL, Gotten ${funderBalance} SOL`
-        success = false
-    }
-    if (devBalance < expectedDevBalance) {
-        message += `\nDev balance too low. Expected ${expectedDevBalance} SOL, Gotten ${devBalance} SOL`
-        success = false
-    }
-    return { success, message }
-}
+  let message = "PreLaunch Checks:";
+  if (funderBalance < expectedFunderBalance) {
+    message += `\nFunder balance too low. Expected ${expectedFunderBalance} SOL, Gotten ${funderBalance} SOL`;
+    success = false;
+  }
+  if (devBalance < expectedDevBalance) {
+    message += `\nDev balance too low. Expected ${expectedDevBalance} SOL, Gotten ${devBalance} SOL`;
+    success = false;
+  }
+  return { success, message };
+};
 
 export const enqueueTokenLaunch = async (
-    userId: string,
-    tokenAddress: string,
-    funderWallet: string,
-    devWallet: string,
-    buyWallets: string[],
-    devBuy: number,
-    buyAmount: number,
+  userId: string,
+  tokenAddress: string,
+  funderWallet: string,
+  devWallet: string,
+  buyWallets: string[],
+  devBuy: number,
+  buyAmount: number,
 ) => {
-    const session = await mongoose.startSession()
-    try {
-        await session.withTransaction(async () => {
-            const walletIds = []
-            for (const key of buyWallets) {
-                const keypair = secretKeyToKeypair(key)
-                let wallet = await WalletModel.findOne({
-                    publicKey: keypair.publicKey.toBase58(),
-                    user: userId
-                })
-                if (wallet) {
-                    walletIds.push(String(wallet.id))
-                } else {
-                    wallet = await WalletModel.create({
-                        user: userId,
-                        isDev: false,
-                        publicKey: keypair.publicKey.toBase58(),
-                        privateKey: encryptPrivateKey(key)
-                    })
-                    walletIds.push(String(wallet.id))
-                }
-            }
-            const encryptedFunder = encryptPrivateKey(funderWallet)
-            const updatedToken = await TokenModel.findOneAndUpdate({
-                tokenAddress,
-                user: userId
-            }, {
-                $set: {
-                    "state": TokenState.LAUNCHING,
-                    "launchData.funderPrivateKey": encryptedFunder,
-                    "launchData.buyWallets": walletIds,
-                    "launchData.buyAmount": buyAmount,
-                    "launchData.devBuy": devBuy
-                },
-                $inc: {
-                    "launchData.launchAttempt": 1
-                }
-            }, { new: true }).lean()
-            if (!updatedToken) {
-                throw new Error("Failed to update token")
-            }
-            await tokenLaunchQueue.add(`launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`, {
-                tokenAddress,
-                tokenName: updatedToken.name,
-                tokenMetadataUri: updatedToken.tokenMetadataUrl,
-                tokenSymbol: updatedToken.symbol,
-                buyAmount,
-                buyerWallets: buyWallets,
-                devBuy,
-                devWallet: decryptPrivateKey(devWallet),
-                funderWallet: funderWallet
-            })
-        })
-        return { success: true, message: "" }
-    } catch (error: any) {
-        console.error(`An error occurred during launch enque: ${error.message}`)
-        session.endSession()
-        return { success: false, message: `An error occurred during launch enque: ${error.message}` }
-    } finally {
-        session.endSession()
-    }
-}
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const walletIds = [];
+      for (const key of buyWallets) {
+        const keypair = secretKeyToKeypair(key);
+        let wallet = await WalletModel.findOne({
+          publicKey: keypair.publicKey.toBase58(),
+          user: userId,
+        });
+        if (wallet) {
+          walletIds.push(String(wallet.id));
+        } else {
+          wallet = await WalletModel.create({
+            user: userId,
+            isDev: false,
+            publicKey: keypair.publicKey.toBase58(),
+            privateKey: encryptPrivateKey(key),
+          });
+          walletIds.push(String(wallet.id));
+        }
+      }
+      const encryptedFunder = encryptPrivateKey(funderWallet);
+      const updatedToken = await TokenModel.findOneAndUpdate(
+        {
+          tokenAddress,
+          user: userId,
+        },
+        {
+          $set: {
+            state: TokenState.LAUNCHING,
+            "launchData.funderPrivateKey": encryptedFunder,
+            "launchData.buyWallets": walletIds,
+            "launchData.buyAmount": buyAmount,
+            "launchData.devBuy": devBuy,
+          },
+          $inc: {
+            "launchData.launchAttempt": 1,
+          },
+        },
+        { new: true },
+      ).lean();
+      if (!updatedToken) {
+        throw new Error("Failed to update token");
+      }
+      await tokenLaunchQueue.add(
+        `launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
+        {
+          tokenAddress,
+          tokenName: updatedToken.name,
+          tokenMetadataUri: updatedToken.tokenMetadataUrl,
+          tokenSymbol: updatedToken.symbol,
+          buyAmount,
+          buyerWallets: buyWallets,
+          devBuy,
+          devWallet: decryptPrivateKey(devWallet),
+          funderWallet: funderWallet,
+        },
+      );
+    });
+    return { success: true, message: "" };
+  } catch (error: any) {
+    console.error(`An error occurred during launch enque: ${error.message}`);
+    session.endSession();
+    return {
+      success: false,
+      message: `An error occurred during launch enque: ${error.message}`,
+    };
+  } finally {
+    session.endSession();
+  }
+};

@@ -20,5 +20,5 @@ export const env = cleanEnv(process.env, {
   PINATA_GATEWAY_URL: validStr(),
   PINATA_JWT: validStr(),
   PINATA_API_URL: validStr(),
-  HELIUS_RPC_URL: validStr()
+  HELIUS_RPC_URL: validStr(),
 });

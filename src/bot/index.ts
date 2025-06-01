@@ -26,7 +26,7 @@ enum CallBackQueries {
   LAUNCH_TOKEN = "launch_token",
   ADD_WALLET = "add_wallet",
   GENERATE_WALLET = "generate_wallets",
-  UPDATE_DEV_WALLET = "update_dev_wallet"
+  UPDATE_DEV_WALLET = "update_dev_wallet",
 }
 
 function escape(text: string): string {
@@ -107,47 +107,48 @@ const createTokenConversation = async (
 const launchTokenConversation = async (
   conversation: Conversation,
   ctx: Context,
-  tokenAddress: string
+  tokenAddress: string,
 ) => {
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("Unrecognized user ❌")
-    await conversation.halt()
-    return
+    await ctx.reply("Unrecognized user ❌");
+    await conversation.halt();
+    return;
   }
-  const token = await getUserToken(user.id, tokenAddress)
+  const token = await getUserToken(user.id, tokenAddress);
   if (!token) {
-    await ctx.reply("Token not found ❌")
-    await conversation.halt()
-    return
+    await ctx.reply("Token not found ❌");
+    await conversation.halt();
+    return;
   }
   if (token.state === TokenState.LAUNCHING) {
-    await ctx.reply("Token is currently launching 🔄")
-    await conversation.halt()
-    return
+    await ctx.reply("Token is currently launching 🔄");
+    await conversation.halt();
+    return;
   }
   if (token.state === TokenState.LAUNCHED) {
-    await ctx.reply("Token is already launched 🚀")
-    await conversation.halt()
-    return
+    await ctx.reply("Token is already launched 🚀");
+    await conversation.halt();
+    return;
   }
 
   // FUNDER PRIVATE KEY
-  await ctx.reply(
-    "Enter the private key of the funder wallet: ",
-    { parse_mode: "MarkdownV2" },
-  );
-  let updatedCtx = await conversation.waitFor("message:text")
-  let funderKey = ""
-  let isValidKey = false
+  await ctx.reply("Enter the private key of the funder wallet: ", {
+    parse_mode: "MarkdownV2",
+  });
+  let updatedCtx = await conversation.waitFor("message:text");
+  let funderKey = "";
+  let isValidKey = false;
   while (!isValidKey) {
     try {
-      funderKey = updatedCtx.message.text
-      secretKeyToKeypair(funderKey)
-      isValidKey = true
+      funderKey = updatedCtx.message.text;
+      secretKeyToKeypair(funderKey);
+      isValidKey = true;
     } catch (error) {
-      await ctx.reply("Invalid private key entered ❌. Please re-enter a correct private key: ")
-      updatedCtx = await conversation.waitFor("message:text")
+      await ctx.reply(
+        "Invalid private key entered ❌. Please re-enter a correct private key: ",
+      );
+      updatedCtx = await conversation.waitFor("message:text");
     }
   }
 
@@ -156,37 +157,38 @@ const launchTokenConversation = async (
     "Enter the private key of the buy wallets comma separated\\. \nExample: key1,key2,key3,key4: ",
     { parse_mode: "MarkdownV2" },
   );
-  updatedCtx = await conversation.waitFor("message:text")
-  let buyerKeys: string[] = []
-  let buyerKeypairs = []
-  let success = false
+  updatedCtx = await conversation.waitFor("message:text");
+  let buyerKeys: string[] = [];
+  let buyerKeypairs = [];
+  let success = false;
   while (!success) {
     try {
-      buyerKeys = updatedCtx.message.text.split(",")
-      buyerKeypairs = buyerKeys.map((pk) => secretKeyToKeypair(pk))
-      success = true
+      buyerKeys = updatedCtx.message.text.split(",");
+      buyerKeypairs = buyerKeys.map((pk) => secretKeyToKeypair(pk));
+      success = true;
     } catch (error) {
-      await ctx.reply("One or more private keys are invalid ❌. Please re-enter correct private keys: ")
-      updatedCtx = await conversation.waitFor("message:text")
+      await ctx.reply(
+        "One or more private keys are invalid ❌. Please re-enter correct private keys: ",
+      );
+      updatedCtx = await conversation.waitFor("message:text");
     }
   }
 
   // BUY AMOUNT
-  await ctx.reply(
-    "Enter the amount in sol to buy for all wallets: ",
-    { parse_mode: "MarkdownV2" },
-  );
-  updatedCtx = await conversation.waitFor("message:text")
-  let buyAmount = 0
-  let isValidAmount = false
+  await ctx.reply("Enter the amount in sol to buy for all wallets: ", {
+    parse_mode: "MarkdownV2",
+  });
+  updatedCtx = await conversation.waitFor("message:text");
+  let buyAmount = 0;
+  let isValidAmount = false;
   while (!isValidAmount) {
-    const parsed = parseFloat(updatedCtx.message.text)
+    const parsed = parseFloat(updatedCtx.message.text);
     if (isNaN(parsed) || parsed <= 0) {
-      await ctx.reply("Invalid buyAmount. Please re-send: ")
-      updatedCtx = await conversation.waitFor("message:text")
+      await ctx.reply("Invalid buyAmount. Please re-send: ");
+      updatedCtx = await conversation.waitFor("message:text");
     } else {
-      buyAmount = parsed
-      isValidAmount = true
+      buyAmount = parsed;
+      isValidAmount = true;
     }
   }
 
@@ -195,36 +197,57 @@ const launchTokenConversation = async (
     "Enter amount in sol to buy from dev wallet \\(enter 0 to skip\\): ",
     { parse_mode: "MarkdownV2" },
   );
-  updatedCtx = await conversation.waitFor("message:text")
-  let devBuy = 0
-  let isValidDevAmount = false
+  updatedCtx = await conversation.waitFor("message:text");
+  let devBuy = 0;
+  let isValidDevAmount = false;
   while (!isValidDevAmount) {
-    const parsed = parseFloat(updatedCtx.message.text)
+    const parsed = parseFloat(updatedCtx.message.text);
     if (isNaN(parsed) || parsed < 0) {
-      await ctx.reply("Invalid devBuy. Please re-send: ")
-      updatedCtx = await conversation.waitFor("message:text")
+      await ctx.reply("Invalid devBuy. Please re-send: ");
+      updatedCtx = await conversation.waitFor("message:text");
     } else {
-      devBuy = parsed
-      isValidDevAmount = true
+      devBuy = parsed;
+      isValidDevAmount = true;
     }
   }
 
   // Perform checks on the wallets
-  await ctx.reply("Performing prelaunh checks 🔃...")
-  const checkResult = await preLaunchChecks(funderKey, (token.launchData!.devWallet! as { privateKey: string}).privateKey, buyAmount, devBuy, buyerKeys.length)
+  await ctx.reply("Performing prelaunh checks 🔃...");
+  const checkResult = await preLaunchChecks(
+    funderKey,
+    (token.launchData!.devWallet! as { privateKey: string }).privateKey,
+    buyAmount,
+    devBuy,
+    buyerKeys.length,
+  );
   if (!checkResult.success) {
-    await ctx.reply("PreLaunch checks failed ❌.\nKindly resolve the issues below and retry\n\n" + checkResult.message)
-    await conversation.halt()
+    await ctx.reply(
+      "PreLaunch checks failed ❌.\nKindly resolve the issues below and retry\n\n" +
+        checkResult.message,
+    );
+    await conversation.halt();
   }
 
   // Enqueue Token Launch
-  const result = await enqueueTokenLaunch(user.id, tokenAddress, funderKey, (token.launchData!.devWallet! as { privateKey: string}).privateKey, buyerKeys, devBuy, buyAmount)
+  const result = await enqueueTokenLaunch(
+    user.id,
+    tokenAddress,
+    funderKey,
+    (token.launchData!.devWallet! as { privateKey: string }).privateKey,
+    buyerKeys,
+    devBuy,
+    buyAmount,
+  );
   if (!result.success) {
-    await ctx.reply("An error occurred while submitting launch details for execution ❌. Please try again..")
+    await ctx.reply(
+      "An error occurred while submitting launch details for execution ❌. Please try again..",
+    );
   } else {
-    await ctx.reply("Token Launch details has been submitted for execution ✅\\.\nYou would get a message once your launch has been completed\\.")
+    await ctx.reply(
+      "Token Launch details has been submitted for execution ✅\\.\nYou would get a message once your launch has been completed\\.",
+    );
   }
-}
+};
 bot.use(createConversation(createTokenConversation));
 bot.use(createConversation(launchTokenConversation));
 
@@ -267,7 +290,7 @@ bot.command("menu", async (ctx) => {
   let user = await getUser(ctx.chat.id.toString());
   if (!user) {
     await ctx.reply("Unrecognized user ❌");
-    return
+    return;
   }
   const devWallet = await getOrCreateDevWallet(String(user?.id));
   const welcomeMsg = `
@@ -301,8 +324,8 @@ bot.callbackQuery(CallBackQueries.VIEW_TOKENS, async (ctx) => {
   await ctx.answerCallbackQuery();
 
   const userId = ctx.from!.id;
-  const user = await getUser(userId.toString())
-  const tokens = await getTokensForUser(user?.id)
+  const user = await getUser(userId.toString());
+  const tokens = await getTokensForUser(user?.id);
   for (const token of tokens) {
     const msg = [
       `*Name*: ${escape(token.name)}`,
@@ -319,12 +342,12 @@ bot.callbackQuery(CallBackQueries.VIEW_TOKENS, async (ctx) => {
       reply_markup: kb,
     });
   }
-})
+});
 bot.callbackQuery(/^launch_token_(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
-  const tokenAddress = ctx.match![1]
-  await ctx.conversation.enter("launchTokenConversation", tokenAddress)
-})
+  const tokenAddress = ctx.match![1];
+  await ctx.conversation.enter("launchTokenConversation", tokenAddress);
+});
 
 await bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
 export default bot;

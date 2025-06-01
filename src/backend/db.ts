@@ -18,4 +18,4 @@ export async function disconnectDB() {
 export const redisClient = new Redis(env.REDIS_URI, {
   maxRetriesPerRequest: null,
   connectTimeout: 5000,
-})
+});

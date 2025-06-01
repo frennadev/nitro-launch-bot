@@ -1,3 +1,3 @@
-import "./workers"
+import "./workers";
 
-console.log("🚀  Jobs service online — workers registered")
+console.log("🚀  Jobs service online — workers registered");
