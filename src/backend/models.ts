@@ -1,4 +1,5 @@
 import { Schema, model, type InferSchemaType, Types } from "mongoose";
+import { LaunchDestination, TokenState } from "./types";
 
 // ---------- DB SCHEMAS -------------
 const userSchema = new Schema(
@@ -24,13 +25,27 @@ const tokenSchema = new Schema(
     user: { type: Types.ObjectId, ref: "User", required: true },
     name: { type: String, required: true },
     symbol: { type: String, required: true },
-    image: { type: String, required: true },
     description: { type: String },
     tokenMetadataUrl: { type: String, required: true },
     tokenAddress: { type: String, required: true },
     tokenPrivateKey: { type: String, required: true },
-    devWallet: { type: Types.ObjectId, ref: "Wallet" },
-    buyWallets: [{ type: Types.ObjectId, ref: "Wallet" }],
+    launchData: {
+      funderPrivateKey: { type: String, default: null },
+      devWallet: { type: Types.ObjectId, ref: "Wallet" },
+      buyWallets: [{ type: Types.ObjectId, ref: "Wallet" }],
+      buyAmount: { type: Number, default: 0 },
+      devBuy: { type: Number, default: 0 },
+      destination: {
+        type: String,
+        enum: Object.values(LaunchDestination),
+        default: LaunchDestination.PUMPFUN,
+      },
+    },
+    state: {
+      type: String,
+      enum: Object.values(TokenState),
+      default: TokenState.LISTED,
+    },
   },
   { timestamps: true },
 );

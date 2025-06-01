@@ -1,4 +1,4 @@
-import { connectDB } from "./backend/db";
+import { connectDB, disconnectDB } from "./backend/db";
 import bot from "./bot";
 
 // -------------- PROJECT SPECIFICATION ----------------
@@ -25,11 +25,24 @@ import bot from "./bot";
 const viperLaunchRunner = async () => {
   console.log("Establishing db connection...");
   await connectDB();
-  console.log("🚀 MongoDB connected");
-  await bot.start().then(() => console.log("🚀  Telegram bot up and running"));
+  console.log("Starting Telegram bot...");
+  bot
+    .start()
+    .catch((e) =>
+      console.error(`Error occurred while starting bot: ${e.message}`),
+    );
 };
 
 viperLaunchRunner().catch((err) => {
   console.log(`Start failed: ${err.message}`);
   throw err;
 });
+
+const onCloseSignal = async () => {
+  console.log("Closing mongo db connection...");
+  await disconnectDB();
+  console.log("Stopping bot...");
+  bot.stop().then(() => console.log("🚦 Telegram Bot stopped"));
+};
+process.on("SIGINT", onCloseSignal);
+process.on("SIGTERM", onCloseSignal);

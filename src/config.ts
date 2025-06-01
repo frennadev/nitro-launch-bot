@@ -17,4 +17,8 @@ export const env = cleanEnv(process.env, {
   MONGODB_URI: validStr(),
   REDIS_URI: validStr(),
   ENCRYPTION_SECRET: validStr(),
+  PINATA_GATEWAY_URL: validStr(),
+  PINATA_JWT: validStr(),
+  PINATA_API_URL: validStr(),
+  HELIUS_RPC_URL: validStr()
 });
