@@ -85,7 +85,7 @@ const createTokenConversation = async (
       fileData,
     );
     await ctx.reply(
-      `🎉 *Token created successfully\!*\n\n*Name:* **${token.name}**\n*Symbol:* **${token.symbol}**\n*Description:* _${token.description}_\n\nTap **Launch Token** below to begin launch process\\.`,
+      `🎉 *Token created successfully*\n\n*Name:* **${token.name}**\n*Symbol:* **${token.symbol}**\n*Description:* _${token.description}_\n\nTap **Launch Token** below to begin launch process\\.`,
       {
         parse_mode: "MarkdownV2",
         reply_markup: {
@@ -262,6 +262,7 @@ bot.command("menu", async (ctx) => {
   let user = await getUser(ctx.chat.id.toString());
   if (!user) {
     await ctx.reply("Unrecognized user ❌");
+    return
   }
   const devWallet = await getOrCreateDevWallet(String(user?.id));
   const welcomeMsg = `

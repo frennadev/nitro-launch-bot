@@ -38,6 +38,23 @@ services:
         condition: service_started
       redis:
         condition: service_started
+  
+  jobs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: viper-jobs
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    command: ["bun", "run", "--hot", "src/jobs/index.ts"]
+    depends_on:
+      redis:
+        condition: service_started
+      bot:
+        condition: service_started
 
 volumes:
   mongo-data:

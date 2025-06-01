@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { env } from "../config";
+import Redis from "ioredis";
 
 export async function connectDB() {
   if (mongoose.connection.readyState === 1) return;
@@ -13,3 +14,8 @@ export async function disconnectDB() {
   }
   console.log("❌ Mongo DB disconnected");
 }
+
+export const redisClient = new Redis(env.REDIS_URI, {
+  maxRetriesPerRequest: null,
+  connectTimeout: 5000,
+})
