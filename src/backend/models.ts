@@ -15,7 +15,7 @@ const walletSchema = new Schema(
   {
     user: { type: Types.ObjectId, ref: "User", required: true },
     publicKey: { type: String, required: true },
-    privateKey: { type: String, required: true, select: false },
+    privateKey: { type: String, required: true },
     isDev: { type: String, required: true, default: false },
   },
   { timestamps: true },
@@ -30,6 +30,7 @@ const tokenSchema = new Schema(
     tokenAddress: { type: String, required: true },
     tokenPrivateKey: { type: String, required: true },
     launchData: {
+      launchAttempt: { type: Number, default: 0 },
       funderPrivateKey: { type: String, default: null },
       devWallet: { type: Types.ObjectId, ref: "Wallet" },
       buyWallets: [{ type: Types.ObjectId, ref: "Wallet" }],

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { connection } from "../blockchain/common/connection";
 import { generateKeypairs, secretKeyToKeypair } from "../blockchain/common/utils";
 import { env } from "../config";
@@ -8,6 +9,8 @@ import {
   uploadFileToPinata,
   uploadJsonToPinata,
 } from "./utils";
+import { TokenState } from "./types";
+import { tokenLaunchQueue } from "../jobs/queues";
 
 export const getUser = async (telegramId: String) => {
   const user = await UserModel.findOne({
@@ -33,7 +36,7 @@ export const getUserToken = async (userId: string, tokenAddress: string) => {
     const token = await TokenModel.findOne({
         user: userId,
         tokenAddress
-    }).exec()
+    }).populate(["launchData.devWallet"]).lean()
     return token
 }
 
@@ -140,14 +143,10 @@ export const createToken = async (
   return token;
 };
 
-export const preLaunchChecks = async (tokenAddress: string, funderWallet: string, buyAmount: number, devBuy: number, walletCount: number) => {
-    const token = await TokenModel.findOne({
-        tokenAddress
-    }).populate(["launchData.devWallet"]).lean()
+export const preLaunchChecks = async (funderWallet: string, devWallet: string, buyAmount: number, devBuy: number, walletCount: number) => {
     let success = true
     const funderKeypair = secretKeyToKeypair(funderWallet)
-    // @ts-ignore
-    const devKeypair = secretKeyToKeypair(decryptPrivateKey(token!.launchData!.devWallet!.privateKey))
+    const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet))
 
     // expectations
     const expectedFunderBalance = buyAmount + (walletCount * 0.05)
@@ -169,4 +168,74 @@ export const preLaunchChecks = async (tokenAddress: string, funderWallet: string
     return { success, message }
 }
 
-export const launchToken = async () => {};
+export const enqueueTokenLaunch = async (
+    userId: string,
+    tokenAddress: string,
+    funderWallet: string,
+    devWallet: string,
+    buyWallets: string[],
+    devBuy: number,
+    buyAmount: number,
+) => {
+    const session = await mongoose.startSession()
+    try {
+        await session.withTransaction(async () => {
+            const walletIds = []
+            for (const key of buyWallets) {
+                const keypair = secretKeyToKeypair(key)
+                let wallet = await WalletModel.findOne({
+                    publicKey: keypair.publicKey.toBase58(),
+                    user: userId
+                })
+                if (wallet) {
+                    walletIds.push(String(wallet.id))
+                } else {
+                    wallet = await WalletModel.create({
+                        user: userId,
+                        isDev: false,
+                        publicKey: keypair.publicKey.toBase58(),
+                        privateKey: encryptPrivateKey(key)
+                    })
+                    walletIds.push(String(wallet.id))
+                }
+            }
+            const encryptedFunder = encryptPrivateKey(funderWallet)
+            const updatedToken = await TokenModel.findOneAndUpdate({
+                tokenAddress,
+                user: userId
+            }, {
+                $set: {
+                    "state": TokenState.LAUNCHING,
+                    "launchData.funderPrivateKey": encryptedFunder,
+                    "launchData.buyWallets": walletIds,
+                    "launchData.buyAmount": buyAmount,
+                    "launchData.devBuy": devBuy
+                },
+                $inc: {
+                    "launchData.launchAttempt": 1
+                }
+            }, { new: true }).lean()
+            if (!updatedToken) {
+                throw new Error("Failed to update token")
+            }
+            await tokenLaunchQueue.add(`launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`, {
+                tokenAddress,
+                tokenName: updatedToken.name,
+                tokenMetadataUri: updatedToken.tokenMetadataUrl,
+                tokenSymbol: updatedToken.symbol,
+                buyAmount,
+                buyerWallets: buyWallets,
+                devBuy,
+                devWallet: decryptPrivateKey(devWallet),
+                funderWallet: funderWallet
+            })
+        })
+        return { success: true, message: "" }
+    } catch (error: any) {
+        console.error(`An error occurred during launch enque: ${error.message}`)
+        session.endSession()
+        return { success: false, message: `An error occurred during launch enque: ${error.message}` }
+    } finally {
+        session.endSession()
+    }
+}

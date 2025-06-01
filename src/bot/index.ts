@@ -1,5 +1,4 @@
 import { Bot, InlineKeyboard, type Context } from "grammy";
-import { session } from "grammy";
 import {
   conversations,
   createConversation,
@@ -10,6 +9,7 @@ import { env } from "../config";
 import {
   createToken,
   createUser,
+  enqueueTokenLaunch,
   getOrCreateDevWallet,
   getTokensForUser,
   getUser,
@@ -139,12 +139,11 @@ const launchTokenConversation = async (
   );
   let updatedCtx = await conversation.waitFor("message:text")
   let funderKey = ""
-  let funderKeypair 
   let isValidKey = false
   while (!isValidKey) {
     try {
       funderKey = updatedCtx.message.text
-      funderKeypair = secretKeyToKeypair(funderKey)
+      secretKeyToKeypair(funderKey)
       isValidKey = true
     } catch (error) {
       await ctx.reply("Invalid private key entered ❌. Please re-enter a correct private key: ")
@@ -158,7 +157,7 @@ const launchTokenConversation = async (
     { parse_mode: "MarkdownV2" },
   );
   updatedCtx = await conversation.waitFor("message:text")
-  let buyerKeys = []
+  let buyerKeys: string[] = []
   let buyerKeypairs = []
   let success = false
   while (!success) {
@@ -212,13 +211,19 @@ const launchTokenConversation = async (
 
   // Perform checks on the wallets
   await ctx.reply("Performing prelaunh checks 🔃...")
-  const checkResult = await preLaunchChecks(tokenAddress, funderKey, buyAmount, devBuy, buyerKeys.length)
+  const checkResult = await preLaunchChecks(funderKey, (token.launchData!.devWallet! as { privateKey: string}).privateKey, buyAmount, devBuy, buyerKeys.length)
   if (!checkResult.success) {
     await ctx.reply("PreLaunch checks failed ❌.\nKindly resolve the issues below and retry\n\n" + checkResult.message)
     await conversation.halt()
   }
 
-  // submit data into the queue for launch operation
+  // Enqueue Token Launch
+  const result = await enqueueTokenLaunch(user.id, tokenAddress, funderKey, (token.launchData!.devWallet! as { privateKey: string}).privateKey, buyerKeys, devBuy, buyAmount)
+  if (!result.success) {
+    await ctx.reply("An error occurred while submitting launch details for execution ❌. Please try again..")
+  } else {
+    await ctx.reply("Token Launch details has been submitted for execution ✅\\.\nYou would get a message once your launch has been completed\\.")
+  }
 }
 bot.use(createConversation(createTokenConversation));
 bot.use(createConversation(launchTokenConversation));
