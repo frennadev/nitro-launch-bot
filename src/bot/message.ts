@@ -8,14 +8,12 @@ export const sendLaunchSuccessNotification = async (
   tokenAddress: string,
   tokenName: string,
   symbol: string,
-  description: string,
 ) => {
   const msg = [
     `🎉 *Token launched successfully* \n`,
     `*Name*: ${escape(tokenName)}`,
     `*Symbol:* $\`${escape(symbol)}\``,
-    `*Description*: _${escape(description || "")}_`,
-    `Click the buttons below to perform other actions ⬇️\n`,
+    `\nClick the buttons below to perform other actions ⬇️`,
   ].join("\n");
   await bot.api.sendMessage(chatId, msg, {
     parse_mode: "MarkdownV2",
@@ -47,14 +45,12 @@ export const sendLaunchFailureNotification = async (
   tokenAddress: string,
   tokenName: string,
   symbol: string,
-  description: string,
 ) => {
   const msg = [
     `🎉 *Token launched successfully* \n`,
     `*Name*: ${escape(tokenName)}`,
     `*Symbol:* $\`${escape(symbol)}\``,
-    `*Description*: _${escape(description || "")}_`,
-    `Click the buttons below to perform other actions ⬇️\n`,
+    `\nClick the buttons below to perform other actions ⬇️`,
   ].join("\n");
   await bot.api.sendMessage(chatId, msg, {
     parse_mode: "MarkdownV2",

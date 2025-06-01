@@ -181,6 +181,7 @@ export const preLaunchChecks = async (
 
 export const enqueueTokenLaunch = async (
   userId: string,
+  chatId: number,
   tokenAddress: string,
   funderWallet: string,
   devWallet: string,
@@ -237,6 +238,7 @@ export const enqueueTokenLaunch = async (
         `launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
         {
           tokenAddress,
+          userChatId: chatId,
           tokenName: updatedToken.name,
           tokenMetadataUri: updatedToken.tokenMetadataUrl,
           tokenSymbol: updatedToken.symbol,
@@ -259,4 +261,20 @@ export const enqueueTokenLaunch = async (
   } finally {
     session.endSession();
   }
+};
+
+export const updateTokenState = async (
+  tokenAddress: string,
+  state: TokenState,
+) => {
+  await TokenModel.findOneAndUpdate(
+    {
+      tokenAddress,
+    },
+    {
+      $set: {
+        state,
+      },
+    },
+  );
 };

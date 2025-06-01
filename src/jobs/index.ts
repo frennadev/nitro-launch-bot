@@ -1,3 +1,6 @@
 import "./workers";
+import { connectDB } from "../backend/db";
 
-console.log("🚀  Jobs service online — workers registered");
+connectDB().then(() => {
+  console.log("🚀  Jobs service online — workers registered");
+});

@@ -1,4 +1,5 @@
 export type LaunchTokenJob = {
+  userChatId: number;
   tokenAddress: string;
   tokenName: string;
   tokenSymbol: string;
