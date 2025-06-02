@@ -2,6 +2,7 @@ import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import {
   enqueueTokenLaunch,
+  enqueueTokenLaunchRetry,
   getUser,
   getUserToken,
   preLaunchChecks,
@@ -30,7 +31,6 @@ const launchTokenConversation = async (
     await conversation.halt();
     return;
   }
-  await updateTokenState(tokenAddress, TokenState.LISTED);
   if (token.state === TokenState.LAUNCHING) {
     await ctx.reply("Token is currently launching 🔄");
     await conversation.halt();
@@ -40,6 +40,24 @@ const launchTokenConversation = async (
     await ctx.reply("Token is already launched 🚀");
     await conversation.halt();
     return;
+  }
+
+  // -------- FOR RETRIES -------
+  if ((token.launchData?.launchStage || 1) > 1) {
+    const result = await enqueueTokenLaunchRetry(
+      user.id,
+      ctx.message!.chat.id,
+      token.tokenAddress,
+    );
+    if (!result.success) {
+      await ctx.reply(
+        "An error occurred while submitting token launch for retry ❌. Please try again..",
+      );
+    } else {
+      await ctx.reply(
+        "Token Launch details has been submitted for retry ✅.\nYou would get a message once your launch has been completed.",
+      );
+    }
   }
 
   // -------- REQUEST & VALIDATE FUNDER WALLET ----------
@@ -69,12 +87,11 @@ const launchTokenConversation = async (
   );
   updatedCtx = await conversation.waitFor("message:text");
   let buyerKeys: string[] = [];
-  let buyerKeypairs = [];
   let success = false;
   while (!success) {
     try {
       buyerKeys = updatedCtx.message.text.split(",");
-      buyerKeypairs = buyerKeys.map((pk) => secretKeyToKeypair(pk));
+      buyerKeys.map((pk) => secretKeyToKeypair(pk));
       success = true;
     } catch (error) {
       await ctx.reply(

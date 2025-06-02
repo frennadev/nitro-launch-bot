@@ -224,6 +224,7 @@ export const enqueueTokenLaunch = async (
             "launchData.buyWallets": walletIds,
             "launchData.buyAmount": buyAmount,
             "launchData.devBuy": devBuy,
+            "launchData.launchStage": 1,
           },
           $inc: {
             "launchData.launchAttempt": 1,
@@ -247,6 +248,8 @@ export const enqueueTokenLaunch = async (
           devBuy,
           devWallet: decryptPrivateKey(devWallet),
           funderWallet: funderWallet,
+          buyDistribution: [],
+          launchStage: 1,
         },
       );
     });
@@ -257,6 +260,75 @@ export const enqueueTokenLaunch = async (
     return {
       success: false,
       message: `An error occurred during launch enque: ${error.message}`,
+    };
+  } finally {
+    session.endSession();
+  }
+};
+
+export const enqueueTokenLaunchRetry = async (
+  userId: string,
+  chatId: number,
+  tokenAddress: string,
+) => {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const updatedToken = await TokenModel.findOneAndUpdate(
+        {
+          tokenAddress,
+          user: userId,
+        },
+        {
+          $set: {
+            state: TokenState.LAUNCHING,
+          },
+          $inc: {
+            "launchData.launchAttempt": 1,
+          },
+        },
+        { new: true },
+      )
+        .populate(["launchData.buyWallets", "launchData.devWallet"])
+        .lean();
+      if (!updatedToken) {
+        throw new Error("Failed to update token");
+      }
+      const data = {
+        tokenAddress,
+        userChatId: chatId,
+        tokenName: updatedToken.name,
+        tokenMetadataUri: updatedToken.tokenMetadataUrl,
+        tokenSymbol: updatedToken.symbol,
+        buyAmount: updatedToken.launchData!.buyAmount,
+        buyerWallets: updatedToken.launchData!.buyWallets.map((w) =>
+          decryptPrivateKey((w as { privateKey: string }).privateKey),
+        ),
+        devWallet: decryptPrivateKey(
+          (updatedToken.launchData!.devWallet as { privateKey: string })
+            .privateKey,
+        ),
+        funderWallet: decryptPrivateKey(
+          updatedToken.launchData!.funderPrivateKey,
+        ),
+        devBuy: updatedToken.launchData!.devBuy,
+        buyDistribution: updatedToken.launchData!.buyDistribution || [],
+        launchStage: updatedToken.launchData!.launchStage || 1,
+      };
+      await tokenLaunchQueue.add(
+        `launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
+        data,
+      );
+    });
+    return { success: true, message: "" };
+  } catch (error: any) {
+    console.error(
+      `An error occurred during launch retry enque: ${error.message}`,
+    );
+    session.endSession();
+    return {
+      success: false,
+      message: `An error occurred during launch retry enque: ${error.message}`,
     };
   } finally {
     session.endSession();
@@ -279,22 +351,34 @@ export const updateTokenState = async (
   );
 };
 
-export const updateLaunchStage = async (tokenAddress: string, stage: Number) => {
-    await TokenModel.findOneAndUpdate({
-        tokenAddress,
-    }, {
-        $set: {
-            "launchData.launchStage": stage
-        }
-    })
-}
+export const updateLaunchStage = async (
+  tokenAddress: string,
+  stage: Number,
+) => {
+  await TokenModel.findOneAndUpdate(
+    {
+      tokenAddress,
+    },
+    {
+      $set: {
+        "launchData.launchStage": stage,
+      },
+    },
+  );
+};
 
-export const updateBuyDistribution = async (tokenAddress: string, dist: Number[]) => {
-    await TokenModel.findOneAndUpdate({
-        tokenAddress
-    }, {
-        $set: {
-            "launchData.buyDistribution": dist
-        }
-    })
-}
+export const updateBuyDistribution = async (
+  tokenAddress: string,
+  dist: Number[],
+) => {
+  await TokenModel.findOneAndUpdate(
+    {
+      tokenAddress,
+    },
+    {
+      $set: {
+        "launchData.buyDistribution": dist,
+      },
+    },
+  );
+};
