@@ -278,3 +278,23 @@ export const updateTokenState = async (
     },
   );
 };
+
+export const updateLaunchStage = async (tokenAddress: string, stage: Number) => {
+    await TokenModel.findOneAndUpdate({
+        tokenAddress,
+    }, {
+        $set: {
+            "launchData.launchStage": stage
+        }
+    })
+}
+
+export const updateBuyDistribution = async (tokenAddress: string, dist: Number[]) => {
+    await TokenModel.findOneAndUpdate({
+        tokenAddress
+    }, {
+        $set: {
+            "launchData.buyDistribution": dist
+        }
+    })
+}

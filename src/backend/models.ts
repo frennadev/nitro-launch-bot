@@ -31,11 +31,13 @@ const tokenSchema = new Schema(
     tokenPrivateKey: { type: String, required: true },
     launchData: {
       launchAttempt: { type: Number, default: 0 },
+      launchStage: { type: Number, default: 1 },
       funderPrivateKey: { type: String, default: null },
       devWallet: { type: Types.ObjectId, ref: "Wallet" },
       buyWallets: [{ type: Types.ObjectId, ref: "Wallet" }],
       buyAmount: { type: Number, default: 0 },
       devBuy: { type: Number, default: 0 },
+      buyDistribution: [{ type: Number }],
       destination: {
         type: String,
         enum: Object.values(LaunchDestination),
