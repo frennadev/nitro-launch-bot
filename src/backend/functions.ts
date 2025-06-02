@@ -239,6 +239,7 @@ export const enqueueTokenLaunch = async (
         `launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
         {
           tokenAddress,
+          tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
           userChatId: chatId,
           tokenName: updatedToken.name,
           tokenMetadataUri: updatedToken.tokenMetadataUrl,
@@ -296,6 +297,7 @@ export const enqueueTokenLaunchRetry = async (
       }
       const data = {
         tokenAddress,
+        tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
         userChatId: chatId,
         tokenName: updatedToken.name,
         tokenMetadataUri: updatedToken.tokenMetadataUrl,

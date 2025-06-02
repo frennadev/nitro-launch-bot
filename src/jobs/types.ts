@@ -1,6 +1,7 @@
 export type LaunchTokenJob = {
   userChatId: number;
   tokenAddress: string;
+  tokenPrivateKey: string;
   tokenName: string;
   tokenSymbol: string;
   tokenMetadataUri: string;
@@ -9,4 +10,6 @@ export type LaunchTokenJob = {
   buyAmount: number;
   devBuy: number;
   buyerWallets: string[];
+  buyDistribution: number[];
+  launchStage: number;
 };

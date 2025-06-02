@@ -1,6 +1,8 @@
 import { PublicKey } from "@solana/web3.js";
 import { PUMPFUN_PROGRAM, TOKEN_METADATA_PROGRAM } from "./constants";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { connection } from "../common/connection";
+import { BondingCurveCodec, GlobalSettingCodec } from "./codecs";
 
 export const getBondingCurve = (mint: PublicKey) => {
   const [bondingCurve, _] = PublicKey.findProgramAddressSync(
@@ -50,4 +52,69 @@ export const getCreatorVault = (creator: PublicKey) => {
     PUMPFUN_PROGRAM,
   );
   return vault;
+};
+
+export const getGlobalSetting = async () => {
+  const [setting] = PublicKey.findProgramAddressSync(
+    [Buffer.from("global")],
+    PUMPFUN_PROGRAM,
+  );
+  const info = await connection.getAccountInfo(setting);
+  if (!info) throw new Error("Empty global settings data!!");
+  return GlobalSettingCodec.decode(info.data);
+};
+
+export const getBondingCurveData = async (curve: PublicKey) => {
+  const info = await connection.getAccountInfo(curve);
+  if (!info) throw new Error("Empty bonding curve data!!");
+  return BondingCurveCodec.decode(info.data);
+};
+
+export const quoteBuy = (
+  amountIn: bigint,
+  virtualTokenReserve: bigint,
+  virtualSolReserve: bigint,
+  realTokenReserve: bigint,
+) => {
+  const virtualTokenAmount = virtualSolReserve * virtualTokenReserve;
+  const totalSolPlusAmount = virtualSolReserve + amountIn;
+  const currentTokenAmount =
+    virtualTokenAmount / totalSolPlusAmount + BigInt(1);
+  const tokenAmountLeft = virtualTokenReserve - currentTokenAmount;
+
+  let tokenOut = tokenAmountLeft;
+  if (tokenAmountLeft > realTokenReserve) {
+    tokenOut = realTokenReserve;
+  }
+
+  const newVirtualSOLReserve = virtualSolReserve + amountIn;
+  const newRealTokenReserve = realTokenReserve - tokenOut;
+  const newVirtualTokenReserve = virtualTokenReserve - tokenOut;
+
+  return {
+    tokenOut,
+    newVirtualTokenReserve,
+    newVirtualSOLReserve,
+    newRealTokenReserve,
+  };
+};
+
+export const applySlippage = (amount: bigint, slippage: number) => {
+  const SlippageAdjustment = 1n;
+  const Big10000 = 10000n;
+
+  let slippageBP =
+    (BigInt(Math.floor(100 * slippage)) + 25n) * SlippageAdjustment;
+  const maxSlippage = Big10000 * SlippageAdjustment;
+
+  if (slippageBP > maxSlippage) {
+    slippageBP = Big10000;
+  }
+
+  const slippageBPBN = slippageBP;
+
+  const slippageNumeratorMul = maxSlippage - slippageBPBN;
+  const slippageNumerator = amount * slippageNumeratorMul;
+
+  return slippageNumerator / maxSlippage;
 };

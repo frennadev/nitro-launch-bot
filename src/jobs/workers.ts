@@ -8,25 +8,38 @@ import {
   sendLaunchFailureNotification,
   sendLaunchSuccessNotification,
 } from "../bot/message";
+import { executeTokenLaunch } from "../blockchain/pumpfun/launch";
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
   async (job) => {
     try {
       console.log("Token Launch Job starting...");
-      console.log(job.data);
-      await new Promise((resolve) => setTimeout(resolve, 5_000));
-      throw new Error("Failed launch due to weird reason");
-      const token = job.data;
-      await updateTokenState(token.tokenAddress, TokenState.LAUNCHED);
+      const data = job.data;
+      console.log("Job Data: ", data);
+      await executeTokenLaunch(
+        data.tokenPrivateKey,
+        data.funderWallet,
+        data.devWallet,
+        data.buyerWallets,
+        data.buyDistribution,
+        data.tokenName,
+        data.tokenSymbol,
+        data.tokenMetadataUri,
+        data.buyAmount,
+        data.devBuy,
+        data.launchStage
+      )
+      await updateTokenState(data.tokenAddress, TokenState.LAUNCHED);
       await sendLaunchSuccessNotification(
-        job!.data.userChatId,
-        token.tokenAddress,
-        token.tokenName,
-        token.tokenSymbol,
+        data.userChatId,
+        data.tokenAddress,
+        data.tokenName,
+        data.tokenSymbol,
       );
     } catch (error: any) {
       console.error(`Error Occurred while launching token: ${error.message}`);
+      console.error(error.stack)
       throw error;
     }
   },
