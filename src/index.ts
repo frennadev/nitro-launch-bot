@@ -1,4 +1,5 @@
 import { connectDB, disconnectDB } from "./backend/db";
+import { logger } from "./blockchain/common/logger";
 import bot from "./bot";
 
 // -------------- PROJECT SPECIFICATION ----------------
@@ -23,26 +24,26 @@ import bot from "./bot";
 // 6. withdraw from all wallets in a launch
 
 const viperLaunchRunner = async () => {
-  console.log("Establishing db connection...");
+  logger.info("Establishing db connection...");
   await connectDB();
-  console.log("Starting Telegram bot...");
+  logger.info("Starting Telegram bot...");
   bot
     .start()
     .catch((e) =>
-      console.error(`Error occurred while starting bot: ${e.message}`),
+      logger.error("Error occurred while starting bot", e),
     );
 };
 
 viperLaunchRunner().catch((err) => {
-  console.log(`Start failed: ${err.message}`);
+  logger.error("Start failed", err);
   throw err;
 });
 
 const onCloseSignal = async () => {
-  console.log("Closing mongo db connection...");
+  logger.info("Closing mongo db connection...");
   await disconnectDB();
-  console.log("Stopping bot...");
-  bot.stop().then(() => console.log("🚦 Telegram Bot stopped"));
+  logger.info("Stopping bot...");
+  bot.stop().then(() => logger.info("🚦 Telegram Bot stopped"));
 };
 process.on("SIGINT", onCloseSignal);
 process.on("SIGTERM", onCloseSignal);

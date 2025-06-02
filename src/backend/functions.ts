@@ -14,6 +14,7 @@ import {
 } from "./utils";
 import { TokenState } from "./types";
 import { tokenLaunchQueue } from "../jobs/queues";
+import { logger } from "../blockchain/common/logger";
 
 export const getUser = async (telegramId: String) => {
   const user = await UserModel.findOne({
@@ -107,7 +108,7 @@ const createTokenMetadata = async (
     const ipfsUrl = `${env.PINATA_GATEWAY_URL}/ipfs/${ipfsMetadataResult}`;
     return ipfsUrl;
   } catch (error: any) {
-    console.error(`Error Occurred While uploading metadata: ${error.message}`);
+    logger.error("Error Occurred While uploading metadata", error);
   }
   return null;
 };
@@ -256,7 +257,7 @@ export const enqueueTokenLaunch = async (
     });
     return { success: true, message: "" };
   } catch (error: any) {
-    console.error(`An error occurred during launch enque: ${error.message}`);
+    logger.error("An error occurred during launch enque", error);
     session.endSession();
     return {
       success: false,
@@ -324,8 +325,9 @@ export const enqueueTokenLaunchRetry = async (
     });
     return { success: true, message: "" };
   } catch (error: any) {
-    console.error(
-      `An error occurred during launch retry enque: ${error.message}`,
+    logger.error(
+      "An error occurred during launch retry enque",
+      error
     );
     session.endSession();
     return {
