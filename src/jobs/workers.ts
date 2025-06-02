@@ -9,14 +9,15 @@ import {
   sendLaunchSuccessNotification,
 } from "../bot/message";
 import { executeTokenLaunch } from "../blockchain/pumpfun/launch";
+import { logger } from "./logger";
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
   async (job) => {
     try {
-      console.log("Token Launch Job starting...");
+      logger.info("[jobs]: Token Launch Job starting...");
       const data = job.data;
-      console.log("Job Data: ", data);
+      logger.info("[jobs-launch-token]: Job Data", data);
       await executeTokenLaunch(
         data.tokenPrivateKey,
         data.funderWallet,
@@ -28,8 +29,8 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         data.tokenMetadataUri,
         data.buyAmount,
         data.devBuy,
-        data.launchStage
-      )
+        data.launchStage,
+      );
       await updateTokenState(data.tokenAddress, TokenState.LAUNCHED);
       await sendLaunchSuccessNotification(
         data.userChatId,
@@ -38,8 +39,7 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         data.tokenSymbol,
       );
     } catch (error: any) {
-      console.error(`Error Occurred while launching token: ${error.message}`);
-      console.error(error.stack)
+      logger.error("[jobs-launch-token]: Error Occurred while launching token", error);
       throw error;
     }
   },
@@ -47,10 +47,9 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
 );
 
 launchTokenWorker.on("error", async (error) => {
-  console.log(`Token Launch Worker Error: ${error}`);
+  logger.error("[jobs]: Token Launch Worker Error", error);
 });
 launchTokenWorker.on("failed", async (job) => {
-  console.log(`Token Launch Worker Job Failed: ${job?.name}`);
   await updateTokenState(job!.data.tokenAddress, TokenState.LISTED);
   const token = job!.data;
   await sendLaunchFailureNotification(
