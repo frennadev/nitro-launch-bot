@@ -39,7 +39,10 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         data.tokenSymbol,
       );
     } catch (error: any) {
-      logger.error("[jobs-launch-token]: Error Occurred while launching token", error);
+      logger.error(
+        "[jobs-launch-token]: Error Occurred while launching token",
+        error,
+      );
       throw error;
     }
   },

@@ -69,10 +69,13 @@ export const sendSignedTransaction = async (txn: VersionedTransaction) => {
     const signature = await connection.sendTransaction(txn, { maxRetries: 3 });
     return signature;
   } catch (error: any) {
-    logger.error("[send-signed-tx]; An Error Occurred While Sending Transaction", {
-      logs: error.getLogs(),
-      message: error.message,
-    });
+    logger.error(
+      "[send-signed-tx]; An Error Occurred While Sending Transaction",
+      {
+        logs: error.getLogs(),
+        message: error.message,
+      },
+    );
     throw error;
   }
 };
@@ -99,8 +102,11 @@ export const sendTransaction = async (
       return signature;
     }
   } catch (error) {
-    logger.error("[send-transaction]: Error occurred while sending transaction", error)
-    return null
+    logger.error(
+      "[send-transaction]: Error occurred while sending transaction",
+      error,
+    );
+    return null;
   }
 };
 
@@ -139,7 +145,9 @@ export const confirmTransaction = async (
     }
 
     if (status.err) {
-      logger.error(`[${logIdentifier}]: Transaction with signature ${signature} failed with error ${JSON.stringify(status.err)}`);
+      logger.error(
+        `[${logIdentifier}]: Transaction with signature ${signature} failed with error ${JSON.stringify(status.err)}`,
+      );
       return false;
     }
 
@@ -156,7 +164,9 @@ export const confirmTransaction = async (
 
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
-  logger.info(`[${logIdentifier}]: Transaction confirmation timeout after ${timeout}ms`);
+  logger.info(
+    `[${logIdentifier}]: Transaction confirmation timeout after ${timeout}ms`,
+  );
   return false;
 };
 

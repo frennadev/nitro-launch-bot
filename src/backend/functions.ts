@@ -325,10 +325,7 @@ export const enqueueTokenLaunchRetry = async (
     });
     return { success: true, message: "" };
   } catch (error: any) {
-    logger.error(
-      "An error occurred during launch retry enque",
-      error
-    );
+    logger.error("An error occurred during launch retry enque", error);
     session.endSession();
     return {
       success: false,

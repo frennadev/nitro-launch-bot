@@ -29,9 +29,7 @@ const viperLaunchRunner = async () => {
   logger.info("Starting Telegram bot...");
   bot
     .start()
-    .catch((e) =>
-      logger.error("Error occurred while starting bot", e),
-    );
+    .catch((e) => logger.error("Error occurred while starting bot", e));
 };
 
 viperLaunchRunner().catch((err) => {

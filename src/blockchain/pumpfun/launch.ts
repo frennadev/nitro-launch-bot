@@ -83,7 +83,7 @@ export const executeTokenLaunch = async (
   // ------- WALLET FUNDING STAGE -------
   if (launchStage === PumpLaunchStage.FUNDING) {
     logger.info(`[${logIdentifier}]: Starting wallet funding stage`);
-    const start = performance.now()
+    const start = performance.now();
     const fundInstructions = (
       await Promise.all(
         buyKeypairs.map(async (keypair, idx) => {
@@ -143,7 +143,7 @@ export const executeTokenLaunch = async (
       results.push(...res);
       await randomizedSleep(1000, 1500);
     }
-    logger.info(`[${logIdentifier}]: Wallet funding results`, results)
+    logger.info(`[${logIdentifier}]: Wallet funding results`, results);
     if (results.filter((res) => !res.success).length > 0) {
       throw new Error("Buy Wallet Funding Failed");
     }
@@ -152,12 +152,14 @@ export const executeTokenLaunch = async (
       PumpLaunchStage.LAUNCH,
     );
     launchStage = PumpLaunchStage.LAUNCH;
-    logger.info(`[${logIdentifier}]: Wallet funding completed in ${formatMilliseconds(performance.now() - start)}`);
+    logger.info(
+      `[${logIdentifier}]: Wallet funding completed in ${formatMilliseconds(performance.now() - start)}`,
+    );
   }
 
   // ------- TOKEN CREATION + DEV BUY STAGE ------
   if (launchStage === PumpLaunchStage.LAUNCH) {
-    const start = performance.now()
+    const start = performance.now();
     const launchInstructions: TransactionInstruction[] = [];
     const createIx = tokenCreateInstruction(
       mintKeypair,
@@ -225,12 +227,14 @@ export const executeTokenLaunch = async (
       PumpLaunchStage.SNIPE,
     );
     launchStage = PumpLaunchStage.SNIPE;
-    logger.info(`[${logIdentifier}]: Token launch completed in ${formatMilliseconds(performance.now() - start)}`)
+    logger.info(
+      `[${logIdentifier}]: Token launch completed in ${formatMilliseconds(performance.now() - start)}`,
+    );
   }
 
   // ------- SNIPING STAGE -------
   if (launchStage === PumpLaunchStage.SNIPE) {
-    const start = performance.now()
+    const start = performance.now();
     const blockHash = await connection.getLatestBlockhash("processed");
     const baseComputeUnitPrice = 1_000_000;
     const maxComputeUnitPrice = 4_000_000;
@@ -320,7 +324,9 @@ export const executeTokenLaunch = async (
       mintKeypair.publicKey.toBase58(),
       PumpLaunchStage.COMPLETE,
     );
-    logger.info(`[${logIdentifier}]: Snipe completed in ${formatMilliseconds(performance.now() - start)}`)
+    logger.info(
+      `[${logIdentifier}]: Snipe completed in ${formatMilliseconds(performance.now() - start)}`,
+    );
   }
 
   logger.info(
