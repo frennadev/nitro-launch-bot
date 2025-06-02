@@ -33,6 +33,7 @@ import {
   updateBuyDistribution,
   updateLaunchStage,
 } from "../../backend/functions";
+import { logger } from "../common/logger";
 
 export const executeTokenLaunch = async (
   mint: string,
@@ -47,7 +48,7 @@ export const executeTokenLaunch = async (
   devBuy: number,
   launchStage: number,
 ) => {
-  const start = performance.now()
+  const start = performance.now();
 
   const mintKeypair = secretKeyToKeypair(mint);
   const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
@@ -64,7 +65,7 @@ export const executeTokenLaunch = async (
   const globalSetting = await getGlobalSetting();
   const logIdentifier = `launch-${mintKeypair.publicKey.toBase58()}`;
 
-  console.log(`Token Launch Data: `, {
+  logger.info(`$[${logIdentifier}]: Token Launch Data`, {
     buyDistribution,
     wallets: buyKeypairs.map((kp) => kp.publicKey.toBase58()),
     funder: funderKeypair.publicKey.toBase58(),
@@ -81,7 +82,8 @@ export const executeTokenLaunch = async (
 
   // ------- WALLET FUNDING STAGE -------
   if (launchStage === PumpLaunchStage.FUNDING) {
-    console.log(`[${logIdentifier}]: Starting wallet funding stage`);
+    logger.info(`[${logIdentifier}]: Starting wallet funding stage`);
+    const start = performance.now()
     const fundInstructions = (
       await Promise.all(
         buyKeypairs.map(async (keypair, idx) => {
@@ -141,8 +143,8 @@ export const executeTokenLaunch = async (
       results.push(...res);
       await randomizedSleep(1000, 1500);
     }
+    logger.info(`[${logIdentifier}]: Wallet funding results`, results)
     if (results.filter((res) => !res.success).length > 0) {
-      // log some further errors here to gather insight
       throw new Error("Buy Wallet Funding Failed");
     }
     await updateLaunchStage(
@@ -150,11 +152,12 @@ export const executeTokenLaunch = async (
       PumpLaunchStage.LAUNCH,
     );
     launchStage = PumpLaunchStage.LAUNCH;
-    console.log(`[${logIdentifier}]: Wallet funding completed`);
+    logger.info(`[${logIdentifier}]: Wallet funding completed in ${formatMilliseconds(performance.now() - start)}`);
   }
 
   // ------- TOKEN CREATION + DEV BUY STAGE ------
   if (launchStage === PumpLaunchStage.LAUNCH) {
+    const start = performance.now()
     const launchInstructions: TransactionInstruction[] = [];
     const createIx = tokenCreateInstruction(
       mintKeypair,
@@ -213,16 +216,21 @@ export const executeTokenLaunch = async (
       1000,
       logIdentifier,
     );
-    console.log(`[${logIdentifier}]: Token launch result`, result)
+    logger.info(`[${logIdentifier}]: Token launch result`, result);
     if (!result.success) {
-      throw new Error("Token launch failed")
+      throw new Error("Token launch failed");
     }
-    await updateLaunchStage(mintKeypair.publicKey.toBase58(), PumpLaunchStage.SNIPE)
-    launchStage = PumpLaunchStage.SNIPE
+    await updateLaunchStage(
+      mintKeypair.publicKey.toBase58(),
+      PumpLaunchStage.SNIPE,
+    );
+    launchStage = PumpLaunchStage.SNIPE;
+    logger.info(`[${logIdentifier}]: Token launch completed in ${formatMilliseconds(performance.now() - start)}`)
   }
 
   // ------- SNIPING STAGE -------
   if (launchStage === PumpLaunchStage.SNIPE) {
+    const start = performance.now()
     const blockHash = await connection.getLatestBlockhash("processed");
     const baseComputeUnitPrice = 1_000_000;
     const maxComputeUnitPrice = 4_000_000;
@@ -301,7 +309,7 @@ export const executeTokenLaunch = async (
     const results = await Promise.all(tasks);
     const success = results.filter((res) => res.success);
     const failed = results.filter((res) => !res.success);
-    console.log(`[${logIdentifier}]: Snipe Results`, {
+    logger.info(`[${logIdentifier}]: Snipe Results`, {
       success,
       failed,
     });
@@ -312,7 +320,10 @@ export const executeTokenLaunch = async (
       mintKeypair.publicKey.toBase58(),
       PumpLaunchStage.COMPLETE,
     );
+    logger.info(`[${logIdentifier}]: Snipe completed in ${formatMilliseconds(performance.now() - start)}`)
   }
 
-  console.log(`[${logIdentifier}]: Token Launch completed in ${performance.now() - start} Milliseconds & ${formatMilliseconds(performance.now() - start)}`)
+  logger.info(
+    `[${logIdentifier}]: Token Launch completed in ${formatMilliseconds(performance.now() - start)}`,
+  );
 };

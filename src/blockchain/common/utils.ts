@@ -8,6 +8,7 @@ import {
 import bs58 from "bs58";
 import type { TransactionSetup } from "./types";
 import { connection } from "./connection";
+import { logger } from "./logger";
 
 export const generateKeypairs = (count: number) => {
   const keys = [];
@@ -63,40 +64,43 @@ export const randomizedSleep = async (min = 1000, max = 2000) => {
   await new Promise((resolve) => setTimeout(resolve, interval));
 };
 
-export const sendTransaction = async (
-  signedTx: VersionedTransaction,
-  setup: TransactionSetup,
-  isRetry: boolean = false,
-) => {
-  if (isRetry) {
-    const blockhash = await connection.getLatestBlockhash("confirmed");
-    const message = new TransactionMessage({
-      instructions: setup.instructions,
-      payerKey: setup.payer,
-      recentBlockhash: blockhash.blockhash,
-    }).compileToV0Message();
-    const txn = new VersionedTransaction(message);
-    txn.sign(setup.signers);
-    const signature = await sendSignedTransaction(txn);
-    return signature;
-  } else {
-    const signature = await sendSignedTransaction(signedTx);
-    return signature;
-  }
-};
-
 export const sendSignedTransaction = async (txn: VersionedTransaction) => {
   try {
     const signature = await connection.sendTransaction(txn, { maxRetries: 3 });
     return signature;
   } catch (error: any) {
-    console.error("An Error Occurred While Sending Transaction", {
+    logger.error("[send-signed-tx]; An Error Occurred While Sending Transaction", {
       logs: error.getLogs(),
       message: error.message,
     });
-    throw new Error(
-      `Error occurred while sending transaction: ${error.message}`,
-    );
+    throw error;
+  }
+};
+
+export const sendTransaction = async (
+  signedTx: VersionedTransaction,
+  setup: TransactionSetup,
+  isRetry: boolean = false,
+) => {
+  try {
+    if (isRetry) {
+      const blockhash = await connection.getLatestBlockhash("confirmed");
+      const message = new TransactionMessage({
+        instructions: setup.instructions,
+        payerKey: setup.payer,
+        recentBlockhash: blockhash.blockhash,
+      }).compileToV0Message();
+      const txn = new VersionedTransaction(message);
+      txn.sign(setup.signers);
+      const signature = await sendSignedTransaction(txn);
+      return signature;
+    } else {
+      const signature = await sendSignedTransaction(signedTx);
+      return signature;
+    }
+  } catch (error) {
+    logger.error("[send-transaction]: Error occurred while sending transaction", error)
+    return null
   }
 };
 
@@ -106,8 +110,8 @@ export const confirmTransaction = async (
   timeout: number = 30000,
   pollInterval: number = 1000,
   searchTransactionHistory: boolean = false,
+  logIdentifier: string,
 ) => {
-  const logIdentifier = "confirm-txn-new";
   const start = Date.now();
 
   while (Date.now() - start < timeout) {
@@ -117,12 +121,10 @@ export const confirmTransaction = async (
     );
 
     if (!statuses || statuses.length === 0) {
-      console.log("Failed to get signature statuse", { logIdentifier });
+      logger.info(`[${logIdentifier}]: Failed to get signature status`);
       if (Date.now() - start > timeout / 2) {
-        // if the time elapsed is already half the timeout, return as failure
-        console.log(
-          "Early termination because signature was not found on chain",
-          { logIdentifier },
+        logger.info(
+          `[${logIdentifier}]: Early termination because signature was not found on chain`,
         );
         return false;
       }
@@ -137,10 +139,7 @@ export const confirmTransaction = async (
     }
 
     if (status.err) {
-      console.log(
-        `Transaction with signature ${signature} failed: ${JSON.stringify(status.err)}`,
-        { logIdentifier },
-      );
+      logger.error(`[${logIdentifier}]: Transaction with signature ${signature} failed with error ${JSON.stringify(status.err)}`);
       return false;
     }
 
@@ -157,9 +156,7 @@ export const confirmTransaction = async (
 
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
-  console.log(`Transaction confirmation timeout after ${timeout}ms`, {
-    logIdentifier,
-  });
+  logger.info(`[${logIdentifier}]: Transaction confirmation timeout after ${timeout}ms`);
   return false;
 };
 
@@ -177,16 +174,19 @@ export const sendAndConfirmTransactionWithRetry = async (
   while (retryCount < maxRetries && !success) {
     signature = await sendTransaction(signedTx, setup, retryCount > 0);
     if (!signature) {
-      console.error(`[${logIdentifier}]: Failed to submit transaction`);
+      logger.error(`[${logIdentifier}]: Failed to send transaction`);
       break;
     }
     success = await confirmTransaction(
       signature,
       "confirmed",
       confirmationTimeout,
+      1000,
+      false,
+      logIdentifier,
     );
     if (!success) {
-      console.info(
+      logger.error(
         `[${logIdentifier}]: transaction confirmation failed❌. Retrying in ${retryInterval} ms...`,
       );
       retryCount += 1;
@@ -201,24 +201,24 @@ export const sendAndConfirmTransactionWithRetry = async (
 };
 
 export function formatMilliseconds(milliseconds: number): string {
-  const hours = Math.floor(milliseconds / (1000 * 60 * 60))
-  const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60))
-  const seconds = Math.floor((milliseconds % (1000 * 60)) / 1000)
-  const remainingMilliseconds = Math.floor(milliseconds % 1000)
+  const hours = Math.floor(milliseconds / (1000 * 60 * 60));
+  const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((milliseconds % (1000 * 60)) / 1000);
+  const remainingMilliseconds = Math.floor(milliseconds % 1000);
 
-  let formattedTime = ""
+  let formattedTime = "";
   if (hours > 0) {
-    formattedTime += hours + "h "
+    formattedTime += hours + "h ";
   }
   if (minutes > 0) {
-    formattedTime += minutes + "m "
+    formattedTime += minutes + "m ";
   }
   if (seconds > 0) {
-    formattedTime += seconds + "s "
+    formattedTime += seconds + "s ";
   }
   if (remainingMilliseconds > 0) {
-    formattedTime += remainingMilliseconds + "ms"
+    formattedTime += remainingMilliseconds + "ms";
   }
 
-  return formattedTime.trim()
+  return formattedTime.trim();
 }
