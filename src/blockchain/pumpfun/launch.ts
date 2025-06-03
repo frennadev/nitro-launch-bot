@@ -107,7 +107,7 @@ export const executeTokenLaunch = async (
         }),
       )
     ).filter((ix) => ix != null);
-    const blockHash = await connection.getLatestBlockhash("processed");
+    const blockHash = await connection.getLatestBlockhash("confirmed");
     const fundTransactions = fundInstructions.map((ix) => {
       const message = new TransactionMessage({
         instructions: [ix],
@@ -159,6 +159,7 @@ export const executeTokenLaunch = async (
 
   // ------- TOKEN CREATION + DEV BUY STAGE ------
   if (launchStage === PumpLaunchStage.LAUNCH) {
+    logger.info(`[${logIdentifier}]: Starting token launch stage`);
     const start = performance.now();
     const launchInstructions: TransactionInstruction[] = [];
     const createIx = tokenCreateInstruction(
@@ -197,7 +198,7 @@ export const executeTokenLaunch = async (
       );
       launchInstructions.push(...[createDevAtaIx, devBuyIx]);
     }
-    const blockHash = await connection.getLatestBlockhash("processed");
+    const blockHash = await connection.getLatestBlockhash("confirmed");
     const launchTx = new VersionedTransaction(
       new TransactionMessage({
         instructions: launchInstructions,
@@ -205,13 +206,13 @@ export const executeTokenLaunch = async (
         recentBlockhash: blockHash.blockhash,
       }).compileToV0Message(),
     );
-    launchTx.sign([devKeypair]);
+    launchTx.sign([devKeypair, mintKeypair]);
     const result = await sendAndConfirmTransactionWithRetry(
       launchTx,
       {
         instructions: launchInstructions,
         payer: devKeypair.publicKey,
-        signers: [devKeypair],
+        signers: [devKeypair, mintKeypair],
       },
       10_000,
       3,
@@ -234,6 +235,8 @@ export const executeTokenLaunch = async (
 
   // ------- SNIPING STAGE -------
   if (launchStage === PumpLaunchStage.SNIPE) {
+    await randomizedSleep(1000, 1500)
+    logger.info(`[${logIdentifier}]: Starting token snipe stage`);
     const start = performance.now();
     const blockHash = await connection.getLatestBlockhash("processed");
     const baseComputeUnitPrice = 1_000_000;
@@ -242,7 +245,18 @@ export const executeTokenLaunch = async (
       (maxComputeUnitPrice - baseComputeUnitPrice) / buyKeypairs.length,
     );
     let currentComputeUnitPrice = maxComputeUnitPrice;
-    const curveData = await getBondingCurveData(bondingCurve);
+    let curveData = await getBondingCurveData(bondingCurve);
+    let retries = 0
+    while (!curveData && retries < 5) {
+      curveData = await getBondingCurveData(bondingCurve)
+      retries +=1
+      if (!curveData) {
+        await randomizedSleep(500, 1000)
+      }
+    }
+    if (!curveData) {
+      throw new Error("Unable to fetch curve data")
+    }
     let virtualTokenReserve = curveData.virtualTokenReserves;
     let virtualSolReserve = curveData.virtualSolReserves;
     let realTokenReserve = curveData.realTokenReserves;

@@ -1,22 +1,18 @@
-import { createLogger, format, level, transports } from "winston";
-const { colorize, combine, timestamp, printf, errors, splat, json } = format;
+import { createLogger, format, transports } from "winston";
+const { colorize, combine, timestamp, printf, errors, splat } = format;
 
-const pretty = printf(({ level, message, timestamp, stack }) => {
-  return `${timestamp} ${level.toUpperCase().padEnd(5)} ${stack ?? message}`;
-});
+const logFormat = printf(
+  ({ level, message, timestamp, context, ...metadata }) => {
+    const formattedMetadata = JSON.stringify(metadata);
+    return `${timestamp}-[${level.toUpperCase().padEnd(5)}]: ${message} ${formattedMetadata}`;
+  },
+);
 
 export const logger = createLogger({
   format: combine(timestamp(), errors({ stack: true }), splat()),
   transports: [
     new transports.Console({
-      format: combine(colorize(), pretty),
-    }),
-    new transports.File({
-      filename: "error.log",
-      level: "error",
-      format: json(),
-      maxsize: 1_048_576,
-      maxFiles: 3,
+      format: combine(colorize(), logFormat),
     }),
   ],
   exitOnError: false,

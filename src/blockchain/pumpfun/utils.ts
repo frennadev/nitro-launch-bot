@@ -3,6 +3,7 @@ import { PUMPFUN_PROGRAM, TOKEN_METADATA_PROGRAM } from "./constants";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { connection } from "../common/connection";
 import { BondingCurveCodec, GlobalSettingCodec } from "./codecs";
+import { getBooleanCodec, getU64Codec } from "@solana/codecs";
 
 export const getBondingCurve = (mint: PublicKey) => {
   const [bondingCurve, _] = PublicKey.findProgramAddressSync(
@@ -61,12 +62,12 @@ export const getGlobalSetting = async () => {
   );
   const info = await connection.getAccountInfo(setting);
   if (!info) throw new Error("Empty global settings data!!");
-  return GlobalSettingCodec.decode(info.data);
+  return GlobalSettingCodec.decode(Uint8Array.from(info.data));
 };
 
 export const getBondingCurveData = async (curve: PublicKey) => {
   const info = await connection.getAccountInfo(curve);
-  if (!info) throw new Error("Empty bonding curve data!!");
+  if (!info) return null;
   return BondingCurveCodec.decode(info.data);
 };
 

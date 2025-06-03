@@ -66,7 +66,10 @@ export const randomizedSleep = async (min = 1000, max = 2000) => {
 
 export const sendSignedTransaction = async (txn: VersionedTransaction) => {
   try {
-    const signature = await connection.sendTransaction(txn, { maxRetries: 3 });
+    const signature = await connection.sendTransaction(txn, {
+      maxRetries: 3,
+      skipPreflight: true,
+    });
     return signature;
   } catch (error: any) {
     logger.error(

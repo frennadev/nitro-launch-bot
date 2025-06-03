@@ -15,6 +15,7 @@ import {
 import { TokenState } from "./types";
 import { tokenLaunchQueue } from "../jobs/queues";
 import { logger } from "../blockchain/common/logger";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 
 export const getUser = async (telegramId: String) => {
   const user = await UserModel.findOne({
@@ -161,8 +162,9 @@ export const preLaunchChecks = async (
   const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet));
 
   // expectations
-  const expectedFunderBalance = buyAmount + walletCount * 0.05;
-  const expectedDevBalance = 0.5 + devBuy * 0.05;
+  const expectedFunderBalance =
+    (buyAmount + walletCount * 0.05) * LAMPORTS_PER_SOL;
+  const expectedDevBalance = (0.01 + devBuy + 0.05) * LAMPORTS_PER_SOL;
 
   // balances
   const funderBalance = await connection.getBalance(funderKeypair.publicKey);
@@ -170,11 +172,11 @@ export const preLaunchChecks = async (
 
   let message = "PreLaunch Checks:";
   if (funderBalance < expectedFunderBalance) {
-    message += `\nFunder balance too low. Expected ${expectedFunderBalance} SOL, Gotten ${funderBalance} SOL`;
+    message += `\nFunder balance too low. Expected ${(expectedFunderBalance / LAMPORTS_PER_SOL).toFixed(2)} SOL, Gotten ${(funderBalance / LAMPORTS_PER_SOL).toFixed(2)} SOL`;
     success = false;
   }
   if (devBalance < expectedDevBalance) {
-    message += `\nDev balance too low. Expected ${expectedDevBalance} SOL, Gotten ${devBalance} SOL`;
+    message += `\nDev balance too low. Expected ${(expectedDevBalance / LAMPORTS_PER_SOL).toFixed(2)} SOL, Gotten ${(devBalance / LAMPORTS_PER_SOL).toFixed(2)} SOL`;
     success = false;
   }
   return { success, message };

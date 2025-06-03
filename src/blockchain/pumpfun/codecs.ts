@@ -7,6 +7,7 @@ import {
   getU64Codec,
   getBase58Codec,
   getBooleanCodec,
+  fixCodecSize,
 } from "@solana/codecs";
 
 type CreateToken = {
@@ -60,7 +61,7 @@ export const CreateCodec: Codec<CreateToken> = getStructCodec([
   ["name", addCodecSizePrefix(getUtf8Codec(), getU32Codec())],
   ["symbol", addCodecSizePrefix(getUtf8Codec(), getU32Codec())],
   ["uri", addCodecSizePrefix(getUtf8Codec(), getU32Codec())],
-  ["creator", getBase58Codec()],
+  ["creator", fixCodecSize(getBase58Codec(), 32)],
 ]);
 
 export const BuyCodec: Codec<Buy> = getStructCodec([
@@ -78,14 +79,14 @@ export const SellCodec: Codec<Sell> = getStructCodec([
 export const GlobalSettingCodec: Codec<GlobalSetting> = getStructCodec([
   ["discriminator", getU64Codec()],
   ["initialized", getBooleanCodec()],
-  ["authority", getBase58Codec()],
-  ["feeRecipient", getBase58Codec()],
+  ["authority", fixCodecSize(getBase58Codec(), 32)],
+  ["feeRecipient", fixCodecSize(getBase58Codec(), 32)],
   ["initialVirtualTokenReserves", getU64Codec()],
   ["initialVirtualSolReserves", getU64Codec()],
   ["initialRealTokenReserves", getU64Codec()],
   ["tokenTotalSupply", getU64Codec()],
   ["feeBasisPoints", getU64Codec()],
-  ["withdrawAuthority", getBase58Codec()],
+  ["withdrawAuthority", fixCodecSize(getBase58Codec(), 32)],
   ["enableMigrate", getBooleanCodec()],
   ["poolMigrationFee", getU64Codec()],
   ["creatorFeeBasisPoints", getU64Codec()],

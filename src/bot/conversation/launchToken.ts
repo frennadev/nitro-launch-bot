@@ -46,7 +46,7 @@ const launchTokenConversation = async (
   if ((token.launchData?.launchStage || 1) > 1) {
     const result = await enqueueTokenLaunchRetry(
       user.id,
-      ctx.message!.chat.id,
+      Number(user.telegramId),
       token.tokenAddress,
     );
     if (!result.success) {
@@ -58,6 +58,7 @@ const launchTokenConversation = async (
         "Token Launch details has been submitted for retry ✅.\nYou would get a message once your launch has been completed.",
       );
     }
+    await conversation.halt();
   }
 
   // -------- REQUEST & VALIDATE FUNDER WALLET ----------
