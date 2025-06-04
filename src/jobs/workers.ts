@@ -62,11 +62,15 @@ export const sellDevWorker = new Worker<SellDevJob>(
       logger.info("[jobs]: Sell Dev Job starting...");
       const data = job.data;
       logger.info("[jobs-sell-dev]: Job Data", data);
-      await executeDevSell(data.tokenAddress, data.devWallet, data.sellPercent);
+      const result = await executeDevSell(
+        data.tokenAddress,
+        data.devWallet,
+        data.sellPercent,
+      );
       await releaseDevSellLock(data.tokenAddress);
       await sendNotification(
         data.userChatId,
-        "🎉 Dev Sell completed successfully.",
+        `🎉 Dev Sell completed successfully\\.\n[View on Solscan](https://solscan.io/tx/${result.signature})`,
       );
     } catch (error: any) {
       logger.error(
@@ -95,7 +99,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       await releaseWalletSellLock(data.tokenAddress);
       await sendNotification(
         data.userChatId,
-        "🎉 Wallet Sell completed successfully.",
+        "🎉 Wallet Sell completed successfully\\.",
       );
     } catch (error: any) {
       logger.error(
@@ -129,7 +133,7 @@ sellDevWorker.on("failed", async (job) => {
   await releaseDevSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Dev Wallet Sell Failed. Please try again 🔄",
+    "❌ Dev Wallet Sell Failed\\. Please try again 🔄",
   );
 });
 
@@ -140,6 +144,6 @@ sellWalletWorker.on("failed", async (job) => {
   await releaseWalletSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Wallet Sells Failed. Please try again 🔄",
+    "❌ Wallet Sells Failed\\. Please try again 🔄",
   );
 });

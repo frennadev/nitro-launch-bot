@@ -36,7 +36,7 @@ const devSellConversation = async (
 
   // -------- Request & validate % of dev holdings to sell ----------
   await ctx.reply(
-    "Enter the % of dev holdings to sell (must not be less than 1 or greater than 100): ",
+    "Enter the % of dev holdings to sell \\(must not be less than 1 or greater than 100\\): ",
     {
       parse_mode: "MarkdownV2",
     },

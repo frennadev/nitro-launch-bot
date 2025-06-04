@@ -42,7 +42,7 @@ const walletSellConversation = async (
   // -------- Request & validate % of wallet holdings to sell ----------
   if (!sellPercent) {
     await ctx.reply(
-      "Enter the % of wallet holdings to sell (must not be less than 1 or greater than 100): ",
+      "Enter the % of wallet holdings to sell \\(must not be less than 1 or greater than 100\\): ",
       {
         parse_mode: "MarkdownV2",
       },
@@ -66,14 +66,15 @@ const walletSellConversation = async (
   }
 
   // ------ SEND WALLET SELL DATA TO QUEUE -----
+  const buyWallets = token.launchData!.buyWallets.map(
+    (w) => (w as { privateKey: string }).privateKey,
+  );
   const result = await enqueueWalletSell(
     user.id,
     Number(user.telegramId),
     tokenAddress,
     (token.launchData!.devWallet! as { privateKey: string }).privateKey,
-    token.launchData!.buyWallets!.map(
-      (w) => (w as { privateKey: string }).privateKey,
-    ),
+    buyWallets,
     sellPercent,
   );
   if (!result.success) {

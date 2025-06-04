@@ -81,6 +81,7 @@ export const executeDevSell = async (
   logger.info(
     `[${logIdentifier}]: Dev Sell completed in ${formatMilliseconds(performance.now() - start)}`,
   );
+  return result;
 };
 
 export const executeWalletSell = async (

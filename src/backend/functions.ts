@@ -59,7 +59,7 @@ export const getUserTokenWithBuyWallets = async (
     user: userId,
     tokenAddress,
   })
-    .populate(["launchData.buyWallets"])
+    .populate(["launchData.buyWallets", "launchData.devWallet"])
     .lean();
   return token;
 };
@@ -277,13 +277,13 @@ export const enqueueTokenLaunch = async (
     return { success: true, message: "" };
   } catch (error: any) {
     logger.error("An error occurred during launch enque", error);
-    session.endSession();
+    await session.endSession();
     return {
       success: false,
       message: `An error occurred during launch enque: ${error.message}`,
     };
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
 
@@ -345,13 +345,13 @@ export const enqueueTokenLaunchRetry = async (
     return { success: true, message: "" };
   } catch (error: any) {
     logger.error("An error occurred during launch retry enque", error);
-    session.endSession();
+    await session.endSession();
     return {
       success: false,
       message: `An error occurred during launch retry enque: ${error.message}`,
     };
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
 
@@ -371,6 +371,9 @@ export const enqueueDevSell = async (
           user: userId,
         },
         {
+          $set: {
+            "launchData.lockDevSell": true,
+          },
           $inc: {
             "launchData.devSellAttempt": 1,
           },
@@ -380,7 +383,6 @@ export const enqueueDevSell = async (
       if (!updatedToken) {
         throw new Error("Failed to update token");
       }
-      await acquireDevSellLock(tokenAddress);
       await devSellQueue.add(
         `dev-sell-${tokenAddress}-${updatedToken.launchData?.devSellAttempt}`,
         {
@@ -394,13 +396,13 @@ export const enqueueDevSell = async (
     return { success: true, message: "" };
   } catch (error: any) {
     logger.error("An error occurred during dev sell enque", error);
-    session.endSession();
+    await session.endSession();
     return {
       success: false,
       message: `An error occurred during dev sell enque: ${error.message}`,
     };
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
 
@@ -421,6 +423,9 @@ export const enqueueWalletSell = async (
           user: userId,
         },
         {
+          $set: {
+            "launchData.lockWalletSell": true,
+          },
           $inc: {
             "launchData.walletSellAttempt": 1,
           },
@@ -430,14 +435,15 @@ export const enqueueWalletSell = async (
       if (!updatedToken) {
         throw new Error("Failed to update token");
       }
-      await acquireWalletSellLock(tokenAddress);
+      buyerWallets = buyerWallets.filter((w) => Boolean(w));
+      const decrypted = buyerWallets.map((w) => decryptPrivateKey(w));
       await walletSellQueue.add(
         `wallet-sell-${tokenAddress}-${updatedToken.launchData?.walletSellAttempt}`,
         {
           tokenAddress,
           userChatId: chatId,
           devWallet: decryptPrivateKey(devWallet),
-          buyerWallets: buyerWallets.map((w) => decryptPrivateKey(w)),
+          buyerWallets: decrypted,
           sellPercent,
         },
       );
@@ -445,13 +451,13 @@ export const enqueueWalletSell = async (
     return { success: true, message: "" };
   } catch (error: any) {
     logger.error("An error occurred during wallet sell enque", error);
-    session.endSession();
+    await session.endSession();
     return {
       success: false,
       message: `An error occurred during wallet sell enque: ${error.message}`,
     };
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
 
