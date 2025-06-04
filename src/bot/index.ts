@@ -17,6 +17,7 @@ import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
 import devSellConversation from "./conversation/devSell";
 import walletSellConversation from "./conversation/walletSell";
+import { TokenState } from "../backend/types";
 
 const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
@@ -111,11 +112,25 @@ bot.callbackQuery(CallBackQueries.VIEW_TOKENS, async (ctx) => {
       `*Symbol:* $\`${escape(token.symbol)}\``,
       `*Description*: _${escape(token.description || "")}_`,
     ].join("\n");
-    const kb = new InlineKeyboard().text(
-      "🚀 Launch Token",
-      `${CallBackQueries.LAUNCH_TOKEN}_${token.address}`,
-    );
-
+    let kb;
+    if (token.state == TokenState.LAUNCHED) {
+      kb = new InlineKeyboard()
+        .text(
+          "👨‍💻 Sell Dev Supply",
+          `${CallBackQueries.SELL_DEV}_${token.address}`,
+        )
+        .text(
+          "📈 Sell % supply",
+          `${CallBackQueries.SELL_PERCENT}_${token.address}`,
+        )
+        .row()
+        .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${token.address}`);
+    } else {
+      kb = new InlineKeyboard().text(
+        "🚀 Launch Token",
+        `${CallBackQueries.LAUNCH_TOKEN}_${token.address}`,
+      );
+    }
     await ctx.reply(msg, {
       parse_mode: "MarkdownV2",
       reply_markup: kb,

@@ -38,6 +38,7 @@ export const getTokensForUser = async (userId: string) => {
     name: token.name,
     symbol: token.symbol,
     description: token.description,
+    state: token.state,
   }));
 };
 
