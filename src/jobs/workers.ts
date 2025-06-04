@@ -2,7 +2,11 @@ import { Worker } from "bullmq";
 import { tokenLaunchQueue, devSellQueue, walletSellQueue } from "./queues";
 import type { LaunchTokenJob, SellDevJob, SellWalletJob } from "./types";
 import { redisClient } from "../backend/db";
-import { releaseDevSellLock, releaseWalletSellLock, updateTokenState } from "../backend/functions";
+import {
+  releaseDevSellLock,
+  releaseWalletSellLock,
+  updateTokenState,
+} from "../backend/functions";
 import { TokenState } from "../backend/types";
 import {
   sendLaunchFailureNotification,
@@ -60,7 +64,10 @@ export const sellDevWorker = new Worker<SellDevJob>(
       logger.info("[jobs-sell-dev]: Job Data", data);
       await executeDevSell(data.tokenAddress, data.devWallet, data.sellPercent);
       await releaseDevSellLock(data.tokenAddress);
-      await sendNotification(data.userChatId, "🎉 Dev Sell completed successfully.")
+      await sendNotification(
+        data.userChatId,
+        "🎉 Dev Sell completed successfully.",
+      );
     } catch (error: any) {
       logger.error(
         "[jobs-sell-dev]: Error Occurred while selling dev supply",
@@ -79,9 +86,17 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       logger.info("[jobs]: Wallet Sell Job starting...");
       const data = job.data;
       logger.info("[jobs-sell-wallet]: Job Data", data);
-      await executeWalletSell(data.tokenAddress, data.buyerWallets, data.devWallet, data.sellPercent);
+      await executeWalletSell(
+        data.tokenAddress,
+        data.buyerWallets,
+        data.devWallet,
+        data.sellPercent,
+      );
       await releaseWalletSellLock(data.tokenAddress);
-      await sendNotification(data.userChatId, "🎉 Wallet Sell completed successfully.")
+      await sendNotification(
+        data.userChatId,
+        "🎉 Wallet Sell completed successfully.",
+      );
     } catch (error: any) {
       logger.error(
         "[jobs-sell-wallet]: Error Occurred while selling wallet supply",
@@ -114,7 +129,7 @@ sellDevWorker.on("failed", async (job) => {
   await releaseDevSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Dev Wallet Sell Failed. Please try again 🔄"
+    "❌ Dev Wallet Sell Failed. Please try again 🔄",
   );
 });
 
@@ -125,6 +140,6 @@ sellWalletWorker.on("failed", async (job) => {
   await releaseWalletSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Wallet Sells Failed. Please try again 🔄"
+    "❌ Wallet Sells Failed. Please try again 🔄",
   );
 });

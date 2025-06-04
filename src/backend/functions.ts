@@ -13,7 +13,11 @@ import {
   uploadJsonToPinata,
 } from "./utils";
 import { TokenState } from "./types";
-import { tokenLaunchQueue } from "../jobs/queues";
+import {
+  devSellQueue,
+  tokenLaunchQueue,
+  walletSellQueue,
+} from "../jobs/queues";
 import { logger } from "../blockchain/common/logger";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 
@@ -43,6 +47,19 @@ export const getUserToken = async (userId: string, tokenAddress: string) => {
     tokenAddress,
   })
     .populate(["launchData.devWallet"])
+    .lean();
+  return token;
+};
+
+export const getUserTokenWithBuyWallets = async (
+  userId: string,
+  tokenAddress: string,
+) => {
+  const token = await TokenModel.findOne({
+    user: userId,
+    tokenAddress,
+  })
+    .populate(["launchData.buyWallets"])
     .lean();
   return token;
 };
@@ -338,6 +355,106 @@ export const enqueueTokenLaunchRetry = async (
   }
 };
 
+export const enqueueDevSell = async (
+  userId: string,
+  chatId: number,
+  tokenAddress: string,
+  devWallet: string,
+  sellPercent: number,
+) => {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const updatedToken = await TokenModel.findOneAndUpdate(
+        {
+          tokenAddress,
+          user: userId,
+        },
+        {
+          $inc: {
+            "launchData.devSellAttempt": 1,
+          },
+        },
+        { new: true },
+      ).lean();
+      if (!updatedToken) {
+        throw new Error("Failed to update token");
+      }
+      await acquireDevSellLock(tokenAddress);
+      await devSellQueue.add(
+        `dev-sell-${tokenAddress}-${updatedToken.launchData?.devSellAttempt}`,
+        {
+          tokenAddress,
+          userChatId: chatId,
+          devWallet: decryptPrivateKey(devWallet),
+          sellPercent,
+        },
+      );
+    });
+    return { success: true, message: "" };
+  } catch (error: any) {
+    logger.error("An error occurred during dev sell enque", error);
+    session.endSession();
+    return {
+      success: false,
+      message: `An error occurred during dev sell enque: ${error.message}`,
+    };
+  } finally {
+    session.endSession();
+  }
+};
+
+export const enqueueWalletSell = async (
+  userId: string,
+  chatId: number,
+  tokenAddress: string,
+  devWallet: string,
+  buyerWallets: string[],
+  sellPercent: number,
+) => {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const updatedToken = await TokenModel.findOneAndUpdate(
+        {
+          tokenAddress,
+          user: userId,
+        },
+        {
+          $inc: {
+            "launchData.walletSellAttempt": 1,
+          },
+        },
+        { new: true },
+      ).lean();
+      if (!updatedToken) {
+        throw new Error("Failed to update token");
+      }
+      await acquireWalletSellLock(tokenAddress);
+      await walletSellQueue.add(
+        `wallet-sell-${tokenAddress}-${updatedToken.launchData?.walletSellAttempt}`,
+        {
+          tokenAddress,
+          userChatId: chatId,
+          devWallet: decryptPrivateKey(devWallet),
+          buyerWallets: buyerWallets.map((w) => decryptPrivateKey(w)),
+          sellPercent,
+        },
+      );
+    });
+    return { success: true, message: "" };
+  } catch (error: any) {
+    logger.error("An error occurred during wallet sell enque", error);
+    session.endSession();
+    return {
+      success: false,
+      message: `An error occurred during wallet sell enque: ${error.message}`,
+    };
+  } finally {
+    session.endSession();
+  }
+};
+
 export const updateTokenState = async (
   tokenAddress: string,
   state: TokenState,
@@ -381,6 +498,58 @@ export const updateBuyDistribution = async (
     {
       $set: {
         "launchData.buyDistribution": dist,
+      },
+    },
+  );
+};
+
+export const acquireDevSellLock = async (tokenAddress: string) => {
+  await TokenModel.findOneAndUpdate(
+    {
+      tokenAddress,
+    },
+    {
+      $set: {
+        "launchData.lockDevSell": true,
+      },
+    },
+  );
+};
+
+export const releaseDevSellLock = async (tokenAddress: string) => {
+  await TokenModel.findOneAndUpdate(
+    {
+      tokenAddress,
+    },
+    {
+      $set: {
+        "launchData.lockDevSell": false,
+      },
+    },
+  );
+};
+
+export const acquireWalletSellLock = async (tokenAddress: string) => {
+  await TokenModel.findOneAndUpdate(
+    {
+      tokenAddress,
+    },
+    {
+      $set: {
+        "launchData.lockWalletSell": true,
+      },
+    },
+  );
+};
+
+export const releaseWalletSellLock = async (tokenAddress: string) => {
+  await TokenModel.findOneAndUpdate(
+    {
+      tokenAddress,
+    },
+    {
+      $set: {
+        "launchData.lockWalletSell": false,
       },
     },
   );

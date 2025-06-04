@@ -20,8 +20,8 @@ export const executeDevSell = async (
   devWallet: string,
   sellPercent: number,
 ) => {
-  if (sellPercent < 1) {
-    throw new Error("Sell % cannot be less than 1");
+  if (sellPercent < 1 || sellPercent > 100) {
+    throw new Error("Sell % cannot be less than 1 or greater than 100");
   }
   const logIdentifier = `sell-dev-${tokenAddress}`;
   logger.info("Starting dev sell");
@@ -39,7 +39,7 @@ export const executeDevSell = async (
   const tokensToSell =
     sellPercent === 100
       ? devBalance
-      : (BigInt(sellPercent) * devBalance) / BigInt(100);
+      : (BigInt(sellPercent) * BigInt(100) * devBalance) / BigInt(10_000);
   const sellIx = sellInstruction(
     mintPublicKey,
     devKeypair.publicKey,
@@ -89,8 +89,8 @@ export const executeWalletSell = async (
   devWallet: string,
   sellPercent: number,
 ) => {
-  if (sellPercent < 1) {
-    throw new Error("Sell % cannot be less than 1");
+  if (sellPercent < 1 || sellPercent > 100) {
+    throw new Error("Sell % cannot be less than 1 or greater than 100");
   }
   const logIdentifier = `sell-${tokenAddress}`;
   logger.info("Starting wallets sell");
@@ -134,7 +134,7 @@ export const executeWalletSell = async (
   let tokensToSell =
     sellPercent === 100
       ? totalTokens
-      : (BigInt(sellPercent) * totalTokens) / BigInt(100);
+      : (BigInt(sellPercent) * BigInt(100) * totalTokens) / BigInt(10_000);
 
   const sellSetups: { wallet: Keypair; ata: PublicKey; amount: bigint }[] = [];
   for (const walletInfo of walletBalances) {
@@ -192,9 +192,9 @@ export const executeWalletSell = async (
       logIdentifier,
     );
   });
-  const results = await Promise.all(tasks)
+  const results = await Promise.all(tasks);
   logger.info(`[${logIdentifier}]: Wallet Sell results`, results);
-  const success = results.filter(res=>res.success)
+  const success = results.filter((res) => res.success);
   if (success.length == 0) {
     throw new Error("Wallet sells failed");
   }

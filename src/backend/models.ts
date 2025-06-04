@@ -16,7 +16,7 @@ const walletSchema = new Schema(
     user: { type: Types.ObjectId, ref: "User", required: true },
     publicKey: { type: String, required: true },
     privateKey: { type: String, required: true },
-    isDev: { type: String, required: true, default: false },
+    isDev: { type: Boolean, required: true, default: false },
   },
   { timestamps: true },
 );
@@ -30,7 +30,11 @@ const tokenSchema = new Schema(
     tokenAddress: { type: String, required: true },
     tokenPrivateKey: { type: String, required: true },
     launchData: {
+      // Job Attempts
       launchAttempt: { type: Number, default: 0 },
+      devSellAttempt: { type: Number, default: 0 },
+      walletSellAttempt: { type: Number, default: 0 },
+      // Launch
       launchStage: { type: Number, default: 1 },
       funderPrivateKey: { type: String, default: null },
       devWallet: { type: Types.ObjectId, ref: "Wallet" },
@@ -43,6 +47,9 @@ const tokenSchema = new Schema(
         enum: Object.values(LaunchDestination),
         default: LaunchDestination.PUMPFUN,
       },
+      // Locks
+      lockDevSell: { type: Boolean, default: false },
+      lockWalletSell: { type: Boolean, default: false },
     },
     state: {
       type: String,

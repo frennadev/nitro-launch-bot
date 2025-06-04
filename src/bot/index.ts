@@ -15,6 +15,8 @@ import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
+import devSellConversation from "./conversation/devSell";
+import walletSellConversation from "./conversation/walletSell";
 
 const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
@@ -22,6 +24,8 @@ const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 bot.use(conversations());
 bot.use(createConversation(createTokenConversation));
 bot.use(createConversation(launchTokenConversation));
+bot.use(createConversation(devSellConversation));
+bot.use(createConversation(walletSellConversation));
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
@@ -122,6 +126,21 @@ bot.callbackQuery(/^launch_token_(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const tokenAddress = ctx.match![1];
   await ctx.conversation.enter("launchTokenConversation", tokenAddress);
+});
+bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const tokenAddress = ctx.match![1];
+  await ctx.conversation.enter("devSellConversation", tokenAddress);
+});
+bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const tokenAddress = ctx.match![1];
+  await ctx.conversation.enter("walletSellConversation", tokenAddress, 100);
+});
+bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const tokenAddress = ctx.match![1];
+  await ctx.conversation.enter("walletSellConversation", tokenAddress);
 });
 
 await bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);

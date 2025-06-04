@@ -1,4 +1,3 @@
-import { InlineKeyboard } from "grammy";
 import bot from ".";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
@@ -67,4 +66,8 @@ export const sendLaunchFailureNotification = async (
       ],
     },
   });
+};
+
+export const sendNotification = async (chatId: number, message: string) => {
+  await bot.api.sendMessage(chatId, message, { parse_mode: "MarkdownV2" });
 };
