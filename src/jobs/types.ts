@@ -13,3 +13,18 @@ export type LaunchTokenJob = {
   buyDistribution: number[];
   launchStage: number;
 };
+
+export type SellDevJob = {
+  userChatId: number;
+  tokenAddress: string;
+  devWallet: string;
+  sellPercent: number;
+};
+
+export type SellWalletJob = {
+  userChatId: number;
+  tokenAddress: string;
+  devWallet: string;
+  sellPercent: number;
+  buyerWallets: string[];
+};
