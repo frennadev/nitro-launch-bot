@@ -235,7 +235,7 @@ export const executeTokenLaunch = async (
 
   // ------- SNIPING STAGE -------
   if (launchStage === PumpLaunchStage.SNIPE) {
-    await randomizedSleep(1000, 1500)
+    await randomizedSleep(1000, 1500);
     logger.info(`[${logIdentifier}]: Starting token snipe stage`);
     const start = performance.now();
     const blockHash = await connection.getLatestBlockhash("processed");
@@ -246,16 +246,16 @@ export const executeTokenLaunch = async (
     );
     let currentComputeUnitPrice = maxComputeUnitPrice;
     let curveData = await getBondingCurveData(bondingCurve);
-    let retries = 0
+    let retries = 0;
     while (!curveData && retries < 5) {
-      curveData = await getBondingCurveData(bondingCurve)
-      retries +=1
+      curveData = await getBondingCurveData(bondingCurve);
+      retries += 1;
       if (!curveData) {
-        await randomizedSleep(500, 1000)
+        await randomizedSleep(500, 1000);
       }
     }
     if (!curveData) {
-      throw new Error("Unable to fetch curve data")
+      throw new Error("Unable to fetch curve data");
     }
     let virtualTokenReserve = curveData.virtualTokenReserves;
     let virtualSolReserve = curveData.virtualSolReserves;
