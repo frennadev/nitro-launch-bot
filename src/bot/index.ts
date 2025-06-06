@@ -55,9 +55,9 @@ To proceed, you can choose any of the actions below ⬇️
   const inlineKeyboard = new InlineKeyboard()
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
-    .row()
-    .text("Add Wallet", CallBackQueries.ADD_WALLET)
-    .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
+    // .row()
+    // .text("Add Wallet", CallBackQueries.ADD_WALLET)
+    // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
   await ctx.reply(welcomeMsg, {
     parse_mode: "MarkdownV2",
@@ -85,9 +85,9 @@ To proceed, you can choose any of the actions below ⬇️
   const inlineKeyboard = new InlineKeyboard()
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
-    .row()
-    .text("Add Wallet", CallBackQueries.ADD_WALLET)
-    .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
+    // .row()
+    // .text("Add Wallet", CallBackQueries.ADD_WALLET)
+    // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
   await ctx.reply(welcomeMsg, {
     parse_mode: "MarkdownV2",

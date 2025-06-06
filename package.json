@@ -4,13 +4,13 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "build": "bun build src/index.ts --outfile dist/index.js --minify",
+    "build:bot": "bun build src/index.ts --outdir build --sourcemap=linked --target bun",
+    "build:job": "bun build src/bot/index.ts --outdir build --sourcemap=linked --target bun",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@types/bun": "^1.2.14",
-    "@types/mongoose": "^5.11.97",
     "@types/node": "^22.15.23",
     "@typescript-eslint/eslint-plugin": "^8.32.1",
     "@typescript-eslint/parser": "^8.32.1",

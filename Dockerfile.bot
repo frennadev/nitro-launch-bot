@@ -1,0 +1,21 @@
+FROM oven/bun:alpine AS base
+
+# Dependencies
+FROM base AS deps
+WORKDIR /app
+COPY bun.lock package.json ./
+RUN bun install --frozen-lockfile
+
+
+# Build
+FROM deps AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules /node_modules
+COPY . .
+RUN bun run build:bot
+
+# Runtime
+FROM base AS runtime
+WORKDIR /app
+COPY --from=build /app/build ./build
+CMD ["bun", "run", "build/index.js"]

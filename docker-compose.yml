@@ -29,9 +29,10 @@ services:
     container_name: viper-bot
     env_file:
       - .env
-    # volumes:
-    #   - ./:/app
-    #   - /app/node_modules
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    command: ["bun", "run", "--hot", "src/index.ts"]
     depends_on:
       database:
         condition: service_started

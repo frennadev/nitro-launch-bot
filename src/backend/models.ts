@@ -1,4 +1,4 @@
-import { Schema, model, type InferSchemaType, Types } from "mongoose";
+import { Schema, model, type InferSchemaType } from "mongoose";
 import { LaunchDestination, TokenState } from "./types";
 
 // ---------- DB SCHEMAS -------------
@@ -13,7 +13,7 @@ const userSchema = new Schema(
 );
 const walletSchema = new Schema(
   {
-    user: { type: Types.ObjectId, ref: "User", required: true },
+    user: { type: Schema.ObjectId, ref: "User", required: true },
     publicKey: { type: String, required: true },
     privateKey: { type: String, required: true },
     isDev: { type: Boolean, required: true, default: false },
@@ -22,7 +22,7 @@ const walletSchema = new Schema(
 );
 const tokenSchema = new Schema(
   {
-    user: { type: Types.ObjectId, ref: "User", required: true },
+    user: { type: Schema.ObjectId, ref: "User", required: true },
     name: { type: String, required: true },
     symbol: { type: String, required: true },
     description: { type: String },
@@ -37,8 +37,8 @@ const tokenSchema = new Schema(
       // Launch
       launchStage: { type: Number, default: 1 },
       funderPrivateKey: { type: String, default: null },
-      devWallet: { type: Types.ObjectId, ref: "Wallet" },
-      buyWallets: [{ type: Types.ObjectId, ref: "Wallet" }],
+      devWallet: { type: Schema.ObjectId, ref: "Wallet" },
+      buyWallets: [{ type: Schema.ObjectId, ref: "Wallet" }],
       buyAmount: { type: Number, default: 0 },
       devBuy: { type: Number, default: 0 },
       buyDistribution: [{ type: Number }],
