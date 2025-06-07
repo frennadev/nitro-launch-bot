@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { tokenLaunchQueue, devSellQueue, walletSellQueue } from "./queues";
 import type { LaunchTokenJob, SellDevJob, SellWalletJob } from "./types";
-import { redisClient } from "../backend/db";
+import { redisClient } from "./db";
 import {
   releaseDevSellLock,
   releaseWalletSellLock,
@@ -17,7 +17,6 @@ import { executeTokenLaunch } from "../blockchain/pumpfun/launch";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { logger } from "./logger";
 
-console.log("workerrrr here")
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
   async (job) => {
@@ -53,7 +52,16 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
       throw error;
     }
   },
-  { connection: redisClient, concurrency: 10 },
+  {
+    connection: redisClient,
+    concurrency: 10,
+    removeOnFail: {
+      count: 20,
+    },
+    removeOnComplete: {
+      count: 10,
+    },
+  },
 );
 
 export const sellDevWorker = new Worker<SellDevJob>(
@@ -81,7 +89,16 @@ export const sellDevWorker = new Worker<SellDevJob>(
       throw error;
     }
   },
-  { connection: redisClient, concurrency: 10 },
+  {
+    connection: redisClient,
+    concurrency: 10,
+    removeOnComplete: {
+      count: 10,
+    },
+    removeOnFail: {
+      count: 20,
+    },
+  },
 );
 
 export const sellWalletWorker = new Worker<SellWalletJob>(
@@ -110,11 +127,26 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       throw error;
     }
   },
-  { connection: redisClient, concurrency: 10 },
+  {
+    connection: redisClient,
+    concurrency: 10,
+    removeOnComplete: {
+      count: 10,
+    },
+    removeOnFail: {
+      count: 20,
+    },
+  },
 );
 
+launchTokenWorker.on("ready", () => {
+  logger.info("Token launch worker ready");
+});
+launchTokenWorker.on("active", async () => {
+  logger.info("Token launch worker active");
+});
 launchTokenWorker.on("error", async (error) => {
-  logger.error("[jobs]: Token Launch Worker Error", error);
+  logger.error("Token Launch Worker Error", error);
 });
 launchTokenWorker.on("failed", async (job) => {
   await updateTokenState(job!.data.tokenAddress, TokenState.LISTED);
@@ -127,8 +159,14 @@ launchTokenWorker.on("failed", async (job) => {
   );
 });
 
+sellDevWorker.on("ready", () => {
+  logger.info("Dev Sell worker ready");
+});
+sellDevWorker.on("active", async () => {
+  logger.info("Dev Sell worker active");
+});
 sellDevWorker.on("error", async (error) => {
-  logger.error("[jobs]: Dev Sell Worker Error", error);
+  logger.error("Dev Sell Worker Error", error);
 });
 sellDevWorker.on("failed", async (job) => {
   await releaseDevSellLock(job!.data.tokenAddress);
@@ -138,8 +176,14 @@ sellDevWorker.on("failed", async (job) => {
   );
 });
 
+sellWalletWorker.on("ready", () => {
+  logger.info("Wallet Sell worker ready");
+});
+sellWalletWorker.on("active", async () => {
+  logger.info("Wallet Sell worker active");
+});
 sellWalletWorker.on("error", async (error) => {
-  logger.error("[jobs]: Wallet Sell Worker Error", error);
+  logger.error("Wallet Sell Worker Error", error);
 });
 sellWalletWorker.on("failed", async (job) => {
   await releaseWalletSellLock(job!.data.tokenAddress);
@@ -148,5 +192,3 @@ sellWalletWorker.on("failed", async (job) => {
     "❌ Wallet Sells Failed\\. Please try again 🔄",
   );
 });
-
-console.log("after worker -->")

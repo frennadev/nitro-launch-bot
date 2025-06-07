@@ -1,17 +1,17 @@
 import { createLogger, format, transports } from "winston";
-const { colorize, combine, timestamp, printf, errors, splat } = format;
+const { colorize, combine, printf } = format;
 
 const logFormat = printf(
-  ({ level, message, timestamp, context, ...metadata }) => {
-    const formattedMetadata = JSON.stringify(metadata);
-    return `${timestamp}-[${level.toUpperCase().padEnd(5)}]: ${message} ${formattedMetadata}`;
+  ({ level, message, ...metadata }) => {
+    const formattedMetadata = Object.keys(metadata).length ? JSON.stringify(metadata): "";
+    return `[job]: ${message} ${formattedMetadata}`;
   },
 );
 
 export const logger = createLogger({
-  format: combine(timestamp(), errors({ stack: true }), splat()),
   transports: [
     new transports.Console({
+      level: "info",
       format: combine(colorize(), logFormat),
     }),
   ],
