@@ -73,7 +73,8 @@ const walletSellConversation = async (
     user.id,
     Number(user.telegramId),
     tokenAddress,
-    (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
+    (token.launchData!.devWallet! as unknown as { privateKey: string })
+      .privateKey,
     buyWallets,
     sellPercent,
   );

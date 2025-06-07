@@ -57,9 +57,9 @@ To proceed, you can choose any of the actions below ⬇️
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
-    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
-    // .text("Add Wallet", CallBackQueries.ADD_WALLET)
-    // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
+    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET);
+  // .text("Add Wallet", CallBackQueries.ADD_WALLET)
+  // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
   await ctx.reply(welcomeMsg, {
     parse_mode: "MarkdownV2",
@@ -88,9 +88,9 @@ To proceed, you can choose any of the actions below ⬇️
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
-    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
-    // .text("Add Wallet", CallBackQueries.ADD_WALLET)
-    // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
+    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET);
+  // .text("Add Wallet", CallBackQueries.ADD_WALLET)
+  // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
   await ctx.reply(welcomeMsg, {
     parse_mode: "MarkdownV2",
@@ -146,8 +146,8 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
     await ctx.reply("Unrecognized user ❌");
     return;
   }
-  await ctx.answerCallbackQuery()
-  const { wallet } = await getDevWallet(user.id)
+  await ctx.answerCallbackQuery();
+  const { wallet } = await getDevWallet(user.id);
   const msg = [
     "*Your dev wallet private key*",
     "```",
@@ -155,12 +155,12 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
     "```",
     "_Copy it now and delete the message as soon as you’re done\\._",
   ].join("\n");
-  const keyboard = new InlineKeyboard().text("🗑 Delete", "del_message")
+  const keyboard = new InlineKeyboard().text("🗑 Delete", "del_message");
   const sent = await ctx.reply(msg, {
     parse_mode: "MarkdownV2",
-    reply_markup: keyboard
+    reply_markup: keyboard,
   });
-})
+});
 bot.callbackQuery("del_message", async (ctx) => {
   await ctx.answerCallbackQuery("Message deleted");
   if (ctx.callbackQuery.message) {

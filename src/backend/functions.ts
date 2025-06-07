@@ -29,21 +29,23 @@ export const getUser = async (telegramId: String) => {
 };
 
 export const getDevWallet = async (userId: String) => {
-  const wallets = await WalletModel.find({ user: userId })
-  console.log(wallets.map(w=>({
-    public: w.publicKey,
-    secret: decryptPrivateKey(w.privateKey),
-    isDev: w.isDev
-  })))
-  const wallet = wallets.filter(w=>w.isDev)[0]
+  const wallets = await WalletModel.find({ user: userId });
+  console.log(
+    wallets.map((w) => ({
+      public: w.publicKey,
+      secret: decryptPrivateKey(w.privateKey),
+      isDev: w.isDev,
+    })),
+  );
+  const wallet = wallets.filter((w) => w.isDev)[0];
   // const wallet = await WalletModel.findOne({
   //   user: userId,
   //   isDev: true
   // })
   return {
-    wallet: decryptPrivateKey(wallet?.privateKey!)
-  } 
-}
+    wallet: decryptPrivateKey(wallet?.privateKey!),
+  };
+};
 
 export const getTokensForUser = async (userId: string) => {
   const result = await TokenModel.find({
@@ -342,11 +344,16 @@ export const enqueueTokenLaunchRetry = async (
         tokenSymbol: updatedToken.symbol,
         buyAmount: updatedToken.launchData!.buyAmount,
         buyerWallets: updatedToken.launchData!.buyWallets.map((w) =>
-          decryptPrivateKey((w as unknown as { privateKey: string }).privateKey),
+          decryptPrivateKey(
+            (w as unknown as { privateKey: string }).privateKey,
+          ),
         ),
         devWallet: decryptPrivateKey(
-          (updatedToken.launchData!.devWallet as unknown as { privateKey: string })
-            .privateKey,
+          (
+            updatedToken.launchData!.devWallet as unknown as {
+              privateKey: string;
+            }
+          ).privateKey,
         ),
         funderWallet: decryptPrivateKey(
           updatedToken.launchData!.funderPrivateKey,

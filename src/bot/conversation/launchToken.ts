@@ -6,7 +6,6 @@ import {
   getUser,
   getUserToken,
   preLaunchChecks,
-  updateTokenState,
 } from "../../backend/functions";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
@@ -143,7 +142,8 @@ const launchTokenConversation = async (
   await ctx.reply("Performing prelaunh checks 🔃...");
   const checkResult = await preLaunchChecks(
     funderKey,
-    (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
+    (token.launchData!.devWallet! as unknown as { privateKey: string })
+      .privateKey,
     buyAmount,
     devBuy,
     buyerKeys.length,
@@ -162,7 +162,8 @@ const launchTokenConversation = async (
     updatedCtx.message!.chat.id,
     tokenAddress,
     funderKey,
-    (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
+    (token.launchData!.devWallet! as unknown as { privateKey: string })
+      .privateKey,
     buyerKeys,
     devBuy,
     buyAmount,
