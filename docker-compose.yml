@@ -6,14 +6,13 @@ services:
       context: .
       dockerfile: Dockerfile.bot
     container_name: nitro-bot
-    env:
+    environment:
       NODE_ENV: "production"
-    depends_on:
   
   jobs:
     build:
       context: .
       dockerfile: Dockerfile.job
     container_name: nitro-jobs
-    env:
+    environment:
       NODE_ENV: "production"

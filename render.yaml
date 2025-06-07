@@ -1,0 +1,16 @@
+services:
+  - type: worker
+    name: nitro-bot
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile.bot
+    envVars:
+      - fromGroup: nitro-launch
+  
+  - type: worker
+    name: nitro-jobs
+    runtime: docker
+    plan: standard
+    dockerfilePath: ./Dockerfile.job
+    envVars:
+      - fromGroup: nitro-launch
