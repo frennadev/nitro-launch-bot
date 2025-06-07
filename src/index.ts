@@ -8,7 +8,11 @@ const nitroLaunchRunner = async () => {
   logger.info("Starting Telegram bot...");
   bot
     .start()
-    .catch((e) => logger.error("Error occurred while starting bot", e));
+    .catch(async (e) => {
+      logger.info("Closing mongo db connection...");
+      await disconnectDB();
+      logger.error("Error occurred while starting bot", e)
+    });
 };
 
 nitroLaunchRunner().catch((err) => {

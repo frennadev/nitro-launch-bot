@@ -158,6 +158,9 @@ launchTokenWorker.on("failed", async (job) => {
     token.tokenSymbol,
   );
 });
+launchTokenWorker.on("closed", () => {
+  logger.info("Launch Token worker closed successfully")
+})
 
 sellDevWorker.on("ready", () => {
   logger.info("Dev Sell worker ready");
@@ -175,6 +178,9 @@ sellDevWorker.on("failed", async (job) => {
     "❌ Dev Wallet Sell Failed\\. Please try again 🔄",
   );
 });
+sellDevWorker.on("closed", () => {
+  logger.error("Dev Sell Worker closed successfully");
+});
 
 sellWalletWorker.on("ready", () => {
   logger.info("Wallet Sell worker ready");
@@ -191,4 +197,7 @@ sellWalletWorker.on("failed", async (job) => {
     job!.data.userChatId,
     "❌ Wallet Sells Failed\\. Please try again 🔄",
   );
+});
+sellWalletWorker.on("closed", async () => {
+  logger.info("Wallet Sell worker closed successfully");
 });

@@ -6,8 +6,10 @@ import { logger } from "./logger";
 connectDB()
   .then(() => {
     logger.info("🚀  Jobs service online — workers registered");
+  }).catch(async (e) => {
+    await onCloseSignal()
+    logger.error("Error connecting to db: ", e)
   })
-  .catch((e) => logger.error("Error with db connection: ", e));
 
 const onCloseSignal = async () => {
   logger.info("Closing mongo db connection...");
