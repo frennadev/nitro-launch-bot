@@ -1,4 +1,4 @@
-import crypto from "crypto";
+import * as crypto from "crypto";
 import { env } from "../config";
 import { ENCRYPTION_ALGORITHM, ENCRYPTION_IV_LENGTH } from "./constants";
 import axios from "axios";

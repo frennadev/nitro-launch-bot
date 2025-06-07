@@ -1,21 +1,34 @@
-FROM oven/bun:alpine AS base
-
-# Dependencies
-FROM base AS deps
+FROM oven/bun:slim
 WORKDIR /app
-COPY bun.lock package.json ./
+
+# install deps first for better layer caching
+COPY bun.lock package.json tsconfig.json ./
 RUN bun install --frozen-lockfile
 
-
-# Build
-FROM deps AS build
-WORKDIR /app
-COPY --from=deps /app/node_modules /node_modules
+# now copy source
 COPY . .
-RUN bun run build:job
 
-# Runtime
-FROM base AS runtime
-WORKDIR /app
-COPY --from=build /app/build ./build
-CMD ["bun", "run", "build/index.js"]
+CMD ["bun", "run", "src/bot/index.ts"]
+
+# FROM oven/bun:slim AS base
+
+# # Dependencies
+# FROM base AS deps
+# WORKDIR /app
+# COPY bun.lock package.json ./
+# RUN bun install --frozen-lockfile
+
+
+# # Build
+# FROM deps AS build
+# WORKDIR /app
+# COPY --from=deps /app/node_modules /node_modules
+# COPY . .
+# RUN bun run build
+
+# # Runtime
+# FROM base AS runtime
+# WORKDIR /app
+# COPY --from=build /app/src ./src
+# COPY --from=build /app/node_modules ./node_modules
+# CMD ["bun", "src/bot/index.ts"]

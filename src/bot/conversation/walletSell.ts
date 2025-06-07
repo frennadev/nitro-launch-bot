@@ -67,13 +67,13 @@ const walletSellConversation = async (
 
   // ------ SEND WALLET SELL DATA TO QUEUE -----
   const buyWallets = token.launchData!.buyWallets.map(
-    (w) => (w as { privateKey: string }).privateKey,
+    (w) => (w as unknown as { privateKey: string }).privateKey,
   );
   const result = await enqueueWalletSell(
     user.id,
     Number(user.telegramId),
     tokenAddress,
-    (token.launchData!.devWallet! as { privateKey: string }).privateKey,
+    (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
     buyWallets,
     sellPercent,
   );

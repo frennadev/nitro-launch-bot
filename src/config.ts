@@ -1,7 +1,7 @@
-import dotenv from "dotenv";
+import { config } from "dotenv";
 import { cleanEnv, makeValidator, str } from "envalid";
 
-dotenv.config();
+config();
 
 const validStr = makeValidator((x) => {
   if (!x) throw new Error("Should not empty");

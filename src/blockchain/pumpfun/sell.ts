@@ -122,7 +122,7 @@ export const executeWalletSell = async (
         };
       }),
     )
-  ).filter(({ balance }) => BigInt(balance) > 0n);
+  ).filter(({ balance }) => BigInt(balance) > BigInt(0));
   if (walletBalances.length == 0) {
     throw new Error("No wallet has tokens");
   }
@@ -130,7 +130,7 @@ export const executeWalletSell = async (
 
   const totalTokens = walletBalances.reduce(
     (acc, { balance }) => acc + BigInt(balance),
-    0n,
+    BigInt(0),
   );
   let tokensToSell =
     sellPercent === 100
@@ -139,7 +139,7 @@ export const executeWalletSell = async (
 
   const sellSetups: { wallet: Keypair; ata: PublicKey; amount: bigint }[] = [];
   for (const walletInfo of walletBalances) {
-    if (tokensToSell <= 0n) {
+    if (tokensToSell <= BigInt(0)) {
       break;
     }
     if (tokensToSell <= BigInt(walletInfo.balance)) {

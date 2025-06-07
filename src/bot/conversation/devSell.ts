@@ -63,7 +63,7 @@ const devSellConversation = async (
     user.id,
     updatedCtx.message!.chat.id,
     tokenAddress,
-    (token.launchData!.devWallet! as { privateKey: string }).privateKey,
+    (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
     sellPercent,
   );
   if (!result.success) {

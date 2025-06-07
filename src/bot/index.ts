@@ -7,6 +7,7 @@ import {
 import { env } from "../config";
 import {
   createUser,
+  getDevWallet,
   getOrCreateDevWallet,
   getTokensForUser,
   getUser,
@@ -55,7 +56,8 @@ To proceed, you can choose any of the actions below ⬇️
   const inlineKeyboard = new InlineKeyboard()
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
-    // .row()
+    .row()
+    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
     // .text("Add Wallet", CallBackQueries.ADD_WALLET)
     // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
@@ -85,7 +87,8 @@ To proceed, you can choose any of the actions below ⬇️
   const inlineKeyboard = new InlineKeyboard()
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
-    // .row()
+    .row()
+    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
     // .text("Add Wallet", CallBackQueries.ADD_WALLET)
     // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
@@ -137,6 +140,36 @@ bot.callbackQuery(CallBackQueries.VIEW_TOKENS, async (ctx) => {
     });
   }
 });
+bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
+  let user = await getUser(ctx.chat!.id.toString());
+  if (!user) {
+    await ctx.reply("Unrecognized user ❌");
+    return;
+  }
+  await ctx.answerCallbackQuery()
+  const { wallet } = await getDevWallet(user.id)
+  const msg = [
+    "*Your dev wallet private key*",
+    "```",
+    wallet,
+    "```",
+    "_Copy it now and delete the message as soon as you’re done\\._",
+  ].join("\n");
+  const keyboard = new InlineKeyboard().text("🗑 Delete", "del_message")
+  const sent = await ctx.reply(msg, {
+    parse_mode: "MarkdownV2",
+    reply_markup: keyboard
+  });
+})
+bot.callbackQuery("del_message", async (ctx) => {
+  await ctx.answerCallbackQuery("Message deleted");
+  if (ctx.callbackQuery.message) {
+    await ctx.api.deleteMessage(
+      ctx.chat!.id,
+      ctx.callbackQuery.message.message_id,
+    );
+  }
+});
 bot.callbackQuery(/^launch_token_(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const tokenAddress = ctx.match![1];
@@ -158,5 +191,5 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
   await ctx.conversation.enter("walletSellConversation", tokenAddress);
 });
 
-await bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
+bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
 export default bot;

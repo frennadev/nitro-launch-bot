@@ -45,10 +45,9 @@ services:
     container_name: viper-jobs
     env_file:
       - .env
-    volumes:
-      - ./:/app
-      - /app/node_modules
-    command: ["bun", "run", "--hot", "src/jobs/index.ts"]
+    # volumes:
+    #   - ./:/app
+    #   - /app/node_modules
     depends_on:
       redis:
         condition: service_started

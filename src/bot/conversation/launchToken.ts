@@ -143,7 +143,7 @@ const launchTokenConversation = async (
   await ctx.reply("Performing prelaunh checks 🔃...");
   const checkResult = await preLaunchChecks(
     funderKey,
-    (token.launchData!.devWallet! as { privateKey: string }).privateKey,
+    (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
     buyAmount,
     devBuy,
     buyerKeys.length,
@@ -162,7 +162,7 @@ const launchTokenConversation = async (
     updatedCtx.message!.chat.id,
     tokenAddress,
     funderKey,
-    (token.launchData!.devWallet! as { privateKey: string }).privateKey,
+    (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
     buyerKeys,
     devBuy,
     buyAmount,

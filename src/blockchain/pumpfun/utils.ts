@@ -3,7 +3,6 @@ import { PUMPFUN_PROGRAM, TOKEN_METADATA_PROGRAM } from "./constants";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { connection } from "../common/connection";
 import { BondingCurveCodec, GlobalSettingCodec } from "./codecs";
-import { getBooleanCodec, getU64Codec } from "@solana/codecs";
 
 export const getBondingCurve = (mint: PublicKey) => {
   const [bondingCurve, _] = PublicKey.findProgramAddressSync(
@@ -101,11 +100,11 @@ export const quoteBuy = (
 };
 
 export const applySlippage = (amount: bigint, slippage: number) => {
-  const SlippageAdjustment = 1n;
-  const Big10000 = 10000n;
+  const SlippageAdjustment = BigInt(1);
+  const Big10000 = BigInt(10000);
 
   let slippageBP =
-    (BigInt(Math.floor(100 * slippage)) + 25n) * SlippageAdjustment;
+    (BigInt(Math.floor(100 * slippage)) + BigInt(25)) * SlippageAdjustment;
   const maxSlippage = Big10000 * SlippageAdjustment;
 
   if (slippageBP > maxSlippage) {

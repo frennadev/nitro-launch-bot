@@ -17,6 +17,7 @@ import { executeTokenLaunch } from "../blockchain/pumpfun/launch";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { logger } from "./logger";
 
+console.log("workerrrr here")
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
   async (job) => {
@@ -147,3 +148,5 @@ sellWalletWorker.on("failed", async (job) => {
     "❌ Wallet Sells Failed\\. Please try again 🔄",
   );
 });
+
+console.log("after worker -->")
