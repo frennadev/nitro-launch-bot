@@ -29,19 +29,10 @@ export const getUser = async (telegramId: String) => {
 };
 
 export const getDevWallet = async (userId: String) => {
-  const wallets = await WalletModel.find({ user: userId });
-  console.log(
-    wallets.map((w) => ({
-      public: w.publicKey,
-      secret: decryptPrivateKey(w.privateKey),
-      isDev: w.isDev,
-    })),
-  );
-  const wallet = wallets.filter((w) => w.isDev)[0];
-  // const wallet = await WalletModel.findOne({
-  //   user: userId,
-  //   isDev: true
-  // })
+  const wallet = await WalletModel.findOne({
+    user: userId,
+    isDev: true
+  })
   return {
     wallet: decryptPrivateKey(wallet?.privateKey!),
   };
