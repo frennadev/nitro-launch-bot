@@ -1,4 +1,4 @@
-# viper-launch
+# Nitro-launch
 
 To install dependencies:
 

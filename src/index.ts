@@ -2,7 +2,7 @@ import { connectDB, disconnectDB } from "./backend/db";
 import { logger } from "./blockchain/common/logger";
 import bot from "./bot";
 
-const viperLaunchRunner = async () => {
+const nitroLaunchRunner = async () => {
   logger.info("Establishing db connection...");
   await connectDB();
   logger.info("Starting Telegram bot...");
@@ -11,7 +11,7 @@ const viperLaunchRunner = async () => {
     .catch((e) => logger.error("Error occurred while starting bot", e));
 };
 
-viperLaunchRunner().catch((err) => {
+nitroLaunchRunner().catch((err) => {
   logger.error("Start failed", err);
   throw err;
 });

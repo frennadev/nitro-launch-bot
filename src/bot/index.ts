@@ -43,7 +43,7 @@ bot.command("start", async (ctx) => {
   }
   const devWallet = await getOrCreateDevWallet(String(user?.id));
   const welcomeMsg = `
-👋 *Welcome to Viper Bot*
+👋 *Welcome to Nitro Bot*
 
 Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.  
 Here’s what you can do right from this chat:
@@ -74,7 +74,7 @@ bot.command("menu", async (ctx) => {
   }
   const devWallet = await getOrCreateDevWallet(String(user?.id));
   const welcomeMsg = `
-👋 *Welcome to Viper Bot*
+👋 *Welcome to Nitro Bot*
 
 Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.  
 Here’s what you can do right from this chat:
