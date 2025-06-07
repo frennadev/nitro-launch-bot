@@ -1,11 +1,9 @@
 {
-  "name": "viper-launch",
+  "name": "nitro-launch",
   "module": "main.ts",
   "scripts": {
-    "start:bot": "bun src/bot/index.ts --target bun",
-    "build": "tsc --outdir build",
     "build:bot": "bun build src/index.ts --outdir build --sourcemap=linked --target bun",
-    "build:job": "bun build src/bot/index.ts --outdir build/bot --sourcemap=linked --target bun",
+    "build:job": "bun build src/jobs/index.ts --outdir build/jobs --sourcemap=linked --target bun",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "devDependencies": {
@@ -29,7 +27,6 @@
     "@solana/spl-token": "^0.4.13",
     "@solana/web3.js": "^1.98.2",
     "axios": "^1.9.0",
-    "bcrypt": "^6.0.0",
     "bs58": "^6.0.0",
     "bullmq": "^5.53.1",
     "dotenv": "^16.5.0",

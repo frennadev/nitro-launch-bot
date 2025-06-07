@@ -1,9 +1,9 @@
-name: viper
+name: nitro
 
 services:
   database:
     image: mongo
-    container_name: viper-db
+    container_name: nitro-db
     restart: unless-stopped
     ports:
       - "27017:27017"
@@ -12,47 +12,52 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: password
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   redis:
     image: redis:8.0-alpine
-    container_name: viper-redis
+    container_name: nitro-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   bot:
     build:
       context: .
       dockerfile: Dockerfile.bot
-    container_name: viper-bot
+    container_name: nitro-bot
     env_file:
       - .env
-    # volumes:
-    #   - ./:/app
-    #   - /app/node_modules
     depends_on:
       database:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
   
   jobs:
     build:
       context: .
       dockerfile: Dockerfile.job
-    container_name: viper-jobs
+    container_name: nitro-jobs
     env_file:
       - .env
-    # volumes:
-    #   - ./:/app
-    #   - /app/node_modules
     depends_on:
       redis:
-        condition: service_started
-      bot:
-        condition: service_started
+        condition: service_healthy
+      database:
+        condition: service_healthy
 
 volumes:
   mongo-data:
