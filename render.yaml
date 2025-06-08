@@ -3,6 +3,7 @@ services:
     name: nitro-bot
     runtime: docker
     plan: starter
+    region: frankfurt
     dockerfilePath: ./Dockerfile.bot
     envVars:
       - fromGroup: nitro-launch
@@ -11,6 +12,7 @@ services:
     name: nitro-jobs
     runtime: docker
     plan: standard
+    region: frankfurt
     dockerfilePath: ./Dockerfile.job
     envVars:
       - fromGroup: nitro-launch
