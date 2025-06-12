@@ -1,7 +1,7 @@
 import { Bot, InlineKeyboard, type Context } from "grammy";
 import { conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
 import { env } from "../config";
-import { createUser, getDevWallet, getOrCreateDevWallet, getTokensForUser, getUser } from "../backend/functions";
+import { createUser, getDevWallet, getDefaultDevWallet, getTokensForUser, getUser } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
@@ -33,12 +33,12 @@ bot.command("start", async (ctx) => {
   if (isFirstTime) {
     user = await createUser(ctx.chat.first_name, ctx.chat.last_name, ctx.chat.username!, ctx.chat.id.toString());
   }
-  const devWallet = await getOrCreateDevWallet(String(user?.id));
+  const devWallet = await getDefaultDevWallet(String(user?.id));
   const welcomeMsg = `
 👋 *Welcome to Nitro Bot*
 
 Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.  
-Here’s what you can do right from this chat:
+Here's what you can do right from this chat:
 
 💳 *Your current dev wallet:*  
 \`${devWallet}\`
@@ -65,12 +65,12 @@ bot.command("menu", async (ctx) => {
     await ctx.reply("Unrecognized user ❌");
     return;
   }
-  const devWallet = await getOrCreateDevWallet(String(user?.id));
+  const devWallet = await getDefaultDevWallet(String(user?.id));
   const welcomeMsg = `
 👋 *Welcome to Nitro Bot*
 
 Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.  
-Here’s what you can do right from this chat:
+Here's what you can do right from this chat:
 
 💳 *Your current dev wallet:*  
 \`${devWallet}\`
@@ -138,7 +138,7 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
     "```",
     wallet,
     "```",
-    "_Copy it now and delete the message as soon as you’re done\\._",
+    "_Copy it now and delete the message as soon as you're done\\._",
   ].join("\n");
   const keyboard = new InlineKeyboard().text("🗑 Delete", "del_message");
   const sent = await ctx.reply(msg, {

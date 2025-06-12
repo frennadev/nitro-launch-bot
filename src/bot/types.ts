@@ -18,4 +18,8 @@ export enum CallBackQueries {
   DEFAULT_DEV = "default_dev",
   SELECT_DEV = "select_dev",
   CHANGE_DEV_WALLET = "change_dev_wallet",
+  ADD_DEV_WALLET = "add_dev_wallet",
+  GENERATE_DEV_WALLET = "generate_dev_wallet",
+  IMPORT_DEV_WALLET = "import_dev_wallet",
+  CANCEL_DEV_WALLET = "cancel_dev_wallet",
 }

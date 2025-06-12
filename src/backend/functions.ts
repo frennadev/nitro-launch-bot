@@ -98,9 +98,188 @@ export const getOrCreateDevWallet = async (userId: string) => {
       publicKey: devWallet.publicKey,
       privateKey: encryptPrivateKey(devWallet.secretKey),
       isDev: true,
+      isDefault: true,
     });
   }
   return wallet.publicKey;
+};
+
+export const getAllDevWallets = async (userId: string) => {
+  const wallets = await WalletModel.find({
+    user: userId,
+    isDev: true,
+  }).sort({ createdAt: 1 }).lean();
+  
+  return wallets.map((wallet) => ({
+    id: String(wallet._id),
+    publicKey: wallet.publicKey,
+    isDefault: wallet.isDefault || false,
+    createdAt: wallet.createdAt,
+  }));
+};
+
+export const getDefaultDevWallet = async (userId: string) => {
+  const wallet = await WalletModel.findOne({
+    user: userId,
+    isDev: true,
+    isDefault: true,
+  }).exec();
+  
+  if (!wallet) {
+    const firstWallet = await WalletModel.findOne({
+      user: userId,
+      isDev: true,
+    }).exec();
+    
+    if (firstWallet) {
+      await WalletModel.updateOne(
+        { _id: firstWallet._id },
+        { isDefault: true }
+      );
+      return firstWallet.publicKey;
+    }
+    
+    return await getOrCreateDevWallet(userId);
+  }
+  
+  return wallet.publicKey;
+};
+
+export const addDevWallet = async (userId: string, privateKey: string) => {
+  const existingWallets = await WalletModel.countDocuments({
+    user: userId,
+    isDev: true,
+  });
+  
+  if (existingWallets >= 5) {
+    throw new Error("Maximum of 5 dev wallets allowed");
+  }
+  
+  const keypair = secretKeyToKeypair(privateKey);
+  const publicKey = keypair.publicKey.toBase58();
+  
+  const existingWallet = await WalletModel.findOne({
+    user: userId,
+    publicKey: publicKey,
+    isDev: true,
+  });
+  
+  if (existingWallet) {
+    throw new Error("This wallet is already added");
+  }
+  
+  const wallet = await WalletModel.create({
+    user: userId,
+    publicKey: publicKey,
+    privateKey: encryptPrivateKey(privateKey),
+    isDev: true,
+    isDefault: false,
+  });
+  
+  return {
+    id: String(wallet._id),
+    publicKey: wallet.publicKey,
+    isDefault: false,
+  };
+};
+
+export const setDefaultDevWallet = async (userId: string, walletId: string) => {
+  await WalletModel.updateMany(
+    {
+      user: userId,
+      isDev: true,
+    },
+    { isDefault: false }
+  );
+  
+  const updatedWallet = await WalletModel.findOneAndUpdate(
+    {
+      _id: walletId,
+      user: userId,
+      isDev: true,
+    },
+    { isDefault: true },
+    { new: true }
+  );
+  
+  if (!updatedWallet) {
+    throw new Error("Wallet not found");
+  }
+  
+  return updatedWallet.publicKey;
+};
+
+export const deleteDevWallet = async (userId: string, walletId: string) => {
+  const devWalletCount = await WalletModel.countDocuments({
+    user: userId,
+    isDev: true,
+  });
+  
+  if (devWalletCount <= 1) {
+    throw new Error("Cannot delete the last dev wallet");
+  }
+  
+  const walletToDelete = await WalletModel.findOne({
+    _id: walletId,
+    user: userId,
+    isDev: true,
+  });
+  
+  if (!walletToDelete) {
+    throw new Error("Wallet not found");
+  }
+  
+  const wasDefault = walletToDelete.isDefault;
+  
+  await WalletModel.deleteOne({
+    _id: walletId,
+    user: userId,
+    isDev: true,
+  });
+  
+  if (wasDefault) {
+    const firstRemainingWallet = await WalletModel.findOne({
+      user: userId,
+      isDev: true,
+    });
+    
+    if (firstRemainingWallet) {
+      await WalletModel.updateOne(
+        { _id: firstRemainingWallet._id },
+        { isDefault: true }
+      );
+    }
+  }
+  
+  return true;
+};
+
+export const generateNewDevWallet = async (userId: string) => {
+  const existingWallets = await WalletModel.countDocuments({
+    user: userId,
+    isDev: true,
+  });
+  
+  if (existingWallets >= 5) {
+    throw new Error("Maximum of 5 dev wallets allowed");
+  }
+  
+  const [devWallet] = generateKeypairs(1);
+  
+  const wallet = await WalletModel.create({
+    user: userId,
+    publicKey: devWallet.publicKey,
+    privateKey: encryptPrivateKey(devWallet.secretKey),
+    isDev: true,
+    isDefault: false,
+  });
+  
+  return {
+    id: String(wallet._id),
+    publicKey: wallet.publicKey,
+    privateKey: devWallet.secretKey,
+    isDefault: false,
+  };
 };
 
 export const addWallet = async (publickKey: string, secretKey: string) => {};
@@ -152,7 +331,13 @@ export const createToken = async (
   const devWallet = await WalletModel.findOne({
     user: userId,
     isDev: true,
+    isDefault: true,
   });
+  
+  if (!devWallet) {
+    throw new Error("No default dev wallet found");
+  }
+  
   const metadataUri = await createTokenMetadata(
     name,
     symbol,

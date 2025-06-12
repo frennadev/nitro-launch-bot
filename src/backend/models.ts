@@ -17,6 +17,7 @@ const walletSchema = new Schema(
     publicKey: { type: String, required: true },
     privateKey: { type: String, required: true },
     isDev: { type: Boolean, required: true, default: false },
+    isDefault: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

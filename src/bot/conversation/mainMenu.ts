@@ -1,25 +1,22 @@
 import type { Conversation } from "@grammyjs/conversations";
 import type { Context } from "grammy";
-import { createUser, getUser, getOrCreateDevWallet } from "../../backend/functions";
+import { createUser, getUser, getDefaultDevWallet } from "../../backend/functions";
 import { CallBackQueries } from "../types";
 import { InlineKeyboard } from "grammy";
 
 export default async function mainMenuConversation(conversation: Conversation<Context>, ctx: Context) {
-  let user = await getUser(ctx?.chat!.id.toString());
+  let user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    user = await createUser(
-      ctx?.chat!.first_name,
-      ctx?.chat!.last_name,
-      ctx?.chat!.username ?? "",
-      ctx?.chat!.id.toString()
-    );
+    await ctx.reply("Unrecognized user ❌");
+    return conversation.halt();
   }
 
-  const devWallet = await getOrCreateDevWallet(String(user.id));
+  const devWallet = await getDefaultDevWallet(String(user.id));
   const welcomeMsg = `
 👋 *Welcome to Nitro Bot*
 
-Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.
+Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.  
+Here's what you can do right from this chat:
 
 💳 *Your current dev wallet:*  
 \`${devWallet}\`
