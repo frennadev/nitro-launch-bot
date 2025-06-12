@@ -1,5 +1,5 @@
 import { type Conversation } from "@grammyjs/conversations";
-import { type Context } from "grammy";
+import { type Context, InlineKeyboard } from "grammy";
 import {
   enqueueTokenLaunch,
   enqueueTokenLaunchRetry,
@@ -10,15 +10,41 @@ import {
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 
-const launchTokenConversation = async (
+enum CallBackQueries {
+  CANCEL = "CANCEL_LAUNCH_PROCESS",
+}
+
+const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", CallBackQueries.CANCEL);
+
+async function sendMessage(ctx: Context, text: string, options: any = {}) {
+  await ctx.reply(text, options);
+}
+
+async function waitForInputOrCancel(
   conversation: Conversation,
   ctx: Context,
-  tokenAddress: string,
-) => {
+  prompt: string,
+  parseMode: string = "HTML"
+) {
+  await sendMessage(ctx, prompt, {
+    parse_mode: parseMode,
+    reply_markup: cancelKeyboard,
+  });
+
+  const input = await conversation.waitFor(["message:text", "callback_query:data"]);
+  if (input.callbackQuery?.data === CallBackQueries.CANCEL) {
+    await sendMessage(ctx, "Process cancelled. Returning to the beginning.");
+    await conversation.halt();
+    return null;
+  }
+  return input;
+}
+
+const launchTokenConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("Unrecognized user ❌");
+    await sendMessage(ctx, "Unrecognized user ❌");
     await conversation.halt();
     return;
   }
@@ -26,93 +52,79 @@ const launchTokenConversation = async (
   // -------- VALIDATE TOKEN ----------
   const token = await getUserToken(user.id, tokenAddress);
   if (!token) {
-    await ctx.reply("Token not found ❌");
+    await sendMessage(ctx, "Token not found ❌");
     await conversation.halt();
     return;
   }
   if (token.state === TokenState.LAUNCHING) {
-    await ctx.reply("Token is currently launching 🔄");
+    await sendMessage(ctx, "Token is currently launching 🔄");
     await conversation.halt();
     return;
   }
   if (token.state === TokenState.LAUNCHED) {
-    await ctx.reply("Token is already launched 🚀");
+    await sendMessage(ctx, "Token is already launched 🚀");
     await conversation.halt();
     return;
   }
 
   // -------- FOR RETRIES -------
   if ((token.launchData?.launchStage || 1) > 1) {
-    const result = await enqueueTokenLaunchRetry(
-      user.id,
-      Number(user.telegramId),
-      token.tokenAddress,
-    );
+    const result = await enqueueTokenLaunchRetry(user.id, Number(user.telegramId), token.tokenAddress);
     if (!result.success) {
-      await ctx.reply(
-        "An error occurred while submitting token launch for retry ❌. Please try again..",
-      );
+      await sendMessage(ctx, "An error occurred while submitting token launch for retry ❌. Please try again..");
     } else {
-      await ctx.reply(
-        "Token Launch details has been submitted for retry ✅.\nYou would get a message once your launch has been completed.",
+      await sendMessage(
+        ctx,
+        "Token Launch details has been submitted for retry ✅.\nYou would get a message once your launch has been completed."
       );
     }
     await conversation.halt();
+    return;
   }
 
   // -------- REQUEST & VALIDATE FUNDER WALLET ----------
-  await ctx.reply("Enter the private key of the funder wallet: ", {
-    parse_mode: "MarkdownV2",
-  });
-  let updatedCtx = await conversation.waitFor("message:text");
   let funderKey = "";
   let isValidKey = false;
   while (!isValidKey) {
+    const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter the private key of the funder wallet:");
+    if (!updatedCtx) return;
     try {
-      funderKey = updatedCtx.message.text;
+      funderKey = updatedCtx?.message!.text;
       secretKeyToKeypair(funderKey);
       isValidKey = true;
-    } catch (error) {
-      await ctx.reply(
-        "Invalid private key entered ❌. Please re-enter a correct private key: ",
-      );
-      updatedCtx = await conversation.waitFor("message:text");
+    } catch {
+      await sendMessage(ctx, "Invalid private key entered ❌. Please re-enter a correct private key:");
     }
   }
 
   // ------- REQUEST & VALIDATE BUY WALLETS -------
-  await ctx.reply(
-    "Enter the private key of the buy wallets comma separated\\. \nExample: key1,key2,key3,key4: ",
-    { parse_mode: "MarkdownV2" },
-  );
-  updatedCtx = await conversation.waitFor("message:text");
   let buyerKeys: string[] = [];
   let success = false;
   while (!success) {
+    const updatedCtx = await waitForInputOrCancel(
+      conversation,
+      ctx,
+      "Enter the private key of the buy wallets comma separated.\nExample: key1,key2,key3,key4:"
+    );
+    if (!updatedCtx) return;
     try {
-      buyerKeys = updatedCtx.message.text.split(",");
+      buyerKeys = updatedCtx?.message!.text.split(",");
       buyerKeys.map((pk) => secretKeyToKeypair(pk));
       success = true;
-    } catch (error) {
-      await ctx.reply(
-        "One or more private keys are invalid ❌. Please re-enter correct private keys: ",
-      );
-      updatedCtx = await conversation.waitFor("message:text");
+    } catch {
+      await sendMessage(ctx, "One or more private keys are invalid ❌. Please re-enter correct private keys:");
     }
   }
 
   // -------- REQUEST & VALIDATE BUY AMOUNT ------
-  await ctx.reply("Enter the amount in sol to buy for all wallets: ", {
-    parse_mode: "MarkdownV2",
-  });
-  updatedCtx = await conversation.waitFor("message:text");
   let buyAmount = 0;
   let isValidAmount = false;
   while (!isValidAmount) {
-    const parsed = parseFloat(updatedCtx.message.text);
+    const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter the amount in sol to buy for all wallets:");
+    if (!updatedCtx) return;
+    const parsed = parseFloat(updatedCtx?.message!.text);
     if (isNaN(parsed) || parsed <= 0) {
-      await ctx.reply("Invalid buyAmount. Please re-send: ");
-      updatedCtx = await conversation.waitFor("message:text");
+      await sendMessage(ctx, "Invalid buyAmount. Please re-send:");
     } else {
       buyAmount = parsed;
       isValidAmount = true;
@@ -120,18 +132,18 @@ const launchTokenConversation = async (
   }
 
   // -------- REQUEST & VALIDATE DEV BUY --------
-  await ctx.reply(
-    "Enter amount in sol to buy from dev wallet \\(enter 0 to skip\\): ",
-    { parse_mode: "MarkdownV2" },
-  );
-  updatedCtx = await conversation.waitFor("message:text");
   let devBuy = 0;
   let isValidDevAmount = false;
   while (!isValidDevAmount) {
-    const parsed = parseFloat(updatedCtx.message.text);
+    const updatedCtx = await waitForInputOrCancel(
+      conversation,
+      ctx,
+      "Enter amount in sol to buy from dev wallet (enter 0 to skip):"
+    );
+    if (!updatedCtx) return;
+    const parsed = parseFloat(updatedCtx?.message!.text);
     if (isNaN(parsed) || parsed < 0) {
-      await ctx.reply("Invalid devBuy. Please re-send: ");
-      updatedCtx = await conversation.waitFor("message:text");
+      await sendMessage(ctx, "Invalid devBuy. Please re-send:");
     } else {
       devBuy = parsed;
       isValidDevAmount = true;
@@ -139,42 +151,40 @@ const launchTokenConversation = async (
   }
 
   // ------- CHECKS BEFORE LAUNCH ------
-  await ctx.reply("Performing prelaunh checks 🔃...");
+  await sendMessage(ctx, "Performing prelaunch checks 🔃...");
   const checkResult = await preLaunchChecks(
     funderKey,
-    (token.launchData!.devWallet! as unknown as { privateKey: string })
-      .privateKey,
+    (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
     buyAmount,
     devBuy,
-    buyerKeys.length,
+    buyerKeys.length
   );
   if (!checkResult.success) {
-    await ctx.reply(
-      "PreLaunch checks failed ❌.\nKindly resolve the issues below and retry\n\n" +
-        checkResult.message,
+    await sendMessage(
+      ctx,
+      "PreLaunch checks failed ❌.\nKindly resolve the issues below and retry\n\n" + checkResult.message
     );
     await conversation.halt();
+    return;
   }
 
   // ------ SEND LAUNCH DATA TO QUEUE -----
   const result = await enqueueTokenLaunch(
     user.id,
-    updatedCtx.message!.chat.id,
+    ctx.chat!.id,
     tokenAddress,
     funderKey,
-    (token.launchData!.devWallet! as unknown as { privateKey: string })
-      .privateKey,
+    (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
     buyerKeys,
     devBuy,
-    buyAmount,
+    buyAmount
   );
   if (!result.success) {
-    await ctx.reply(
-      "An error occurred while submitting launch details for execution ❌. Please try again..",
-    );
+    await sendMessage(ctx, "An error occurred while submitting launch details for execution ❌. Please try again..");
   } else {
-    await ctx.reply(
-      "Token Launch details has been submitted for execution ✅.\nYou would get a message once your launch has been completed.",
+    await sendMessage(
+      ctx,
+      "Token Launch details has been submitted for execution ✅.\nYou would get a message once your launch has been completed."
     );
   }
 };

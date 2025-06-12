@@ -221,6 +221,18 @@ export const enqueueTokenLaunch = async (
   buyAmount: number,
 ) => {
   const session = await mongoose.startSession();
+
+  console.log("enqueueTokenLaunch called with params:", {
+    userId,
+    chatId,
+    tokenAddress,
+    funderWallet,
+    devWallet,
+    buyWallets,
+    devBuy,
+    buyAmount,
+  });
+  console.log("Starting mongoose session...");
   try {
     await session.withTransaction(async () => {
       const walletIds = [];

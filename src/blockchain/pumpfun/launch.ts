@@ -34,6 +34,9 @@ import {
   updateLaunchStage,
 } from "../../backend/functions";
 import { logger } from "../common/logger";
+import { initializeMixer } from "../mixer/init-mixer";
+import bs58 from "bs58";
+import { getSolBalance, getTokenBalance } from "../../backend/utils";
 
 export const executeTokenLaunch = async (
   mint: string,
@@ -54,19 +57,19 @@ export const executeTokenLaunch = async (
   const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
   const funderKeypair = secretKeyToKeypair(funderWallet);
   const devKeypair = secretKeyToKeypair(devWallet);
-  if (buyDistribution.length == 0) {
-    buyDistribution = randomizeDistribution(buyAmount, buyKeypairs.length);
-    await updateBuyDistribution(
-      mintKeypair.publicKey.toBase58(),
-      buyDistribution,
-    );
-  }
+  // if (buyDistribution.length == 0) {
+  //   buyDistribution = randomizeDistribution(buyAmount, buyKeypairs.length);
+  //   await updateBuyDistribution(
+  //     mintKeypair.publicKey.toBase58(),
+  //     buyDistribution,
+  //   );
+  // }
   const { bondingCurve } = getBondingCurve(mintKeypair.publicKey);
   const globalSetting = await getGlobalSetting();
   const logIdentifier = `launch-${mintKeypair.publicKey.toBase58()}`;
 
   logger.info(`$[${logIdentifier}]: Token Launch Data`, {
-    buyDistribution,
+    // buyDistribution,
     wallets: buyKeypairs.map((kp) => kp.publicKey.toBase58()),
     funder: funderKeypair.publicKey.toBase58(),
     token: mintKeypair.publicKey.toBase58(),
@@ -77,6 +80,7 @@ export const executeTokenLaunch = async (
       mintKeypair.publicKey.toBase58(),
       PumpLaunchStage.FUNDING,
     );
+    console.log('LAUNCHING')
     launchStage = PumpLaunchStage.FUNDING;
   }
 
@@ -84,69 +88,77 @@ export const executeTokenLaunch = async (
   if (launchStage === PumpLaunchStage.FUNDING) {
     logger.info(`[${logIdentifier}]: Starting wallet funding stage`);
     const start = performance.now();
-    const fundInstructions = (
-      await Promise.all(
-        buyKeypairs.map(async (keypair, idx) => {
-          const solBalance = await connection
-            .getBalance(keypair.publicKey)
-            .then(BigInt);
-          // amount for swap + extra for gas fees
-          const targetBalance = BigInt(
-            Math.floor(buyDistribution[idx] * LAMPORTS_PER_SOL) +
-              0.02 * LAMPORTS_PER_SOL,
-          );
-          const needsSol = solBalance < targetBalance;
-          if (needsSol) {
-            return SystemProgram.transfer({
-              fromPubkey: funderKeypair.publicKey,
-              toPubkey: keypair.publicKey,
-              lamports: targetBalance - solBalance,
-            });
-          }
-          return null;
-        }),
-      )
-    ).filter((ix) => ix != null);
-    const blockHash = await connection.getLatestBlockhash("confirmed");
-    const fundTransactions = fundInstructions.map((ix) => {
-      const message = new TransactionMessage({
-        instructions: [ix],
-        payerKey: funderKeypair.publicKey,
-        recentBlockhash: blockHash.blockhash,
-      }).compileToV0Message();
-      const txn = new VersionedTransaction(message);
-      txn.sign([funderKeypair]);
-      return {
-        signedTx: txn,
-        setup: {
-          payer: funderKeypair.publicKey,
-          instructions: [ix],
-          signers: [funderKeypair],
-        },
-      };
-    });
-    const txnChunks = chunkArray(fundTransactions, 4);
-    let results: { success: boolean; signature: string | null }[] = [];
-    for (const chunk of txnChunks) {
-      const res = await Promise.all(
-        chunk.map((data) =>
-          sendAndConfirmTransactionWithRetry(
-            data.signedTx,
-            data.setup,
-            10_000,
-            3,
-            1_000,
-            logIdentifier,
-          ),
-        ),
-      );
-      results.push(...res);
-      await randomizedSleep(1000, 1500);
-    }
-    logger.info(`[${logIdentifier}]: Wallet funding results`, results);
-    if (results.filter((res) => !res.success).length > 0) {
-      throw new Error("Buy Wallet Funding Failed");
-    }
+    // const fundInstructions = (
+    //   await Promise.all(
+    //     buyKeypairs.map(async (keypair, idx) => {
+    //       const solBalance = await connection
+    //         .getBalance(keypair.publicKey)
+    //         .then(BigInt);
+    //       // amount for swap + extra for gas fees
+    //       const targetBalance = BigInt(
+    //         Math.floor(buyDistribution[idx] * LAMPORTS_PER_SOL) +
+    //           0.02 * LAMPORTS_PER_SOL,
+    //       );
+    //       const needsSol = solBalance < targetBalance;
+    //       if (needsSol) {
+    //         return SystemProgram.transfer({
+    //           fromPubkey: funderKeypair.publicKey,
+    //           toPubkey: keypair.publicKey,
+    //           lamports: targetBalance - solBalance,
+    //         });
+    //       }
+    //       return null;
+    //     }),
+    //   )
+    // ).filter((ix) => ix != null);
+    // const blockHash = await connection.getLatestBlockhash("confirmed");
+    // const fundTransactions = fundInstructions.map((ix) => {
+    //   const message = new TransactionMessage({
+    //     instructions: [ix],
+    //     payerKey: funderKeypair.publicKey,
+    //     recentBlockhash: blockHash.blockhash,
+    //   }).compileToV0Message();
+    //   const txn = new VersionedTransaction(message);
+    //   txn.sign([funderKeypair]);
+    //   return {
+    //     signedTx: txn,
+    //     setup: {
+    //       payer: funderKeypair.publicKey,
+    //       instructions: [ix],
+    //       signers: [funderKeypair],
+    //     },
+    //   };
+    // });
+    // const txnChunks = chunkArray(fundTransactions, 4);
+    // let results: { success: boolean; signature: string | null }[] = [];
+    // for (const chunk of txnChunks) {
+    //   const res = await Promise.all(
+    //     chunk.map((data) =>
+    //       sendAndConfirmTransactionWithRetry(
+    //         data.signedTx,
+    //         data.setup,
+    //         10_000,
+    //         3,
+    //         1_000,
+    //         logIdentifier,
+    //       ),
+    //     ),
+    //   );
+    //   results.push(...res);
+    //   await randomizedSleep(1000, 1500);
+    // }
+    // logger.info(`[${logIdentifier}]: Wallet funding results`, results);
+    // if (results.filter((res) => !res.success).length > 0) {
+    //   throw new Error("Buy Wallet Funding Failed");
+    // }
+
+    const funderPrivateKey = bs58.encode(funderKeypair.secretKey)
+    const destinationAddresses = buyKeypairs.map(w => {return w.publicKey.toString()})
+    await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses )
+
+
+    // I'll be using mixer to fund the buyers wallet 
+    // ################# STARTing Mixer Here ##############
     await updateLaunchStage(
       mintKeypair.publicKey.toBase58(),
       PumpLaunchStage.LAUNCH,
@@ -266,8 +278,11 @@ export const executeTokenLaunch = async (
     }[] = [];
     for (let i = 0; i < buyKeypairs.length; i++) {
       const keypair = buyKeypairs[i];
+      const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58())
+
+      console.log("SOL balance", {walletSolBalance, keypair: keypair.publicKey.toBase58()})
       const swapAmount = BigInt(
-        Math.floor(buyDistribution[i] * LAMPORTS_PER_SOL),
+        Math.floor((walletSolBalance - 0.01) * LAMPORTS_PER_SOL),
       );
       const ata = getAssociatedTokenAddressSync(
         mintKeypair.publicKey,

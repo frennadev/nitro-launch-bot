@@ -9,4 +9,13 @@ export enum CallBackQueries {
   SELL_ALL = "sell_all",
   SELL_DEV = "sell_dev",
   SELL_PERCENT = "sell_percent",
+  WALLET_CONFIG = "wallet_config",
+  BACK = "back",
+  MENU = "menu",
+  CHANGE_FUNDING_WALLET = "change_funding_wallet",
+  CANCEL_FUNDING_WALLET = "cancel_funding_wallet",
+  DELETE_DEV = "delete_dev",
+  DEFAULT_DEV = "default_dev",
+  SELECT_DEV = "select_dev",
+  CHANGE_DEV_WALLET = "change_dev_wallet",
 }

@@ -1,14 +1,14 @@
+import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { connection } from "../blockchain/common/connection";
+import type { Bot, Context } from "grammy";
+import { InlineKeyboard } from "grammy";
 import * as crypto from "crypto";
 import { env } from "../config";
 import { ENCRYPTION_ALGORITHM, ENCRYPTION_IV_LENGTH } from "./constants";
 import axios from "axios";
 
 export function encryptPrivateKey(privateKey: string): string {
-  const SECRET_KEY = crypto.scryptSync(
-    env.ENCRYPTION_SECRET,
-    "salt",
-    ENCRYPTION_IV_LENGTH * 2,
-  );
+  const SECRET_KEY = crypto.scryptSync(env.ENCRYPTION_SECRET, "salt", ENCRYPTION_IV_LENGTH * 2);
   try {
     const iv = crypto.randomBytes(ENCRYPTION_IV_LENGTH);
 
@@ -24,11 +24,7 @@ export function encryptPrivateKey(privateKey: string): string {
 }
 
 export function decryptPrivateKey(encryptedPrivateKey: string): string {
-  const SECRET_KEY = crypto.scryptSync(
-    env.ENCRYPTION_SECRET,
-    "salt",
-    ENCRYPTION_IV_LENGTH * 2,
-  );
+  const SECRET_KEY = crypto.scryptSync(env.ENCRYPTION_SECRET, "salt", ENCRYPTION_IV_LENGTH * 2);
 
   try {
     const [ivHex, encryptedData] = encryptedPrivateKey.split(":");
@@ -37,11 +33,7 @@ export function decryptPrivateKey(encryptedPrivateKey: string): string {
       throw new Error("Invalid encrypted data format");
     }
     const iv = Buffer.from(ivHex, "hex");
-    const decipher = crypto.createDecipheriv(
-      ENCRYPTION_ALGORITHM,
-      SECRET_KEY,
-      iv,
-    );
+    const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, SECRET_KEY, iv);
     let decrypted = decipher.update(encryptedData, "hex", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
@@ -109,4 +101,46 @@ export async function uploadJsonToPinata(jsonData: any, name: string) {
     console.error("Error uploading JSON to Pinata:", error);
     throw error;
   }
+}
+
+interface EditOptions {
+  parse_mode?: "MarkdownV2" | "Markdown" | "HTML";
+  reply_markup?: InlineKeyboard;
+}
+
+export async function editMessage(
+  ctxOrBot: Context | Bot,
+  text: string,
+  opts: EditOptions = {},
+  chatId?: number | string,
+  messageId?: number
+) {
+  try {
+    if ("editMessageText" in ctxOrBot) {
+      await ctxOrBot.editMessageText(text, opts);
+    } else {
+      if (chatId == null || messageId == null) {
+        throw new Error("chatId and messageId required when calling from bot instance");
+      }
+      await ctxOrBot.api.editMessageText(chatId, messageId, text, opts);
+    }
+  } catch (err) {
+    console.error("Failed to edit message", err);
+  }
+}
+
+export async function getTokenBalance(tokenAddress: string, walletAddress: string): Promise<number> {
+  const mint = new PublicKey(tokenAddress);
+  const owner = new PublicKey(walletAddress);
+  const resp = await connection.getParsedTokenAccountsByOwner(owner, { mint });
+  return resp.value.reduce((sum, { account }) => {
+    const amt = account.data.parsed.info.tokenAmount.uiAmount || 0;
+    return sum + amt;
+  }, 0);
+}
+
+export async function getSolBalance(walletAddress: string): Promise<number> {
+  const pubkey = new PublicKey(walletAddress);
+  const lamports = await connection.getBalance(pubkey);
+  return lamports / LAMPORTS_PER_SOL;
 }
