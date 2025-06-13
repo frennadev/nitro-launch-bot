@@ -132,9 +132,12 @@ export const collectPlatformFeeOptimized = async (
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = devPublicKey;
 
-    // Sign and send transaction using connection pool
+    // Sign transaction
     transaction.sign(devKeypair);
-    const signature = await connectionPool.sendTransaction(transaction, {
+
+    // Send raw transaction using connection pool
+    const connection = connectionPool.getConnection();
+    const signature = await connection.sendRawTransaction(transaction.serialize(), {
       skipPreflight: false,
       preflightCommitment: "confirmed",
     });
@@ -212,9 +215,12 @@ export const collectTransactionFeeOptimized = async (
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = fromPublicKey;
 
-    // Sign and send transaction using connection pool
+    // Sign transaction
     transaction.sign(fromKeypair);
-    const signature = await connectionPool.sendTransaction(transaction, {
+
+    // Send raw transaction using connection pool
+    const connection = connectionPool.getConnection();
+    const signature = await connection.sendRawTransaction(transaction.serialize(), {
       skipPreflight: false,
       preflightCommitment: "confirmed",
     });
