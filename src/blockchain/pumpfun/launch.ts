@@ -338,8 +338,8 @@ export const executeTokenLaunch = async (
         signedTx: buyTx,
         setup: {
           instructions: [ataIx, buyIx],
-          signers: [devKeypair],
-          payer: devKeypair.publicKey,
+          signers: [keypair],
+          payer: keypair.publicKey,
         },
       });
       currentComputeUnitPrice -= computeUnitPriceDecrement;
