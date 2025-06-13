@@ -62,6 +62,9 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
     removeOnComplete: {
       count: 10,
     },
+    // Set lock duration to 5 minutes (300 seconds) for launch operations
+    lockDuration: 5 * 60 * 1000, // 5 minutes in milliseconds
+    lockRenewTime: 30 * 1000, // Renew lock every 30 seconds
   },
 );
 
