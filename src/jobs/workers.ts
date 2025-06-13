@@ -6,6 +6,7 @@ import {
   releaseDevSellLock,
   releaseWalletSellLock,
   updateTokenState,
+  handleTokenLaunchFailure,
 } from "../backend/functions";
 import { TokenState } from "../backend/types";
 import {
@@ -150,6 +151,10 @@ launchTokenWorker.on("error", async (error) => {
 });
 launchTokenWorker.on("failed", async (job) => {
   await updateTokenState(job!.data.tokenAddress, TokenState.LISTED);
+  
+  // Handle pump address release on launch failure
+  await handleTokenLaunchFailure(job!.data.tokenAddress);
+  
   const token = job!.data;
   await sendLaunchFailureNotification(
     job!.data.userChatId,

@@ -24,6 +24,20 @@ const walletSchema = new Schema(
   },
   { timestamps: true },
 );
+const pumpAddressSchema = new Schema(
+  {
+    publicKey: { type: String, required: true, unique: true },
+    secretKey: { type: String, required: true },
+    rawSecretKey: [{ type: Number }],
+    suffix: { type: String, required: true },
+    workerId: { type: Number },
+    attempts: { type: Number },
+    isUsed: { type: Boolean, default: false },
+    usedBy: { type: Schema.ObjectId, ref: "User" },
+    usedAt: { type: Date },
+  },
+  { timestamps: true },
+);
 const tokenSchema = new Schema(
   {
     user: { type: Schema.ObjectId, ref: "User", required: true },
@@ -69,5 +83,7 @@ export type User = InferSchemaType<typeof userSchema>;
 export const UserModel = model<User>("User", userSchema);
 export type Wallet = InferSchemaType<typeof walletSchema>;
 export const WalletModel = model<Wallet>("Wallet", walletSchema);
+export type PumpAddress = InferSchemaType<typeof pumpAddressSchema>;
+export const PumpAddressModel = model<PumpAddress>("PumpAddress", pumpAddressSchema, "pump_addresses");
 export type Token = InferSchemaType<typeof tokenSchema>;
 export const TokenModel = model<Token>("Token", tokenSchema);

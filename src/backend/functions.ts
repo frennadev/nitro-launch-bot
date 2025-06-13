@@ -5,7 +5,7 @@ import {
   secretKeyToKeypair,
 } from "../blockchain/common/utils";
 import { env } from "../config";
-import { TokenModel, UserModel, WalletModel, type User } from "./models";
+import { TokenModel, UserModel, WalletModel, type User, PumpAddressModel } from "./models";
 import {
   decryptPrivateKey,
   encryptPrivateKey,
@@ -321,6 +321,72 @@ const createTokenMetadata = async (
   return null;
 };
 
+export const getAvailablePumpAddress = async (userId: string) => {
+  const session = await mongoose.startSession();
+  
+  try {
+    return await session.withTransaction(async () => {
+      // Find an unused pump address
+      const pumpAddress = await PumpAddressModel.findOneAndUpdate(
+        { isUsed: false },
+        { 
+          $set: { 
+            isUsed: true, 
+            usedBy: userId, 
+            usedAt: new Date() 
+          } 
+        },
+        { 
+          new: true, 
+          session,
+          sort: { createdAt: 1 } // Use oldest first
+        }
+      );
+      
+      if (!pumpAddress) {
+        throw new Error("No available pump addresses found. Please contact support.");
+      }
+      
+      return {
+        publicKey: pumpAddress.publicKey,
+        secretKey: pumpAddress.secretKey
+      };
+    });
+  } finally {
+    await session.endSession();
+  }
+};
+
+export const releasePumpAddress = async (publicKey: string) => {
+  await PumpAddressModel.findOneAndUpdate(
+    { publicKey },
+    { 
+      $set: { 
+        isUsed: false, 
+        usedBy: null, 
+        usedAt: null 
+      } 
+    }
+  );
+};
+
+export const getPumpAddressStats = async () => {
+  const total = await PumpAddressModel.countDocuments();
+  const used = await PumpAddressModel.countDocuments({ isUsed: true });
+  const available = total - used;
+  
+  return {
+    total,
+    used,
+    available,
+    usagePercentage: total > 0 ? Math.round((used / total) * 100) : 0
+  };
+};
+
+export const getUserPumpAddresses = async (userId: string) => {
+  return await PumpAddressModel.find({ usedBy: userId }).select('publicKey usedAt');
+};
+
 export const createToken = async (
   userId: string,
   name: string,
@@ -347,20 +413,41 @@ export const createToken = async (
   if (!metadataUri) {
     throw new Error("Token metadata uri not uploaded");
   }
-  const [tokenKey] = generateKeypairs(1);
-  const token = await TokenModel.create({
-    user: userId,
-    name,
-    symbol,
-    description,
-    launchData: {
-      devWallet: devWallet?.id,
-    },
-    tokenAddress: tokenKey.publicKey,
-    tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
-    tokenMetadataUrl: metadataUri,
-  });
-  return token;
+  
+  // Use pump address instead of generating random keypair
+  let tokenKey;
+  let isPumpAddress = false;
+  try {
+    tokenKey = await getAvailablePumpAddress(userId);
+    isPumpAddress = true;
+  } catch (error: any) {
+    // Fallback to random generation if no pump addresses available
+    logger.warn(`No pump addresses available for user ${userId}, falling back to random generation: ${error.message}`);
+    const [randomKey] = generateKeypairs(1);
+    tokenKey = randomKey;
+  }
+  
+  try {
+    const token = await TokenModel.create({
+      user: userId,
+      name,
+      symbol,
+      description,
+      launchData: {
+        devWallet: devWallet?.id,
+      },
+      tokenAddress: tokenKey.publicKey,
+      tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
+      tokenMetadataUrl: metadataUri,
+    });
+    return token;
+  } catch (error) {
+    // If token creation fails and we used a pump address, release it
+    if (isPumpAddress) {
+      await releasePumpAddress(tokenKey.publicKey);
+    }
+    throw error;
+  }
 };
 
 export const preLaunchChecks = async (
@@ -969,5 +1056,70 @@ export const getWalletBalance = async (publicKey: string) => {
   } catch (error) {
     logger.error("Error fetching wallet balance", error);
     return 0;
+  }
+};
+
+export const deleteToken = async (userId: string, tokenAddress: string) => {
+  const session = await mongoose.startSession();
+  
+  try {
+    return await session.withTransaction(async () => {
+      // Find the token
+      const token = await TokenModel.findOne({
+        user: userId,
+        tokenAddress
+      }).session(session);
+      
+      if (!token) {
+        throw new Error("Token not found");
+      }
+      
+      // Check if token is using a pump address and release it
+      const pumpAddress = await PumpAddressModel.findOne({
+        publicKey: tokenAddress,
+        usedBy: userId
+      }).session(session);
+      
+      if (pumpAddress) {
+        await PumpAddressModel.findOneAndUpdate(
+          { publicKey: tokenAddress },
+          { 
+            $set: { 
+              isUsed: false, 
+              usedBy: null, 
+              usedAt: null 
+            } 
+          },
+          { session }
+        );
+      }
+      
+      // Delete the token
+      await TokenModel.deleteOne({ _id: token._id }).session(session);
+      
+      return { success: true, message: "Token deleted successfully" };
+    });
+  } catch (error: any) {
+    logger.error("Error deleting token:", error);
+    return { success: false, message: error.message };
+  } finally {
+    await session.endSession();
+  }
+};
+
+export const handleTokenLaunchFailure = async (tokenAddress: string) => {
+  // Release pump address if launch fails permanently
+  const pumpAddress = await PumpAddressModel.findOne({
+    publicKey: tokenAddress,
+    isUsed: true
+  });
+  
+  if (pumpAddress) {
+    // Check if token has failed multiple times (more than 3 attempts)
+    const token = await TokenModel.findOne({ tokenAddress });
+    if (token && token.launchData && token.launchData.launchAttempt && token.launchData.launchAttempt > 3) {
+      logger.info(`Releasing pump address ${tokenAddress} after ${token.launchData.launchAttempt} failed launch attempts`);
+      await releasePumpAddress(tokenAddress);
+    }
   }
 };

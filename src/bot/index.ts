@@ -1,7 +1,7 @@
 import { Bot, InlineKeyboard, type Context } from "grammy";
 import { conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
 import { env } from "../config";
-import { createUser, getDevWallet, getDefaultDevWallet, getTokensForUser, getUser, getOrCreateFundingWallet } from "../backend/functions";
+import { createUser, getDevWallet, getDefaultDevWallet, getTokensForUser, getUser, getOrCreateFundingWallet, getPumpAddressStats } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
@@ -101,6 +101,36 @@ To proceed, you can choose any of the actions below ⬇️
     parse_mode: "MarkdownV2",
     reply_markup: inlineKeyboard,
   });
+});
+
+bot.command("admin", async (ctx) => {
+  // Simple admin check - you can enhance this with proper admin user IDs
+  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(',').map((id: string) => parseInt(id)) : [];
+  
+  if (!adminIds.includes(ctx.from!.id)) {
+    await ctx.reply("❌ Access denied. Admin only command.");
+    return;
+  }
+  
+  try {
+    const stats = await getPumpAddressStats();
+    
+    const message = `
+🔧 *Admin Panel - Pump Address Statistics*
+
+📊 *Address Pool Status:*
+• Total Addresses: \`${stats.total}\`
+• Used Addresses: \`${stats.used}\`
+• Available Addresses: \`${stats.available}\`
+• Usage: \`${stats.usagePercentage}%\`
+
+${stats.available < 100 ? '⚠️ *Warning: Low address pool\\!*' : '✅ *Address pool healthy*'}
+`;
+
+    await ctx.reply(message, { parse_mode: "MarkdownV2" });
+  } catch (error: any) {
+    await ctx.reply(`❌ Error fetching stats: ${error.message}`);
+  }
 });
 
 // ----- Callback Queries -----
