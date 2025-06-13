@@ -17,14 +17,27 @@ import {
 import { executeTokenLaunch } from "../blockchain/pumpfun/launch";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { logger } from "./logger";
+import { updateLoadingState, completeLoadingState, failLoadingState } from "../bot/loading";
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
   async (job) => {
+    const data = job.data;
+    const loadingKey = `${data.userChatId}-token_launch-${data.tokenAddress}`;
+    
     try {
       logger.info("[jobs]: Token Launch Job starting...");
-      const data = job.data;
       logger.info("[jobs-launch-token]: Job Data", data);
+      
+      // Update loading state - Phase 0: Validating parameters
+      await updateLoadingState(loadingKey, 0);
+      
+      // Update loading state - Phase 1: Checking balances
+      await updateLoadingState(loadingKey, 1);
+      
+      // Update loading state - Phase 2: Creating token
+      await updateLoadingState(loadingKey, 2);
+      
       await executeTokenLaunch(
         data.tokenPrivateKey,
         data.funderWallet,
@@ -38,7 +51,19 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         data.devBuy,
         data.launchStage,
       );
+      
+      // Update loading state - Phase 5: Finalizing
+      await updateLoadingState(loadingKey, 5);
+      
       await updateTokenState(data.tokenAddress, TokenState.LAUNCHED);
+      
+      // Complete loading state
+      await completeLoadingState(
+        loadingKey,
+        undefined,
+        `**Token:** ${data.tokenName} ($${data.tokenSymbol})\n**Address:** \`${data.tokenAddress}\``
+      );
+      
       await sendLaunchSuccessNotification(
         data.userChatId,
         data.tokenAddress,
@@ -50,6 +75,10 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         "[jobs-launch-token]: Error Occurred while launching token",
         error,
       );
+      
+      // Fail loading state
+      await failLoadingState(loadingKey, error.message);
+      
       throw error;
     }
   },
@@ -71,16 +100,40 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
 export const sellDevWorker = new Worker<SellDevJob>(
   devSellQueue.name,
   async (job) => {
+    const data = job.data;
+    const loadingKey = `${data.userChatId}-dev_sell-${data.tokenAddress}`;
+    
     try {
       logger.info("[jobs]: Sell Dev Job starting...");
-      const data = job.data;
       logger.info("[jobs-sell-dev]: Job Data", data);
+      
+      // Update loading state - Phase 0: Validating parameters
+      await updateLoadingState(loadingKey, 0);
+      
+      // Update loading state - Phase 1: Calculating amounts
+      await updateLoadingState(loadingKey, 1);
+      
+      // Update loading state - Phase 2: Executing transaction
+      await updateLoadingState(loadingKey, 2);
+      
       const result = await executeDevSell(
         data.tokenAddress,
         data.devWallet,
         data.sellPercent,
       );
+      
+      // Update loading state - Phase 3: Confirming
+      await updateLoadingState(loadingKey, 3);
+      
       await releaseDevSellLock(data.tokenAddress);
+      
+      // Complete loading state
+      await completeLoadingState(
+        loadingKey,
+        undefined,
+        `**Transaction:** [View on Solscan](https://solscan.io/tx/${result.signature})`
+      );
+      
       await sendNotification(
         data.userChatId,
         `🎉 Dev Sell completed successfully\\.\n[View on Solscan](https://solscan.io/tx/${result.signature})`,
@@ -90,6 +143,10 @@ export const sellDevWorker = new Worker<SellDevJob>(
         "[jobs-sell-dev]: Error Occurred while selling dev supply",
         error,
       );
+      
+      // Fail loading state
+      await failLoadingState(loadingKey, error.message);
+      
       throw error;
     }
   },
@@ -108,17 +165,37 @@ export const sellDevWorker = new Worker<SellDevJob>(
 export const sellWalletWorker = new Worker<SellWalletJob>(
   walletSellQueue.name,
   async (job) => {
+    const data = job.data;
+    const loadingKey = `${data.userChatId}-wallet_sell-${data.tokenAddress}`;
+    
     try {
       logger.info("[jobs]: Wallet Sell Job starting...");
-      const data = job.data;
       logger.info("[jobs-sell-wallet]: Job Data", data);
+      
+      // Update loading state - Phase 0: Validating holdings
+      await updateLoadingState(loadingKey, 0);
+      
+      // Update loading state - Phase 1: Calculating amounts
+      await updateLoadingState(loadingKey, 1);
+      
+      // Update loading state - Phase 2: Executing transactions
+      await updateLoadingState(loadingKey, 2);
+      
       await executeWalletSell(
         data.tokenAddress,
         data.buyerWallets,
         data.devWallet,
         data.sellPercent,
       );
+      
+      // Update loading state - Phase 3: Confirming
+      await updateLoadingState(loadingKey, 3);
+      
       await releaseWalletSellLock(data.tokenAddress);
+      
+      // Complete loading state
+      await completeLoadingState(loadingKey);
+      
       await sendNotification(
         data.userChatId,
         "🎉 Wallet Sell completed successfully\\.",
@@ -128,6 +205,10 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         "[jobs-sell-wallet]: Error Occurred while selling wallet supply",
         error,
       );
+      
+      // Fail loading state
+      await failLoadingState(loadingKey, error.message);
+      
       throw error;
     }
   },

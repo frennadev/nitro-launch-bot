@@ -21,6 +21,7 @@ import { secretKeyToKeypair } from "../../blockchain/common/utils";
 import { decryptPrivateKey } from "../../backend/utils";
 import { CallBackQueries } from "../types";
 import { env } from "../../config";
+import { startLoadingState, sendLoadingMessage } from "../loading";
 
 enum LaunchCallBackQueries {
   CANCEL = "CANCEL_LAUNCH",
@@ -272,7 +273,7 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   }
 
   // ------- CHECKS BEFORE LAUNCH ------
-  await sendMessage(ctx, "Performing prelaunch checks 🔃...");
+  const checksLoading = await sendLoadingMessage(ctx, "🔍 **Performing pre-launch checks...**\n\n⏳ Validating parameters...");
   
   // Get buyer wallet private keys
   const { WalletModel } = await import("../../backend/models");
@@ -283,6 +284,8 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   
   const buyerKeys = buyerWalletDocs.map(w => decryptPrivateKey(w.privateKey));
   
+  await checksLoading.update("🔍 **Performing pre-launch checks...**\n\n💰 Checking wallet balances...");
+  
   const checkResult = await preLaunchChecks(
     fundingWallet.privateKey,
     (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
@@ -290,7 +293,10 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     devBuy,
     buyerKeys.length
   );
+  
   if (!checkResult.success) {
+    await checksLoading.update(`❌ **Pre-launch checks failed**\n\n${checkResult.message}\n\nPlease resolve the issues and try again.`);
+    
     await sendMessage(
       ctx,
       `❌ <b>PreLaunch checks failed</b>
@@ -317,6 +323,8 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard }
     }
   }
 
+  await checksLoading.update("✅ **Pre-launch checks completed successfully!**\n\n🚀 Submitting launch to queue...");
+
   // ------ SEND LAUNCH DATA TO QUEUE -----
   const result = await enqueueTokenLaunch(
     user.id,
@@ -328,13 +336,15 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard }
     devBuy,
     buyAmount
   );
+  
   if (!result.success) {
+    await checksLoading.update("❌ **Failed to submit launch**\n\nAn error occurred while submitting launch details for execution. Please try again.");
     await sendMessage(ctx, "An error occurred while submitting launch details for execution ❌. Please try again..");
   } else {
-    await sendMessage(
-      ctx,
-      "Token Launch details has been submitted for execution ✅.\nYou would get a message once your launch has been completed."
-    );
+    await checksLoading.update("🎉 **Launch submitted successfully!**\n\n⏳ Your token launch is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the launch is completed.");
+    
+    // Start the loading state for the actual launch process
+    await startLoadingState(ctx, "token_launch", tokenAddress);
   }
 };
 

@@ -5,6 +5,7 @@ import { createToken, getUser } from "../../backend/functions-main";
 import axios from "axios";
 import { CallBackQueries } from "../types";
 import { env } from "../../config";
+import { sendLoadingMessage } from "../loading";
 
 const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", CallBackQueries.BACK);
 
@@ -67,9 +68,11 @@ const createTokenConversation = async (conversation: Conversation, ctx: Context)
     responseType: "arraybuffer",
   });
 
-  await ctx.reply("Creating token… 🔄");
+  const { update } = await sendLoadingMessage(ctx, "🔄 **Creating your token...**\n\n⏳ Processing image and metadata...");
 
   const token = await createToken(user.id, name, symbol, description, fileData);
+
+  await update("🎉 **Token created successfully!**\n\n✅ Your token is ready to launch!");
 
   const launchKb = new InlineKeyboard().text(
     "🚀 Launch Token",
