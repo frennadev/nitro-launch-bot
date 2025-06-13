@@ -36,6 +36,10 @@ const walletConfigConversation = async (conversation: Conversation<Context>, ctx
     .row()
     .text("👥 Manage Buyer Wallets", CallBackQueries.MANAGE_BUYER_WALLETS)
     .row()
+    .text("💸 Withdraw from Dev Wallet", CallBackQueries.WITHDRAW_DEV_WALLET)
+    .row()
+    .text("💸 Withdraw from Buyer Wallets", CallBackQueries.WITHDRAW_BUYER_WALLETS)
+    .row()
     .text("🔙 Back", CallBackQueries.BACK);
 
   const menuMessage = `
@@ -97,6 +101,18 @@ ${buyerWallets.length > 0 ? '✅ Ready for launches' : '⚠️ No buyer wallets 
       await sendMessage(confirmCtx, "Operation cancelled.");
     }
     return conversation.halt();
+  }
+
+  if (data === CallBackQueries.WITHDRAW_DEV_WALLET) {
+    // Import and start dev wallet withdrawal conversation
+    const { withdrawDevWalletConversation } = await import("./withdrawal");
+    return await withdrawDevWalletConversation(conversation, next);
+  }
+
+  if (data === CallBackQueries.WITHDRAW_BUYER_WALLETS) {
+    // Import and start buyer wallets withdrawal conversation
+    const { withdrawBuyerWalletsConversation } = await import("./withdrawal");
+    return await withdrawBuyerWalletsConversation(conversation, next);
   }
 
   conversation.halt();

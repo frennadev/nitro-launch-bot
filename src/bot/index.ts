@@ -15,6 +15,7 @@ import mainMenuConversation from "./conversation/mainMenu";
 import { sendMessage } from "../backend/sender";
 import manageDevWalletsConversation from "./conversation/devWallets";
 import manageBuyerWalletsConversation from "./conversation/buyerWallets";
+import { withdrawDevWalletConversation, withdrawBuyerWalletsConversation } from "./conversation/withdrawal";
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
@@ -29,6 +30,8 @@ bot.use(createConversation(walletConfigConversation));
 bot.use(createConversation(mainMenuConversation));
 bot.use(createConversation(manageDevWalletsConversation));
 bot.use(createConversation(manageBuyerWalletsConversation));
+bot.use(createConversation(withdrawDevWalletConversation));
+bot.use(createConversation(withdrawBuyerWalletsConversation));
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
@@ -246,4 +249,14 @@ bot.callbackQuery(CallBackQueries.MANAGE_BUYER_WALLETS, async (ctx) => {
 bot.callbackQuery(CallBackQueries.QUICK_LAUNCH, async (ctx) => {
   await ctx.answerCallbackQuery();
   await ctx.conversation.enter("quickLaunchConversation");
+});
+
+bot.callbackQuery(CallBackQueries.WITHDRAW_DEV_WALLET, async (ctx) => {
+  await ctx.conversation.enter("withdrawDevWalletConversation");
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(CallBackQueries.WITHDRAW_BUYER_WALLETS, async (ctx) => {
+  await ctx.conversation.enter("withdrawBuyerWalletsConversation");
+  await ctx.answerCallbackQuery();
 });

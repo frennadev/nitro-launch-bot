@@ -31,4 +31,10 @@ export enum CallBackQueries {
   DELETE_BUYER_WALLET = "delete_buyer_wallet",
   EXPORT_BUYER_WALLET = "export_buyer_wallet",
   CANCEL_BUYER_WALLET = "cancel_buyer_wallet",
+  // Withdrawal options
+  WITHDRAW_BUYER_WALLETS = "withdraw_buyer_wallets",
+  WITHDRAW_DEV_WALLET = "withdraw_dev_wallet",
+  WITHDRAW_TO_FUNDING = "withdraw_to_funding",
+  WITHDRAW_TO_EXTERNAL = "withdraw_to_external",
+  CANCEL_WITHDRAWAL = "cancel_withdrawal",
 }
