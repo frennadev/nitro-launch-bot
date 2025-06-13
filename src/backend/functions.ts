@@ -5,7 +5,7 @@ import {
   secretKeyToKeypair,
 } from "../blockchain/common/utils";
 import { env } from "../config";
-import { TokenModel, UserModel, WalletModel, type User, PumpAddressModel } from "./models";
+import { TokenModel, UserModel, WalletModel, type User, PumpAddressModel, RetryDataModel, type RetryData } from "./models";
 import {
   decryptPrivateKey,
   encryptPrivateKey,
@@ -1128,4 +1128,69 @@ export const handleTokenLaunchFailure = async (tokenAddress: string) => {
       await releasePumpAddress(tokenAddress);
     }
   }
+};
+
+// ========== RETRY DATA FUNCTIONS ==========
+
+export const saveRetryData = async (
+  userId: string,
+  telegramId: string,
+  conversationType: "launch_token" | "quick_launch",
+  data: {
+    // Launch Token data
+    tokenAddress?: string;
+    buyAmount?: number;
+    devBuy?: number;
+    // Quick Launch data
+    name?: string;
+    symbol?: string;
+    description?: string;
+    imageData?: Buffer;
+    totalBuyAmount?: number;
+    walletsNeeded?: number;
+  }
+) => {
+  // Remove any existing retry data for this user and conversation type
+  await RetryDataModel.deleteMany({
+    user: userId,
+    conversationType,
+  });
+
+  // Create new retry data
+  const retryData = await RetryDataModel.create({
+    user: userId,
+    telegramId,
+    conversationType,
+    ...data,
+  });
+
+  return retryData;
+};
+
+export const getRetryData = async (
+  userId: string,
+  conversationType: "launch_token" | "quick_launch"
+): Promise<any> => {
+  const retryData = await RetryDataModel.findOne({
+    user: userId,
+    conversationType,
+  }).lean();
+
+  return retryData;
+};
+
+export const clearRetryData = async (
+  userId: string,
+  conversationType: "launch_token" | "quick_launch"
+) => {
+  await RetryDataModel.deleteMany({
+    user: userId,
+    conversationType,
+  });
+};
+
+export const clearAllRetryData = async (userId: string) => {
+  await RetryDataModel.deleteMany({
+    user: userId,
+  });
 };

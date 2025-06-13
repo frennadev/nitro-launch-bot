@@ -9,6 +9,9 @@ import {
   getFundingWallet,
   getAllBuyerWallets,
   getWalletBalance,
+  saveRetryData,
+  getRetryData,
+  clearRetryData,
 } from "../../backend/functions";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
@@ -25,14 +28,6 @@ const retryKeyboard = new InlineKeyboard()
   .text("🔄 Try Again", LaunchCallBackQueries.RETRY)
   .row()
   .text("❌ Cancel", LaunchCallBackQueries.CANCEL);
-
-// Store retry data
-interface RetryData {
-  buyAmount: number;
-  devBuy: number;
-}
-
-let retryData: RetryData | null = null;
 
 async function sendMessage(ctx: Context, text: string, options: any = {}) {
   await ctx.reply(text, options);
@@ -59,9 +54,6 @@ async function waitForInputOrCancel(
 }
 
 const launchTokenConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
-  // Check if this is a retry attempt
-  const isRetry = retryData !== null;
-  
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
@@ -70,6 +62,10 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     return;
   }
 
+  // Check if this is a retry attempt
+  const existingRetryData = await getRetryData(user.id, "launch_token");
+  const isRetry = existingRetryData !== null;
+  
   // -------- VALIDATE TOKEN ----------
   const token = await getUserToken(user.id, tokenAddress);
   if (!token) {
@@ -127,15 +123,15 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   let devBuy = 0;
 
   // Use stored values if this is a retry, otherwise get new input
-  if (isRetry && retryData) {
-    buyAmount = retryData.buyAmount;
-    devBuy = retryData.devBuy;
+  if (isRetry && existingRetryData) {
+    buyAmount = existingRetryData.buyAmount;
+    devBuy = existingRetryData.devBuy;
     await sendMessage(ctx, `🔄 <b>Retrying with previous values:</b>
 • <b>Buy Amount:</b> ${buyAmount} SOL
 • <b>Dev Buy:</b> ${devBuy} SOL`, { parse_mode: "HTML" });
     
     // Clear retry data after use
-    retryData = null;
+    await clearRetryData(user.id, "launch_token");
   } else {
     // -------- REQUEST & VALIDATE BUY AMOUNT ------
     let isValidAmount = false;
@@ -170,7 +166,13 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     }
 
     // Store the input for potential retry
-    retryData = { buyAmount, devBuy };
+    // await saveRetryData(user.id, "launch_token", { buyAmount, devBuy }); // Fixed - using correct call below
+    // Store the input for potential retry
+    await saveRetryData(user.id, ctx.chat!.id!.toString(), "launch_token", { 
+      tokenAddress, 
+      buyAmount, 
+      devBuy 
+    });
   }
 
   // -------- CHECK IF FUNDING WALLET HAS SUFFICIENT BALANCE ----------
@@ -199,7 +201,7 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
       await response.answerCallbackQuery();
       console.log("Cancel button clicked or unexpected data");
       await sendMessage(ctx, "Process cancelled.");
-      retryData = null; // Clear retry data
+      await clearRetryData(user.id, "launch_token");
       await conversation.halt();
       return;
     }
@@ -247,7 +249,7 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard }
       await response.answerCallbackQuery();
       console.log("Cancel button clicked or unexpected data");
       await sendMessage(ctx, "Process cancelled.");
-      retryData = null; // Clear retry data
+      await clearRetryData(user.id, "launch_token");
       await conversation.halt();
       return;
     }

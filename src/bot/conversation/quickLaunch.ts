@@ -12,6 +12,9 @@ import {
   preLaunchChecks,
   getDefaultDevWallet,
   getDevWallet,
+  saveRetryData,
+  getRetryData,
+  clearRetryData,
 } from "../../backend/functions";
 import { CallBackQueries } from "../types";
 import { env } from "../../config";
@@ -33,7 +36,8 @@ const retryKeyboard = new InlineKeyboard()
   .row()
   .text("❌ Cancel", QuickLaunchCallbacks.CANCEL);
 
-// Store retry data for quick launch
+// Store retry data
+/*
 interface QuickLaunchRetryData {
   name: string;
   symbol: string;
@@ -45,6 +49,7 @@ interface QuickLaunchRetryData {
 }
 
 let quickLaunchRetryData: QuickLaunchRetryData | null = null;
+*/
 
 async function sendMessage(ctx: Context, text: string, options: any = {}) {
   await ctx.reply(text, options);
@@ -73,9 +78,6 @@ async function waitForInputOrCancel(
 }
 
 const quickLaunchConversation = async (conversation: Conversation, ctx: Context) => {
-  // Check if this is a retry attempt
-  const isRetry = quickLaunchRetryData !== null;
-  
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
@@ -83,12 +85,22 @@ const quickLaunchConversation = async (conversation: Conversation, ctx: Context)
     return conversation.halt();
   }
 
+  // Check if this is a retry attempt
+  const existingRetryData = await getRetryData(user.id, "quick_launch");
+  const isRetry = existingRetryData !== null;
+
   let name: string, symbol: string, description: string, fileData: ArrayBuffer;
   let totalBuyAmount: number, devBuy: number, walletsNeeded: number;
 
-  if (isRetry && quickLaunchRetryData) {
+  if (isRetry && existingRetryData) {
     // Use stored data for retry
-    ({ name, symbol, description, fileData, totalBuyAmount, devBuy, walletsNeeded } = quickLaunchRetryData);
+    name = existingRetryData.name;
+    symbol = existingRetryData.symbol;
+    description = existingRetryData.description;
+    fileData = existingRetryData.imageData.buffer;
+    totalBuyAmount = existingRetryData.totalBuyAmount;
+    devBuy = existingRetryData.devBuy;
+    walletsNeeded = existingRetryData.walletsNeeded;
     
     await sendMessage(ctx, `🔄 <b>Retrying Quick Launch</b>
 
@@ -101,7 +113,7 @@ const quickLaunchConversation = async (conversation: Conversation, ctx: Context)
 Proceeding to wallet setup...`, { parse_mode: "HTML" });
 
     // Clear retry data after use
-    quickLaunchRetryData = null;
+    await clearRetryData(user.id, "quick_launch");
   } else {
     // Original input collection flow
     await sendMessage(ctx, `🚀 <b>Quick Launch - Create & Launch Token in Minutes!</b>
@@ -299,15 +311,15 @@ Enter amount in SOL (or click Skip):`,
     );
 
     // Store data for potential retry
-    quickLaunchRetryData = {
+    await saveRetryData(user.id, ctx.chat!.id!.toString(), "quick_launch", {
       name,
       symbol,
       description,
-      fileData,
+      imageData: Buffer.from(fileData),
       totalBuyAmount,
       devBuy,
       walletsNeeded
-    };
+    });
   }
 
   // --------- STEP 5: WALLET SETUP & FUNDING ---------
@@ -383,7 +395,6 @@ Click "I've funded it" when done:`,
       if (fundingResponse.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
         await fundingResponse.answerCallbackQuery();
         await sendMessage(ctx, "Quick launch cancelled.");
-        quickLaunchRetryData = null; // Clear retry data
         return conversation.halt();
       }
       
@@ -425,7 +436,6 @@ Click "I've funded it" when done:`,
             await response.answerCallbackQuery();
             console.log("Quick Launch Funding - Cancel button clicked");
             await sendMessage(ctx, "Quick launch cancelled.");
-            quickLaunchRetryData = null; // Clear retry data
             return conversation.halt();
           }
         }
@@ -503,7 +513,6 @@ Click "I've funded it" when done:`,
             await response.answerCallbackQuery();
             console.log("Quick Launch Funding - Cancel button clicked");
             await sendMessage(ctx, "Quick launch cancelled.");
-            quickLaunchRetryData = null; // Clear retry data
             return conversation.halt();
           }
         }
@@ -598,7 +607,6 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard });
           await response.answerCallbackQuery();
           console.log("Quick Launch Pre-launch - Cancel button clicked");
           await sendMessage(ctx, "Quick launch cancelled.");
-          quickLaunchRetryData = null; // Clear retry data
           return conversation.halt();
         }
       }

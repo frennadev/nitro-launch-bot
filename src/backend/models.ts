@@ -78,6 +78,31 @@ const tokenSchema = new Schema(
   { timestamps: true },
 );
 
+const retryDataSchema = new Schema(
+  {
+    user: { type: Schema.ObjectId, ref: "User", required: true },
+    telegramId: { type: String, required: true },
+    conversationType: { type: String, enum: ["launch_token", "quick_launch"], required: true },
+    
+    // Launch Token retry data
+    tokenAddress: { type: String }, // For launch token retries
+    buyAmount: { type: Number },
+    devBuy: { type: Number },
+    
+    // Quick Launch retry data
+    name: { type: String },
+    symbol: { type: String },
+    description: { type: String },
+    imageData: { type: Buffer }, // Store image as binary data
+    totalBuyAmount: { type: Number },
+    walletsNeeded: { type: Number },
+    
+    // Expiry for cleanup
+    expiresAt: { type: Date, default: Date.now, expires: 3600 }, // Expires after 1 hour
+  },
+  { timestamps: true },
+);
+
 // ----------- DB MODELS & TYPES ------------
 export type User = InferSchemaType<typeof userSchema>;
 export const UserModel = model<User>("User", userSchema);
@@ -87,3 +112,5 @@ export type PumpAddress = InferSchemaType<typeof pumpAddressSchema>;
 export const PumpAddressModel = model<PumpAddress>("PumpAddress", pumpAddressSchema, "pump_addresses");
 export type Token = InferSchemaType<typeof tokenSchema>;
 export const TokenModel = model<Token>("Token", tokenSchema);
+export type RetryData = InferSchemaType<typeof retryDataSchema>;
+export const RetryDataModel = model<RetryData>("RetryData", retryDataSchema);
