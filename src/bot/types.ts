@@ -22,4 +22,12 @@ export enum CallBackQueries {
   GENERATE_DEV_WALLET = "generate_dev_wallet",
   IMPORT_DEV_WALLET = "import_dev_wallet",
   CANCEL_DEV_WALLET = "cancel_dev_wallet",
+  GENERATE_FUNDING_WALLET = "generate_funding_wallet",
+  MANAGE_BUYER_WALLETS = "manage_buyer_wallets",
+  ADD_BUYER_WALLET = "add_buyer_wallet",
+  GENERATE_BUYER_WALLET = "generate_buyer_wallet",
+  IMPORT_BUYER_WALLET = "import_buyer_wallet",
+  DELETE_BUYER_WALLET = "delete_buyer_wallet",
+  EXPORT_BUYER_WALLET = "export_buyer_wallet",
+  CANCEL_BUYER_WALLET = "cancel_buyer_wallet",
 }

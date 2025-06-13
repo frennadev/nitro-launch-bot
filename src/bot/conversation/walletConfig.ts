@@ -1,7 +1,14 @@
 import type { Conversation } from "@grammyjs/conversations";
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { getUser } from "../../backend/functions";
+import { 
+  getUser, 
+  getDefaultDevWallet, 
+  getFundingWallet, 
+  getOrCreateFundingWallet,
+  getAllBuyerWallets,
+  getWalletBalance 
+} from "../../backend/functions";
 import { CallBackQueries } from "../types";
 import type { ParseMode } from "grammy/types";
 import { sendMessage } from "../../backend/sender";
@@ -13,27 +20,41 @@ const walletConfigConversation = async (conversation: Conversation<Context>, ctx
     return conversation.halt();
   }
 
+  // Get wallet data
+  const devWalletAddress = await getDefaultDevWallet(String(user.id));
+  const fundingWalletAddress = await getOrCreateFundingWallet(String(user.id));
+  const buyerWallets = await getAllBuyerWallets(String(user.id));
+
+  // Get balances
+  const devBalance = await getWalletBalance(devWalletAddress);
+  const fundingBalance = await getWalletBalance(fundingWalletAddress);
+
   const keyboard = new InlineKeyboard()
-    .text("🛠️ Change developer wallet", CallBackQueries.CHANGE_DEV_WALLET)
+    .text("🛠️ Change Developer Wallet", CallBackQueries.CHANGE_DEV_WALLET)
     .row()
-    .text("💰 Change funding wallet", CallBackQueries.CHANGE_FUNDING_WALLET)
+    .text("💰 Generate New Funding Wallet", CallBackQueries.GENERATE_FUNDING_WALLET)
     .row()
-    .text("📤 Export wallets", CallBackQueries.LAUNCH_TOKEN)
+    .text("👥 Manage Buyer Wallets", CallBackQueries.MANAGE_BUYER_WALLETS)
     .row()
     .text("🔙 Back", CallBackQueries.BACK);
 
+  const devShort = `${devWalletAddress.slice(0, 6)}…${devWalletAddress.slice(-4)}`;
+  const fundingShort = `${fundingWalletAddress.slice(0, 6)}…${fundingWalletAddress.slice(-4)}`;
+
   const menuMessage = `
-<b>Wallet Configuration</b>
-Configure and select your wallet for launching tokens
+<b>💼 Wallet Configuration</b>
+Configure and manage your wallets for token operations
 
-<b>Dev</b>: <code>5UUmSV4oaaB9kp651r9CKhr4dh5zVzctmqW1YDvbXbzD</code>
-🟢 0.05 SOL  | 💰 $50.50
+<b>🔧 Developer Wallet:</b> <code>${devShort}</code>
+💰 ${devBalance.toFixed(4)} SOL
 
-<b>Funding</b>: <code>5UUmSV4oaaB9kp651r9CKhr4dh5zVzctmqW1YDvbXbzD</code>
-🟢 0.05 SOL  | 💰 $50.50
+<b>💳 Funding Wallet:</b> <code>${fundingShort}</code>
+💰 ${fundingBalance.toFixed(4)} SOL
 
-<b>Worker</b>: <code>5UUmSV4oaaB9kp651r9CKhr4dh5zVzctmqW1YDvbXbzD</code>
-🟢 1.45 SOL  | 50
+<b>👥 Buyer Wallets:</b> ${buyerWallets.length}/10 wallets
+${buyerWallets.length > 0 ? '✅ Ready for launches' : '⚠️ No buyer wallets configured'}
+
+<i>💡 Tip: Ensure your funding wallet has sufficient SOL for token launches!</i>
 `;
 
   await sendMessage(ctx, menuMessage, {
@@ -42,31 +63,44 @@ Configure and select your wallet for launching tokens
   });
 
   const next = await conversation.wait();
+  const data = next.callbackQuery?.data;
+  if (!data) return conversation.halt();
 
-  if (next.callbackQuery?.data === CallBackQueries.CHANGE_FUNDING_WALLET) {
-    await next.answerCallbackQuery();
-    const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", CallBackQueries.CANCEL_FUNDING_WALLET);
+  await next.answerCallbackQuery();
 
-    await sendMessage(next, "Please send me your new funding wallet private keys:", {
-      reply_markup: cancelKeyboard,
+  if (data === CallBackQueries.BACK) {
+    return conversation.halt();
+  }
+
+  if (data === CallBackQueries.GENERATE_FUNDING_WALLET) {
+    await next.reply("⚠️ This will replace your current funding wallet. Any funds in the old wallet will need to be transferred manually.\n\nAre you sure you want to continue?", {
+      reply_markup: new InlineKeyboard()
+        .text("✅ Yes, Generate New", "confirm_generate_funding")
+        .text("❌ Cancel", CallBackQueries.BACK)
     });
 
-    const textCtx = await conversation.wait();
-
-    if (textCtx.callbackQuery?.data === CallBackQueries.CANCEL_FUNDING_WALLET) {
-      await textCtx.answerCallbackQuery();
-      await sendMessage(textCtx, "Funding wallet update cancelled.");
-      return conversation.halt();
-    }
-
-    const newAddress = textCtx.message?.text?.trim();
-    if (newAddress) {
-      // await setFundingWallet(ctx.chat!.id.toString(), newAddress);
-      await sendMessage(textCtx, `✅ Funding wallet updated to <code>${newAddress}</code>`, { parse_mode: "HTML" });
+    const confirmCtx = await conversation.wait();
+    if (confirmCtx.callbackQuery?.data === "confirm_generate_funding") {
+      await confirmCtx.answerCallbackQuery();
+      try {
+        const { generateNewFundingWallet } = await import("../../backend/functions");
+        const newWallet = await generateNewFundingWallet(String(user.id));
+        
+        await sendMessage(confirmCtx, 
+          `✅ New funding wallet generated!\n\n<b>Address:</b> <code>${newWallet.publicKey}</code>\n\n<b>Private Key:</b>\n<code>${newWallet.privateKey}</code>\n\n<i>⚠️ Save this private key securely and delete this message!</i>`,
+          { parse_mode: "HTML" }
+        );
+      } catch (error: any) {
+        await sendMessage(confirmCtx, `❌ Error: ${error.message}`);
+      }
     } else {
-      await sendMessage(textCtx, "❌ Invalid address. Please try again.");
+      await confirmCtx.answerCallbackQuery();
+      await sendMessage(confirmCtx, "Operation cancelled.");
     }
+    return conversation.halt();
   }
+
+  conversation.halt();
 };
 
 export default walletConfigConversation;

@@ -1,6 +1,6 @@
 import type { Conversation } from "@grammyjs/conversations";
 import type { Context } from "grammy";
-import { createUser, getUser, getDefaultDevWallet } from "../../backend/functions";
+import { createUser, getUser, getDefaultDevWallet, getOrCreateFundingWallet } from "../../backend/functions";
 import { CallBackQueries } from "../types";
 import { InlineKeyboard } from "grammy";
 
@@ -10,6 +10,9 @@ export default async function mainMenuConversation(conversation: Conversation<Co
     await ctx.reply("Unrecognized user ❌");
     return conversation.halt();
   }
+
+  // Auto-create funding wallet for all users
+  await getOrCreateFundingWallet(String(user.id));
 
   const devWallet = await getDefaultDevWallet(String(user.id));
   const welcomeMsg = `

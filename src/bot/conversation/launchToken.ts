@@ -6,9 +6,13 @@ import {
   getUser,
   getUserToken,
   preLaunchChecks,
+  getFundingWallet,
+  getAllBuyerWallets,
+  getWalletBalance,
 } from "../../backend/functions";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
+import { decryptPrivateKey } from "../../backend/utils";
 
 enum CallBackQueries {
   CANCEL = "CANCEL_LAUNCH_PROCESS",
@@ -82,45 +86,31 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     return;
   }
 
-  // -------- REQUEST & VALIDATE FUNDER WALLET ----------
-  let funderKey = "";
-  let isValidKey = false;
-  while (!isValidKey) {
-    const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter the private key of the funder wallet:");
-    if (!updatedCtx) return;
-    try {
-      funderKey = updatedCtx?.message!.text;
-      secretKeyToKeypair(funderKey);
-      isValidKey = true;
-    } catch {
-      await sendMessage(ctx, "Invalid private key entered ❌. Please re-enter a correct private key:");
-    }
+  // -------- GET FUNDING WALLET ----------
+  const fundingWallet = await getFundingWallet(user.id);
+  if (!fundingWallet) {
+    await sendMessage(ctx, "❌ No funding wallet found. Please configure your funding wallet in Wallet Config first.");
+    await conversation.halt();
+    return;
   }
 
-  // ------- REQUEST & VALIDATE BUY WALLETS -------
-  let buyerKeys: string[] = [];
-  let success = false;
-  while (!success) {
-    const updatedCtx = await waitForInputOrCancel(
-      conversation,
-      ctx,
-      "Enter the private key of the buy wallets comma separated.\nExample: key1,key2,key3,key4:"
-    );
-    if (!updatedCtx) return;
-    try {
-      buyerKeys = updatedCtx?.message!.text.split(",");
-      buyerKeys.map((pk) => secretKeyToKeypair(pk));
-      success = true;
-    } catch {
-      await sendMessage(ctx, "One or more private keys are invalid ❌. Please re-enter correct private keys:");
-    }
+  // -------- GET BUYER WALLETS ----------
+  const buyerWallets = await getAllBuyerWallets(user.id);
+  if (buyerWallets.length === 0) {
+    await sendMessage(ctx, "❌ No buyer wallets found. Please add buyer wallets in Wallet Config first.");
+    await conversation.halt();
+    return;
   }
+
+  // -------- CHECK FUNDING WALLET BALANCE ----------
+  const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
+  await sendMessage(ctx, `💳 Using funding wallet: ${fundingWallet.publicKey.slice(0, 6)}...${fundingWallet.publicKey.slice(-4)}\n💰 Balance: ${fundingBalance.toFixed(4)} SOL\n👥 Using ${buyerWallets.length} buyer wallets`);
 
   // -------- REQUEST & VALIDATE BUY AMOUNT ------
   let buyAmount = 0;
   let isValidAmount = false;
   while (!isValidAmount) {
-    const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter the amount in sol to buy for all wallets:");
+    const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter the amount in SOL to buy for all wallets:");
     if (!updatedCtx) return;
     const parsed = parseFloat(updatedCtx?.message!.text);
     if (isNaN(parsed) || parsed <= 0) {
@@ -138,7 +128,7 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     const updatedCtx = await waitForInputOrCancel(
       conversation,
       ctx,
-      "Enter amount in sol to buy from dev wallet (enter 0 to skip):"
+      "Enter amount in SOL to buy from dev wallet (enter 0 to skip):"
     );
     if (!updatedCtx) return;
     const parsed = parseFloat(updatedCtx?.message!.text);
@@ -150,10 +140,28 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     }
   }
 
+  // -------- CHECK IF FUNDING WALLET HAS SUFFICIENT BALANCE ----------
+  const requiredAmount = buyAmount + devBuy + (buyerWallets.length * 0.05) + 0.2; // Buy amount + dev buy + fees + buffer
+  if (fundingBalance < requiredAmount) {
+    await sendMessage(ctx, `❌ Insufficient funding wallet balance!\n\n💰 Required: ~${requiredAmount.toFixed(4)} SOL\n💳 Available: ${fundingBalance.toFixed(4)} SOL\n\nPlease fund your wallet and try again.`);
+    await conversation.halt();
+    return;
+  }
+
   // ------- CHECKS BEFORE LAUNCH ------
   await sendMessage(ctx, "Performing prelaunch checks 🔃...");
+  
+  // Get buyer wallet private keys
+  const { WalletModel } = await import("../../backend/models");
+  const buyerWalletDocs = await WalletModel.find({
+    user: user.id,
+    isBuyer: true,
+  }).lean();
+  
+  const buyerKeys = buyerWalletDocs.map(w => decryptPrivateKey(w.privateKey));
+  
   const checkResult = await preLaunchChecks(
-    funderKey,
+    fundingWallet.privateKey,
     (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
     buyAmount,
     devBuy,
@@ -173,7 +181,7 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     user.id,
     ctx.chat!.id,
     tokenAddress,
-    funderKey,
+    fundingWallet.privateKey,
     (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
     buyerKeys,
     devBuy,

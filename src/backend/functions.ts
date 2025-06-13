@@ -773,3 +773,201 @@ export const releaseWalletSellLock = async (tokenAddress: string) => {
     },
   );
 };
+
+// ========== FUNDING WALLET FUNCTIONS ==========
+
+export const getOrCreateFundingWallet = async (userId: string) => {
+  let user = await UserModel.findById(userId).populate('fundingWallet').exec();
+  if (!user) {
+    throw new Error("User not found");
+  }
+  
+  if (!user.fundingWallet) {
+    const [fundingWallet] = generateKeypairs(1);
+    const wallet = await WalletModel.create({
+      user: userId,
+      publicKey: fundingWallet.publicKey,
+      privateKey: encryptPrivateKey(fundingWallet.secretKey),
+      isDev: false,
+      isBuyer: false,
+      isFunding: true,
+    });
+    
+    await UserModel.updateOne(
+      { _id: userId },
+      { fundingWallet: wallet._id }
+    );
+    
+    return wallet.publicKey;
+  }
+  
+  return (user.fundingWallet as any).publicKey;
+};
+
+export const getFundingWallet = async (userId: string) => {
+  const user = await UserModel.findById(userId).populate('fundingWallet').exec();
+  if (!user || !user.fundingWallet) {
+    return null;
+  }
+  
+  return {
+    id: String((user.fundingWallet as any)._id),
+    publicKey: (user.fundingWallet as any).publicKey,
+    privateKey: decryptPrivateKey((user.fundingWallet as any).privateKey),
+  };
+};
+
+export const generateNewFundingWallet = async (userId: string) => {
+  const user = await UserModel.findById(userId).populate('fundingWallet').exec();
+  if (!user) {
+    throw new Error("User not found");
+  }
+  
+  // Delete old funding wallet if exists
+  if (user.fundingWallet) {
+    await WalletModel.deleteOne({ _id: (user.fundingWallet as any)._id });
+  }
+  
+  // Create new funding wallet
+  const [fundingWallet] = generateKeypairs(1);
+  const wallet = await WalletModel.create({
+    user: userId,
+    publicKey: fundingWallet.publicKey,
+    privateKey: encryptPrivateKey(fundingWallet.secretKey),
+    isDev: false,
+    isBuyer: false,
+    isFunding: true,
+  });
+  
+  await UserModel.updateOne(
+    { _id: userId },
+    { fundingWallet: wallet._id }
+  );
+  
+  return {
+    id: String(wallet._id),
+    publicKey: wallet.publicKey,
+    privateKey: fundingWallet.secretKey,
+  };
+};
+
+// ========== BUYER WALLET FUNCTIONS ==========
+
+export const getAllBuyerWallets = async (userId: string) => {
+  const wallets = await WalletModel.find({
+    user: userId,
+    isBuyer: true,
+  }).sort({ createdAt: 1 }).lean();
+  
+  return wallets.map((wallet) => ({
+    id: String(wallet._id),
+    publicKey: wallet.publicKey,
+    createdAt: wallet.createdAt,
+  }));
+};
+
+export const addBuyerWallet = async (userId: string, privateKey: string) => {
+  const existingWallets = await WalletModel.countDocuments({
+    user: userId,
+    isBuyer: true,
+  });
+  
+  if (existingWallets >= 10) {
+    throw new Error("Maximum of 10 buyer wallets allowed");
+  }
+  
+  const keypair = secretKeyToKeypair(privateKey);
+  const publicKey = keypair.publicKey.toBase58();
+  
+  const existingWallet = await WalletModel.findOne({
+    user: userId,
+    publicKey: publicKey,
+    isBuyer: true,
+  });
+  
+  if (existingWallet) {
+    throw new Error("This wallet is already added");
+  }
+  
+  const wallet = await WalletModel.create({
+    user: userId,
+    publicKey: publicKey,
+    privateKey: encryptPrivateKey(privateKey),
+    isDev: false,
+    isBuyer: true,
+    isFunding: false,
+  });
+  
+  return {
+    id: String(wallet._id),
+    publicKey: wallet.publicKey,
+  };
+};
+
+export const generateNewBuyerWallet = async (userId: string) => {
+  const existingWallets = await WalletModel.countDocuments({
+    user: userId,
+    isBuyer: true,
+  });
+  
+  if (existingWallets >= 10) {
+    throw new Error("Maximum of 10 buyer wallets allowed");
+  }
+  
+  const [buyerWallet] = generateKeypairs(1);
+  
+  const wallet = await WalletModel.create({
+    user: userId,
+    publicKey: buyerWallet.publicKey,
+    privateKey: encryptPrivateKey(buyerWallet.secretKey),
+    isDev: false,
+    isBuyer: true,
+    isFunding: false,
+  });
+  
+  return {
+    id: String(wallet._id),
+    publicKey: wallet.publicKey,
+    privateKey: buyerWallet.secretKey,
+  };
+};
+
+export const deleteBuyerWallet = async (userId: string, walletId: string) => {
+  const deletedWallet = await WalletModel.findOneAndDelete({
+    _id: walletId,
+    user: userId,
+    isBuyer: true,
+  });
+  
+  if (!deletedWallet) {
+    throw new Error("Buyer wallet not found");
+  }
+  
+  return true;
+};
+
+export const getBuyerWalletPrivateKey = async (userId: string, walletId: string) => {
+  const wallet = await WalletModel.findOne({
+    _id: walletId,
+    user: userId,
+    isBuyer: true,
+  });
+  
+  if (!wallet) {
+    throw new Error("Buyer wallet not found");
+  }
+  
+  return decryptPrivateKey(wallet.privateKey);
+};
+
+// ========== BALANCE CHECKING FUNCTIONS ==========
+
+export const getWalletBalance = async (publicKey: string) => {
+  try {
+    const balance = await connection.getBalance(new (await import("@solana/web3.js")).PublicKey(publicKey));
+    return balance / LAMPORTS_PER_SOL;
+  } catch (error) {
+    logger.error("Error fetching wallet balance", error);
+    return 0;
+  }
+};

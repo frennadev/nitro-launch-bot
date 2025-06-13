@@ -1,7 +1,7 @@
 import { Bot, InlineKeyboard, type Context } from "grammy";
 import { conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
 import { env } from "../config";
-import { createUser, getDevWallet, getDefaultDevWallet, getTokensForUser, getUser } from "../backend/functions";
+import { createUser, getDevWallet, getDefaultDevWallet, getTokensForUser, getUser, getOrCreateFundingWallet } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
@@ -13,6 +13,7 @@ import walletConfigConversation from "./conversation/walletConfig";
 import mainMenuConversation from "./conversation/mainMenu";
 import { sendMessage } from "../backend/sender";
 import manageDevWalletsConversation from "./conversation/devWallets";
+import manageBuyerWalletsConversation from "./conversation/buyerWallets";
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
@@ -25,6 +26,7 @@ bot.use(createConversation(walletSellConversation));
 bot.use(createConversation(walletConfigConversation));
 bot.use(createConversation(mainMenuConversation));
 bot.use(createConversation(manageDevWalletsConversation));
+bot.use(createConversation(manageBuyerWalletsConversation));
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
@@ -33,6 +35,10 @@ bot.command("start", async (ctx) => {
   if (isFirstTime) {
     user = await createUser(ctx.chat.first_name, ctx.chat.last_name, ctx.chat.username!, ctx.chat.id.toString());
   }
+  
+  // Auto-create funding wallet for all users
+  await getOrCreateFundingWallet(String(user?.id));
+  
   const devWallet = await getDefaultDevWallet(String(user?.id));
   const welcomeMsg = `
 👋 *Welcome to Nitro Bot*
@@ -59,12 +65,17 @@ To proceed, you can choose any of the actions below ⬇️
     reply_markup: inlineKeyboard,
   });
 });
+
 bot.command("menu", async (ctx) => {
   let user = await getUser(ctx.chat.id.toString());
   if (!user) {
     await ctx.reply("Unrecognized user ❌");
     return;
   }
+  
+  // Auto-create funding wallet for all users
+  await getOrCreateFundingWallet(String(user?.id));
+  
   const devWallet = await getDefaultDevWallet(String(user?.id));
   const welcomeMsg = `
 👋 *Welcome to Nitro Bot*
@@ -188,5 +199,10 @@ bot.callbackQuery(CallBackQueries.BACK, async (ctx) => {
 
 bot.callbackQuery(CallBackQueries.CHANGE_DEV_WALLET, async (ctx) => {
   await ctx.conversation.enter("manageDevWalletsConversation");
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(CallBackQueries.MANAGE_BUYER_WALLETS, async (ctx) => {
+  await ctx.conversation.enter("manageBuyerWalletsConversation");
   await ctx.answerCallbackQuery();
 });

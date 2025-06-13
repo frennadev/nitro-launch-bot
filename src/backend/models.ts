@@ -8,6 +8,7 @@ const userSchema = new Schema(
     userName: { type: String, required: true },
     firstName: { type: String },
     lastName: { type: String },
+    fundingWallet: { type: Schema.ObjectId, ref: "Wallet" },
   },
   { timestamps: true },
 );
@@ -17,6 +18,8 @@ const walletSchema = new Schema(
     publicKey: { type: String, required: true },
     privateKey: { type: String, required: true },
     isDev: { type: Boolean, required: true, default: false },
+    isBuyer: { type: Boolean, required: true, default: false },
+    isFunding: { type: Boolean, required: true, default: false },
     isDefault: { type: Boolean, default: false },
   },
   { timestamps: true },
