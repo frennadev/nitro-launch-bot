@@ -2,6 +2,7 @@ export enum CallBackQueries {
   CREATE_TOKEN = "create_token",
   VIEW_TOKENS = "view_tokens",
   LAUNCH_TOKEN = "launch_token",
+  QUICK_LAUNCH = "quick_launch",
   ADD_WALLET = "add_wallet",
   GENERATE_WALLET = "generate_wallets",
   UPDATE_DEV_WALLET = "update_dev_wallet",

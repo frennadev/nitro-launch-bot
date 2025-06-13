@@ -28,6 +28,8 @@ To proceed, you can choose any of the actions below ⬇️
 `;
 
   const keyboard = new InlineKeyboard()
+    .text("🚀 Quick Launch", CallBackQueries.QUICK_LAUNCH)
+    .row()
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()

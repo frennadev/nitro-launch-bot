@@ -6,6 +6,7 @@ import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
+import quickLaunchConversation from "./conversation/quickLaunch";
 import devSellConversation from "./conversation/devSell";
 import walletSellConversation from "./conversation/walletSell";
 import { TokenState } from "../backend/types";
@@ -20,6 +21,7 @@ export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 // ----- Conversations -----
 bot.use(conversations());
 bot.use(createConversation(createTokenConversation));
+bot.use(createConversation(quickLaunchConversation));
 bot.use(createConversation(launchTokenConversation));
 bot.use(createConversation(devSellConversation));
 bot.use(createConversation(walletSellConversation));
@@ -52,6 +54,8 @@ Here's what you can do right from this chat:
 To proceed, you can choose any of the actions below ⬇️
 `;
   const inlineKeyboard = new InlineKeyboard()
+    .text("🚀 Quick Launch", CallBackQueries.QUICK_LAUNCH)
+    .row()
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
@@ -89,6 +93,8 @@ Here's what you can do right from this chat:
 To proceed, you can choose any of the actions below ⬇️
 `;
   const inlineKeyboard = new InlineKeyboard()
+    .text("🚀 Quick Launch", CallBackQueries.QUICK_LAUNCH)
+    .row()
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
@@ -235,4 +241,9 @@ bot.callbackQuery(CallBackQueries.CHANGE_DEV_WALLET, async (ctx) => {
 bot.callbackQuery(CallBackQueries.MANAGE_BUYER_WALLETS, async (ctx) => {
   await ctx.conversation.enter("manageBuyerWalletsConversation");
   await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(CallBackQueries.QUICK_LAUNCH, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.conversation.enter("quickLaunchConversation");
 });
