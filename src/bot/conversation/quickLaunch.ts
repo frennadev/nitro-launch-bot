@@ -150,38 +150,43 @@ Upload an image for your token (max 20 MB).
   await sendMessage(ctx, "✅ Image uploaded successfully!");
 
   // --------- STEP 3: BUY AMOUNT ---------
-  await sendMessage(ctx, `<b>Step 3/6: Buy Amount</b> 💰
+  await sendMessage(ctx, `<b>Step 3/6: Total Buy Amount</b> 💰
 
-How much SOL should each buyer wallet spend?
+How much SOL should be spent in total across all buyer wallets?
 
 <b>Recommended amounts:</b>
-• <code>0.1</code> SOL - Conservative (Total: ~0.5 SOL)
-• <code>0.2</code> SOL - Moderate (Total: ~1.0 SOL) 
-• <code>0.5</code> SOL - Aggressive (Total: ~2.5 SOL)
+• <code>0.5</code> SOL - Conservative 
+• <code>1.0</code> SOL - Moderate
+• <code>2.5</code> SOL - Aggressive
 
-<i>💡 We'll create 5 buyer wallets automatically. Enter amount per wallet:</i>`, 
+<i>💡 This amount will be split randomly across 5 buyer wallets during launch using our mixer for natural distribution patterns!</i>`, 
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
 
-  let buyAmount = 0;
+  let totalBuyAmount = 0;
   while (true) {
-    const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter SOL amount per buyer wallet:");
+    const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter total SOL amount for all buyer wallets:");
     if (!updatedCtx) return;
     
     const parsed = parseFloat(updatedCtx.message!.text);
     if (isNaN(parsed) || parsed <= 0) {
       await sendMessage(ctx, "❌ Invalid amount. Please enter a positive number:");
-    } else if (parsed > 5) {
-      await sendMessage(ctx, "⚠️ Amount seems high. Please enter a reasonable amount (0.1-5 SOL):");
+    } else if (parsed > 25) {
+      await sendMessage(ctx, "⚠️ Amount seems high. Please enter a reasonable amount (0.1-25 SOL):");
+    } else if (parsed < 0.05) {
+      await sendMessage(ctx, "⚠️ Amount too small. Minimum 0.05 SOL needed for 5 wallets:");
     } else {
-      buyAmount = parsed;
+      totalBuyAmount = parsed;
       break;
     }
   }
 
-  const totalBuyAmount = buyAmount * 5; // 5 wallets
-  await sendMessage(ctx, `✅ Buy amount set: ${buyAmount} SOL per wallet
-📊 <b>Total for 5 wallets:</b> ${totalBuyAmount} SOL`, { parse_mode: "HTML" });
+  // Generate random distribution for the buy amounts
+  // Note: The mixer will handle random distribution automatically during launch
+  
+  await sendMessage(ctx, `✅ Total buy amount set: ${totalBuyAmount} SOL
+
+<i>💡 This amount will be split randomly across 5 buyer wallets during launch using our mixer for natural distribution patterns!</i>`, { parse_mode: "HTML" });
 
   // --------- STEP 4: DEV BUY AMOUNT ---------
   const skipDevKeyboard = new InlineKeyboard()
@@ -385,14 +390,14 @@ Please fund your wallet and try again.`,
 
 <b>📋 Summary:</b>
 • <b>Token:</b> ${name} (${symbol})
-• <b>Buy Amount:</b> ${buyAmount} SOL × 5 wallets = ${totalBuyAmount} SOL
+• <b>Total Buy Amount:</b> ${totalBuyAmount} SOL
 • <b>Dev Buy:</b> ${devBuy > 0 ? `${devBuy} SOL` : 'None'}
 • <b>Total Cost:</b> ~${(totalBuyAmount + devBuy + (buyerWallets.length * 0.05) + 0.2).toFixed(4)} SOL
 
 This will:
 1. Create your token on Pump.fun
 2. Launch it immediately  
-3. Execute buy orders from 5 wallets
+3. Execute buy orders from 5 wallets with random amounts
 ${devBuy > 0 ? '4. Execute dev buy order' : ''}
 
 <b>Ready to proceed?</b>`, 
@@ -481,7 +486,7 @@ Your token <b>${name} (${symbol})</b> is now being launched on Pump.fun!
 
 <b>What happens next:</b>
 • Token will be deployed to Pump.fun
-• 5 buyer wallets will purchase ${buyAmount} SOL each
+• 5 buyer wallets will purchase tokens with random amounts totaling ${totalBuyAmount} SOL
 ${devBuy > 0 ? `• Dev wallet will purchase ${devBuy} SOL` : ''}
 • You'll receive updates as the launch progresses
 
