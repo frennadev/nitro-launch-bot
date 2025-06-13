@@ -24,9 +24,27 @@ enum QuickLaunchCallbacks {
   FUND_DEV_WALLET = "FUND_DEV_WALLET",
   FUND_FUNDING_WALLET = "FUND_FUNDING_WALLET",
   SKIP_DEV_BUY = "SKIP_DEV_BUY",
+  RETRY = "RETRY_QUICK_LAUNCH",
 }
 
 const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", QuickLaunchCallbacks.CANCEL);
+const retryKeyboard = new InlineKeyboard()
+  .text("🔄 Try Again", QuickLaunchCallbacks.RETRY)
+  .row()
+  .text("❌ Cancel", QuickLaunchCallbacks.CANCEL);
+
+// Store retry data for quick launch
+interface QuickLaunchRetryData {
+  name: string;
+  symbol: string;
+  description: string;
+  fileData: ArrayBuffer;
+  totalBuyAmount: number;
+  devBuy: number;
+  walletsNeeded: number;
+}
+
+let quickLaunchRetryData: QuickLaunchRetryData | null = null;
 
 async function sendMessage(ctx: Context, text: string, options: any = {}) {
   await ctx.reply(text, options);
@@ -55,6 +73,9 @@ async function waitForInputOrCancel(
 }
 
 const quickLaunchConversation = async (conversation: Conversation, ctx: Context) => {
+  // Check if this is a retry attempt
+  const isRetry = quickLaunchRetryData !== null;
+  
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
@@ -62,7 +83,28 @@ const quickLaunchConversation = async (conversation: Conversation, ctx: Context)
     return conversation.halt();
   }
 
-  await sendMessage(ctx, `🚀 <b>Quick Launch - Create & Launch Token in Minutes!</b>
+  let name: string, symbol: string, description: string, fileData: ArrayBuffer;
+  let totalBuyAmount: number, devBuy: number, walletsNeeded: number;
+
+  if (isRetry && quickLaunchRetryData) {
+    // Use stored data for retry
+    ({ name, symbol, description, fileData, totalBuyAmount, devBuy, walletsNeeded } = quickLaunchRetryData);
+    
+    await sendMessage(ctx, `🔄 <b>Retrying Quick Launch</b>
+
+<b>Using previous input:</b>
+• <b>Token:</b> ${name} (${symbol})
+• <b>Total Buy Amount:</b> ${totalBuyAmount} SOL
+• <b>Dev Buy:</b> ${devBuy > 0 ? `${devBuy} SOL` : 'None'}
+• <b>Wallets:</b> ${walletsNeeded}
+
+Proceeding to wallet setup...`, { parse_mode: "HTML" });
+
+    // Clear retry data after use
+    quickLaunchRetryData = null;
+  } else {
+    // Original input collection flow
+    await sendMessage(ctx, `🚀 <b>Quick Launch - Create & Launch Token in Minutes!</b>
 
 This guided process will help you:
 • Create your token with smart defaults
@@ -72,85 +114,92 @@ This guided process will help you:
 
 Let's get started! 🎯`, { parse_mode: "HTML", reply_markup: cancelKeyboard });
 
-  // --------- STEP 1: TOKEN DETAILS ---------
-  await sendMessage(ctx, `<b>Step 1/6: Token Details</b> 📝
+    // --------- STEP 1: TOKEN DETAILS ---------
+    await sendMessage(ctx, `<b>Step 1/6: Token Details</b> 📝
 
 Please send your token details as <b>name, symbol, description</b>, separated by commas.
 
 <b>Example:</b> <code>Rocket Token,ROCKET,The next big memecoin on Solana!</code>
 
 <i>💡 Tip: Keep the symbol short (3-6 characters) and description engaging!</i>`, 
-    { parse_mode: "HTML", reply_markup: cancelKeyboard }
-  );
+      { parse_mode: "HTML", reply_markup: cancelKeyboard }
+    );
 
-  let details: string[];
-  while (true) {
-    const upd = await conversation.wait();
-    if (upd.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
-      await upd.answerCallbackQuery();
-      await sendMessage(ctx, "Quick launch cancelled.");
-      return conversation.halt();
-    }
-    if (upd.message?.text) {
-      details = upd.message.text.split(",").map((s) => s.trim());
-      if (details.length === 3 && details.every(d => d.length > 0)) {
-        // Validate symbol length
-        if (details[1].length > 10) {
-          await sendMessage(ctx, "⚠️ Symbol should be 10 characters or less. Please try again:", {
-            parse_mode: "HTML",
-            reply_markup: cancelKeyboard,
-          });
-          continue;
-        }
-        break;
+    let details: string[];
+    while (true) {
+      const upd = await conversation.wait();
+      if (upd.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
+        await upd.answerCallbackQuery();
+        await sendMessage(ctx, "Quick launch cancelled.");
+        return conversation.halt();
       }
-      await sendMessage(ctx, "❌ Invalid format. Please send exactly 3 parts: <b>name,symbol,description</b>", {
-        parse_mode: "HTML",
-        reply_markup: cancelKeyboard,
-      });
+      if (upd.message?.text) {
+        details = upd.message.text.split(",").map((s) => s.trim());
+        if (details.length === 3 && details.every(d => d.length > 0)) {
+          // Validate symbol length
+          if (details[1].length > 10) {
+            await sendMessage(ctx, "⚠️ Symbol should be 10 characters or less. Please try again:", {
+              parse_mode: "HTML",
+              reply_markup: cancelKeyboard,
+            });
+            continue;
+          }
+          break;
+        }
+        await sendMessage(ctx, "❌ Invalid format. Please send exactly 3 parts: <b>name,symbol,description</b>", {
+          parse_mode: "HTML",
+          reply_markup: cancelKeyboard,
+        });
+      }
     }
-  }
 
-  const [name, symbol, description] = details;
-  await sendMessage(ctx, `✅ Token details saved:
+    [name, symbol, description] = details;
+    await sendMessage(ctx, `✅ Token details saved:
 • <b>Name:</b> ${name}
 • <b>Symbol:</b> ${symbol}
 • <b>Description:</b> ${description}`, { parse_mode: "HTML" });
 
-  // --------- STEP 2: TOKEN IMAGE ---------
-  await sendMessage(ctx, `<b>Step 2/6: Token Image</b> 🖼️
+    // --------- STEP 2: TOKEN IMAGE ---------
+    await sendMessage(ctx, `<b>Step 2/6: Token Image</b> 🖼️
 
 Upload an image for your token (max 20 MB).
 
 <i>💡 Tip: Use a square image (1:1 ratio) for best results. High quality PNG or JPG works best!</i>`, 
-    { parse_mode: "HTML", reply_markup: cancelKeyboard }
-  );
+      { parse_mode: "HTML", reply_markup: cancelKeyboard }
+    );
 
-  let fileCtx;
-  while (true) {
-    const upd = await conversation.wait();
-    if (upd.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
-      await upd.answerCallbackQuery();
-      await sendMessage(ctx, "Quick launch cancelled.");
+    let fileCtx;
+    while (true) {
+      const upd = await conversation.wait();
+      if (upd.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
+        await upd.answerCallbackQuery();
+        await sendMessage(ctx, "Quick launch cancelled.");
+        return conversation.halt();
+      }
+      if (upd.message?.photo) {
+        fileCtx = upd;
+        break;
+      }
+      await sendMessage(ctx, "❌ Please upload an image file.", { reply_markup: cancelKeyboard });
+    }
+
+    const file = await fileCtx.getFile();
+    if ((file.file_size ?? 0) > 20 * 1024 * 1024) {
+      await sendMessage(ctx, "❌ Image too large (max 20MB). Please start over.");
       return conversation.halt();
     }
-    if (upd.message?.photo) {
-      fileCtx = upd;
-      break;
-    }
-    await sendMessage(ctx, "❌ Please upload an image file.", { reply_markup: cancelKeyboard });
-  }
 
-  const file = await fileCtx.getFile();
-  if ((file.file_size ?? 0) > 20 * 1024 * 1024) {
-    await sendMessage(ctx, "❌ Image too large (max 20MB). Please start over.");
-    return conversation.halt();
-  }
+    await sendMessage(ctx, "✅ Image uploaded successfully!");
 
-  await sendMessage(ctx, "✅ Image uploaded successfully!");
+    // Get file data
+    const imageUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+    const { data } = await axios.get<ArrayBuffer>(imageUrl, {
+      responseType: "arraybuffer",
+    });
+    fileData = data;
 
-  // --------- STEP 3: BUY AMOUNT ---------
-  await sendMessage(ctx, `<b>Step 3/6: Total Buy Amount</b> 💰
+    // --------- STEP 3: BUY AMOUNT ---------
+    await sendMessage(ctx, `<b>Step 3/6: Total Buy Amount</b> 💰
 
 How much SOL should be spent in total across buyer wallets?
 
@@ -160,52 +209,50 @@ How much SOL should be spent in total across buyer wallets?
 • <code>3.0</code> SOL - Aggressive (2+ wallets)
 
 <i>💡 Wallet count will be determined automatically based on amount (max 2 SOL per wallet)</i>`, 
-    { parse_mode: "HTML", reply_markup: cancelKeyboard }
-  );
+      { parse_mode: "HTML", reply_markup: cancelKeyboard }
+    );
 
-  let totalBuyAmount = 0;
-  while (true) {
-    const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter total SOL amount for buyer wallets:");
-    if (!updatedCtx) return;
-    
-    const parsed = parseFloat(updatedCtx.message!.text);
-    if (isNaN(parsed) || parsed <= 0) {
-      await sendMessage(ctx, "❌ Invalid amount. Please enter a positive number:");
-    } else if (parsed > 20) {
-      await sendMessage(ctx, "⚠️ Amount seems high. Please enter a reasonable amount (0.1-20 SOL):");
-    } else if (parsed < 0.1) {
-      await sendMessage(ctx, "⚠️ Amount too small. Minimum 0.1 SOL needed:");
-    } else {
-      totalBuyAmount = parsed;
-      break;
+    while (true) {
+      const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter total SOL amount for buyer wallets:");
+      if (!updatedCtx) return;
+      
+      const parsed = parseFloat(updatedCtx.message!.text);
+      if (isNaN(parsed) || parsed <= 0) {
+        await sendMessage(ctx, "❌ Invalid amount. Please enter a positive number:");
+      } else if (parsed > 20) {
+        await sendMessage(ctx, "⚠️ Amount seems high. Please enter a reasonable amount (0.1-20 SOL):");
+      } else if (parsed < 0.1) {
+        await sendMessage(ctx, "⚠️ Amount too small. Minimum 0.1 SOL needed:");
+      } else {
+        totalBuyAmount = parsed;
+        break;
+      }
     }
-  }
 
-  // Calculate number of wallets needed based on amount
-  let walletsNeeded: number;
-  if (totalBuyAmount <= 1) {
-    walletsNeeded = 1;
-  } else if (totalBuyAmount <= 2) {
-    walletsNeeded = 2;
-  } else {
-    // For amounts over 2 SOL, ensure no wallet gets more than 2 SOL
-    walletsNeeded = Math.ceil(totalBuyAmount / 2);
-    // Cap at 10 wallets maximum
-    walletsNeeded = Math.min(walletsNeeded, 10);
-  }
+    // Calculate number of wallets needed based on amount
+    if (totalBuyAmount <= 1) {
+      walletsNeeded = 1;
+    } else if (totalBuyAmount <= 2) {
+      walletsNeeded = 2;
+    } else {
+      // For amounts over 2 SOL, ensure no wallet gets more than 2 SOL
+      walletsNeeded = Math.ceil(totalBuyAmount / 2);
+      // Cap at 10 wallets maximum
+      walletsNeeded = Math.min(walletsNeeded, 10);
+    }
 
-  await sendMessage(ctx, `✅ Total buy amount: ${totalBuyAmount} SOL
+    await sendMessage(ctx, `✅ Total buy amount: ${totalBuyAmount} SOL
 📊 Will use ${walletsNeeded} buyer wallet${walletsNeeded > 1 ? 's' : ''}
 
 <i>💡 Amount will be distributed randomly using our mixer for natural patterns!</i>`, { parse_mode: "HTML" });
 
-  // --------- STEP 4: DEV BUY AMOUNT ---------
-  const skipDevKeyboard = new InlineKeyboard()
-    .text("Skip Dev Buy", QuickLaunchCallbacks.SKIP_DEV_BUY)
-    .row()
-    .text("❌ Cancel", QuickLaunchCallbacks.CANCEL);
+    // --------- STEP 4: DEV BUY AMOUNT ---------
+    const skipDevKeyboard = new InlineKeyboard()
+      .text("Skip Dev Buy", QuickLaunchCallbacks.SKIP_DEV_BUY)
+      .row()
+      .text("❌ Cancel", QuickLaunchCallbacks.CANCEL);
 
-  await sendMessage(ctx, `<b>Step 4/6: Dev Buy (Optional)</b> 👨‍💻
+    await sendMessage(ctx, `<b>Step 4/6: Dev Buy (Optional)</b> 👨‍💻
 
 Should your dev wallet also buy tokens? This can help with initial liquidity.
 
@@ -215,42 +262,53 @@ Should your dev wallet also buy tokens? This can help with initial liquidity.
 • <code>0.2</code> - Moderate dev position
 
 Enter amount in SOL (or click Skip):`, 
-    { parse_mode: "HTML", reply_markup: skipDevKeyboard }
-  );
+      { parse_mode: "HTML", reply_markup: skipDevKeyboard }
+    );
 
-  let devBuy = 0;
-  while (true) {
-    const updatedCtx = await conversation.waitFor(["message:text", "callback_query:data"]);
-    
-    if (updatedCtx.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
-      await updatedCtx.answerCallbackQuery();
-      await sendMessage(ctx, "Quick launch cancelled.");
-      return conversation.halt();
-    }
-    
-    if (updatedCtx.callbackQuery?.data === QuickLaunchCallbacks.SKIP_DEV_BUY) {
-      await updatedCtx.answerCallbackQuery();
-      devBuy = 0;
-      break;
-    }
-    
-    if (updatedCtx.message?.text) {
-      const parsed = parseFloat(updatedCtx.message.text);
-      if (isNaN(parsed) || parsed < 0) {
-        await sendMessage(ctx, "❌ Invalid amount. Please enter 0 or a positive number:");
-      } else if (parsed > 2) {
-        await sendMessage(ctx, "⚠️ Dev buy amount seems high. Please enter a reasonable amount (0-2 SOL):");
-      } else {
-        devBuy = parsed;
+    while (true) {
+      const updatedCtx = await conversation.waitFor(["message:text", "callback_query:data"]);
+      
+      if (updatedCtx.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
+        await updatedCtx.answerCallbackQuery();
+        await sendMessage(ctx, "Quick launch cancelled.");
+        return conversation.halt();
+      }
+      
+      if (updatedCtx.callbackQuery?.data === QuickLaunchCallbacks.SKIP_DEV_BUY) {
+        await updatedCtx.answerCallbackQuery();
+        devBuy = 0;
         break;
       }
+      
+      if (updatedCtx.message?.text) {
+        const parsed = parseFloat(updatedCtx.message.text);
+        if (isNaN(parsed) || parsed < 0) {
+          await sendMessage(ctx, "❌ Invalid amount. Please enter 0 or a positive number:");
+        } else if (parsed > 2) {
+          await sendMessage(ctx, "⚠️ Dev buy amount seems high. Please enter a reasonable amount (0-2 SOL):");
+        } else {
+          devBuy = parsed;
+          break;
+        }
+      }
     }
-  }
 
-  await sendMessage(ctx, devBuy > 0 
-    ? `✅ Dev buy set: ${devBuy} SOL`
-    : `✅ Skipping dev buy`
-  );
+    await sendMessage(ctx, devBuy > 0 
+      ? `✅ Dev buy set: ${devBuy} SOL`
+      : `✅ Skipping dev buy`
+    );
+
+    // Store data for potential retry
+    quickLaunchRetryData = {
+      name,
+      symbol,
+      description,
+      fileData,
+      totalBuyAmount,
+      devBuy,
+      walletsNeeded
+    };
+  }
 
   // --------- STEP 5: WALLET SETUP & FUNDING ---------
   await sendMessage(ctx, `<b>Step 5/6: Wallet Setup</b> 🔧
@@ -313,6 +371,8 @@ Your dev wallet needs more SOL. Please send <b>${devRequired.toFixed(4)} SOL</b>
 
 <code>${devWalletAddress}</code>
 
+<i>💡 Tap the address above to copy it</i>
+
 Click "I've funded it" when done:`, 
       { parse_mode: "HTML", reply_markup: fundDevKeyboard }
     );
@@ -323,6 +383,7 @@ Click "I've funded it" when done:`,
       if (fundingResponse.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
         await fundingResponse.answerCallbackQuery();
         await sendMessage(ctx, "Quick launch cancelled.");
+        quickLaunchRetryData = null; // Clear retry data
         return conversation.halt();
       }
       
@@ -335,11 +396,35 @@ Click "I've funded it" when done:`,
           await sendMessage(ctx, `✅ Dev wallet funded! Balance: ${newDevBalance.toFixed(4)} SOL`);
           break;
         } else {
+          const retryFundDevKeyboard = new InlineKeyboard()
+            .text("✅ I've funded it", QuickLaunchCallbacks.FUND_DEV_WALLET)
+            .row()
+            .text("🔄 Try Again", QuickLaunchCallbacks.RETRY)
+            .row()
+            .text("❌ Cancel", QuickLaunchCallbacks.CANCEL);
+
           await sendMessage(ctx, `❌ Still insufficient funds. Current: ${newDevBalance.toFixed(4)} SOL, Need: ${devRequired.toFixed(4)} SOL
 
-Please fund your wallet and try again.`, 
-            { parse_mode: "HTML", reply_markup: fundDevKeyboard }
+<b>Please fund your dev wallet:</b>
+<code>${devWalletAddress}</code>
+
+<i>💡 Tap the address above to copy it, then send the required SOL.</i>`, 
+            { parse_mode: "HTML", reply_markup: retryFundDevKeyboard }
           );
+
+          // Handle retry option in the insufficient funds case
+          const retryResponse = await conversation.waitFor("callback_query:data");
+          if (retryResponse.callbackQuery?.data === QuickLaunchCallbacks.RETRY) {
+            await retryResponse.answerCallbackQuery();
+            // Restart the conversation with stored data
+            return quickLaunchConversation(conversation, ctx);
+          } else if (retryResponse.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
+            await retryResponse.answerCallbackQuery();
+            await sendMessage(ctx, "Quick launch cancelled.");
+            quickLaunchRetryData = null; // Clear retry data
+            return conversation.halt();
+          }
+          // If "I've funded it" was clicked, continue the loop
         }
       }
     }
@@ -361,6 +446,8 @@ This will cover:
 • Buy orders: ${totalBuyAmount} SOL
 • Transaction fees: ~${(walletsNeeded * 0.05).toFixed(3)} SOL  
 • Buffer: 0.2 SOL
+
+<i>💡 Tap the address above to copy it</i>
 
 Click "I've funded it" when done:`, 
       { parse_mode: "HTML", reply_markup: fundFundingKeyboard }
@@ -384,11 +471,35 @@ Click "I've funded it" when done:`,
           await sendMessage(ctx, `✅ Funding wallet funded! Balance: ${newFundingBalance.toFixed(4)} SOL`);
           break;
         } else {
+          const retryFundFundingKeyboard = new InlineKeyboard()
+            .text("✅ I've funded it", QuickLaunchCallbacks.FUND_FUNDING_WALLET)
+            .row()
+            .text("🔄 Try Again", QuickLaunchCallbacks.RETRY)
+            .row()
+            .text("❌ Cancel", QuickLaunchCallbacks.CANCEL);
+
           await sendMessage(ctx, `❌ Still insufficient funds. Current: ${newFundingBalance.toFixed(4)} SOL, Need: ${fundingRequired.toFixed(4)} SOL
 
-Please fund your wallet and try again.`, 
-            { parse_mode: "HTML", reply_markup: fundFundingKeyboard }
+<b>Please fund your funding wallet:</b>
+<code>${fundingWallet!.publicKey}</code>
+
+<i>💡 Tap the address above to copy it, then send the required SOL.</i>`, 
+            { parse_mode: "HTML", reply_markup: retryFundFundingKeyboard }
           );
+
+          // Handle retry option in the insufficient funds case
+          const retryResponse = await conversation.waitFor("callback_query:data");
+          if (retryResponse.callbackQuery?.data === QuickLaunchCallbacks.RETRY) {
+            await retryResponse.answerCallbackQuery();
+            // Restart the conversation with stored data
+            return quickLaunchConversation(conversation, ctx);
+          } else if (retryResponse.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
+            await retryResponse.answerCallbackQuery();
+            await sendMessage(ctx, "Quick launch cancelled.");
+            quickLaunchRetryData = null; // Clear retry data
+            return conversation.halt();
+          }
+          // If "I've funded it" was clicked, continue the loop
         }
       }
     }
@@ -436,11 +547,6 @@ ${devBuy > 0 ? '4. Execute dev buy order' : ''}
       // Create token
       await sendMessage(ctx, "🔄 Creating token...");
       
-      const imageUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-      const { data: fileData } = await axios.get<ArrayBuffer>(imageUrl, {
-        responseType: "arraybuffer",
-      });
-
       const token = await createToken(user.id, name, symbol, description, fileData);
       
       await sendMessage(ctx, `✅ Token created successfully!
@@ -471,8 +577,20 @@ ${devBuy > 0 ? '4. Execute dev buy order' : ''}
 
 Please resolve the issues below and try launching manually from your tokens list:
 
-${checkResult.message}`, { parse_mode: "HTML" });
-        return conversation.halt();
+${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard });
+
+        // Wait for retry or cancel
+        const response = await conversation.waitFor("callback_query:data");
+        if (response.callbackQuery?.data === QuickLaunchCallbacks.RETRY) {
+          await response.answerCallbackQuery();
+          // Restart the conversation with stored data
+          return quickLaunchConversation(conversation, ctx);
+        } else {
+          await response.answerCallbackQuery();
+          await sendMessage(ctx, "Quick launch cancelled.");
+          quickLaunchRetryData = null; // Clear retry data
+          return conversation.halt();
+        }
       }
 
       // Launch token

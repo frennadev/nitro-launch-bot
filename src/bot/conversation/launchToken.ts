@@ -13,12 +13,26 @@ import {
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 import { decryptPrivateKey } from "../../backend/utils";
+import { CallBackQueries } from "../types";
 
-enum CallBackQueries {
+enum LaunchCallBackQueries {
   CANCEL = "CANCEL_LAUNCH_PROCESS",
+  RETRY = "RETRY_LAUNCH_PROCESS",
 }
 
-const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", CallBackQueries.CANCEL);
+const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", LaunchCallBackQueries.CANCEL);
+const retryKeyboard = new InlineKeyboard()
+  .text("🔄 Try Again", LaunchCallBackQueries.RETRY)
+  .row()
+  .text("❌ Cancel", LaunchCallBackQueries.CANCEL);
+
+// Store retry data
+interface RetryData {
+  buyAmount: number;
+  devBuy: number;
+}
+
+let retryData: RetryData | null = null;
 
 async function sendMessage(ctx: Context, text: string, options: any = {}) {
   await ctx.reply(text, options);
@@ -36,7 +50,7 @@ async function waitForInputOrCancel(
   });
 
   const input = await conversation.waitFor(["message:text", "callback_query:data"]);
-  if (input.callbackQuery?.data === CallBackQueries.CANCEL) {
+  if (input.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
     await sendMessage(ctx, "Process cancelled. Returning to the beginning.");
     await conversation.halt();
     return null;
@@ -45,6 +59,9 @@ async function waitForInputOrCancel(
 }
 
 const launchTokenConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
+  // Check if this is a retry attempt
+  const isRetry = retryData !== null;
+  
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
@@ -106,38 +123,54 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
   await sendMessage(ctx, `💳 Using funding wallet: ${fundingWallet.publicKey.slice(0, 6)}...${fundingWallet.publicKey.slice(-4)}\n💰 Balance: ${fundingBalance.toFixed(4)} SOL\n👥 Using ${buyerWallets.length} buyer wallets`);
 
-  // -------- REQUEST & VALIDATE BUY AMOUNT ------
   let buyAmount = 0;
-  let isValidAmount = false;
-  while (!isValidAmount) {
-    const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter the amount in SOL to buy for all wallets:");
-    if (!updatedCtx) return;
-    const parsed = parseFloat(updatedCtx?.message!.text);
-    if (isNaN(parsed) || parsed <= 0) {
-      await sendMessage(ctx, "Invalid buyAmount. Please re-send:");
-    } else {
-      buyAmount = parsed;
-      isValidAmount = true;
-    }
-  }
-
-  // -------- REQUEST & VALIDATE DEV BUY --------
   let devBuy = 0;
-  let isValidDevAmount = false;
-  while (!isValidDevAmount) {
-    const updatedCtx = await waitForInputOrCancel(
-      conversation,
-      ctx,
-      "Enter amount in SOL to buy from dev wallet (enter 0 to skip):"
-    );
-    if (!updatedCtx) return;
-    const parsed = parseFloat(updatedCtx?.message!.text);
-    if (isNaN(parsed) || parsed < 0) {
-      await sendMessage(ctx, "Invalid devBuy. Please re-send:");
-    } else {
-      devBuy = parsed;
-      isValidDevAmount = true;
+
+  // Use stored values if this is a retry, otherwise get new input
+  if (isRetry && retryData) {
+    buyAmount = retryData.buyAmount;
+    devBuy = retryData.devBuy;
+    await sendMessage(ctx, `🔄 <b>Retrying with previous values:</b>
+• <b>Buy Amount:</b> ${buyAmount} SOL
+• <b>Dev Buy:</b> ${devBuy} SOL`, { parse_mode: "HTML" });
+    
+    // Clear retry data after use
+    retryData = null;
+  } else {
+    // -------- REQUEST & VALIDATE BUY AMOUNT ------
+    let isValidAmount = false;
+    while (!isValidAmount) {
+      const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter the amount in SOL to buy for all wallets:");
+      if (!updatedCtx) return;
+      const parsed = parseFloat(updatedCtx?.message!.text);
+      if (isNaN(parsed) || parsed <= 0) {
+        await sendMessage(ctx, "Invalid buyAmount. Please re-send:");
+      } else {
+        buyAmount = parsed;
+        isValidAmount = true;
+      }
     }
+
+    // -------- REQUEST & VALIDATE DEV BUY --------
+    let isValidDevAmount = false;
+    while (!isValidDevAmount) {
+      const updatedCtx = await waitForInputOrCancel(
+        conversation,
+        ctx,
+        "Enter amount in SOL to buy from dev wallet (enter 0 to skip):"
+      );
+      if (!updatedCtx) return;
+      const parsed = parseFloat(updatedCtx?.message!.text);
+      if (isNaN(parsed) || parsed < 0) {
+        await sendMessage(ctx, "Invalid devBuy. Please re-send:");
+      } else {
+        devBuy = parsed;
+        isValidDevAmount = true;
+      }
+    }
+
+    // Store the input for potential retry
+    retryData = { buyAmount, devBuy };
   }
 
   // -------- CHECK IF FUNDING WALLET HAS SUFFICIENT BALANCE ----------
@@ -151,9 +184,21 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
 <b>Please fund your wallet:</b>
 <code>${fundingWallet.publicKey}</code>
 
-<i>💡 Tap the address above to copy it, then send the required SOL and try again.</i>`, { parse_mode: "HTML" });
-    await conversation.halt();
-    return;
+<i>💡 Tap the address above to copy it, then send the required SOL and try again.</i>`, { parse_mode: "HTML", reply_markup: retryKeyboard });
+
+    // Wait for retry or cancel
+    const response = await conversation.waitFor("callback_query:data");
+    if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
+      await response.answerCallbackQuery();
+      // Restart the conversation with stored data
+      return launchTokenConversation(conversation, ctx, tokenAddress);
+    } else {
+      await response.answerCallbackQuery();
+      await sendMessage(ctx, "Process cancelled.");
+      retryData = null; // Clear retry data
+      await conversation.halt();
+      return;
+    }
   }
 
   // ------- CHECKS BEFORE LAUNCH ------
@@ -182,10 +227,22 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
 
 Please resolve the issues below and retry:
 
-${checkResult.message}`, { parse_mode: "HTML" }
+${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard }
     );
-    await conversation.halt();
-    return;
+
+    // Wait for retry or cancel
+    const response = await conversation.waitFor("callback_query:data");
+    if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
+      await response.answerCallbackQuery();
+      // Restart the conversation with stored data
+      return launchTokenConversation(conversation, ctx, tokenAddress);
+    } else {
+      await response.answerCallbackQuery();
+      await sendMessage(ctx, "Process cancelled.");
+      retryData = null; // Clear retry data
+      await conversation.halt();
+      return;
+    }
   }
 
   // ------ SEND LAUNCH DATA TO QUEUE -----

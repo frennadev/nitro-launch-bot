@@ -37,4 +37,7 @@ export enum CallBackQueries {
   WITHDRAW_TO_FUNDING = "withdraw_to_funding",
   WITHDRAW_TO_EXTERNAL = "withdraw_to_external",
   CANCEL_WITHDRAWAL = "cancel_withdrawal",
+  // Retry options
+  RETRY_LAUNCH = "retry_launch",
+  RETRY_QUICK_LAUNCH = "retry_quick_launch",
 }
