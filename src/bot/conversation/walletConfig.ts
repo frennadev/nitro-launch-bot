@@ -38,17 +38,16 @@ const walletConfigConversation = async (conversation: Conversation<Context>, ctx
     .row()
     .text("🔙 Back", CallBackQueries.BACK);
 
-  const devShort = `${devWalletAddress.slice(0, 6)}…${devWalletAddress.slice(-4)}`;
-  const fundingShort = `${fundingWalletAddress.slice(0, 6)}…${fundingWalletAddress.slice(-4)}`;
-
   const menuMessage = `
 <b>💼 Wallet Configuration</b>
 Configure and manage your wallets for token operations
 
-<b>🔧 Developer Wallet:</b> <code>${devShort}</code>
+<b>🔧 Developer Wallet:</b>
+<code>${devWalletAddress}</code>
 💰 ${devBalance.toFixed(4)} SOL
 
-<b>💳 Funding Wallet:</b> <code>${fundingShort}</code>
+<b>💳 Funding Wallet:</b>
+<code>${fundingWalletAddress}</code>
 💰 ${fundingBalance.toFixed(4)} SOL
 
 <b>👥 Buyer Wallets:</b> ${buyerWallets.length}/10 wallets
