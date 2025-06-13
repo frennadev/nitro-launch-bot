@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard, type Context } from "grammy";
+import { Bot, InlineKeyboard, type Context, type BotError, GrammyError, HttpError } from "grammy";
 import { conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
 import { env } from "../config";
 import {
@@ -24,8 +24,51 @@ import manageDevWalletsConversation from "./conversation/devWallets";
 import manageBuyerWalletsConversation from "./conversation/buyerWallets";
 import { withdrawDevWalletConversation, withdrawBuyerWalletsConversation } from "./conversation/withdrawal";
 import viewTokensConversation from "./conversation/viewTokenConversation";
+import { logger } from "../blockchain/common/logger";
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
+
+// Global error handler
+bot.catch((err: BotError<ConversationFlavor<Context>>) => {
+  const ctx = err.ctx;
+  logger.error("Error in bot middleware:", {
+    error: err.error,
+    update: ctx.update,
+    stack: err.stack
+  });
+  
+  // Don't crash the bot for callback query timeout errors
+  if (err.error instanceof GrammyError && 
+      (err.error.description.includes("query is too old") || 
+       err.error.description.includes("response timeout expired"))) {
+    logger.info("Ignoring callback query timeout error");
+    return;
+  }
+  
+  // For other errors, try to notify the user if possible
+  if (ctx.chat) {
+    ctx.reply("❌ An unexpected error occurred. Please try again or contact support.")
+      .catch(() => logger.error("Failed to send error message to user"));
+  }
+});
+
+// Safe wrapper for answerCallbackQuery to handle timeout errors
+async function safeAnswerCallbackQuery(ctx: Context, text?: string): Promise<void> {
+  try {
+    await ctx.answerCallbackQuery(text);
+  } catch (error: any) {
+    // Ignore callback query timeout errors
+    if (error instanceof GrammyError && 
+        (error.description?.includes("query is too old") || 
+         error.description?.includes("response timeout expired") ||
+         error.description?.includes("query ID is invalid"))) {
+      logger.info("Callback query timeout ignored:", error.description);
+      return;
+    }
+    // Re-throw other errors
+    throw error;
+  }
+}
 
 // ----- Conversations -----
 bot.use(conversations());
@@ -149,12 +192,11 @@ ${stats.available < 100 ? "⚠️ *Warning: Low address pool\\!*" : "✅ *Addres
 // ----- Callback Queries -----
 bot.callbackQuery(CallBackQueries.CREATE_TOKEN, async (ctx) => {
   await ctx.conversation.enter("createTokenConversation");
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
 });
 bot.callbackQuery(CallBackQueries.VIEW_TOKENS, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("viewTokensConversation");
-  await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
@@ -163,7 +205,7 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
     await ctx.reply("Unrecognized user ❌");
     return;
   }
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   const { wallet } = await getDevWallet(user.id);
   const msg = [
     "*Your dev wallet private key*",
@@ -179,28 +221,28 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
   });
 });
 bot.callbackQuery("del_message", async (ctx) => {
-  await ctx.answerCallbackQuery("Message deleted");
+  await safeAnswerCallbackQuery(ctx, "Message deleted");
   if (ctx.callbackQuery.message) {
     await ctx.api.deleteMessage(ctx.chat!.id, ctx.callbackQuery.message.message_id);
   }
 });
 bot.callbackQuery(/^launch_token_(.+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
   await ctx.conversation.enter("launchTokenConversation", tokenAddress);
 });
 bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
   await ctx.conversation.enter("devSellConversation", tokenAddress);
 });
 bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
   await ctx.conversation.enter("walletSellConversation", tokenAddress, 100);
 });
 bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
   await ctx.conversation.enter("walletSellConversation", tokenAddress);
 });
@@ -208,41 +250,38 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
 bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
 
 bot.callbackQuery(CallBackQueries.WALLET_CONFIG, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("walletConfigConversation");
-  await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery(CallBackQueries.BACK, async (ctx) => {
   await ctx.conversation.enter("mainMenuConversation");
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
 });
 
 bot.callbackQuery(CallBackQueries.CHANGE_DEV_WALLET, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("manageDevWalletsConversation");
-  await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery(CallBackQueries.MANAGE_BUYER_WALLETS, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("manageBuyerWalletsConversation");
-  await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery(CallBackQueries.WITHDRAW_DEV_WALLET, async (ctx) => {
   await ctx.conversation.enter("withdrawDevWalletConversation");
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
 });
 
 bot.callbackQuery(CallBackQueries.WITHDRAW_BUYER_WALLETS, async (ctx) => {
   await ctx.conversation.enter("withdrawBuyerWalletsConversation");
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
 });
 
 // Retry callback handlers
 bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   
   try {
     // Try to extract token address from the message text
@@ -258,7 +297,7 @@ bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
       await ctx.reply("🔄 Please go to 'View Tokens' and select the token you want to launch.");
     }
   } catch (error) {
-    console.error("Error handling RETRY_LAUNCH:", error);
+    logger.error("Error handling RETRY_LAUNCH:", error);
     await ctx.reply("❌ Unable to retry launch. Please go to 'View Tokens' and try launching again.");
   }
 });
@@ -269,7 +308,7 @@ bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
   const [action, token, address] = data.split("_");
   if (action && token && address) {
-    console.log(`${action} called`);
+    logger.info(`${action} called`);
     // You can add further handling logic here if needed
   }
 });
