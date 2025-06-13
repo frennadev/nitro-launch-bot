@@ -1,6 +1,6 @@
 import type { Conversation } from "@grammyjs/conversations";
 import type { Context } from "grammy";
-import { createUser, getUser, getDefaultDevWallet, getOrCreateFundingWallet } from "../../backend/functions";
+import { createUser, getUser, getDefaultDevWallet, getOrCreateFundingWallet } from "../../backend/functions-main";
 import { CallBackQueries } from "../types";
 import { InlineKeyboard } from "grammy";
 

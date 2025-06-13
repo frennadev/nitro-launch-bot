@@ -11,7 +11,7 @@ import {
   deleteDevWallet, 
   addDevWallet, 
   generateNewDevWallet 
-} from "../../backend/functions";
+} from "../../backend/functions-main";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 
 const manageDevWalletsConversation = async (conversation: Conversation<Context>, ctx: Context) => {

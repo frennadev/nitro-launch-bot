@@ -7,7 +7,7 @@ import {
   releaseWalletSellLock,
   updateTokenState,
   handleTokenLaunchFailure,
-} from "../backend/functions";
+} from "../backend/functions-main";
 import { TokenState } from "../backend/types";
 import {
   sendLaunchFailureNotification,

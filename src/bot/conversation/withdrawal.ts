@@ -7,7 +7,7 @@ import {
   getDefaultDevWallet,
   getFundingWallet,
   getWalletBalance,
-} from "../../backend/functions";
+} from "../../backend/functions-main";
 import { CallBackQueries } from "../types";
 import { sendMessage } from "../../backend/sender";
 import { decryptPrivateKey } from "../../backend/utils";

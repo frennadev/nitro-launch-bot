@@ -1,6 +1,6 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
-import { enqueueDevSell, getUser, getUserToken } from "../../backend/functions";
+import { enqueueDevSell, getUser, getUserToken } from "../../backend/functions-main";
 import { TokenState } from "../../backend/types";
 
 const devSellConversation = async (

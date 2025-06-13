@@ -15,7 +15,7 @@ import {
   calculateTotalLaunchCost,
   getDefaultDevWallet,
   getDevWallet,
-} from "../../backend/functions";
+} from "../../backend/functions-main";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 import { decryptPrivateKey } from "../../backend/utils";

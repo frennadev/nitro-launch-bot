@@ -4,7 +4,7 @@ import {
   enqueueWalletSell,
   getUser,
   getUserTokenWithBuyWallets,
-} from "../../backend/functions";
+} from "../../backend/functions-main";
 import { TokenState } from "../../backend/types";
 
 const walletSellConversation = async (

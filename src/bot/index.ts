@@ -9,7 +9,7 @@ import {
   getUser,
   getOrCreateFundingWallet,
   getPumpAddressStats,
-} from "../backend/functions";
+} from "../backend/functions-main";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";

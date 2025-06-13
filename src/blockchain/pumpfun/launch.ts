@@ -33,7 +33,7 @@ import {
   updateBuyDistribution,
   updateLaunchStage,
   collectPlatformFee,
-} from "../../backend/functions";
+} from "../../backend/functions-main";
 import { logger } from "../common/logger";
 import { initializeMixer } from "../mixer/init-mixer";
 import bs58 from "bs58";

@@ -1,7 +1,7 @@
 import type { Conversation } from "@grammyjs/conversations";
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { getUser } from "../../backend/functions";
+import { getUser } from "../../backend/functions-main";
 import { TokenModel } from "../../backend/models";
 import { CallBackQueries } from "../types";
 import { sendMessage } from "../../backend/sender";

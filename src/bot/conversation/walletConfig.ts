@@ -8,7 +8,7 @@ import {
   getOrCreateFundingWallet,
   getAllBuyerWallets,
   getWalletBalance 
-} from "../../backend/functions";
+} from "../../backend/functions-main";
 import { CallBackQueries } from "../types";
 import type { ParseMode } from "grammy/types";
 import { sendMessage } from "../../backend/sender";
@@ -86,7 +86,7 @@ ${buyerWallets.length > 0 ? '✅ Ready for launches' : '⚠️ No buyer wallets 
     if (confirmCtx.callbackQuery?.data === "confirm_generate_funding") {
       await confirmCtx.answerCallbackQuery();
       try {
-        const { generateNewFundingWallet } = await import("../../backend/functions");
+        const { generateNewFundingWallet } = await import("../../backend/functions-main");
         const newWallet = await generateNewFundingWallet(String(user.id));
         
         await sendMessage(confirmCtx, 

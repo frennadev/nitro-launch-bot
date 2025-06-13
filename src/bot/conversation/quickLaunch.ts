@@ -16,7 +16,7 @@ import {
   getRetryData,
   clearRetryData,
   calculateTotalLaunchCost,
-} from "../../backend/functions";
+} from "../../backend/functions-main";
 import { CallBackQueries } from "../types";
 import { env } from "../../config";
 import axios from "axios";

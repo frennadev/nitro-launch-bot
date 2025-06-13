@@ -11,7 +11,7 @@ import {
   generateNewBuyerWallet,
   deleteBuyerWallet,
   getBuyerWalletPrivateKey 
-} from "../../backend/functions";
+} from "../../backend/functions-main";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 
 const manageBuyerWalletsConversation = async (conversation: Conversation<Context>, ctx: Context) => {
