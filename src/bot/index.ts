@@ -243,9 +243,24 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_BUYER_WALLETS, async (ctx) => {
 // Retry callback handlers
 bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
   await ctx.answerCallbackQuery();
-  // Extract token address from the current context if available
-  // For now, we'll need to handle this within the conversation itself
-  await ctx.reply("🔄 Retrying launch...");
+  
+  try {
+    // Try to extract token address from the message text
+    const messageText = ctx.callbackQuery?.message?.text || "";
+    const addressMatch = messageText.match(/([A-Za-z0-9]{32,44})/); // Solana address pattern
+    
+    if (addressMatch) {
+      const tokenAddress = addressMatch[1];
+      // Restart the launch conversation with the extracted token address
+      await ctx.conversation.enter("launchTokenConversation", tokenAddress);
+    } else {
+      // If we can't extract the token address, guide user to tokens list
+      await ctx.reply("🔄 Please go to 'View Tokens' and select the token you want to launch.");
+    }
+  } catch (error) {
+    console.error("Error handling RETRY_LAUNCH:", error);
+    await ctx.reply("❌ Unable to retry launch. Please go to 'View Tokens' and try launching again.");
+  }
 });
 
 export default bot;
