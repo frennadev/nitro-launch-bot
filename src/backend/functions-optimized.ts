@@ -1,5 +1,6 @@
 import { connectionPool } from "../blockchain/common/connection-pool";
 import { secretKeyToKeypair } from "../blockchain/common/utils-optimized";
+import { decryptPrivateKey } from "./utils";
 import { env } from "../config";
 import { logger } from "../blockchain/common/logger";
 import { LAMPORTS_PER_SOL, PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
@@ -48,10 +49,17 @@ export const preLaunchChecksOptimized = async (
   walletCount: number,
 ) => {
   try {
+    // Convert private keys to public keys (matching original function API)
+    const funderKeypair = secretKeyToKeypair(funderWallet);
+    const devKeypair = secretKeyToKeypair(devWallet);
+    
+    const funderPublicKey = funderKeypair.publicKey.toBase58();
+    const devPublicKey = devKeypair.publicKey.toBase58();
+    
     // Get balances for both wallets in a single batch call
-    const balances = await getBatchWalletBalances([funderWallet, devWallet]);
-    const funderBalance = balances[funderWallet];
-    const devBalance = balances[devWallet];
+    const balances = await getBatchWalletBalances([funderPublicKey, devPublicKey]);
+    const funderBalance = balances[funderPublicKey];
+    const devBalance = balances[devPublicKey];
 
     // Calculate required amounts
     const totalBuyAmount = buyAmount + devBuy;
