@@ -472,11 +472,17 @@ export const preLaunchChecks = async (
 
   let message = "PreLaunch Checks:";
   if (funderBalance < expectedFunderBalance) {
-    message += `\nFunder balance too low. Expected ${(expectedFunderBalance / LAMPORTS_PER_SOL).toFixed(2)} SOL, Gotten ${(funderBalance / LAMPORTS_PER_SOL).toFixed(2)} SOL`;
+    message += `\n❌ <b>Funder wallet balance too low</b>
+💰 <b>Required:</b> ${(expectedFunderBalance / LAMPORTS_PER_SOL).toFixed(4)} SOL
+💳 <b>Available:</b> ${(funderBalance / LAMPORTS_PER_SOL).toFixed(4)} SOL
+<b>Fund this wallet:</b> <code>${funderKeypair.publicKey.toBase58()}</code>`;
     success = false;
   }
   if (devBalance < expectedDevBalance) {
-    message += `\nDev balance too low. Expected ${(expectedDevBalance / LAMPORTS_PER_SOL).toFixed(2)} SOL, Gotten ${(devBalance / LAMPORTS_PER_SOL).toFixed(2)} SOL`;
+    message += `\n❌ <b>Dev wallet balance too low</b>
+💰 <b>Required:</b> ${(expectedDevBalance / LAMPORTS_PER_SOL).toFixed(4)} SOL
+💳 <b>Available:</b> ${(devBalance / LAMPORTS_PER_SOL).toFixed(4)} SOL
+<b>Fund this wallet:</b> <code>${devKeypair.publicKey.toBase58()}</code>`;
     success = false;
   }
   return { success, message };

@@ -143,7 +143,15 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   // -------- CHECK IF FUNDING WALLET HAS SUFFICIENT BALANCE ----------
   const requiredAmount = buyAmount + devBuy + (buyerWallets.length * 0.05) + 0.2; // Buy amount + dev buy + fees + buffer
   if (fundingBalance < requiredAmount) {
-    await sendMessage(ctx, `❌ Insufficient funding wallet balance!\n\n💰 Required: ~${requiredAmount.toFixed(4)} SOL\n💳 Available: ${fundingBalance.toFixed(4)} SOL\n\nPlease fund your wallet and try again.`);
+    await sendMessage(ctx, `❌ <b>Insufficient funding wallet balance!</b>
+
+💰 <b>Required:</b> ~${requiredAmount.toFixed(4)} SOL
+💳 <b>Available:</b> ${fundingBalance.toFixed(4)} SOL
+
+<b>Please fund your wallet:</b>
+<code>${fundingWallet.publicKey}</code>
+
+<i>💡 Tap the address above to copy it, then send the required SOL and try again.</i>`, { parse_mode: "HTML" });
     await conversation.halt();
     return;
   }
@@ -170,7 +178,11 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   if (!checkResult.success) {
     await sendMessage(
       ctx,
-      "PreLaunch checks failed ❌.\nKindly resolve the issues below and retry\n\n" + checkResult.message
+      `❌ <b>PreLaunch checks failed</b>
+
+Please resolve the issues below and retry:
+
+${checkResult.message}`, { parse_mode: "HTML" }
     );
     await conversation.halt();
     return;

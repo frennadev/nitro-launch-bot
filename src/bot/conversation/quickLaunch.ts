@@ -467,11 +467,11 @@ ${devBuy > 0 ? '4. Execute dev buy order' : ''}
       );
       
       if (!checkResult.success) {
-        await sendMessage(ctx, `❌ Pre-launch checks failed:
+        await sendMessage(ctx, `❌ <b>Pre-launch checks failed</b>
 
-${checkResult.message}
+Please resolve the issues below and try launching manually from your tokens list:
 
-Please resolve these issues and try launching manually from your tokens list.`);
+${checkResult.message}`, { parse_mode: "HTML" });
         return conversation.halt();
       }
 
