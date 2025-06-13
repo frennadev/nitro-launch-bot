@@ -51,7 +51,7 @@ export const preLaunchChecksOptimized = async (
   try {
     // Convert private keys to public keys (matching original function API)
     const funderKeypair = secretKeyToKeypair(funderWallet);
-    const devKeypair = secretKeyToKeypair(devWallet);
+    const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet));
     
     const funderPublicKey = funderKeypair.publicKey.toBase58();
     const devPublicKey = devKeypair.publicKey.toBase58();
