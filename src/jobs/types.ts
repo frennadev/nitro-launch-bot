@@ -1,4 +1,5 @@
 export type LaunchTokenJob = {
+  userId: string;
   userChatId: number;
   tokenAddress: string;
   tokenPrivateKey: string;
@@ -15,6 +16,7 @@ export type LaunchTokenJob = {
 };
 
 export type SellDevJob = {
+  userId: string;
   userChatId: number;
   tokenAddress: string;
   devWallet: string;
@@ -22,6 +24,7 @@ export type SellDevJob = {
 };
 
 export type SellWalletJob = {
+  userId: string;
   userChatId: number;
   tokenAddress: string;
   devWallet: string;

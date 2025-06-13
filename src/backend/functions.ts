@@ -561,6 +561,7 @@ export const enqueueTokenLaunch = async (
       await tokenLaunchQueue.add(
         `launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
         {
+          userId,
           tokenAddress,
           tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
           userChatId: chatId,
@@ -619,6 +620,7 @@ export const enqueueTokenLaunchRetry = async (
         throw new Error("Failed to update token");
       }
       const data = {
+        userId,
         tokenAddress,
         tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
         userChatId: chatId,
@@ -694,6 +696,7 @@ export const enqueueDevSell = async (
       await devSellQueue.add(
         `dev-sell-${tokenAddress}-${updatedToken.launchData?.devSellAttempt}`,
         {
+          userId,
           tokenAddress,
           userChatId: chatId,
           devWallet: decryptPrivateKey(devWallet),
@@ -748,6 +751,7 @@ export const enqueueWalletSell = async (
       await walletSellQueue.add(
         `wallet-sell-${tokenAddress}-${updatedToken.launchData?.walletSellAttempt}`,
         {
+          userId,
           tokenAddress,
           userChatId: chatId,
           devWallet: decryptPrivateKey(devWallet),
@@ -772,11 +776,17 @@ export const enqueueWalletSell = async (
 export const updateTokenState = async (
   tokenAddress: string,
   state: TokenState,
+  userId?: string,
 ) => {
+  const filter: any = { tokenAddress };
+  
+  // If userId is provided, filter by user as well to avoid cross-user state updates
+  if (userId) {
+    filter.user = userId;
+  }
+  
   await TokenModel.findOneAndUpdate(
-    {
-      tokenAddress,
-    },
+    filter,
     {
       $set: {
         state,

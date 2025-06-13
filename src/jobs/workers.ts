@@ -55,7 +55,7 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
       // Update loading state - Phase 5: Finalizing
       await updateLoadingState(loadingKey, 5);
       
-      await updateTokenState(data.tokenAddress, TokenState.LAUNCHED);
+      await updateTokenState(data.tokenAddress, TokenState.LAUNCHED, data.userId);
       
       // Complete loading state
       await completeLoadingState(
@@ -234,7 +234,7 @@ launchTokenWorker.on("error", async (error) => {
   logger.error("Token Launch Worker Error", error);
 });
 launchTokenWorker.on("failed", async (job) => {
-  await updateTokenState(job!.data.tokenAddress, TokenState.LISTED);
+  await updateTokenState(job!.data.tokenAddress, TokenState.LISTED, job!.data.userId);
   
   // Handle pump address release on launch failure
   await handleTokenLaunchFailure(job!.data.tokenAddress);
