@@ -17,6 +17,8 @@ import {
   devSellQueue,
   tokenLaunchQueue,
   walletSellQueue,
+  prepareLaunchQueue,
+  executeLaunchQueue,
 } from "../jobs/queues";
 import { logger } from "../blockchain/common/logger";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
@@ -1296,4 +1298,160 @@ export const calculateTotalLaunchCost = (
     totalCost,
     breakdown,
   };
+};
+
+export const enqueuePrepareTokenLaunch = async (
+  userId: string,
+  chatId: number,
+  tokenAddress: string,
+  funderWallet: string,
+  devWallet: string,
+  buyWallets: string[],
+  devBuy: number,
+  buyAmount: number,
+) => {
+  const session = await mongoose.startSession();
+
+  try {
+    await session.withTransaction(async () => {
+      const walletIds = [];
+      for (const key of buyWallets) {
+        const keypair = secretKeyToKeypair(key);
+        let wallet = await WalletModel.findOne({
+          publicKey: keypair.publicKey.toBase58(),
+          user: userId,
+        });
+        if (wallet) {
+          walletIds.push(String(wallet.id));
+        } else {
+          wallet = await WalletModel.create({
+            user: userId,
+            isDev: false,
+            publicKey: keypair.publicKey.toBase58(),
+            privateKey: encryptPrivateKey(key),
+          });
+          walletIds.push(String(wallet.id));
+        }
+      }
+      const encryptedFunder = encryptPrivateKey(funderWallet);
+      const updatedToken = await TokenModel.findOneAndUpdate(
+        {
+          tokenAddress,
+          user: userId,
+        },
+        {
+          $set: {
+            state: TokenState.LAUNCHING, // Will be changed to PREPARING in future
+            "launchData.funderPrivateKey": encryptedFunder,
+            "launchData.buyWallets": walletIds,
+            "launchData.buyAmount": buyAmount,
+            "launchData.devBuy": devBuy,
+            "launchData.launchStage": 1,
+          },
+          $inc: {
+            "launchData.launchAttempt": 1,
+          },
+        },
+        { new: true },
+      ).lean();
+      if (!updatedToken) {
+        throw new Error("Failed to update token");
+      }
+      await prepareLaunchQueue.add(
+        `prepare-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
+        {
+          userId,
+          tokenAddress,
+          tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
+          userChatId: chatId,
+          tokenName: updatedToken.name,
+          tokenMetadataUri: updatedToken.tokenMetadataUrl,
+          tokenSymbol: updatedToken.symbol,
+          buyAmount,
+          buyerWallets: buyWallets,
+          devBuy,
+          devWallet: decryptPrivateKey(devWallet),
+          funderWallet: funderWallet,
+        },
+      );
+    });
+    return { success: true, message: "" };
+  } catch (error: any) {
+    logger.error("An error occurred during prepare launch enqueue", error);
+    return {
+      success: false,
+      message: `An error occurred during prepare launch enqueue: ${error.message}`,
+    };
+  } finally {
+    await session.endSession();
+  }
+};
+
+export const enqueueExecuteTokenLaunch = async (
+  userId: string,
+  chatId: number,
+  tokenAddress: string,
+) => {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const updatedToken = await TokenModel.findOneAndUpdate(
+        {
+          tokenAddress,
+          user: userId,
+        },
+        {
+          $set: {
+            state: TokenState.LAUNCHING,
+          },
+          $inc: {
+            "launchData.launchAttempt": 1,
+          },
+        },
+        { new: true },
+      )
+        .populate(["launchData.buyWallets", "launchData.devWallet"])
+        .lean();
+      if (!updatedToken) {
+        throw new Error("Failed to update token");
+      }
+      const data = {
+        userId,
+        tokenAddress,
+        tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
+        userChatId: chatId,
+        tokenName: updatedToken.name,
+        tokenMetadataUri: updatedToken.tokenMetadataUrl,
+        tokenSymbol: updatedToken.symbol,
+        buyAmount: updatedToken.launchData!.buyAmount,
+        buyerWallets: updatedToken.launchData!.buyWallets.map((w) =>
+          decryptPrivateKey(
+            (w as unknown as { privateKey: string }).privateKey,
+          ),
+        ),
+        devWallet: decryptPrivateKey(
+          (
+            updatedToken.launchData!.devWallet as unknown as {
+              privateKey: string;
+            }
+          ).privateKey,
+        ),
+        devBuy: updatedToken.launchData!.devBuy,
+        launchStage: updatedToken.launchData!.launchStage || 3, // Start from LAUNCH stage
+      };
+      await executeLaunchQueue.add(
+        `execute-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
+        data,
+      );
+    });
+    return { success: true, message: "" };
+  } catch (error: any) {
+    logger.error("An error occurred during execute launch enqueue", error);
+    return {
+      success: false,
+      message: `An error occurred during execute launch enqueue: ${error.message}`,
+    };
+  } finally {
+    await session.endSession();
+  }
 };

@@ -40,6 +40,70 @@ import { initializeMixer } from "../mixer/init-mixer";
 import bs58 from "bs58";
 import { getSolBalance, getTokenBalance } from "../../backend/utils";
 
+export const prepareTokenLaunch = async (
+  mint: string,
+  funderWallet: string,
+  devWallet: string,
+  buyWallets: string[],
+  tokenName: string,
+  symbol: string,
+  buyAmount: number,
+  devBuy: number,
+) => {
+  const start = performance.now();
+
+  const mintKeypair = secretKeyToKeypair(mint);
+  const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
+  const funderKeypair = secretKeyToKeypair(funderWallet);
+  const devKeypair = secretKeyToKeypair(devWallet);
+  const logIdentifier = `prepare-${mintKeypair.publicKey.toBase58()}`;
+
+  logger.info(`[${logIdentifier}]: Token Launch Preparation Data`, {
+    wallets: buyKeypairs.map((kp) => kp.publicKey.toBase58()),
+    funder: funderKeypair.publicKey.toBase58(),
+    token: mintKeypair.publicKey.toBase58(),
+  });
+
+  // ------- PLATFORM FEE COLLECTION -------
+  logger.info(`[${logIdentifier}]: Collecting platform fee`);
+  
+  const feeResult = await collectPlatformFee(devWallet);
+  if (!feeResult.success) {
+    logger.error(`[${logIdentifier}]: Platform fee collection failed: ${feeResult.error}`);
+    throw new Error(`Platform fee collection failed: ${feeResult.error}`);
+  }
+  
+  if (feeResult.signature) {
+    logger.info(`[${logIdentifier}]: Platform fee collected successfully. Signature: ${feeResult.signature}`);
+  }
+
+  await updateLaunchStage(
+    mintKeypair.publicKey.toBase58(),
+    PumpLaunchStage.FUNDING,
+  );
+
+  // ------- WALLET FUNDING STAGE -------
+  logger.info(`[${logIdentifier}]: Starting wallet funding stage`);
+  const fundingStart = performance.now();
+
+  const funderPrivateKey = bs58.encode(funderKeypair.secretKey);
+  const destinationAddresses = buyKeypairs.map(w => w.publicKey.toString());
+  await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+
+  await updateLaunchStage(
+    mintKeypair.publicKey.toBase58(),
+    PumpLaunchStage.LAUNCH,
+  );
+  
+  logger.info(
+    `[${logIdentifier}]: Wallet funding completed in ${formatMilliseconds(performance.now() - fundingStart)}`,
+  );
+
+  logger.info(
+    `[${logIdentifier}]: Token Launch Preparation completed in ${formatMilliseconds(performance.now() - start)}`,
+  );
+};
+
 export const executeTokenLaunch = async (
   mint: string,
   funderWallet: string,
@@ -59,135 +123,24 @@ export const executeTokenLaunch = async (
   const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
   const funderKeypair = secretKeyToKeypair(funderWallet);
   const devKeypair = secretKeyToKeypair(devWallet);
-  // if (buyDistribution.length == 0) {
-  //   buyDistribution = randomizeDistribution(buyAmount, buyKeypairs.length);
-  //   await updateBuyDistribution(
-  //     mintKeypair.publicKey.toBase58(),
-  //     buyDistribution,
-  //   );
-  // }
   const { bondingCurve } = getBondingCurve(mintKeypair.publicKey);
   const globalSetting = await getGlobalSetting();
   const logIdentifier = `launch-${mintKeypair.publicKey.toBase58()}`;
 
-  logger.info(`$[${logIdentifier}]: Token Launch Data`, {
-    // buyDistribution,
+  logger.info(`[${logIdentifier}]: Token Launch Execution Data`, {
     wallets: buyKeypairs.map((kp) => kp.publicKey.toBase58()),
     funder: funderKeypair.publicKey.toBase58(),
     token: mintKeypair.publicKey.toBase58(),
+    launchStage,
   });
 
-  // ------- PLATFORM FEE COLLECTION -------
-  if (launchStage == PumpLaunchStage.START) {
-    logger.info(`[${logIdentifier}]: Collecting platform fee`);
-    
-    const feeResult = await collectPlatformFee(devWallet);
-    if (!feeResult.success) {
-      logger.error(`[${logIdentifier}]: Platform fee collection failed: ${feeResult.error}`);
-      throw new Error(`Platform fee collection failed: ${feeResult.error}`);
-    }
-    
-    if (feeResult.signature) {
-      logger.info(`[${logIdentifier}]: Platform fee collected successfully. Signature: ${feeResult.signature}`);
-    }
-
-    await updateLaunchStage(
-      mintKeypair.publicKey.toBase58(),
-      PumpLaunchStage.FUNDING,
-    );
-    console.log('LAUNCHING')
-    launchStage = PumpLaunchStage.FUNDING;
-  }
-
-  // ------- WALLET FUNDING STAGE -------
-  if (launchStage === PumpLaunchStage.FUNDING) {
-    logger.info(`[${logIdentifier}]: Starting wallet funding stage`);
-    const start = performance.now();
-    // const fundInstructions = (
-    //   await Promise.all(
-    //     buyKeypairs.map(async (keypair, idx) => {
-    //       const solBalance = await connection
-    //         .getBalance(keypair.publicKey)
-    //         .then(BigInt);
-    //       // amount for swap + extra for gas fees
-    //       const targetBalance = BigInt(
-    //         Math.floor(buyDistribution[idx] * LAMPORTS_PER_SOL) +
-    //           0.02 * LAMPORTS_PER_SOL,
-    //       );
-    //       const needsSol = solBalance < targetBalance;
-    //       if (needsSol) {
-    //         return SystemProgram.transfer({
-    //           fromPubkey: funderKeypair.publicKey,
-    //           toPubkey: keypair.publicKey,
-    //           lamports: targetBalance - solBalance,
-    //         });
-    //       }
-    //       return null;
-    //     }),
-    //   )
-    // ).filter((ix) => ix != null);
-    // const blockHash = await connection.getLatestBlockhash("confirmed");
-    // const fundTransactions = fundInstructions.map((ix) => {
-    //   const message = new TransactionMessage({
-    //     instructions: [ix],
-    //     payerKey: funderKeypair.publicKey,
-    //     recentBlockhash: blockHash.blockhash,
-    //   }).compileToV0Message();
-    //   const txn = new VersionedTransaction(message);
-    //   txn.sign([funderKeypair]);
-    //   return {
-    //     signedTx: txn,
-    //     setup: {
-    //       payer: funderKeypair.publicKey,
-    //       instructions: [ix],
-    //       signers: [funderKeypair],
-    //     },
-    //   };
-    // });
-    // const txnChunks = chunkArray(fundTransactions, 4);
-    // let results: { success: boolean; signature: string | null }[] = [];
-    // for (const chunk of txnChunks) {
-    //   const res = await Promise.all(
-    //     chunk.map((data) =>
-    //       sendAndConfirmTransactionWithRetry(
-    //         data.signedTx,
-    //         data.setup,
-    //         10_000,
-    //         3,
-    //         1_000,
-    //         logIdentifier,
-    //       ),
-    //     ),
-    //   );
-    //   results.push(...res);
-    //   await randomizedSleep(1000, 1500);
-    // }
-    // logger.info(`[${logIdentifier}]: Wallet funding results`, results);
-    // if (results.filter((res) => !res.success).length > 0) {
-    //   throw new Error("Buy Wallet Funding Failed");
-    // }
-
-    const funderPrivateKey = bs58.encode(funderKeypair.secretKey)
-    const destinationAddresses = buyKeypairs.map(w => {return w.publicKey.toString()})
-    await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses )
-
-
-    // I'll be using mixer to fund the buyers wallet 
-    // ################# STARTing Mixer Here ##############
-    await updateLaunchStage(
-      mintKeypair.publicKey.toBase58(),
-      PumpLaunchStage.LAUNCH,
-    );
-    launchStage = PumpLaunchStage.LAUNCH;
-    logger.info(
-      `[${logIdentifier}]: Wallet funding completed in ${formatMilliseconds(performance.now() - start)}`,
-    );
-  }
+  // Skip preparation phases if launchStage >= LAUNCH (3)
+  // This assumes preparation was already completed by prepareTokenLaunch
 
   // ------- TOKEN CREATION + DEV BUY STAGE ------
-  if (launchStage === PumpLaunchStage.LAUNCH) {
-    logger.info(`[${logIdentifier}]: Starting token launch stage`);
-    const start = performance.now();
+  if (launchStage >= PumpLaunchStage.LAUNCH) {
+    logger.info(`[${logIdentifier}]: Starting token creation stage`);
+    const tokenStart = performance.now();
     const launchInstructions: TransactionInstruction[] = [];
     const createIx = tokenCreateInstruction(
       mintKeypair,
@@ -246,17 +199,16 @@ export const executeTokenLaunch = async (
       1000,
       logIdentifier,
     );
-    logger.info(`[${logIdentifier}]: Token launch result`, result);
+    logger.info(`[${logIdentifier}]: Token creation result`, result);
     if (!result.success) {
-      throw new Error("Token launch failed");
+      throw new Error("Token creation failed");
     }
     await updateLaunchStage(
       mintKeypair.publicKey.toBase58(),
       PumpLaunchStage.SNIPE,
     );
-    launchStage = PumpLaunchStage.SNIPE;
     logger.info(
-      `[${logIdentifier}]: Token launch completed in ${formatMilliseconds(performance.now() - start)}`,
+      `[${logIdentifier}]: Token creation completed in ${formatMilliseconds(performance.now() - tokenStart)}`,
     );
   }
 

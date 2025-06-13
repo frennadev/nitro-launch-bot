@@ -3,6 +3,7 @@ import { type Context, InlineKeyboard } from "grammy";
 import {
   enqueueTokenLaunch,
   enqueueTokenLaunchRetry,
+  enqueuePrepareTokenLaunch,
   getUser,
   getUserToken,
   preLaunchChecks,
@@ -326,7 +327,7 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard }
   await checksLoading.update("✅ **Pre-launch checks completed successfully!**\n\n🚀 Submitting launch to queue...");
 
   // ------ SEND LAUNCH DATA TO QUEUE -----
-  const result = await enqueueTokenLaunch(
+  const result = await enqueuePrepareTokenLaunch(
     user.id,
     ctx.chat!.id,
     tokenAddress,

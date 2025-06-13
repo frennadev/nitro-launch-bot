@@ -1,12 +1,13 @@
 import { Worker } from "bullmq";
-import { tokenLaunchQueue, devSellQueue, walletSellQueue } from "./queues";
-import type { LaunchTokenJob, SellDevJob, SellWalletJob } from "./types";
+import { tokenLaunchQueue, devSellQueue, walletSellQueue, prepareLaunchQueue, executeLaunchQueue } from "./queues";
+import type { LaunchTokenJob, PrepareTokenLaunchJob, ExecuteTokenLaunchJob, SellDevJob, SellWalletJob } from "./types";
 import { redisClient } from "./db";
 import {
   releaseDevSellLock,
   releaseWalletSellLock,
   updateTokenState,
   handleTokenLaunchFailure,
+  enqueueExecuteTokenLaunch,
 } from "../backend/functions-main";
 import { TokenState } from "../backend/types";
 import {
@@ -14,7 +15,7 @@ import {
   sendLaunchSuccessNotification,
   sendNotification,
 } from "../bot/message";
-import { executeTokenLaunch } from "../blockchain/pumpfun/launch";
+import { executeTokenLaunch, prepareTokenLaunch } from "../blockchain/pumpfun/launch";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { logger } from "./logger";
 import { updateLoadingState, completeLoadingState, failLoadingState } from "../bot/loading";
@@ -224,6 +225,162 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
   },
 );
 
+export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
+  prepareLaunchQueue.name,
+  async (job) => {
+    const data = job.data;
+    const loadingKey = `${data.userChatId}-prepare_launch-${data.tokenAddress}`;
+    
+    try {
+      logger.info("[jobs]: Prepare Launch Job starting...");
+      logger.info("[jobs-prepare-launch]: Job Data", data);
+      
+      // Update loading state - Phase 0: Validating parameters
+      await updateLoadingState(loadingKey, 0);
+      
+      // Update loading state - Phase 1: Collecting platform fee
+      await updateLoadingState(loadingKey, 1);
+      
+      // Update loading state - Phase 2: Initializing mixer
+      await updateLoadingState(loadingKey, 2);
+      
+      await prepareTokenLaunch(
+        data.tokenPrivateKey,
+        data.funderWallet,
+        data.devWallet,
+        data.buyerWallets,
+        data.tokenName,
+        data.tokenSymbol,
+        data.buyAmount,
+        data.devBuy,
+      );
+      
+      // Complete preparation loading state
+      await completeLoadingState(
+        loadingKey,
+        undefined,
+        `**Token:** ${data.tokenName} ($${data.tokenSymbol})\n**Status:** Ready for launch`
+      );
+      
+      // Automatically enqueue the execution phase
+      const executeResult = await enqueueExecuteTokenLaunch(
+        data.userId,
+        data.userChatId,
+        data.tokenAddress
+      );
+      
+      if (!executeResult.success) {
+        throw new Error(`Failed to enqueue execution phase: ${executeResult.message}`);
+      }
+      
+      await sendNotification(
+        data.userChatId,
+        `🛠️ **Preparation Complete!**\n\n✅ Platform fee collected\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token...**`,
+      );
+      
+    } catch (error: any) {
+      logger.error(
+        "[jobs-prepare-launch]: Error Occurred while preparing token launch",
+        error,
+      );
+      
+      // Fail loading state
+      await failLoadingState(loadingKey, error.message);
+      
+      throw error;
+    }
+  },
+  {
+    connection: redisClient,
+    concurrency: 5,
+    removeOnFail: {
+      count: 20,
+    },
+    removeOnComplete: {
+      count: 10,
+    },
+    lockDuration: 3 * 60 * 1000, // 3 minutes for preparation
+    lockRenewTime: 30 * 1000,
+  },
+);
+
+export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
+  executeLaunchQueue.name,
+  async (job) => {
+    const data = job.data;
+    const loadingKey = `${data.userChatId}-execute_launch-${data.tokenAddress}`;
+    
+    try {
+      logger.info("[jobs]: Execute Launch Job starting...");
+      logger.info("[jobs-execute-launch]: Job Data", data);
+      
+      // Update loading state - Phase 0: Starting execution
+      await updateLoadingState(loadingKey, 0);
+      
+      // Update loading state - Phase 1: Creating token
+      await updateLoadingState(loadingKey, 1);
+      
+      // Update loading state - Phase 2: Executing buys
+      await updateLoadingState(loadingKey, 2);
+      
+      await executeTokenLaunch(
+        data.tokenPrivateKey,
+        "", // funderWallet not needed for execution phase
+        data.devWallet,
+        data.buyerWallets,
+        [], // buyDistribution
+        data.tokenName,
+        data.tokenSymbol,
+        data.tokenMetadataUri,
+        data.buyAmount,
+        data.devBuy,
+        data.launchStage,
+      );
+      
+      // Update loading state - Phase 3: Finalizing
+      await updateLoadingState(loadingKey, 3);
+      
+      await updateTokenState(data.tokenAddress, TokenState.LAUNCHED, data.userId);
+      
+      // Complete loading state
+      await completeLoadingState(
+        loadingKey,
+        undefined,
+        `**Token:** ${data.tokenName} ($${data.tokenSymbol})\n**Address:** \`${data.tokenAddress}\``
+      );
+      
+      await sendLaunchSuccessNotification(
+        data.userChatId,
+        data.tokenAddress,
+        data.tokenName,
+        data.tokenSymbol,
+      );
+    } catch (error: any) {
+      logger.error(
+        "[jobs-execute-launch]: Error Occurred while executing token launch",
+        error,
+      );
+      
+      // Fail loading state
+      await failLoadingState(loadingKey, error.message);
+      
+      throw error;
+    }
+  },
+  {
+    connection: redisClient,
+    concurrency: 10,
+    removeOnFail: {
+      count: 20,
+    },
+    removeOnComplete: {
+      count: 10,
+    },
+    lockDuration: 3 * 60 * 1000, // 3 minutes for execution
+    lockRenewTime: 30 * 1000,
+  },
+);
+
 launchTokenWorker.on("ready", () => {
   logger.info("Token launch worker ready");
 });
@@ -289,4 +446,53 @@ sellWalletWorker.on("failed", async (job) => {
 });
 sellWalletWorker.on("closed", async () => {
   logger.info("Wallet Sell worker closed successfully");
+});
+
+prepareLaunchWorker.on("ready", () => {
+  logger.info("Prepare Launch worker ready");
+});
+prepareLaunchWorker.on("active", async () => {
+  logger.info("Prepare Launch worker active");
+});
+prepareLaunchWorker.on("error", async (error) => {
+  logger.error("Prepare Launch Worker Error", error);
+});
+prepareLaunchWorker.on("failed", async (job) => {
+  await updateTokenState(job!.data.tokenAddress, TokenState.LISTED, job!.data.userId);
+  
+  const token = job!.data;
+  await sendNotification(
+    job!.data.userChatId,
+    `❌ **Token preparation failed**\n\nToken: ${token.tokenName} ($${token.tokenSymbol})\n\n🔄 You can try again from your tokens list.`,
+  );
+});
+prepareLaunchWorker.on("closed", () => {
+  logger.info("Prepare Launch worker closed successfully");
+});
+
+executeLaunchWorker.on("ready", () => {
+  logger.info("Execute Launch worker ready");
+});
+executeLaunchWorker.on("active", async () => {
+  logger.info("Execute Launch worker active");
+});
+executeLaunchWorker.on("error", async (error) => {
+  logger.error("Execute Launch Worker Error", error);
+});
+executeLaunchWorker.on("failed", async (job) => {
+  await updateTokenState(job!.data.tokenAddress, TokenState.LISTED, job!.data.userId);
+  
+  // Handle pump address release on launch failure
+  await handleTokenLaunchFailure(job!.data.tokenAddress);
+  
+  const token = job!.data;
+  await sendLaunchFailureNotification(
+    job!.data.userChatId,
+    token.tokenAddress,
+    token.tokenName,
+    token.tokenSymbol,
+  );
+});
+executeLaunchWorker.on("closed", () => {
+  logger.info("Execute Launch worker closed successfully");
 });
