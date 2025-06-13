@@ -142,13 +142,15 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
 
     // Wait for retry or cancel
     const response = await conversation.waitFor("callback_query:data");
+    await response.answerCallbackQuery();
+    
     if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
-      await response.answerCallbackQuery();
-      // Restart the conversation
-      return launchTokenConversation(conversation, ctx, tokenAddress);
+      // Exit conversation and let user manually retry from tokens list
+      await sendMessage(response, "🔄 Please fund your dev wallet and try launching again from your tokens list.");
+      await conversation.halt();
+      return;
     } else {
-      await response.answerCallbackQuery();
-      await sendMessage(ctx, "Process cancelled.");
+      await sendMessage(response, "Process cancelled.");
       await conversation.halt();
       return;
     }
@@ -254,17 +256,15 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
 
     // Wait for retry or cancel
     const response = await conversation.waitFor("callback_query:data");
-    console.log("Received callback data:", response.callbackQuery?.data);
-    console.log("Expected retry data:", LaunchCallBackQueries.RETRY);
+    await response.answerCallbackQuery();
+    
     if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
-      await response.answerCallbackQuery();
-      console.log("Retry button clicked - restarting conversation");
-      // Restart the conversation with stored data
-      return launchTokenConversation(conversation, ctx, tokenAddress);
+      // Exit conversation and let user manually retry from tokens list
+      await sendMessage(response, "🔄 Please check your wallet balance and try launching again from your tokens list.");
+      await conversation.halt();
+      return;
     } else {
-      await response.answerCallbackQuery();
-      console.log("Cancel button clicked or unexpected data");
-      await sendMessage(ctx, "Process cancelled.");
+      await sendMessage(response, "Process cancelled.");
       await clearRetryData(user.id, "launch_token");
       await conversation.halt();
       return;
@@ -302,17 +302,15 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard }
 
     // Wait for retry or cancel
     const response = await conversation.waitFor("callback_query:data");
-    console.log("Received callback data:", response.callbackQuery?.data);
-    console.log("Expected retry data:", LaunchCallBackQueries.RETRY);
+    await response.answerCallbackQuery();
+    
     if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
-      await response.answerCallbackQuery();
-      console.log("Retry button clicked - restarting conversation");
-      // Restart the conversation with stored data
-      return launchTokenConversation(conversation, ctx, tokenAddress);
+      // Exit conversation and let user manually retry from tokens list
+      await sendMessage(response, "🔄 Please resolve the issues and try launching again from your tokens list.");
+      await conversation.halt();
+      return;
     } else {
-      await response.answerCallbackQuery();
-      console.log("Cancel button clicked or unexpected data");
-      await sendMessage(ctx, "Process cancelled.");
+      await sendMessage(response, "Process cancelled.");
       await clearRetryData(user.id, "launch_token");
       await conversation.halt();
       return;
