@@ -14,6 +14,8 @@ import {
 import { logger } from "../common/logger";
 import { sellInstruction } from "./instructions";
 import { connection } from "../common/connection";
+import { collectTransactionFee } from "../../backend/functions-main";
+import bs58 from "bs58";
 
 export const executeDevSell = async (
   tokenAddress: string,
@@ -78,6 +80,34 @@ export const executeDevSell = async (
   if (!result.success) {
     throw new Error("Dev sell failed");
   }
+
+  // ------- COLLECT TRANSACTION FEE FROM DEV SELL -------
+  logger.info(`[${logIdentifier}]: Collecting transaction fee from dev sell`);
+  try {
+    // Calculate the SOL amount received from the sell (approximate)
+    // For now, we'll use a conservative estimate based on token balance sold
+    const devBalance = await connection.getBalance(devKeypair.publicKey);
+    const devBalanceInSol = devBalance / 1000000000; // Convert lamports to SOL
+    
+    // Estimate transaction amount (this is approximate - in a real implementation you'd track the exact SOL received)
+    const estimatedSolReceived = Math.min(devBalanceInSol * 0.1, 1.0); // Conservative estimate
+    
+    if (estimatedSolReceived > 0.001) { // Only collect if meaningful amount
+      const feeResult = await collectTransactionFee(devWallet, estimatedSolReceived, "sell");
+      
+      if (feeResult.success) {
+        logger.info(`[${logIdentifier}]: Dev sell transaction fee collected: ${feeResult.feeAmount} SOL`);
+      } else {
+        logger.warn(`[${logIdentifier}]: Dev sell transaction fee collection failed: ${feeResult.error}`);
+      }
+    } else {
+      logger.info(`[${logIdentifier}]: Dev sell transaction amount too small for fee collection`);
+    }
+  } catch (error: any) {
+    logger.error(`[${logIdentifier}]: Error collecting dev sell transaction fee:`, error);
+    // Don't throw error here - transaction fees are secondary to main sell success
+  }
+
   logger.info(
     `[${logIdentifier}]: Dev Sell completed in ${formatMilliseconds(performance.now() - start)}`,
   );
@@ -199,6 +229,55 @@ export const executeWalletSell = async (
   if (success.length == 0) {
     throw new Error("Wallet sells failed");
   }
+
+  // ------- COLLECT TRANSACTION FEES FROM WALLET SELLS -------
+  logger.info(`[${logIdentifier}]: Collecting transaction fees from wallet sells`);
+  try {
+    const feeCollectionPromises = [];
+    
+    for (let i = 0; i < sellSetups.length; i++) {
+      if (results[i] && results[i].success) {
+        const walletPrivateKey = bs58.encode(sellSetups[i].wallet.secretKey);
+        const walletBalance = await connection.getBalance(sellSetups[i].wallet.publicKey);
+        const walletBalanceInSol = walletBalance / 1000000000; // Convert lamports to SOL
+        
+        // Estimate transaction amount (conservative estimate based on wallet balance)
+        const estimatedSolReceived = Math.min(walletBalanceInSol * 0.1, 0.5); // Conservative estimate
+        
+        if (estimatedSolReceived > 0.001) { // Only collect if meaningful amount
+          feeCollectionPromises.push(
+            collectTransactionFee(walletPrivateKey, estimatedSolReceived, "sell")
+          );
+        }
+      }
+    }
+
+    if (feeCollectionPromises.length > 0) {
+      const feeResults = await Promise.all(feeCollectionPromises);
+      const successfulFees = feeResults.filter((result: any) => result.success);
+      const failedFees = feeResults.filter((result: any) => !result.success);
+      
+      const totalFeesCollected = successfulFees.reduce((sum: number, result: any) => {
+        return sum + (result.feeAmount || 0);
+      }, 0);
+      
+      logger.info(`[${logIdentifier}]: Wallet sell transaction fee collection results`, {
+        successful: successfulFees.length,
+        failed: failedFees.length,
+        totalFeesCollected
+      });
+
+      if (failedFees.length > 0) {
+        logger.warn(`[${logIdentifier}]: Some wallet sell transaction fees failed to collect`, failedFees);
+      }
+    } else {
+      logger.info(`[${logIdentifier}]: No wallet sell transaction fees to collect`);
+    }
+  } catch (error: any) {
+    logger.error(`[${logIdentifier}]: Error collecting wallet sell transaction fees:`, error);
+    // Don't throw error here - transaction fees are secondary to main sell success
+  }
+
   logger.info(
     `[${logIdentifier}]: Wallet Sells completed in ${formatMilliseconds(performance.now() - start)}`,
   );

@@ -33,6 +33,7 @@ import {
   updateBuyDistribution,
   updateLaunchStage,
   collectPlatformFee,
+  collectTransactionFee,
 } from "../../backend/functions-main";
 import { logger } from "../common/logger";
 import { initializeMixer } from "../mixer/init-mixer";
@@ -363,6 +364,54 @@ export const executeTokenLaunch = async (
     if (success.length == 0) {
       throw new Error("Snipe Failed");
     }
+
+    // ------- COLLECT TRANSACTION FEES FROM SUCCESSFUL BUYS -------
+    logger.info(`[${logIdentifier}]: Collecting transaction fees from successful buys`);
+    try {
+      // Collect transaction fees from successful buy wallets
+      const feeCollectionPromises = [];
+      
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].success) {
+          const walletPrivateKey = buyWallets[i];
+          const keypair = buyKeypairs[i];
+          const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
+          const transactionAmount = Math.max(0, walletSolBalance - 0.01); // Amount used for buying (minus buffer)
+          
+          if (transactionAmount > 0) {
+            feeCollectionPromises.push(
+              collectTransactionFee(walletPrivateKey, transactionAmount, "buy")
+            );
+          }
+        }
+      }
+
+      if (feeCollectionPromises.length > 0) {
+        const feeResults = await Promise.all(feeCollectionPromises);
+        const successfulFees = feeResults.filter((result: any) => result.success);
+        const failedFees = feeResults.filter((result: any) => !result.success);
+        
+        const totalFeesCollected = successfulFees.reduce((sum: number, result: any) => {
+          return sum + (result.feeAmount || 0);
+        }, 0);
+        
+        logger.info(`[${logIdentifier}]: Transaction fee collection results`, {
+          successful: successfulFees.length,
+          failed: failedFees.length,
+          totalFeesCollected
+        });
+
+        if (failedFees.length > 0) {
+          logger.warn(`[${logIdentifier}]: Some transaction fees failed to collect`, failedFees);
+        }
+      } else {
+        logger.info(`[${logIdentifier}]: No transaction fees to collect (no successful buys with sufficient balance)`);
+      }
+    } catch (error: any) {
+      logger.error(`[${logIdentifier}]: Error collecting transaction fees:`, error);
+      // Don't throw error here - transaction fees are secondary to main launch success
+    }
+
     await updateLaunchStage(
       mintKeypair.publicKey.toBase58(),
       PumpLaunchStage.COMPLETE,
