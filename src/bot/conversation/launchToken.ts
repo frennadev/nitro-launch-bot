@@ -12,15 +12,20 @@ import {
   saveRetryData,
   getRetryData,
   clearRetryData,
+  calculateTotalLaunchCost,
+  getDefaultDevWallet,
+  getDevWallet,
 } from "../../backend/functions";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 import { decryptPrivateKey } from "../../backend/utils";
 import { CallBackQueries } from "../types";
+import { env } from "../../config";
 
 enum LaunchCallBackQueries {
-  CANCEL = "CANCEL_LAUNCH_PROCESS",
-  RETRY = "RETRY_LAUNCH_PROCESS",
+  CANCEL = "CANCEL_LAUNCH",
+  CONFIRM_LAUNCH = "CONFIRM_LAUNCH",
+  RETRY = "RETRY_LAUNCH",
 }
 
 const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", LaunchCallBackQueries.CANCEL);
@@ -66,6 +71,8 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   const existingRetryData = await getRetryData(user.id, "launch_token");
   const isRetry = existingRetryData !== null;
   
+  console.log("Launch Token - Retry check:", { isRetry, existingRetryData });
+
   // -------- VALIDATE TOKEN ----------
   const token = await getUserToken(user.id, tokenAddress);
   if (!token) {
@@ -115,6 +122,40 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     return;
   }
 
+  // -------- CHECK DEV WALLET BALANCE ----------
+  const devWalletAddress = await getDefaultDevWallet(String(user.id));
+  const devBalance = await getWalletBalance(devWalletAddress);
+  const minDevBalance = env.LAUNCH_FEE_SOL + 0.1; // Platform fee + buffer for token creation and dev buy
+
+  if (devBalance < minDevBalance) {
+    await sendMessage(ctx, `❌ <b>Insufficient dev wallet balance!</b>
+
+💰 <b>Required:</b> At least ${minDevBalance.toFixed(4)} SOL
+💳 <b>Available:</b> ${devBalance.toFixed(4)} SOL
+
+<b>Your dev wallet needs funding for:</b>
+• Platform fee: ${env.LAUNCH_FEE_SOL} SOL
+• Token creation & dev buy: ~0.1 SOL
+
+<b>Please fund your dev wallet:</b>
+<code>${devWalletAddress}</code>
+
+<i>💡 Tap the address above to copy it</i>`, { parse_mode: "HTML", reply_markup: retryKeyboard });
+
+    // Wait for retry or cancel
+    const response = await conversation.waitFor("callback_query:data");
+    if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
+      await response.answerCallbackQuery();
+      // Restart the conversation
+      return launchTokenConversation(conversation, ctx, tokenAddress);
+    } else {
+      await response.answerCallbackQuery();
+      await sendMessage(ctx, "Process cancelled.");
+      await conversation.halt();
+      return;
+    }
+  }
+
   // -------- CHECK FUNDING WALLET BALANCE ----------
   const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
   await sendMessage(ctx, `💳 Using funding wallet: ${fundingWallet.publicKey.slice(0, 6)}...${fundingWallet.publicKey.slice(-4)}\n💰 Balance: ${fundingBalance.toFixed(4)} SOL\n👥 Using ${buyerWallets.length} buyer wallets`);
@@ -128,60 +169,87 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     devBuy = existingRetryData.devBuy;
     await sendMessage(ctx, `🔄 <b>Retrying with previous values:</b>
 • <b>Buy Amount:</b> ${buyAmount} SOL
-• <b>Dev Buy:</b> ${devBuy} SOL`, { parse_mode: "HTML" });
+• <b>Dev Buy:</b> ${devBuy} SOL
+• <b>Platform Fee:</b> ${env.LAUNCH_FEE_SOL} SOL (from dev wallet)`, { parse_mode: "HTML" });
     
     // Clear retry data after use
     await clearRetryData(user.id, "launch_token");
   } else {
-    // -------- REQUEST & VALIDATE BUY AMOUNT ------
-    let isValidAmount = false;
-    while (!isValidAmount) {
-      const updatedCtx = await waitForInputOrCancel(conversation, ctx, "Enter the amount in SOL to buy for all wallets:");
-      if (!updatedCtx) return;
-      const parsed = parseFloat(updatedCtx?.message!.text);
-      if (isNaN(parsed) || parsed <= 0) {
-        await sendMessage(ctx, "Invalid buyAmount. Please re-send:");
-      } else {
-        buyAmount = parsed;
-        isValidAmount = true;
+    // -------- GET BUY AMOUNT --------
+    await sendMessage(ctx, "💰 Enter the total SOL amount to buy tokens with (e.g., 1.5):", { reply_markup: cancelKeyboard });
+
+    while (true) {
+      const buyAmountCtx = await conversation.waitFor(["message:text", "callback_query:data"]);
+      
+      if (buyAmountCtx.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+        await buyAmountCtx.answerCallbackQuery();
+        await sendMessage(ctx, "Launch cancelled.");
+        return conversation.halt();
+      }
+      
+      if (buyAmountCtx.message?.text) {
+        const parsed = parseFloat(buyAmountCtx.message.text);
+        if (isNaN(parsed) || parsed <= 0) {
+          await sendMessage(ctx, "❌ Invalid amount. Please enter a positive number:");
+        } else if (parsed > 50) {
+          await sendMessage(ctx, "⚠️ Amount seems very high. Please enter a reasonable amount (0.1-50 SOL):");
+        } else {
+          buyAmount = parsed;
+          break;
+        }
       }
     }
 
-    // -------- REQUEST & VALIDATE DEV BUY --------
-    let isValidDevAmount = false;
-    while (!isValidDevAmount) {
-      const updatedCtx = await waitForInputOrCancel(
-        conversation,
-        ctx,
-        "Enter amount in SOL to buy from dev wallet (enter 0 to skip):"
-      );
-      if (!updatedCtx) return;
-      const parsed = parseFloat(updatedCtx?.message!.text);
-      if (isNaN(parsed) || parsed < 0) {
-        await sendMessage(ctx, "Invalid devBuy. Please re-send:");
-      } else {
-        devBuy = parsed;
-        isValidDevAmount = true;
+    // -------- GET DEV BUY AMOUNT --------
+    await sendMessage(ctx, `💎 Enter SOL amount for dev to buy (0 to skip, recommended: 10-20% of buy amount = ${(buyAmount * 0.15).toFixed(3)} SOL):`, { reply_markup: cancelKeyboard });
+
+    while (true) {
+      const devBuyCtx = await conversation.waitFor(["message:text", "callback_query:data"]);
+      
+      if (devBuyCtx.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+        await devBuyCtx.answerCallbackQuery();
+        await sendMessage(ctx, "Launch cancelled.");
+        return conversation.halt();
+      }
+      
+      if (devBuyCtx.message?.text) {
+        const parsed = parseFloat(devBuyCtx.message.text);
+        if (isNaN(parsed) || parsed < 0) {
+          await sendMessage(ctx, "❌ Invalid amount. Please enter 0 or a positive number:");
+        } else if (parsed > buyAmount) {
+          await sendMessage(ctx, "⚠️ Dev buy amount should not exceed total buy amount. Please enter a smaller amount:");
+        } else {
+          devBuy = parsed;
+          break;
+        }
       }
     }
 
-    // Store the input for potential retry
-    // await saveRetryData(user.id, "launch_token", { buyAmount, devBuy }); // Fixed - using correct call below
-    // Store the input for potential retry
-    await saveRetryData(user.id, ctx.chat!.id!.toString(), "launch_token", { 
-      tokenAddress, 
-      buyAmount, 
-      devBuy 
+    // Store retry data for potential retry
+    await saveRetryData(user.id, ctx.chat!.id!.toString(), "launch_token", {
+      tokenAddress,
+      buyAmount,
+      devBuy
     });
   }
 
-  // -------- CHECK IF FUNDING WALLET HAS SUFFICIENT BALANCE ----------
-  const requiredAmount = buyAmount + devBuy + (buyerWallets.length * 0.05) + 0.2; // Buy amount + dev buy + fees + buffer
-  if (fundingBalance < requiredAmount) {
+  // -------- CALCULATE TOTAL COSTS --------
+  const costBreakdown = calculateTotalLaunchCost(buyAmount, devBuy, buyerWallets.length, true);
+  const requiredFundingAmount = costBreakdown.totalCost - env.LAUNCH_FEE_SOL; // Platform fee comes from dev wallet
+
+  // Check funding wallet balance
+  if (fundingBalance < requiredFundingAmount) {
     await sendMessage(ctx, `❌ <b>Insufficient funding wallet balance!</b>
 
-💰 <b>Required:</b> ~${requiredAmount.toFixed(4)} SOL
-💳 <b>Available:</b> ${fundingBalance.toFixed(4)} SOL
+💰 <b>Cost Breakdown:</b>
+• Buy Amount: ${costBreakdown.breakdown.buyAmount} SOL
+• Dev Buy: ${costBreakdown.breakdown.devBuy} SOL  
+• Wallet Fees: ${costBreakdown.breakdown.walletFees} SOL
+• Buffer: ${costBreakdown.breakdown.buffer} SOL
+• <b>Platform Fee: ${costBreakdown.breakdown.platformFee} SOL</b> (from dev wallet)
+
+<b>Funding Wallet Required:</b> ${requiredFundingAmount.toFixed(4)} SOL
+<b>Funding Wallet Available:</b> ${fundingBalance.toFixed(4)} SOL
 
 <b>Please fund your wallet:</b>
 <code>${fundingWallet.publicKey}</code>

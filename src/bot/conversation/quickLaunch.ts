@@ -15,6 +15,7 @@ import {
   saveRetryData,
   getRetryData,
   clearRetryData,
+  calculateTotalLaunchCost,
 } from "../../backend/functions";
 import { CallBackQueries } from "../types";
 import { env } from "../../config";
@@ -87,7 +88,7 @@ const quickLaunchConversation = async (conversation: Conversation, ctx: Context)
 
   // Check if this is a retry attempt
   const existingRetryData = await getRetryData(user.id, "quick_launch");
-  const isRetry = existingRetryData !== null;
+  const isRetry = !!existingRetryData;
 
   let name: string, symbol: string, description: string, fileData: ArrayBuffer;
   let totalBuyAmount: number, devBuy: number, walletsNeeded: number;
@@ -116,15 +117,14 @@ Proceeding to wallet setup...`, { parse_mode: "HTML" });
     await clearRetryData(user.id, "quick_launch");
   } else {
     // Original input collection flow
-    await sendMessage(ctx, `🚀 <b>Quick Launch - Create & Launch Token in Minutes!</b>
+    await sendMessage(ctx, `🚀 <b>Quick Launch - Create & Launch Token</b>
 
-This guided process will help you:
-• Create your token with smart defaults
-• Set up wallets automatically 
-• Launch with optimal settings
-• Get your token live on Pump.fun
+This will create a new token and launch it immediately!
 
-Let's get started! 🎯`, { parse_mode: "HTML", reply_markup: cancelKeyboard });
+💰 <b>Platform Fee:</b> ${env.LAUNCH_FEE_SOL} SOL (deducted from dev wallet)
+<i>💡 The platform fee helps maintain and improve our services!</i>
+
+Let's get started! 🎯`, { parse_mode: "HTML" });
 
     // --------- STEP 1: TOKEN DETAILS ---------
     await sendMessage(ctx, `<b>Step 1/6: Token Details</b> 📝
@@ -358,15 +358,24 @@ Setting up your wallets automatically...`, { parse_mode: "HTML" });
   const devBalance = await getWalletBalance(devWalletAddress);
   const fundingBalance = await getWalletBalance(fundingWallet!.publicKey);
   
-  const devRequired = devBuy > 0 ? Math.max(devBuy + 0.1, 0.1) : 0.1; // Min 0.1 SOL for dev wallet
-  const fundingRequired = totalBuyAmount + (walletsNeeded * 0.05) + 0.2; // Buy amount + fees + buffer
+  // Calculate costs including platform fee
+  const costBreakdown = calculateTotalLaunchCost(totalBuyAmount, devBuy, walletsNeeded, true);
+  const devRequired = Math.max(devBuy + env.LAUNCH_FEE_SOL + 0.1, env.LAUNCH_FEE_SOL + 0.1); // Dev buy + platform fee + buffer
+  const fundingRequired = costBreakdown.totalCost - env.LAUNCH_FEE_SOL; // Everything except platform fee
   
-  await sendMessage(ctx, `💰 <b>Balance Check:</b>
+  await sendMessage(ctx, `💰 <b>Cost Breakdown:</b>
 
-<b>Dev Wallet:</b> ${devBalance.toFixed(4)} SOL (need: ${devRequired.toFixed(4)} SOL)
-<b>Funding Wallet:</b> ${fundingBalance.toFixed(4)} SOL (need: ${fundingRequired.toFixed(4)} SOL)
+<b>💳 Dev Wallet:</b> ${devBalance.toFixed(4)} SOL (need: ${devRequired.toFixed(4)} SOL)
+• Platform Fee: ${env.LAUNCH_FEE_SOL} SOL
+• Dev Buy: ${devBuy} SOL
+• Token Creation: ~0.1 SOL
 
-${devBalance < devRequired || fundingBalance < fundingRequired ? '⚠️ <b>Funding needed!</b>' : '✅ <b>Sufficient funds!</b>'}`, 
+<b>💰 Funding Wallet:</b> ${fundingBalance.toFixed(4)} SOL (need: ${fundingRequired.toFixed(4)} SOL)
+• Buy Orders: ${totalBuyAmount} SOL
+• Transaction Fees: ${costBreakdown.breakdown.walletFees} SOL
+• Buffer: ${costBreakdown.breakdown.buffer} SOL
+
+${devBalance < devRequired || fundingBalance < fundingRequired ? '⚠️ <b>Funding needed!</b>' : '✅ <b>All wallets funded!</b>'}`, 
     { parse_mode: "HTML" }
   );
 
@@ -379,8 +388,12 @@ ${devBalance < devRequired || fundingBalance < fundingRequired ? '⚠️ <b>Fund
 
     await sendMessage(ctx, `💳 <b>Fund Your Dev Wallet</b>
 
-Your dev wallet needs more SOL. Please send <b>${devRequired.toFixed(4)} SOL</b> to:
+Your dev wallet needs more SOL for:
+• <b>Platform Fee:</b> ${env.LAUNCH_FEE_SOL} SOL
+• <b>Dev Buy:</b> ${devBuy} SOL  
+• <b>Token Creation:</b> ~0.1 SOL
 
+<b>Please send ${devRequired.toFixed(4)} SOL to:</b>
 <code>${devWalletAddress}</code>
 
 <i>💡 Tap the address above to copy it</i>
@@ -529,13 +542,15 @@ Click "I've funded it" when done:`,
 • <b>Token:</b> ${name} (${symbol})
 • <b>Total Buy Amount:</b> ${totalBuyAmount} SOL
 • <b>Dev Buy:</b> ${devBuy > 0 ? `${devBuy} SOL` : 'None'}
-• <b>Total Cost:</b> ~${(totalBuyAmount + devBuy + (walletsNeeded * 0.05) + 0.2).toFixed(4)} SOL
+• <b>Platform Fee:</b> ${env.LAUNCH_FEE_SOL} SOL
+• <b>Total Cost:</b> ~${costBreakdown.totalCost.toFixed(4)} SOL
 
 This will:
-1. Create your token on Pump.fun
-2. Launch it immediately  
-3. Execute buy orders from ${walletsNeeded} wallet${walletsNeeded > 1 ? 's' : ''} with random amounts
-${devBuy > 0 ? '4. Execute dev buy order' : ''}
+1. Collect ${env.LAUNCH_FEE_SOL} SOL platform fee from dev wallet
+2. Create your token on Pump.fun
+3. Launch it immediately  
+4. Execute buy orders from ${walletsNeeded} wallet${walletsNeeded > 1 ? 's' : ''} with random amounts
+${devBuy > 0 ? '5. Execute dev buy order' : ''}
 
 <b>Ready to proceed?</b>`, 
     { 

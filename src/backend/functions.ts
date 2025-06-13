@@ -20,6 +20,8 @@ import {
 } from "../jobs/queues";
 import { logger } from "../blockchain/common/logger";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
+import { sendAndConfirmTransaction } from "@solana/web3.js";
 
 export const getUser = async (telegramId: String) => {
   const user = await UserModel.findOne({
@@ -1193,4 +1195,93 @@ export const clearAllRetryData = async (userId: string) => {
   await RetryDataModel.deleteMany({
     user: userId,
   });
+};
+
+// ========== FEE COLLECTION FUNCTIONS ==========
+
+export const collectPlatformFee = async (
+  devWalletPrivateKey: string,
+  feeAmountSol: number = 0.05
+): Promise<{ success: boolean; signature?: string; error?: string }> => {
+  try {
+    const { env } = await import("../config");
+    
+    if (!env.PLATFORM_FEE_WALLET) {
+      logger.warn("Platform fee wallet not configured, skipping fee collection");
+      return { success: true }; // Skip fee collection if not configured
+    }
+
+    const devKeypair = secretKeyToKeypair(devWalletPrivateKey);
+    const platformFeeWallet = new PublicKey(env.PLATFORM_FEE_WALLET);
+    const feeAmountLamports = Math.floor(feeAmountSol * LAMPORTS_PER_SOL);
+
+    // Check if dev wallet has sufficient balance for the fee
+    const devBalance = await connection.getBalance(devKeypair.publicKey);
+    const estimatedTxFee = 5000; // ~5000 lamports for transaction fee
+    const totalRequired = feeAmountLamports + estimatedTxFee;
+
+    if (devBalance < totalRequired) {
+      return {
+        success: false,
+        error: `Insufficient balance for platform fee. Required: ${(totalRequired / LAMPORTS_PER_SOL).toFixed(6)} SOL, Available: ${(devBalance / LAMPORTS_PER_SOL).toFixed(6)} SOL`
+      };
+    }
+
+    // Create fee transfer transaction
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: devKeypair.publicKey,
+        toPubkey: platformFeeWallet,
+        lamports: feeAmountLamports,
+      })
+    );
+
+    // Send transaction
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      transaction,
+      [devKeypair],
+      { commitment: "confirmed" }
+    );
+
+    logger.info(`Platform fee collected: ${feeAmountSol} SOL from ${devKeypair.publicKey.toBase58()} to ${platformFeeWallet.toBase58()}`);
+    
+    return { success: true, signature };
+  } catch (error: any) {
+    logger.error("Error collecting platform fee:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+export const calculateTotalLaunchCost = (
+  buyAmount: number,
+  devBuy: number,
+  walletCount: number,
+  includePlatformFee: boolean = true
+): { 
+  totalCost: number;
+  breakdown: {
+    buyAmount: number;
+    devBuy: number;
+    walletFees: number;
+    platformFee: number;
+    buffer: number;
+  }
+} => {
+  const { env } = require("../config");
+  const platformFee = includePlatformFee ? env.LAUNCH_FEE_SOL : 0;
+  const walletFees = walletCount * 0.05; // 0.05 SOL per wallet for fees
+  const buffer = 0.1; // 0.1 SOL buffer for unexpected fees
+  
+  const breakdown = {
+    buyAmount,
+    devBuy,
+    walletFees,
+    platformFee,
+    buffer
+  };
+  
+  const totalCost = buyAmount + devBuy + walletFees + platformFee + buffer;
+  
+  return { totalCost, breakdown };
 };

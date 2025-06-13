@@ -1,5 +1,5 @@
 import { config } from "dotenv";
-import { cleanEnv, makeValidator, str } from "envalid";
+import { cleanEnv, makeValidator, str, num } from "envalid";
 
 config();
 
@@ -22,4 +22,8 @@ export const env = cleanEnv(process.env, {
   PINATA_API_URL: validStr(),
   HELIUS_RPC_URL: validStr(),
   ADMIN_IDS: str({ default: "" }),
+  
+  // Platform Fee Configuration
+  PLATFORM_FEE_WALLET: str({ default: "" }), // Platform fee collection wallet
+  LAUNCH_FEE_SOL: num({ default: 0.05 }), // Fee for token launches (0.05 SOL)
 });

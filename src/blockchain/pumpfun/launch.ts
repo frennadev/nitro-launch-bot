@@ -32,6 +32,7 @@ import { PumpLaunchStage, type TransactionSetup } from "../common/types";
 import {
   updateBuyDistribution,
   updateLaunchStage,
+  collectPlatformFee,
 } from "../../backend/functions";
 import { logger } from "../common/logger";
 import { initializeMixer } from "../mixer/init-mixer";
@@ -75,7 +76,20 @@ export const executeTokenLaunch = async (
     token: mintKeypair.publicKey.toBase58(),
   });
 
+  // ------- PLATFORM FEE COLLECTION -------
   if (launchStage == PumpLaunchStage.START) {
+    logger.info(`[${logIdentifier}]: Collecting platform fee`);
+    
+    const feeResult = await collectPlatformFee(devWallet);
+    if (!feeResult.success) {
+      logger.error(`[${logIdentifier}]: Platform fee collection failed: ${feeResult.error}`);
+      throw new Error(`Platform fee collection failed: ${feeResult.error}`);
+    }
+    
+    if (feeResult.signature) {
+      logger.info(`[${logIdentifier}]: Platform fee collected successfully. Signature: ${feeResult.signature}`);
+    }
+
     await updateLaunchStage(
       mintKeypair.publicKey.toBase58(),
       PumpLaunchStage.FUNDING,
