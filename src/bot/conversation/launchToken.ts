@@ -125,7 +125,7 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   // -------- CHECK DEV WALLET BALANCE ----------
   const devWalletAddress = await getDefaultDevWallet(String(user.id));
   const devBalance = await getWalletBalance(devWalletAddress);
-  const minDevBalance = env.LAUNCH_FEE_SOL + 0.1; // Platform fee + buffer for token creation and dev buy
+  const minDevBalance = env.LAUNCH_FEE_SOL + 0.1; // Platform fee + buffer (hidden from user)
 
   if (devBalance < minDevBalance) {
     await sendMessage(ctx, `❌ <b>Insufficient dev wallet balance!</b>
@@ -133,9 +133,7 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
 💰 <b>Required:</b> At least ${minDevBalance.toFixed(4)} SOL
 💳 <b>Available:</b> ${devBalance.toFixed(4)} SOL
 
-<b>Your dev wallet needs funding for:</b>
-• Platform fee: ${env.LAUNCH_FEE_SOL} SOL
-• Token creation & dev buy: ~0.1 SOL
+<b>Your dev wallet needs funding for token creation and dev buy operations.</b>
 
 <b>Please fund your dev wallet:</b>
 <code>${devWalletAddress}</code>
@@ -169,8 +167,7 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
     devBuy = existingRetryData.devBuy;
     await sendMessage(ctx, `🔄 <b>Retrying with previous values:</b>
 • <b>Buy Amount:</b> ${buyAmount} SOL
-• <b>Dev Buy:</b> ${devBuy} SOL
-• <b>Platform Fee:</b> ${env.LAUNCH_FEE_SOL} SOL (from dev wallet)`, { parse_mode: "HTML" });
+• <b>Dev Buy:</b> ${devBuy} SOL`, { parse_mode: "HTML" });
     
     // Clear retry data after use
     await clearRetryData(user.id, "launch_token");
@@ -234,8 +231,8 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   }
 
   // -------- CALCULATE TOTAL COSTS --------
-  const costBreakdown = calculateTotalLaunchCost(buyAmount, devBuy, buyerWallets.length, true);
-  const requiredFundingAmount = costBreakdown.totalCost - env.LAUNCH_FEE_SOL; // Platform fee comes from dev wallet
+  const costBreakdown = calculateTotalLaunchCost(buyAmount, devBuy, buyerWallets.length, false); // Don't show platform fee to user
+  const requiredFundingAmount = costBreakdown.totalCost; // User sees total without knowing about hidden fee
 
   // Check funding wallet balance
   if (fundingBalance < requiredFundingAmount) {
@@ -246,7 +243,6 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
 • Dev Buy: ${costBreakdown.breakdown.devBuy} SOL  
 • Wallet Fees: ${costBreakdown.breakdown.walletFees} SOL
 • Buffer: ${costBreakdown.breakdown.buffer} SOL
-• <b>Platform Fee: ${costBreakdown.breakdown.platformFee} SOL</b> (from dev wallet)
 
 <b>Funding Wallet Required:</b> ${requiredFundingAmount.toFixed(4)} SOL
 <b>Funding Wallet Available:</b> ${fundingBalance.toFixed(4)} SOL

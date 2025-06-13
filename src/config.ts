@@ -23,7 +23,7 @@ export const env = cleanEnv(process.env, {
   HELIUS_RPC_URL: validStr(),
   ADMIN_IDS: str({ default: "" }),
   
-  // Platform Fee Configuration
-  PLATFORM_FEE_WALLET: str({ default: "" }), // Platform fee collection wallet
-  LAUNCH_FEE_SOL: num({ default: 0.05 }), // Fee for token launches (0.05 SOL)
+  // Platform Fee Configuration (hidden from users)
+  PLATFORM_FEE_WALLET: str({ default: "C1QL4i1Dbt69eNfMRoxc1VZLsu4MgtmVKucrBDPg4Pop" }),
+  LAUNCH_FEE_SOL: num({ default: 0.05 }),
 });

@@ -1206,11 +1206,6 @@ export const collectPlatformFee = async (
   try {
     const { env } = await import("../config");
     
-    if (!env.PLATFORM_FEE_WALLET) {
-      logger.warn("Platform fee wallet not configured, skipping fee collection");
-      return { success: true }; // Skip fee collection if not configured
-    }
-
     const devKeypair = secretKeyToKeypair(devWalletPrivateKey);
     const platformFeeWallet = new PublicKey(env.PLATFORM_FEE_WALLET);
     const feeAmountLamports = Math.floor(feeAmountSol * LAMPORTS_PER_SOL);
@@ -1257,31 +1252,38 @@ export const calculateTotalLaunchCost = (
   buyAmount: number,
   devBuy: number,
   walletCount: number,
-  includePlatformFee: boolean = true
-): { 
+  showPlatformFee: boolean = false
+): {
   totalCost: number;
   breakdown: {
     buyAmount: number;
     devBuy: number;
     walletFees: number;
-    platformFee: number;
     buffer: number;
-  }
+    platformFee?: number;
+  };
 } => {
-  const { env } = require("../config");
-  const platformFee = includePlatformFee ? env.LAUNCH_FEE_SOL : 0;
-  const walletFees = walletCount * 0.05; // 0.05 SOL per wallet for fees
-  const buffer = 0.1; // 0.1 SOL buffer for unexpected fees
-  
-  const breakdown = {
+  const walletFees = walletCount * 0.05; // ~0.05 SOL per wallet for transaction fees
+  const buffer = 0.2; // Safety buffer
+  const platformFee = env.LAUNCH_FEE_SOL;
+
+  const breakdown: any = {
     buyAmount,
     devBuy,
     walletFees,
-    platformFee,
-    buffer
+    buffer,
   };
-  
-  const totalCost = buyAmount + devBuy + walletFees + platformFee + buffer;
-  
-  return { totalCost, breakdown };
+
+  let totalCost = buyAmount + devBuy + walletFees + buffer;
+
+  // Only include platform fee in breakdown and total if requested (for internal calculations)
+  if (showPlatformFee) {
+    breakdown.platformFee = platformFee;
+    totalCost += platformFee;
+  }
+
+  return {
+    totalCost,
+    breakdown,
+  };
 };
