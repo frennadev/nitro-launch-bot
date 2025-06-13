@@ -224,7 +224,6 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
 });
 
 bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
-export default bot;
 
 bot.callbackQuery(CallBackQueries.WALLET_CONFIG, async (ctx) => {
   await ctx.conversation.enter("walletConfigConversation");
@@ -260,3 +259,18 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_BUYER_WALLETS, async (ctx) => {
   await ctx.conversation.enter("withdrawBuyerWalletsConversation");
   await ctx.answerCallbackQuery();
 });
+
+// Retry callback handlers
+bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  // Extract token address from the current context if available
+  // For now, we'll need to handle this within the conversation itself
+  await ctx.reply("🔄 Retrying launch...");
+});
+
+bot.callbackQuery(CallBackQueries.RETRY_QUICK_LAUNCH, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.conversation.enter("quickLaunchConversation");
+});
+
+export default bot;

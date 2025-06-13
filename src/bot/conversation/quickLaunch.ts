@@ -412,19 +412,22 @@ Click "I've funded it" when done:`,
             { parse_mode: "HTML", reply_markup: retryFundDevKeyboard }
           );
 
-          // Handle retry option in the insufficient funds case
-          const retryResponse = await conversation.waitFor("callback_query:data");
-          if (retryResponse.callbackQuery?.data === QuickLaunchCallbacks.RETRY) {
-            await retryResponse.answerCallbackQuery();
+          // Wait for retry or cancel
+          const response = await conversation.waitFor("callback_query:data");
+          console.log("Quick Launch Funding - Received callback data:", response.callbackQuery?.data);
+          console.log("Quick Launch Funding - Expected retry data:", QuickLaunchCallbacks.RETRY);
+          if (response.callbackQuery?.data === QuickLaunchCallbacks.RETRY) {
+            await response.answerCallbackQuery();
+            console.log("Quick Launch Funding - Retry button clicked - restarting conversation");
             // Restart the conversation with stored data
             return quickLaunchConversation(conversation, ctx);
-          } else if (retryResponse.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
-            await retryResponse.answerCallbackQuery();
+          } else if (response.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
+            await response.answerCallbackQuery();
+            console.log("Quick Launch Funding - Cancel button clicked");
             await sendMessage(ctx, "Quick launch cancelled.");
             quickLaunchRetryData = null; // Clear retry data
             return conversation.halt();
           }
-          // If "I've funded it" was clicked, continue the loop
         }
       }
     }
@@ -487,19 +490,22 @@ Click "I've funded it" when done:`,
             { parse_mode: "HTML", reply_markup: retryFundFundingKeyboard }
           );
 
-          // Handle retry option in the insufficient funds case
-          const retryResponse = await conversation.waitFor("callback_query:data");
-          if (retryResponse.callbackQuery?.data === QuickLaunchCallbacks.RETRY) {
-            await retryResponse.answerCallbackQuery();
+          // Wait for retry or cancel
+          const response = await conversation.waitFor("callback_query:data");
+          console.log("Quick Launch Funding - Received callback data:", response.callbackQuery?.data);
+          console.log("Quick Launch Funding - Expected retry data:", QuickLaunchCallbacks.RETRY);
+          if (response.callbackQuery?.data === QuickLaunchCallbacks.RETRY) {
+            await response.answerCallbackQuery();
+            console.log("Quick Launch Funding - Retry button clicked - restarting conversation");
             // Restart the conversation with stored data
             return quickLaunchConversation(conversation, ctx);
-          } else if (retryResponse.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
-            await retryResponse.answerCallbackQuery();
+          } else if (response.callbackQuery?.data === QuickLaunchCallbacks.CANCEL) {
+            await response.answerCallbackQuery();
+            console.log("Quick Launch Funding - Cancel button clicked");
             await sendMessage(ctx, "Quick launch cancelled.");
             quickLaunchRetryData = null; // Clear retry data
             return conversation.halt();
           }
-          // If "I've funded it" was clicked, continue the loop
         }
       }
     }
@@ -581,12 +587,16 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard });
 
         // Wait for retry or cancel
         const response = await conversation.waitFor("callback_query:data");
+        console.log("Quick Launch Pre-launch - Received callback data:", response.callbackQuery?.data);
+        console.log("Quick Launch Pre-launch - Expected retry data:", QuickLaunchCallbacks.RETRY);
         if (response.callbackQuery?.data === QuickLaunchCallbacks.RETRY) {
           await response.answerCallbackQuery();
+          console.log("Quick Launch Pre-launch - Retry button clicked - restarting conversation");
           // Restart the conversation with stored data
           return quickLaunchConversation(conversation, ctx);
         } else {
           await response.answerCallbackQuery();
+          console.log("Quick Launch Pre-launch - Cancel button clicked");
           await sendMessage(ctx, "Quick launch cancelled.");
           quickLaunchRetryData = null; // Clear retry data
           return conversation.halt();
