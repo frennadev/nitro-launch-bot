@@ -13,17 +13,22 @@ export enum CallBackQueries {
   WALLET_CONFIG = "wallet_config",
   BACK = "back",
   MENU = "menu",
+
   CHANGE_FUNDING_WALLET = "change_funding_wallet",
   CANCEL_FUNDING_WALLET = "cancel_funding_wallet",
+
   DELETE_DEV = "delete_dev",
   DEFAULT_DEV = "default_dev",
   SELECT_DEV = "select_dev",
+
   CHANGE_DEV_WALLET = "change_dev_wallet",
   ADD_DEV_WALLET = "add_dev_wallet",
   GENERATE_DEV_WALLET = "generate_dev_wallet",
   IMPORT_DEV_WALLET = "import_dev_wallet",
   CANCEL_DEV_WALLET = "cancel_dev_wallet",
+
   GENERATE_FUNDING_WALLET = "generate_funding_wallet",
+
   MANAGE_BUYER_WALLETS = "manage_buyer_wallets",
   ADD_BUYER_WALLET = "add_buyer_wallet",
   GENERATE_BUYER_WALLET = "generate_buyer_wallet",
@@ -40,4 +45,13 @@ export enum CallBackQueries {
   // Retry options
   RETRY_LAUNCH = "retry_launch",
   RETRY_QUICK_LAUNCH = "retry_quick_launch",
+
+  WITHDRAW_SOL = "withdraw_sol",
+  WITHDRAW_TOKEN = "withdraw_token",
+
+  // ←–– Newly added callbacks for pagination and generic cancel
+  PREV_TOKEN = "prev_token",
+  NEXT_TOKEN = "next_token",
+  NOOP = "noop",
+  CANCEL = "cancel",
 }

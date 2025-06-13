@@ -6,6 +6,7 @@ import * as crypto from "crypto";
 import { env } from "../config";
 import { ENCRYPTION_ALGORITHM, ENCRYPTION_IV_LENGTH } from "./constants";
 import axios from "axios";
+import { TokenModel, UserModel } from "./models";
 
 export function encryptPrivateKey(privateKey: string): string {
   const SECRET_KEY = crypto.scryptSync(env.ENCRYPTION_SECRET, "salt", ENCRYPTION_IV_LENGTH * 2);

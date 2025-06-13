@@ -1,7 +1,15 @@
 import { Bot, InlineKeyboard, type Context } from "grammy";
 import { conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
 import { env } from "../config";
-import { createUser, getDevWallet, getDefaultDevWallet, getTokensForUser, getUser, getOrCreateFundingWallet, getPumpAddressStats } from "../backend/functions";
+import {
+  createUser,
+  getDevWallet,
+  getDefaultDevWallet,
+  getTokensForUser,
+  getUser,
+  getOrCreateFundingWallet,
+  getPumpAddressStats,
+} from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
@@ -16,6 +24,7 @@ import { sendMessage } from "../backend/sender";
 import manageDevWalletsConversation from "./conversation/devWallets";
 import manageBuyerWalletsConversation from "./conversation/buyerWallets";
 import { withdrawDevWalletConversation, withdrawBuyerWalletsConversation } from "./conversation/withdrawal";
+import viewTokensConversation from "./conversation/viewTokenConversation";
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
@@ -32,6 +41,7 @@ bot.use(createConversation(manageDevWalletsConversation));
 bot.use(createConversation(manageBuyerWalletsConversation));
 bot.use(createConversation(withdrawDevWalletConversation));
 bot.use(createConversation(withdrawBuyerWalletsConversation));
+bot.use(createConversation(viewTokensConversation));
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
@@ -40,10 +50,10 @@ bot.command("start", async (ctx) => {
   if (isFirstTime) {
     user = await createUser(ctx.chat.first_name, ctx.chat.last_name, ctx.chat.username!, ctx.chat.id.toString());
   }
-  
+
   // Auto-create funding wallet for all users
   await getOrCreateFundingWallet(String(user?.id));
-  
+
   const devWallet = await getDefaultDevWallet(String(user?.id));
   const welcomeMsg = `
 👋 *Welcome to Nitro Bot*
@@ -79,10 +89,10 @@ bot.command("menu", async (ctx) => {
     await ctx.reply("Unrecognized user ❌");
     return;
   }
-  
+
   // Auto-create funding wallet for all users
   await getOrCreateFundingWallet(String(user?.id));
-  
+
   const devWallet = await getDefaultDevWallet(String(user?.id));
   const welcomeMsg = `
 👋 *Welcome to Nitro Bot*
@@ -114,16 +124,16 @@ To proceed, you can choose any of the actions below ⬇️
 
 bot.command("admin", async (ctx) => {
   // Simple admin check - you can enhance this with proper admin user IDs
-  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(',').map((id: string) => parseInt(id)) : [];
-  
+  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
+
   if (!adminIds.includes(ctx.from!.id)) {
     await ctx.reply("❌ Access denied. Admin only command.");
     return;
   }
-  
+
   try {
     const stats = await getPumpAddressStats();
-    
+
     const message = `
 🔧 *Admin Panel - Pump Address Statistics*
 
@@ -133,7 +143,7 @@ bot.command("admin", async (ctx) => {
 • Available Addresses: \`${stats.available}\`
 • Usage: \`${stats.usagePercentage}%\`
 
-${stats.available < 100 ? '⚠️ *Warning: Low address pool\\!*' : '✅ *Address pool healthy*'}
+${stats.available < 100 ? "⚠️ *Warning: Low address pool\\!*" : "✅ *Address pool healthy*"}
 `;
 
     await ctx.reply(message, { parse_mode: "MarkdownV2" });
@@ -149,32 +159,10 @@ bot.callbackQuery(CallBackQueries.CREATE_TOKEN, async (ctx) => {
 });
 bot.callbackQuery(CallBackQueries.VIEW_TOKENS, async (ctx) => {
   await ctx.answerCallbackQuery();
-
-  const userId = ctx.from!.id;
-  const user = await getUser(userId.toString());
-  const tokens = await getTokensForUser(user?.id);
-  for (const token of tokens) {
-    const msg = [
-      `*Name*: ${escape(token.name)}`,
-      `*Symbol:* $\`${escape(token.symbol)}\``,
-      `*Description*: _${escape(token.description || "")}_`,
-    ].join("\n");
-    let kb;
-    if (token.state == TokenState.LAUNCHED) {
-      kb = new InlineKeyboard()
-        .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${token.address}`)
-        .text("📈 Sell % supply", `${CallBackQueries.SELL_PERCENT}_${token.address}`)
-        .row()
-        .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${token.address}`);
-    } else {
-      kb = new InlineKeyboard().text("🚀 Launch Token", `${CallBackQueries.LAUNCH_TOKEN}_${token.address}`);
-    }
-    await ctx.reply(msg, {
-      parse_mode: "MarkdownV2",
-      reply_markup: kb,
-    });
-  }
+  await ctx.conversation.enter("viewTokensConversation");
+  await ctx.answerCallbackQuery();
 });
+
 bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
   let user = await getUser(ctx.chat!.id.toString());
   if (!user) {
@@ -226,6 +214,7 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
 bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
 
 bot.callbackQuery(CallBackQueries.WALLET_CONFIG, async (ctx) => {
+  await ctx.answerCallbackQuery();
   await ctx.conversation.enter("walletConfigConversation");
   await ctx.answerCallbackQuery();
 });
@@ -236,11 +225,13 @@ bot.callbackQuery(CallBackQueries.BACK, async (ctx) => {
 });
 
 bot.callbackQuery(CallBackQueries.CHANGE_DEV_WALLET, async (ctx) => {
+  await ctx.answerCallbackQuery();
   await ctx.conversation.enter("manageDevWalletsConversation");
   await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery(CallBackQueries.MANAGE_BUYER_WALLETS, async (ctx) => {
+  await ctx.answerCallbackQuery();
   await ctx.conversation.enter("manageBuyerWalletsConversation");
   await ctx.answerCallbackQuery();
 });
@@ -274,3 +265,12 @@ bot.callbackQuery(CallBackQueries.RETRY_QUICK_LAUNCH, async (ctx) => {
 });
 
 export default bot;
+
+bot.on("callback_query:data", async (ctx) => {
+  const data = ctx.callbackQuery.data;
+  const [action, token, address] = data.split("_");
+  if (action && token && address) {
+    console.log(`${action} called`);
+    // You can add further handling logic here if needed
+  }
+});
