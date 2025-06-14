@@ -94,59 +94,85 @@ export class SolanaConnectionPool {
     if (this.isProcessingRequests) return;
     this.isProcessingRequests = true;
 
-    while (true) {
-      if (this.requestQueue.length === 0) {
-        await new Promise(resolve => setTimeout(resolve, 10));
-        continue;
+    while (this.requestQueue.length > 0) {
+      const now = Date.now();
+      
+      // Reset rate limit counter if needed
+      if (now - this.lastRequestReset >= 1000) {
+        this.requestCount = 0;
+        this.lastRequestReset = now;
       }
 
+      // Check rate limit
       if (this.requestCount >= this.config.maxRequestsPerSecond) {
         await new Promise(resolve => setTimeout(resolve, 100));
         continue;
       }
 
       const request = this.requestQueue.shift();
-      if (!request) continue;
+      if (!request) break;
 
       try {
         this.requestCount++;
-        const result = await request.fn();
+        const result = await this.executeWithRetry(request.fn);
         request.resolve(result);
       } catch (error) {
         request.reject(error);
       }
     }
+
+    this.isProcessingRequests = false;
   }
 
   private async processTransactionQueue() {
     if (this.isProcessingTransactions) return;
     this.isProcessingTransactions = true;
 
-    while (true) {
-      if (this.transactionQueue.length === 0) {
-        await new Promise(resolve => setTimeout(resolve, 10));
-        continue;
+    while (this.transactionQueue.length > 0) {
+      const now = Date.now();
+      
+      // Reset rate limit counter if needed
+      if (now - this.lastTransactionReset >= 1000) {
+        this.transactionCount = 0;
+        this.lastTransactionReset = now;
       }
 
+      // Check rate limit
       if (this.transactionCount >= this.config.maxTransactionsPerSecond) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
         continue;
       }
 
       const request = this.transactionQueue.shift();
-      if (!request) continue;
+      if (!request) break;
 
       try {
         this.transactionCount++;
-        const result = await request.fn();
+        const result = await this.executeWithRetry(request.fn, 2); // Fewer retries for transactions
         request.resolve(result);
       } catch (error) {
         request.reject(error);
       }
     }
+
+    this.isProcessingTransactions = false;
   }
 
   private getNextConnection(): Connection {
+    // Health check connections and remove failed ones
+    this.connections = this.connections.filter(conn => {
+      try {
+        // Simple check - if connection object is still valid
+        return conn && typeof conn.getBalance === 'function';
+      } catch {
+        return false;
+      }
+    });
+
+    if (this.connections.length === 0) {
+      throw new Error('No healthy RPC connections available');
+    }
+
     const connection = this.connections[this.currentConnectionIndex];
     this.currentConnectionIndex = (this.currentConnectionIndex + 1) % this.connections.length;
     return connection;
@@ -178,14 +204,61 @@ export class SolanaConnectionPool {
 
   private async queueRequest<T>(fn: () => Promise<T>, type: 'read' | 'transaction' = 'read'): Promise<T> {
     return new Promise((resolve, reject) => {
-      const request: RequestQueue = { resolve, reject, fn, type };
+      const requestItem: RequestQueue = { resolve, reject, fn, type };
       
       if (type === 'transaction') {
-        this.transactionQueue.push(request);
+        this.transactionQueue.push(requestItem);
+        if (!this.isProcessingTransactions) {
+          this.processTransactionQueue();
+        }
       } else {
-        this.requestQueue.push(request);
+        this.requestQueue.push(requestItem);
+        if (!this.isProcessingRequests) {
+          this.processRequestQueue();
+        }
       }
     });
+  }
+
+  private async executeWithRetry<T>(fn: () => Promise<T>, maxRetries: number = 3): Promise<T> {
+    let lastError: Error = new Error('Unknown error');
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        lastError = error;
+        
+        // Don't retry on certain errors
+        if (this.isNonRetryableError(error)) {
+          throw error;
+        }
+        
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
+          logger.warn(`Connection pool: Request failed (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms: ${error.message}`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    logger.error(`Connection pool: Request failed after ${maxRetries} attempts: ${lastError.message}`);
+    throw lastError;
+  }
+
+  private isNonRetryableError(error: any): boolean {
+    // Don't retry on these types of errors
+    const nonRetryableMessages = [
+      'Invalid signature',
+      'Transaction simulation failed',
+      'Blockhash not found',
+      'Account not found',
+      'Invalid account data',
+    ];
+    
+    return nonRetryableMessages.some(msg => 
+      error.message?.toLowerCase().includes(msg.toLowerCase())
+    );
   }
 
   // Cached balance checking

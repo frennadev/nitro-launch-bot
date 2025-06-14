@@ -604,7 +604,6 @@ export const enqueueTokenLaunch = async (
     return { success: true, message: "" };
   } catch (error: any) {
     logger.error("An error occurred during launch enque", error);
-    await session.endSession();
     return {
       success: false,
       message: `An error occurred during launch enque: ${error.message}`,
@@ -678,7 +677,6 @@ export const enqueueTokenLaunchRetry = async (
     return { success: true, message: "" };
   } catch (error: any) {
     logger.error("An error occurred during launch retry enque", error);
-    await session.endSession();
     return {
       success: false,
       message: `An error occurred during launch retry enque: ${error.message}`,
@@ -722,7 +720,7 @@ export const enqueueDevSell = async (
           userId,
           tokenAddress,
           userChatId: chatId,
-          devWallet: decryptPrivateKey(devWallet),
+          devWallet,
           sellPercent,
         },
       );
@@ -730,7 +728,6 @@ export const enqueueDevSell = async (
     return { success: true, message: "" };
   } catch (error: any) {
     logger.error("An error occurred during dev sell enque", error);
-    await session.endSession();
     return {
       success: false,
       message: `An error occurred during dev sell enque: ${error.message}`,
@@ -769,16 +766,14 @@ export const enqueueWalletSell = async (
       if (!updatedToken) {
         throw new Error("Failed to update token");
       }
-      buyerWallets = buyerWallets.filter((w) => Boolean(w));
-      const decrypted = buyerWallets.map((w) => decryptPrivateKey(w));
       await walletSellQueue.add(
         `wallet-sell-${tokenAddress}-${updatedToken.launchData?.walletSellAttempt}`,
         {
           userId,
           tokenAddress,
           userChatId: chatId,
-          devWallet: decryptPrivateKey(devWallet),
-          buyerWallets: decrypted,
+          devWallet,
+          buyerWallets,
           sellPercent,
         },
       );
@@ -786,7 +781,6 @@ export const enqueueWalletSell = async (
     return { success: true, message: "" };
   } catch (error: any) {
     logger.error("An error occurred during wallet sell enque", error);
-    await session.endSession();
     return {
       success: false,
       message: `An error occurred during wallet sell enque: ${error.message}`,
