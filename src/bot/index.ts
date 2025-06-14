@@ -24,7 +24,7 @@ import mainMenuConversation from "./conversation/mainMenu";
 import { sendMessage } from "../backend/sender";
 import manageDevWalletsConversation from "./conversation/devWallets";
 import manageBuyerWalletsConversation from "./conversation/buyerWallets";
-import { withdrawDevWalletConversation, withdrawBuyerWalletsConversation } from "./conversation/withdrawal";
+import { withdrawDevWalletConversation, withdrawBuyerWalletsConversation, withdrawFundingWalletConversation } from "./conversation/withdrawal";
 import viewTokensConversation from "./conversation/viewTokenConversation";
 import { logger } from "../blockchain/common/logger";
 
@@ -84,6 +84,7 @@ bot.use(createConversation(manageDevWalletsConversation));
 bot.use(createConversation(manageBuyerWalletsConversation));
 bot.use(createConversation(withdrawDevWalletConversation));
 bot.use(createConversation(withdrawBuyerWalletsConversation));
+bot.use(createConversation(withdrawFundingWalletConversation));
 bot.use(createConversation(viewTokensConversation));
 
 // ----- Commands ------
@@ -347,6 +348,11 @@ bot.callbackQuery(CallBackQueries.MANAGE_BUYER_WALLETS, async (ctx) => {
 
 bot.callbackQuery(CallBackQueries.WITHDRAW_DEV_WALLET, async (ctx) => {
   await ctx.conversation.enter("withdrawDevWalletConversation");
+  await safeAnswerCallbackQuery(ctx);
+});
+
+bot.callbackQuery(CallBackQueries.WITHDRAW_FUNDING_WALLET, async (ctx) => {
+  await ctx.conversation.enter("withdrawFundingWalletConversation");
   await safeAnswerCallbackQuery(ctx);
 });
 

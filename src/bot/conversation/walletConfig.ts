@@ -38,6 +38,8 @@ const walletConfigConversation = async (conversation: Conversation<Context>, ctx
     .row()
     .text("💸 Withdraw from Dev Wallet", CallBackQueries.WITHDRAW_DEV_WALLET)
     .row()
+    .text("💸 Withdraw from Funding Wallet", CallBackQueries.WITHDRAW_FUNDING_WALLET)
+    .row()
     .text("💸 Withdraw from Buyer Wallets", CallBackQueries.WITHDRAW_BUYER_WALLETS)
     .row()
     .text("🔙 Back", CallBackQueries.BACK);
@@ -113,6 +115,12 @@ ${buyerWallets.length > 0 ? '✅ Ready for launches' : '⚠️ No buyer wallets 
     // Import and start buyer wallets withdrawal conversation
     const { withdrawBuyerWalletsConversation } = await import("./withdrawal");
     return await withdrawBuyerWalletsConversation(conversation, next);
+  }
+
+  if (data === CallBackQueries.WITHDRAW_FUNDING_WALLET) {
+    // Import and start funding wallet withdrawal conversation
+    const { withdrawFundingWalletConversation } = await import("./withdrawal");
+    return await withdrawFundingWalletConversation(conversation, next);
   }
 
   conversation.halt();

@@ -38,6 +38,7 @@ export enum CallBackQueries {
   // Withdrawal options
   WITHDRAW_BUYER_WALLETS = "withdraw_buyer_wallets",
   WITHDRAW_DEV_WALLET = "withdraw_dev_wallet",
+  WITHDRAW_FUNDING_WALLET = "withdraw_funding_wallet",
   WITHDRAW_TO_FUNDING = "withdraw_to_funding",
   WITHDRAW_TO_EXTERNAL = "withdraw_to_external",
   CANCEL_WITHDRAWAL = "cancel_withdrawal",
