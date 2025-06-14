@@ -275,7 +275,7 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       
       await sendNotification(
         data.userChatId,
-        `🛠️ **Preparation Complete!**\n\n✅ Platform fee collected\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token...**`,
+        `🛠️ **Preparation Complete\\!**\n\n✅ Platform fee collected\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token\\.\\.\\.**`,
       );
       
     } catch (error: any) {
@@ -463,7 +463,7 @@ prepareLaunchWorker.on("failed", async (job) => {
   const token = job!.data;
   await sendNotification(
     job!.data.userChatId,
-    `❌ **Token preparation failed**\n\nToken: ${token.tokenName} ($${token.tokenSymbol})\n\n🔄 You can try again from your tokens list.`,
+    `❌ **Token preparation failed**\n\nToken: ${token.tokenName} \\($${token.tokenSymbol}\\)\n\n🔄 You can try again from your tokens list\\.`,
   );
 });
 prepareLaunchWorker.on("closed", () => {

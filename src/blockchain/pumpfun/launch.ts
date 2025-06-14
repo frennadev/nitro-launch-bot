@@ -119,9 +119,34 @@ export const executeTokenLaunch = async (
 ) => {
   const start = performance.now();
 
+  // Validate secret key formats before creating keypairs
+  const validateSecretKey = (key: string, keyName: string) => {
+    if (!key || typeof key !== 'string') {
+      throw new Error(`${keyName} is invalid: empty or not a string`);
+    }
+    
+    try {
+      // Try to decode the key to validate format
+      const decoded = bs58.decode(key);
+      if (decoded.length !== 64) {
+        throw new Error(`${keyName} has invalid length: ${decoded.length} bytes (expected 64)`);
+      }
+    } catch (error: any) {
+      throw new Error(`${keyName} is not a valid base58 encoded secret key: ${error.message}`);
+    }
+  };
+
+  // Validate all keys
+  validateSecretKey(mint, "mint private key");
+  if (funderWallet) validateSecretKey(funderWallet, "funder wallet");
+  validateSecretKey(devWallet, "dev wallet");
+  buyWallets.forEach((wallet, index) => {
+    validateSecretKey(wallet, `buyer wallet ${index + 1}`);
+  });
+
   const mintKeypair = secretKeyToKeypair(mint);
   const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
-  const funderKeypair = secretKeyToKeypair(funderWallet);
+  const funderKeypair = funderWallet ? secretKeyToKeypair(funderWallet) : null;
   const devKeypair = secretKeyToKeypair(devWallet);
   const { bondingCurve } = getBondingCurve(mintKeypair.publicKey);
   const globalSetting = await getGlobalSetting();
@@ -129,7 +154,7 @@ export const executeTokenLaunch = async (
 
   logger.info(`[${logIdentifier}]: Token Launch Execution Data`, {
     wallets: buyKeypairs.map((kp) => kp.publicKey.toBase58()),
-    funder: funderKeypair.publicKey.toBase58(),
+    funder: funderKeypair?.publicKey.toBase58() || null,
     token: mintKeypair.publicKey.toBase58(),
     launchStage,
   });
