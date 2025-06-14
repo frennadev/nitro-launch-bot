@@ -159,11 +159,15 @@ export const executeTokenLaunch = async (
     launchStage,
   });
 
+  // Track current stage for proper flow control
+  let currentStage = launchStage;
+  let tokenCreated = false;
+
   // Skip preparation phases if launchStage >= LAUNCH (3)
   // This assumes preparation was already completed by prepareTokenLaunch
 
   // ------- TOKEN CREATION + DEV BUY STAGE ------
-  if (launchStage >= PumpLaunchStage.LAUNCH) {
+  if (currentStage >= PumpLaunchStage.LAUNCH) {
     logger.info(`[${logIdentifier}]: Starting token creation stage`);
     const tokenStart = performance.now();
     const launchInstructions: TransactionInstruction[] = [];
@@ -232,16 +236,19 @@ export const executeTokenLaunch = async (
       mintKeypair.publicKey.toBase58(),
       PumpLaunchStage.SNIPE,
     );
+    currentStage = PumpLaunchStage.SNIPE;
+    tokenCreated = true;
     logger.info(
       `[${logIdentifier}]: Token creation completed in ${formatMilliseconds(performance.now() - tokenStart)}`,
     );
   }
 
   // ------- SNIPING STAGE -------
-  if (launchStage === PumpLaunchStage.SNIPE) {
+  // Execute snipe stage if we just created the token OR if we're already at snipe stage
+  if (tokenCreated || currentStage === PumpLaunchStage.SNIPE) {
     await randomizedSleep(1000, 1500);
     logger.info(`[${logIdentifier}]: Starting token snipe stage`);
-    const start = performance.now();
+    const snipeStart = performance.now();
     const blockHash = await connection.getLatestBlockhash("processed");
     const baseComputeUnitPrice = 1_000_000;
     const maxComputeUnitPrice = 4_000_000;
@@ -394,7 +401,7 @@ export const executeTokenLaunch = async (
       PumpLaunchStage.COMPLETE,
     );
     logger.info(
-      `[${logIdentifier}]: Snipe completed in ${formatMilliseconds(performance.now() - start)}`,
+      `[${logIdentifier}]: Snipe completed in ${formatMilliseconds(performance.now() - snipeStart)}`,
     );
   }
 
