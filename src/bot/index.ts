@@ -10,6 +10,7 @@ import {
   getOrCreateFundingWallet,
   getPumpAddressStats,
   markPumpAddressAsUsed,
+  removeFailedToken,
 } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
@@ -185,6 +186,7 @@ ${stats.available < 100 ? "⚠️ *Warning: Low address pool\\!*" : "✅ *Addres
 
 *Admin Commands:*
 • \`/markused <address>\` \\- Mark address as used
+• \`/removetoken <address>\` \\- Remove failed token from database
 `;
 
     await ctx.reply(message, { parse_mode: "MarkdownV2" });
@@ -215,6 +217,35 @@ bot.command("markused", async (ctx) => {
     await ctx.reply(`✅ Successfully marked address as used:\n\`${address}\`\n\nThis address will no longer be used for new token launches.`, { parse_mode: "MarkdownV2" });
   } catch (error: any) {
     await ctx.reply(`❌ Error marking address as used: ${error.message}`);
+  }
+});
+
+bot.command("removetoken", async (ctx) => {
+  // Simple admin check
+  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
+
+  if (!adminIds.includes(ctx.from!.id)) {
+    await ctx.reply("❌ Access denied. Admin only command.");
+    return;
+  }
+
+  const args = ctx.message?.text?.split(" ");
+  if (!args || args.length < 2) {
+    await ctx.reply("❌ Usage: /removetoken <address>\n\nExample: /removetoken 4PsSzzPA4NkrbCstre2YBpHAxJBntD1eKTwi6PmXpump\n\n⚠️ This will permanently delete the token from the database and mark the address as used.");
+    return;
+  }
+
+  const tokenAddress = args[1];
+  
+  try {
+    const result = await removeFailedToken(tokenAddress);
+    await ctx.reply(`✅ Successfully removed failed token:\n\`${tokenAddress}\`\n\n• Token deleted from database\n• Address marked as used (won't be reused)\n• Operation completed safely`, { parse_mode: "MarkdownV2" });
+  } catch (error: any) {
+    if (error.message.includes("not found")) {
+      await ctx.reply(`⚠️ Token not found in database:\n\`${tokenAddress}\`\n\nThe token may have already been removed or the address is incorrect.`, { parse_mode: "MarkdownV2" });
+    } else {
+      await ctx.reply(`❌ Error removing token: ${error.message}`);
+    }
   }
 });
 
@@ -274,6 +305,20 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
   await ctx.conversation.enter("walletSellConversation", tokenAddress);
+});
+
+bot.callbackQuery(/^delete_token_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  // This will be handled within the viewTokensConversation
+  // Just re-enter the conversation to handle the delete flow
+  await ctx.conversation.enter("viewTokensConversation");
+});
+
+bot.callbackQuery(/^confirm_delete_token_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  // This will be handled within the viewTokensConversation
+  // Just re-enter the conversation to handle the confirmation
+  await ctx.conversation.enter("viewTokensConversation");
 });
 
 bot.api.setMyCommands([

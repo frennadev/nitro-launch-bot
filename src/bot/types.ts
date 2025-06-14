@@ -47,6 +47,10 @@ export enum CallBackQueries {
   WITHDRAW_SOL = "withdraw_sol",
   WITHDRAW_TOKEN = "withdraw_token",
 
+  // Token deletion
+  DELETE_TOKEN = "delete_token",
+  CONFIRM_DELETE_TOKEN = "confirm_delete_token",
+
   // ←–– Newly added callbacks for pagination and generic cancel
   PREV_TOKEN = "prev_token",
   NEXT_TOKEN = "next_token",

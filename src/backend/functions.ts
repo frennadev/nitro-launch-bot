@@ -1493,3 +1493,45 @@ export const enqueueExecuteTokenLaunch = async (
     await session.endSession();
   }
 };
+
+export const removeFailedToken = async (tokenAddress: string) => {
+  const session = await mongoose.startSession();
+  
+  try {
+    await session.withTransaction(async () => {
+      // Find and remove the token
+      const deletedToken = await TokenModel.findOneAndDelete({
+        tokenAddress: tokenAddress
+      }).session(session);
+
+      if (!deletedToken) {
+        throw new Error(`Token with address ${tokenAddress} not found`);
+      }
+
+      // Mark the pump address as used to prevent reuse
+      await PumpAddressModel.findOneAndUpdate(
+        { publicKey: tokenAddress },
+        { 
+          isUsed: true,
+          usedAt: new Date(),
+          // Don't set usedBy since we're removing the token
+        },
+        { session }
+      );
+
+      logger.info("Successfully removed failed token:", {
+        tokenAddress,
+        tokenName: deletedToken.name,
+        tokenSymbol: deletedToken.symbol,
+        userId: deletedToken.user
+      });
+    });
+
+    return { success: true, message: "Token removed and address marked as used" };
+  } catch (error: any) {
+    logger.error("Error removing failed token:", error);
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};

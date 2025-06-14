@@ -1,7 +1,7 @@
 import type { Conversation } from "@grammyjs/conversations";
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { getUser } from "../../backend/functions";
+import { getUser, deleteToken } from "../../backend/functions";
 import { TokenModel } from "../../backend/models";
 import { CallBackQueries } from "../types";
 import { sendMessage } from "../../backend/sender";
@@ -60,6 +60,9 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
       keyboard.text("🚀 Launch Token", `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`).row();
     }
 
+    // Add delete button for all tokens
+    keyboard.text("🗑️ Delete Token", `${CallBackQueries.DELETE_TOKEN}_${tokenAddress}`).row();
+
     // Navigation buttons
     if (tokens.length > 1) {
       if (index > 0) {
@@ -74,6 +77,29 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     keyboard.text("🔙 Back", CallBackQueries.BACK);
 
     await ctx.reply(lines, {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    });
+  };
+
+  const showDeleteConfirmation = async (tokenAddress: string, tokenName: string) => {
+    const message = `⚠️ **Delete Token Confirmation**
+
+Are you sure you want to delete this token?
+
+**Token:** ${tokenName}
+**Address:** \`${tokenAddress}\`
+
+⚠️ **Warning:** This action cannot be undone. The token will be permanently removed from your account.
+
+Note: If this token was launched, it will continue to exist on the blockchain, but you will lose access to manage it through this bot.`;
+
+    const keyboard = new InlineKeyboard()
+      .text("✅ Yes, Delete", `${CallBackQueries.CONFIRM_DELETE_TOKEN}_${tokenAddress}`)
+      .text("❌ Cancel", "cancel_delete")
+      .row();
+
+    await ctx.reply(message, {
       parse_mode: "Markdown",
       reply_markup: keyboard,
     });
@@ -95,6 +121,37 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
       await showToken(currentIndex);
     } else if (data === CallBackQueries.BACK) {
       return conversation.halt();
+    } else if (data?.startsWith(`${CallBackQueries.DELETE_TOKEN}_`)) {
+      const tokenAddress = data.split("_").slice(2).join("_");
+      const token = tokens.find(t => t.tokenAddress === tokenAddress);
+      if (token) {
+        await showDeleteConfirmation(tokenAddress, token.name);
+      }
+    } else if (data?.startsWith(`${CallBackQueries.CONFIRM_DELETE_TOKEN}_`)) {
+      const tokenAddress = data.split("_").slice(3).join("_");
+      
+      try {
+        const result = await deleteToken(String(user._id), tokenAddress);
+        
+        if (result.success) {
+          await ctx.reply("✅ **Token deleted successfully!**\n\nThe token has been removed from your account.", {
+            parse_mode: "Markdown"
+          });
+          
+          // Refresh the tokens list and return to main menu
+          return conversation.halt();
+        } else {
+          await ctx.reply(`❌ **Failed to delete token**\n\n${result.message}`, {
+            parse_mode: "Markdown"
+          });
+        }
+      } catch (error: any) {
+        await ctx.reply(`❌ **Error deleting token**\n\n${error.message}`, {
+          parse_mode: "Markdown"
+        });
+      }
+    } else if (data === "cancel_delete") {
+      await showToken(currentIndex);
     } else {
       // Let other callback handlers take over (launch, sell, etc.)
       return conversation.halt();
