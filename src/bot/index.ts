@@ -10,7 +10,7 @@ import {
   getOrCreateFundingWallet,
   getPumpAddressStats,
   markPumpAddressAsUsed,
-} from "../backend/functions-main";
+} from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
@@ -218,83 +218,6 @@ bot.command("markused", async (ctx) => {
   }
 });
 
-// Numbered token selection commands (/1 through /10)
-for (let i = 1; i <= 10; i++) {
-  bot.command(i.toString(), async (ctx) => {
-    const user = await getUser(ctx.chat!.id.toString());
-    if (!user) {
-      await ctx.reply("❌ Unrecognized user. Please use /start first.");
-      return;
-    }
-
-    try {
-      // Get the user's 10 most recent tokens
-      const { TokenModel } = await import("../backend/models");
-      const tokens = await TokenModel.find({ user: user._id })
-        .populate("launchData.devWallet")
-        .populate("launchData.buyWallets")
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .exec();
-
-      if (!tokens.length) {
-        await ctx.reply("❌ No tokens found. Create a token first using the menu.");
-        return;
-      }
-
-      const tokenIndex = i - 1;
-      if (tokenIndex >= tokens.length) {
-        await ctx.reply(`❌ Token #${i} not found. You only have ${tokens.length} token${tokens.length === 1 ? '' : 's'}.`);
-        return;
-      }
-
-      const selectedToken = tokens[tokenIndex];
-      const { name, symbol, description, tokenAddress, state, launchData } = selectedToken;
-      const { buyWallets, buyAmount, devBuy } = launchData!;
-
-      const lines = [
-        `💊 <b>${i}. ${name} - Token Details</b>`,
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        "",
-        `🔑 <b>Address:</b> <code>${tokenAddress}</code>`,
-        `🏷️ <b>Symbol:</b> <code>${symbol}</code>`,
-        `📝 <b>Description:</b> ${description || "–"}`,
-        "",
-        `👨‍💻 <b>Dev allocation:</b> <code>${devBuy || 0}</code> SOL`,
-        `🛒 <b>Buyer allocation:</b> <code>${buyAmount || 0}</code> SOL`,
-        `👥 <b>Worker wallets:</b> <code>${(buyWallets as any[])?.length || 0}</code>`,
-        "",
-        `📊 <b>Status:</b> ${state === TokenState.LAUNCHED ? "✅ Launched" : "⌛ Pending"}`,
-      ].join("\n");
-
-      // Create action buttons based on token state
-      const keyboard = new InlineKeyboard();
-      
-      if (state === TokenState.LAUNCHED) {
-        keyboard
-          .text("👨‍💻 Sell Dev Supply", `sell_dev_${tokenAddress}`)
-          .text("📈 Sell % Supply", `sell_percent_${tokenAddress}`)
-          .row()
-          .text("🧨 Sell All", `sell_all_${tokenAddress}`)
-          .row();
-      } else {
-        keyboard.text("🚀 Launch Token", `launch_token_${tokenAddress}`).row();
-      }
-      
-      keyboard.text("🔙 Back to Menu", CallBackQueries.BACK);
-
-      await ctx.reply(lines, {
-        parse_mode: "HTML",
-        reply_markup: keyboard,
-      });
-
-    } catch (error: any) {
-      logger.error(`Error handling /${i} command:`, error);
-      await ctx.reply(`❌ Error loading token #${i}. Please try again or use the View Tokens menu.`);
-    }
-  });
-}
-
 // ----- Callback Queries -----
 bot.callbackQuery(CallBackQueries.CREATE_TOKEN, async (ctx) => {
   await ctx.conversation.enter("createTokenConversation");
@@ -354,17 +277,7 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
 });
 
 bot.api.setMyCommands([
-  { command: "menu", description: "Bot Menu" },
-  { command: "1", description: "Select Token #1" },
-  { command: "2", description: "Select Token #2" },
-  { command: "3", description: "Select Token #3" },
-  { command: "4", description: "Select Token #4" },
-  { command: "5", description: "Select Token #5" },
-  { command: "6", description: "Select Token #6" },
-  { command: "7", description: "Select Token #7" },
-  { command: "8", description: "Select Token #8" },
-  { command: "9", description: "Select Token #9" },
-  { command: "10", description: "Select Token #10" }
+  { command: "menu", description: "Bot Menu" }
 ]);
 
 bot.callbackQuery(CallBackQueries.WALLET_CONFIG, async (ctx) => {

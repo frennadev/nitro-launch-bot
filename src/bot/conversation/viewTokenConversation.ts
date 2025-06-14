@@ -1,7 +1,7 @@
 import type { Conversation } from "@grammyjs/conversations";
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { getUser } from "../../backend/functions-main";
+import { getUser } from "../../backend/functions";
 import { TokenModel } from "../../backend/models";
 import { CallBackQueries } from "../types";
 import { sendMessage } from "../../backend/sender";
@@ -14,12 +14,10 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     return conversation.halt();
   }
 
-  // Get the 10 most recent tokens, sorted by creation date (newest first)
   const tokens = await TokenModel.find({ user: user._id })
     .populate("launchData.devWallet")
     .populate("launchData.buyWallets")
-    .sort({ createdAt: -1 }) // Sort by newest first
-    .limit(10) // Limit to 10 most recent
+    .sort({ createdAt: -1 })
     .exec();
 
   if (!tokens.length) {
@@ -27,150 +25,80 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     return conversation.halt();
   }
 
-  // Store tokens in conversation session for command access
-  conversation.session.tokenList = tokens.map((token, index) => ({
-    number: index + 1,
-    tokenAddress: token.tokenAddress,
-    name: token.name,
-    symbol: token.symbol,
-    state: token.state
-  }));
+  let currentIndex = 0;
 
-  // Build the token list message
-  const lines = [
-    "🎯 <b>Your Recent Tokens</b>",
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    "",
-  ];
+  const showToken = async (index: number) => {
+    const token = tokens[index];
+    const { name, symbol, description, tokenAddress, state, launchData } = token;
+    const { buyWallets, buyAmount, devBuy } = launchData!;
 
-  tokens.forEach((token, index) => {
-    const number = index + 1;
-    const stateIcon = token.state === TokenState.LAUNCHED ? "✅" : "⌛";
-    const stateText = token.state === TokenState.LAUNCHED ? "Launched" : "Pending";
+    const lines = [
+      `💊 **${name}**`,
+      `🔑 Address: \`${tokenAddress}\``,
+      `🏷️ Symbol: \`${symbol}\``,
+      `📝 Description: ${description || "–"}`,
+      "",
+      `👨‍💻 Dev allocation: \`${devBuy || 0}\` SOL`,
+      `🛒 Buyer allocation: \`${buyAmount || 0}\` SOL`,
+      `👥 Worker wallets: \`${(buyWallets as any[])?.length || 0}\``,
+      "",
+      `📊 Status: ${state === TokenState.LAUNCHED ? "✅ Launched" : "⌛ Pending"}`,
+      "",
+      `Showing ${index + 1} of ${tokens.length}`,
+    ].join("\n");
+
+    const keyboard = new InlineKeyboard();
     
-    lines.push(
-      `<b>${number}.</b> ${token.name} (<code>${token.symbol}</code>) ${stateIcon}`,
-      `    📍 <code>${token.tokenAddress.slice(0, 8)}...${token.tokenAddress.slice(-8)}</code>`,
-      `    📊 ${stateText}`,
-      ""
-    );
-  });
+    if (state === TokenState.LAUNCHED) {
+      keyboard
+        .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${tokenAddress}`)
+        .text("📈 Sell % Supply", `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`)
+        .row()
+        .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
+        .row();
+    } else {
+      keyboard.text("🚀 Launch Token", `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`).row();
+    }
 
-  lines.push(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    "",
-    "💡 <b>How to select a token:</b>",
-    "• Type <code>/1</code> to <code>/10</code> to select a token",
-    "• Or use the buttons below for quick actions",
-    "",
-    "🔄 <i>Showing your 10 most recent tokens</i>"
-  );
+    // Navigation buttons
+    if (tokens.length > 1) {
+      if (index > 0) {
+        keyboard.text("⬅️", "prev");
+      }
+      if (index < tokens.length - 1) {
+        keyboard.text("➡️", "next");
+      }
+      keyboard.row();
+    }
 
-  const message = lines.join("\n");
+    keyboard.text("🔙 Back", CallBackQueries.BACK);
 
-  // Create inline keyboard with back button
-  const keyboard = new InlineKeyboard()
-    .text("🔙 Back to Menu", CallBackQueries.BACK);
+    await ctx.reply(lines, {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    });
+  };
 
-  await ctx.reply(message, {
-    parse_mode: "HTML",
-    reply_markup: keyboard,
-  });
+  await showToken(currentIndex);
 
-  // Wait for user input (either callback query or text command)
   while (true) {
-    const response = await conversation.wait();
-    
-    // Handle callback queries (like back button)
-    if (response.callbackQuery?.data) {
-      await response.answerCallbackQuery();
-      if (response.callbackQuery.data === CallBackQueries.BACK) {
-        return conversation.halt();
-      }
-      continue;
+    const response = await conversation.waitFor("callback_query:data");
+    await response.answerCallbackQuery();
+
+    const data = response.callbackQuery?.data;
+
+    if (data === "prev" && currentIndex > 0) {
+      currentIndex--;
+      await showToken(currentIndex);
+    } else if (data === "next" && currentIndex < tokens.length - 1) {
+      currentIndex++;
+      await showToken(currentIndex);
+    } else if (data === CallBackQueries.BACK) {
+      return conversation.halt();
+    } else {
+      // Let other callback handlers take over (launch, sell, etc.)
+      return conversation.halt();
     }
-
-    // Handle text commands for token selection
-    if (response.message?.text) {
-      const text = response.message.text.trim();
-      
-      // Check if it's a numbered command (/1, /2, etc.)
-      const numberMatch = text.match(/^\/(\d+)$/);
-      if (numberMatch) {
-        const tokenNumber = parseInt(numberMatch[1]);
-        
-        if (tokenNumber >= 1 && tokenNumber <= tokens.length) {
-          const selectedToken = tokens[tokenNumber - 1];
-          await showTokenDetails(conversation, ctx, selectedToken, tokenNumber);
-          return;
-        } else {
-          await ctx.reply(`❌ Invalid token number. Please use /1 to /${tokens.length}`);
-          continue;
-        }
-      }
-      
-      // Handle other commands or invalid input
-      await ctx.reply("💡 Please use /1 to /10 to select a token, or click the Back button.");
-      continue;
-    }
-  }
-};
-
-const showTokenDetails = async (
-  conversation: Conversation<Context>, 
-  ctx: Context, 
-  token: any, 
-  tokenNumber: number
-) => {
-  const { name, symbol, description, tokenAddress, state, launchData } = token;
-  const { buyWallets, buyAmount, devBuy } = launchData!;
-
-  const lines = [
-    `💊 <b>${tokenNumber}. ${name} - Token Details</b>`,
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    "",
-    `🔑 <b>Address:</b> <code>${tokenAddress}</code>`,
-    `🏷️ <b>Symbol:</b> <code>${symbol}</code>`,
-    `📝 <b>Description:</b> ${description || "–"}`,
-    "",
-    `👨‍💻 <b>Dev allocation:</b> <code>${devBuy || 0}</code> SOL`,
-    `🛒 <b>Buyer allocation:</b> <code>${buyAmount || 0}</code> SOL`,
-    `👥 <b>Worker wallets:</b> <code>${(buyWallets as any[])?.length || 0}</code>`,
-    "",
-    `📊 <b>Status:</b> ${state === TokenState.LAUNCHED ? "✅ Launched" : "⌛ Pending"}`,
-  ].join("\n");
-
-  // Create action buttons based on token state
-  const keyboard = new InlineKeyboard();
-  
-  if (state === TokenState.LAUNCHED) {
-    keyboard
-      .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${tokenAddress}`)
-      .text("📈 Sell % Supply", `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`)
-      .row()
-      .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
-      .row();
-  } else {
-    keyboard.text("🚀 Launch Token", `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`).row();
-  }
-  
-  keyboard.text("🔙 Back to Token List", "back_to_list");
-
-  await ctx.reply(lines, {
-    parse_mode: "HTML",
-    reply_markup: keyboard,
-  });
-
-  // Wait for user action
-  const response = await conversation.waitFor("callback_query:data");
-  await response.answerCallbackQuery();
-  
-  if (response.callbackQuery?.data === "back_to_list") {
-    // Restart the conversation to show the token list again
-    await viewTokensConversation(conversation, ctx);
-  } else {
-    // Let other callback handlers take over (launch, sell, etc.)
-    conversation.halt();
   }
 };
 
