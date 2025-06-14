@@ -14,11 +14,23 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     return conversation.halt();
   }
 
+  console.log(`[DEBUG] User lookup - Chat ID: ${ctx.chat!.id}, User ID: ${user._id}, Username: ${user.userName}`);
+
   const tokens = await TokenModel.find({ user: user._id })
     .populate("launchData.devWallet")
     .populate("launchData.buyWallets")
     .sort({ createdAt: -1 })
     .exec();
+
+  // Debug logging to understand what tokens are being loaded
+  console.log(`[DEBUG] User ${user._id} has ${tokens.length} tokens:`);
+  tokens.forEach((token, index) => {
+    console.log(`[DEBUG] Token ${index + 1}: ${token.name} (${token.symbol}) - ${token.tokenAddress} - State: ${token.state}`);
+  });
+
+  // Also check if there are any tokens in the database at all
+  const allTokensCount = await TokenModel.countDocuments();
+  console.log(`[DEBUG] Total tokens in database: ${allTokensCount}`);
 
   if (!tokens.length) {
     await sendMessage(ctx, "No tokens found.");
@@ -122,13 +134,13 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
     } else if (data === CallBackQueries.BACK) {
       return conversation.halt();
     } else if (data?.startsWith(`${CallBackQueries.DELETE_TOKEN}_`)) {
-      const tokenAddress = data.split("_").slice(2).join("_");
+      const tokenAddress = data.substring(`${CallBackQueries.DELETE_TOKEN}_`.length);
       const token = tokens.find(t => t.tokenAddress === tokenAddress);
       if (token) {
         await showDeleteConfirmation(tokenAddress, token.name);
       }
     } else if (data?.startsWith(`${CallBackQueries.CONFIRM_DELETE_TOKEN}_`)) {
-      const tokenAddress = data.split("_").slice(3).join("_");
+      const tokenAddress = data.substring(`${CallBackQueries.CONFIRM_DELETE_TOKEN}_`.length);
       
       try {
         const result = await deleteToken(String(user._id), tokenAddress);
