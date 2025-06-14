@@ -1127,7 +1127,7 @@ export const deleteToken = async (userId: string, tokenAddress: string) => {
   }
 };
 
-export const handleTokenLaunchFailure = async (tokenAddress: string) => {
+export const handleTokenLaunchFailure = async (tokenAddress: string, error?: any) => {
   // Release pump address if launch fails permanently
   const pumpAddress = await PumpAddressModel.findOne({
     publicKey: tokenAddress,
@@ -1135,11 +1135,28 @@ export const handleTokenLaunchFailure = async (tokenAddress: string) => {
   });
   
   if (pumpAddress) {
-    // Check if token has failed multiple times (more than 3 attempts)
     const token = await TokenModel.findOne({ tokenAddress });
-    if (token && token.launchData && token.launchData.launchAttempt && token.launchData.launchAttempt > 3) {
-      logger.info(`Releasing pump address ${tokenAddress} after ${token.launchData.launchAttempt} failed launch attempts`);
+    const launchAttempt = token?.launchData?.launchAttempt || 0;
+    
+    // Check for specific errors that indicate the address is permanently unusable
+    const shouldReleaseImmediately = error && (
+      // Pump.fun Custom:0 error (NotAuthorized/AlreadyInitialized)
+      error.message?.includes('{"InstructionError":[0,{"Custom":0}]}') ||
+      error.message?.includes('Custom:0') ||
+      // Token creation failed with bonding curve errors
+      error.message?.includes('Token creation failed') ||
+      // Unable to fetch curve data (indicates token might already exist)
+      error.message?.includes('Unable to fetch curve data')
+    );
+    
+    if (shouldReleaseImmediately) {
+      logger.info(`Releasing pump address ${tokenAddress} immediately due to permanent error: ${error?.message || 'Unknown error'}`);
       await releasePumpAddress(tokenAddress);
+    } else if (launchAttempt > 3) {
+      logger.info(`Releasing pump address ${tokenAddress} after ${launchAttempt} failed launch attempts`);
+      await releasePumpAddress(tokenAddress);
+    } else {
+      logger.info(`Keeping pump address ${tokenAddress} for retry (attempt ${launchAttempt}/3)`);
     }
   }
 };

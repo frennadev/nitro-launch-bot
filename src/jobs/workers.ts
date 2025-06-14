@@ -393,8 +393,8 @@ launchTokenWorker.on("error", async (error) => {
 launchTokenWorker.on("failed", async (job) => {
   await updateTokenState(job!.data.tokenAddress, TokenState.LISTED, job!.data.userId);
   
-  // Handle pump address release on launch failure
-  await handleTokenLaunchFailure(job!.data.tokenAddress);
+  // Handle pump address release on launch failure with error context
+  await handleTokenLaunchFailure(job!.data.tokenAddress, job?.failedReason);
   
   const token = job!.data;
   await sendLaunchFailureNotification(
@@ -482,8 +482,8 @@ executeLaunchWorker.on("error", async (error) => {
 executeLaunchWorker.on("failed", async (job) => {
   await updateTokenState(job!.data.tokenAddress, TokenState.LISTED, job!.data.userId);
   
-  // Handle pump address release on launch failure
-  await handleTokenLaunchFailure(job!.data.tokenAddress);
+  // Handle pump address release on launch failure with error context
+  await handleTokenLaunchFailure(job!.data.tokenAddress, job?.failedReason);
   
   const token = job!.data;
   await sendLaunchFailureNotification(

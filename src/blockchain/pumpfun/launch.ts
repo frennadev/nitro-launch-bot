@@ -256,18 +256,59 @@ export const executeTokenLaunch = async (
       (maxComputeUnitPrice - baseComputeUnitPrice) / buyKeypairs.length,
     );
     let currentComputeUnitPrice = maxComputeUnitPrice;
-    let curveData = await getBondingCurveData(bondingCurve);
+    
+    // Enhanced curve data fetching with better retry logic
+    let curveData = null;
     let retries = 0;
-    while (!curveData && retries < 5) {
-      curveData = await getBondingCurveData(bondingCurve);
+    const maxRetries = 15; // Increased from 5 to 15
+    const baseDelay = 1000; // Start with 1 second
+    
+    logger.info(`[${logIdentifier}]: Fetching bonding curve data...`);
+    
+    while (!curveData && retries < maxRetries) {
+      try {
+        // Try different commitment levels for better reliability
+        const commitmentLevel = retries < 5 ? "processed" : retries < 10 ? "confirmed" : "finalized";
+        
+        // Get fresh account info with specific commitment
+        const accountInfo = await connection.getAccountInfo(bondingCurve, commitmentLevel);
+        if (accountInfo && accountInfo.data) {
+          curveData = await getBondingCurveData(bondingCurve);
+          if (curveData) {
+            logger.info(`[${logIdentifier}]: Successfully fetched curve data on attempt ${retries + 1} with ${commitmentLevel} commitment`);
+            break;
+          }
+        }
+      } catch (error: any) {
+        logger.warn(`[${logIdentifier}]: Curve data fetch attempt ${retries + 1} failed: ${error.message}`);
+      }
+      
       retries += 1;
-      if (!curveData) {
-        await randomizedSleep(500, 1000);
+      if (!curveData && retries < maxRetries) {
+        // Exponential backoff with jitter
+        const delay = Math.min(baseDelay * Math.pow(1.5, retries), 5000) + Math.random() * 1000;
+        logger.info(`[${logIdentifier}]: Retrying curve data fetch in ${Math.round(delay)}ms (attempt ${retries}/${maxRetries})`);
+        await randomizedSleep(delay, delay + 500);
       }
     }
+    
     if (!curveData) {
-      throw new Error("Unable to fetch curve data");
+      logger.error(`[${logIdentifier}]: Failed to fetch curve data after ${maxRetries} attempts`);
+      
+      // Additional debugging - check if bonding curve account exists
+      try {
+        const accountInfo = await connection.getAccountInfo(bondingCurve, "finalized");
+        if (!accountInfo) {
+          throw new Error(`Bonding curve account does not exist: ${bondingCurve.toBase58()}`);
+        } else {
+          throw new Error(`Bonding curve account exists but data is invalid. Account owner: ${accountInfo.owner.toBase58()}, Data length: ${accountInfo.data.length}`);
+        }
+      } catch (debugError: any) {
+        logger.error(`[${logIdentifier}]: Bonding curve debug info: ${debugError.message}`);
+        throw new Error(`Unable to fetch curve data: ${debugError.message}`);
+      }
     }
+
     let virtualTokenReserve = curveData.virtualTokenReserves;
     let virtualSolReserve = curveData.virtualSolReserves;
     let realTokenReserve = curveData.realTokenReserves;
