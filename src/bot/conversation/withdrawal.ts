@@ -7,7 +7,7 @@ import {
   getDefaultDevWallet,
   getFundingWallet,
   getWalletBalance,
-} from "../../backend/functions-main";
+} from "../../backend/functions";
 import { CallBackQueries } from "../types";
 import { sendMessage } from "../../backend/sender";
 import { decryptPrivateKey } from "../../backend/utils";
@@ -512,7 +512,7 @@ Proceed with withdrawal?`, {
       await sendMessage(confirmation, "🔄 Processing withdrawal...");
 
       // Create and send transaction
-      const fundingKeypair = secretKeyToKeypair(decryptPrivateKey(fundingWallet.privateKey));
+      const fundingKeypair = secretKeyToKeypair(fundingWallet.privateKey);
       const destinationPubkey = new PublicKey(destinationAddress);
       
       const transaction = new Transaction().add(
