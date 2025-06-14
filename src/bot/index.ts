@@ -9,6 +9,7 @@ import {
   getUser,
   getOrCreateFundingWallet,
   getPumpAddressStats,
+  markPumpAddressAsUsed,
 } from "../backend/functions-main";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
@@ -181,11 +182,39 @@ bot.command("admin", async (ctx) => {
 • Usage: \`${stats.usagePercentage}%\`
 
 ${stats.available < 100 ? "⚠️ *Warning: Low address pool\\!*" : "✅ *Address pool healthy*"}
+
+*Admin Commands:*
+• \`/markused <address>\` \\- Mark address as used
 `;
 
     await ctx.reply(message, { parse_mode: "MarkdownV2" });
   } catch (error: any) {
     await ctx.reply(`❌ Error fetching stats: ${error.message}`);
+  }
+});
+
+bot.command("markused", async (ctx) => {
+  // Simple admin check
+  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
+
+  if (!adminIds.includes(ctx.from!.id)) {
+    await ctx.reply("❌ Access denied. Admin only command.");
+    return;
+  }
+
+  const args = ctx.message?.text?.split(" ");
+  if (!args || args.length < 2) {
+    await ctx.reply("❌ Usage: /markused <address>\n\nExample: /markused 4PsSzzPA4NkrbCstre2YBpHAxJBntD1eKTwi6PmXpump");
+    return;
+  }
+
+  const address = args[1];
+  
+  try {
+    await markPumpAddressAsUsed(address);
+    await ctx.reply(`✅ Successfully marked address as used:\n\`${address}\`\n\nThis address will no longer be used for new token launches.`, { parse_mode: "MarkdownV2" });
+  } catch (error: any) {
+    await ctx.reply(`❌ Error marking address as used: ${error.message}`);
   }
 });
 

@@ -80,6 +80,7 @@ export const addWallet = originalFunctions.addWallet;
 export const generateWallets = originalFunctions.generateWallets;
 export const getAvailablePumpAddress = originalFunctions.getAvailablePumpAddress;
 export const releasePumpAddress = originalFunctions.releasePumpAddress;
+export const markPumpAddressAsUsed = originalFunctions.markPumpAddressAsUsed;
 export const getPumpAddressStats = originalFunctions.getPumpAddressStats;
 export const getUserPumpAddresses = originalFunctions.getUserPumpAddresses;
 export const createToken = originalFunctions.createToken;

@@ -374,6 +374,27 @@ export const releasePumpAddress = async (publicKey: string) => {
   );
 };
 
+export const markPumpAddressAsUsed = async (publicKey: string, userId?: string) => {
+  const result = await PumpAddressModel.findOneAndUpdate(
+    { publicKey },
+    { 
+      $set: { 
+        isUsed: true, 
+        usedBy: userId || null, 
+        usedAt: new Date() 
+      } 
+    },
+    { new: true }
+  );
+  
+  if (!result) {
+    throw new Error(`Pump address ${publicKey} not found in database`);
+  }
+  
+  logger.info(`Marked pump address ${publicKey} as used${userId ? ` by user ${userId}` : ''}`);
+  return result;
+};
+
 export const getPumpAddressStats = async () => {
   const total = await PumpAddressModel.countDocuments();
   const used = await PumpAddressModel.countDocuments({ isUsed: true });
