@@ -4,12 +4,13 @@ import * as dotenv from "dotenv";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { MongoSolanaMixer, type MongoMixerConfig } from "../mixer/MongoSolanaMixer";
 import bs58 from "bs58";
+import { MongoClient } from "mongodb";
+import { env } from "../../config";
 
 // Load environment variables
 dotenv.config();
 
-const MONGODB_URI =
-  "mongodb+srv://alphaadmindev:alphaadmin@bundler.bladbsz.mongodb.net/?retryWrites=true&w=majority&appName=Bundler";
+const MONGODB_URI = env.MONGODB_URI;
 const DATABASE_NAME = process.env.DATABASE_NAME || "test";
 const SOLANA_RPC_ENDPOINT =
   process.env.SOLANA_RPC_ENDPOINT || "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e";

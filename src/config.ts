@@ -14,7 +14,9 @@ export const env = cleanEnv(process.env, {
     choices: ["development", "production"],
   }),
   TELEGRAM_BOT_TOKEN: validStr(),
-  MONGODB_URI: validStr(),
+  MONGODB_URI: str({ 
+    default: "mongodb+srv://alphaadmindev:alphaadmin@bundler.bladbsz.mongodb.net/" 
+  }),
   REDIS_URI: validStr(),
   ENCRYPTION_SECRET: validStr(),
   PINATA_GATEWAY_URL: validStr(),
