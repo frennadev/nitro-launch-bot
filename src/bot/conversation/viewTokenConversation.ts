@@ -14,27 +14,28 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     return conversation.halt();
   }
 
-  console.log(`[DEBUG] User lookup - Chat ID: ${ctx.chat!.id}, User ID: ${user._id}, Username: ${user.userName}`);
-
+  // First, let's check if the user lookup is working correctly
+  const userId = String(user._id);
+  
   const tokens = await TokenModel.find({ user: user._id })
     .populate("launchData.devWallet")
     .populate("launchData.buyWallets")
     .sort({ createdAt: -1 })
     .exec();
 
-  // Debug logging to understand what tokens are being loaded
-  console.log(`[DEBUG] User ${user._id} has ${tokens.length} tokens:`);
-  tokens.forEach((token, index) => {
-    console.log(`[DEBUG] Token ${index + 1}: ${token.name} (${token.symbol}) - ${token.tokenAddress} - State: ${token.state}`);
-  });
-
-  // Also check if there are any tokens in the database at all
-  const allTokensCount = await TokenModel.countDocuments();
-  console.log(`[DEBUG] Total tokens in database: ${allTokensCount}`);
-
+  // If no tokens found, provide more helpful information
   if (!tokens.length) {
-    await sendMessage(ctx, "No tokens found.");
+    await sendMessage(ctx, `No tokens found for user ${user.userName}.\n\nUser ID: \`${userId}\`\nTelegram ID: \`${user.telegramId}\``, {
+      parse_mode: "Markdown"
+    });
     return conversation.halt();
+  }
+
+  // If only one token and it's the problematic one, let's provide more info
+  if (tokens.length === 1 && tokens[0].tokenAddress === "4PsSzzPA4NkrbCstre2YBpHAxJBntD1eKTwi6PmXpump") {
+    await sendMessage(ctx, `⚠️ **Debug Information**\n\nYou have exactly 1 token in the database:\n\n**Token:** ${tokens[0].name} (${tokens[0].symbol})\n**Address:** \`${tokens[0].tokenAddress}\`\n**State:** ${tokens[0].state}\n\n**User Info:**\n- Username: ${user.userName}\n- User ID: \`${userId}\`\n- Telegram ID: \`${user.telegramId}\`\n\nThis appears to be the token that was causing issues. You can delete it using the delete button below.`, {
+      parse_mode: "Markdown"
+    });
   }
 
   let currentIndex = 0;
