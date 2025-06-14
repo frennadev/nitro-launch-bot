@@ -17,7 +17,12 @@ const createTokenConversation = async (conversation: Conversation, ctx: Context)
   }
 
   await ctx.reply(
-    "Please send your token details as <b>name, symbol, description</b>, separated by commas.\n\nExample: <code>TokenName,TKN,My great token</code>",
+    "🚀 <b>Token Launch Setup Instructions</b>\n\n" +
+      "📝 Please send your token details as <b>name, symbol, description</b>, separated by commas.\n" +
+      "<i>Example: <code>TokenName,TKN,My great token</code></i>\n\n" +
+      "<b>Launch Instructions:</b>\n" +
+      "🤖 Fund dev wallet with a minimum of <b>0.15 SOL</b> + your desired dev‐buy amount (optional)\n" +
+      "💰 Fund your funding wallet with buyer amount + <b>0.1 SOL</b>\n",
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
 
@@ -68,7 +73,10 @@ const createTokenConversation = async (conversation: Conversation, ctx: Context)
     responseType: "arraybuffer",
   });
 
-  const { update } = await sendLoadingMessage(ctx, "🔄 **Creating your token...**\n\n⏳ Processing image and metadata...");
+  const { update } = await sendLoadingMessage(
+    ctx,
+    "🔄 **Creating your token...**\n\n⏳ Processing image and metadata..."
+  );
 
   const token = await createToken(user.id, name, symbol, description, fileData);
 

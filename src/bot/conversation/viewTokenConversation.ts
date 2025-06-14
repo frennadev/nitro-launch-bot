@@ -6,6 +6,7 @@ import { TokenModel } from "../../backend/models";
 import { CallBackQueries } from "../types";
 import { sendMessage } from "../../backend/sender";
 import { TokenState } from "../../backend/types";
+import { getTokenInfo } from "../../backend/utils";
 
 const viewTokensConversation = async (conversation: Conversation<Context>, ctx: Context) => {
   const user = await getUser(ctx.chat!.id.toString());
@@ -16,7 +17,7 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
 
   // First, let's check if the user lookup is working correctly
   const userId = String(user._id);
-  
+
   const tokens = await TokenModel.find({ user: user._id })
     .populate("launchData.devWallet")
     .populate("launchData.buyWallets")
@@ -25,17 +26,25 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
 
   // If no tokens found, provide more helpful information
   if (!tokens.length) {
-    await sendMessage(ctx, `No tokens found for user ${user.userName}.\n\nUser ID: \`${userId}\`\nTelegram ID: \`${user.telegramId}\``, {
-      parse_mode: "Markdown"
-    });
+    await sendMessage(
+      ctx,
+      `No tokens found for user ${user.userName}.\n\nUser ID: \`${userId}\`\nTelegram ID: \`${user.telegramId}\``,
+      {
+        parse_mode: "Markdown",
+      }
+    );
     return conversation.halt();
   }
 
   // If only one token and it's the problematic one, let's provide more info
   if (tokens.length === 1 && tokens[0].tokenAddress === "4PsSzzPA4NkrbCstre2YBpHAxJBntD1eKTwi6PmXpump") {
-    await sendMessage(ctx, `⚠️ **Debug Information**\n\nYou have exactly 1 token in the database:\n\n**Token:** ${tokens[0].name} (${tokens[0].symbol})\n**Address:** \`${tokens[0].tokenAddress}\`\n**State:** ${tokens[0].state}\n\n**User Info:**\n- Username: ${user.userName}\n- User ID: \`${userId}\`\n- Telegram ID: \`${user.telegramId}\`\n\nThis appears to be the token that was causing issues. You can delete it using the delete button below.`, {
-      parse_mode: "Markdown"
-    });
+    await sendMessage(
+      ctx,
+      `⚠️ **Debug Information**\n\nYou have exactly 1 token in the database:\n\n**Token:** ${tokens[0].name} (${tokens[0].symbol})\n**Address:** \`${tokens[0].tokenAddress}\`\n**State:** ${tokens[0].state}\n\n**User Info:**\n- Username: ${user.userName}\n- User ID: \`${userId}\`\n- Telegram ID: \`${user.telegramId}\`\n\nThis appears to be the token that was causing issues. You can delete it using the delete button below.`,
+      {
+        parse_mode: "Markdown",
+      }
+    );
   }
 
   let currentIndex = 0;
@@ -44,6 +53,11 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     const token = tokens[index];
     const { name, symbol, description, tokenAddress, state, launchData } = token;
     const { buyWallets, buyAmount, devBuy } = launchData!;
+
+    let tokenInfo;
+    if (state === TokenState.LAUNCHED) {
+      tokenInfo = await getTokenInfo(tokenAddress);
+    }
 
     const lines = [
       `💊 **${name}**`,
@@ -55,13 +69,16 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
       `🛒 Buyer allocation: \`${buyAmount || 0}\` SOL`,
       `👥 Worker wallets: \`${(buyWallets as any[])?.length || 0}\``,
       "",
+      state === TokenState.LAUNCHED && tokenInfo
+        ? `📊 Market Cap: $${tokenInfo.marketCap.toLocaleString() ?? 0} \n💸 Price: $${tokenInfo.priceUsd} \n`
+        : "",
       `📊 Status: ${state === TokenState.LAUNCHED ? "✅ Launched" : "⌛ Pending"}`,
       "",
       `Showing ${index + 1} of ${tokens.length}`,
     ].join("\n");
 
     const keyboard = new InlineKeyboard();
-    
+
     if (state === TokenState.LAUNCHED) {
       keyboard
         .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${tokenAddress}`)
@@ -89,7 +106,11 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
 
     keyboard.text("🔙 Back", CallBackQueries.BACK);
 
-    await ctx.reply(lines, {
+    // await ctx.reply(lines, {
+    //   parse_mode: "Markdown",
+    //   reply_markup: keyboard,
+    // });
+    sendMessage(ctx, lines, {
       parse_mode: "Markdown",
       reply_markup: keyboard,
     });
@@ -136,31 +157,31 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
       return conversation.halt();
     } else if (data?.startsWith(`${CallBackQueries.DELETE_TOKEN}_`)) {
       const tokenAddress = data.substring(`${CallBackQueries.DELETE_TOKEN}_`.length);
-      const token = tokens.find(t => t.tokenAddress === tokenAddress);
+      const token = tokens.find((t) => t.tokenAddress === tokenAddress);
       if (token) {
         await showDeleteConfirmation(tokenAddress, token.name);
       }
     } else if (data?.startsWith(`${CallBackQueries.CONFIRM_DELETE_TOKEN}_`)) {
       const tokenAddress = data.substring(`${CallBackQueries.CONFIRM_DELETE_TOKEN}_`.length);
-      
+
       try {
         const result = await deleteToken(String(user._id), tokenAddress);
-        
+
         if (result.success) {
           await ctx.reply("✅ **Token deleted successfully!**\n\nThe token has been removed from your account.", {
-            parse_mode: "Markdown"
+            parse_mode: "Markdown",
           });
-          
+
           // Refresh the tokens list and return to main menu
           return conversation.halt();
         } else {
           await ctx.reply(`❌ **Failed to delete token**\n\n${result.message}`, {
-            parse_mode: "Markdown"
+            parse_mode: "Markdown",
           });
         }
       } catch (error: any) {
         await ctx.reply(`❌ **Error deleting token**\n\n${error.message}`, {
-          parse_mode: "Markdown"
+          parse_mode: "Markdown",
         });
       }
     } else if (data === "cancel_delete") {
