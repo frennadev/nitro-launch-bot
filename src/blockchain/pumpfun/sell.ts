@@ -16,6 +16,7 @@ import { sellInstruction } from "./instructions";
 import { connection } from "../common/connection";
 import { collectTransactionFee } from "../../backend/functions-main";
 import bs58 from "bs58";
+import { decryptPrivateKey } from "../../backend/utils";
 
 export const executeDevSell = async (
   tokenAddress: string,
@@ -30,7 +31,7 @@ export const executeDevSell = async (
   const start = performance.now();
 
   const mintPublicKey = new PublicKey(tokenAddress);
-  const devKeypair = secretKeyToKeypair(devWallet);
+  const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet));
   const ata = getAssociatedTokenAddressSync(
     mintPublicKey,
     devKeypair.publicKey,
@@ -93,7 +94,7 @@ export const executeDevSell = async (
     const estimatedSolReceived = Math.min(devBalanceInSol * 0.1, 1.0); // Conservative estimate
     
     if (estimatedSolReceived > 0.001) { // Only collect if meaningful amount
-      const feeResult = await collectTransactionFee(devWallet, estimatedSolReceived, "sell");
+      const feeResult = await collectTransactionFee(decryptPrivateKey(devWallet), estimatedSolReceived, "sell");
       
       if (feeResult.success) {
         logger.info(`[${logIdentifier}]: Dev sell transaction fee collected: ${feeResult.feeAmount} SOL`);
@@ -128,8 +129,9 @@ export const executeWalletSell = async (
   const start = performance.now();
 
   const mintPublicKey = new PublicKey(tokenAddress);
-  const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
-  const devKeypair = secretKeyToKeypair(devWallet);
+  // Decrypt the private keys before creating keypairs
+  const buyKeypairs = buyWallets.map((encryptedKey) => secretKeyToKeypair(decryptPrivateKey(encryptedKey)));
+  const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet));
 
   const walletBalances = (
     await Promise.all(
