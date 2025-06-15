@@ -184,8 +184,8 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       
       await executeWalletSell(
         data.tokenAddress,
-        data.buyerWallets,
         data.devWallet,
+        data.buyerWallets,
         data.sellPercent,
       );
       
