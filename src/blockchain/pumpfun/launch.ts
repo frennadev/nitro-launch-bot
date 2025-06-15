@@ -33,8 +33,8 @@ import {
   updateBuyDistribution,
   updateLaunchStage,
   collectPlatformFee,
-  collectTransactionFee,
-} from "../../backend/functions-main";
+} from "../../backend/functions";
+import { collectTransactionFee } from "../../backend/functions-main";
 import { logger } from "../common/logger";
 import { initializeMixer } from "../mixer/init-mixer";
 import bs58 from "bs58";
@@ -197,7 +197,7 @@ export const executeTokenLaunch = async (
         globalSetting.initialVirtualSolReserves,
         globalSetting.initialRealTokenReserves,
       );
-      const tokenOutWithSlippage = applySlippage(tokenOut, 2);
+      const tokenOutWithSlippage = applySlippage(tokenOut, 10);
       const devBuyIx = buyInstruction(
         mintKeypair.publicKey,
         devKeypair.publicKey,
@@ -312,77 +312,126 @@ export const executeTokenLaunch = async (
     let virtualTokenReserve = curveData.virtualTokenReserves;
     let virtualSolReserve = curveData.virtualSolReserves;
     let realTokenReserve = curveData.realTokenReserves;
-    const snipeSetups: {
-      signedTx: VersionedTransaction;
-      setup: TransactionSetup;
-    }[] = [];
+    
+    // Enhanced buy transaction with retry logic and higher slippage
+    const executeBuyWithRetry = async (
+      keypair: any,
+      swapAmount: bigint,
+      currentComputeUnitPrice: number,
+      blockHash: any,
+      maxRetries: number = 3
+    ) => {
+      let baseSlippage = 10; // Start with 10% slippage
+      
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const currentSlippage = baseSlippage + (attempt * 5); // Increase by 5% each retry
+          logger.info(`[${logIdentifier}]: Attempting buy for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
+          
+          const ata = getAssociatedTokenAddressSync(
+            mintKeypair.publicKey,
+            keypair.publicKey,
+          );
+          const ataIx = createAssociatedTokenAccountIdempotentInstruction(
+            keypair.publicKey,
+            ata,
+            keypair.publicKey,
+            mintKeypair.publicKey,
+          );
+          
+          const { tokenOut } = quoteBuy(
+            swapAmount,
+            virtualTokenReserve,
+            virtualSolReserve,
+            realTokenReserve,
+          );
+          
+          const tokenOutWithSlippage = applySlippage(tokenOut, currentSlippage);
+          const buyIx = buyInstruction(
+            mintKeypair.publicKey,
+            devKeypair.publicKey,
+            keypair.publicKey,
+            tokenOutWithSlippage,
+            swapAmount,
+          );
+          
+          const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
+            microLamports: currentComputeUnitPrice,
+          });
+          
+          const buyTx = new VersionedTransaction(
+            new TransactionMessage({
+              instructions: [addPriorityFee, ataIx, buyIx],
+              payerKey: keypair.publicKey,
+              recentBlockhash: blockHash.blockhash,
+            }).compileToV0Message(),
+          );
+          buyTx.sign([keypair]);
+          
+          const result = await sendAndConfirmTransactionWithRetry(
+            buyTx,
+            {
+              instructions: [ataIx, buyIx],
+              signers: [keypair],
+              payer: keypair.publicKey,
+            },
+            10_000,
+            3,
+            1000,
+            logIdentifier,
+          );
+          
+          if (result.success) {
+            logger.info(`[${logIdentifier}]: Buy successful for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage on attempt ${attempt + 1}`);
+            return result;
+          } else {
+            logger.warn(`[${logIdentifier}]: Buy attempt ${attempt + 1} failed for ${keypair.publicKey.toBase58()}: ${result.signature || 'No signature'}`);
+            if (attempt === maxRetries) {
+              logger.error(`[${logIdentifier}]: All buy attempts failed for ${keypair.publicKey.toBase58()}`);
+              return result;
+            }
+            // Wait before retry
+            await randomizedSleep(500, 1000);
+          }
+        } catch (error: any) {
+          logger.error(`[${logIdentifier}]: Buy attempt ${attempt + 1} error for ${keypair.publicKey.toBase58()}: ${error.message}`);
+          if (attempt === maxRetries) {
+            return { success: false, error: error.message };
+          }
+          await randomizedSleep(500, 1000);
+        }
+      }
+      
+      return { success: false, error: "Max retries exceeded" };
+    };
+    
+    // Execute all buy transactions with enhanced retry logic
+    const buyTasks = [];
     for (let i = 0; i < buyKeypairs.length; i++) {
       const keypair = buyKeypairs[i];
-      const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58())
+      const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
 
-      console.log("SOL balance", {walletSolBalance, keypair: keypair.publicKey.toBase58()})
+      console.log("SOL balance", {walletSolBalance, keypair: keypair.publicKey.toBase58()});
       const swapAmount = BigInt(
         Math.floor((walletSolBalance - 0.01) * LAMPORTS_PER_SOL),
       );
-      const ata = getAssociatedTokenAddressSync(
-        mintKeypair.publicKey,
-        keypair.publicKey,
+      
+      buyTasks.push(
+        executeBuyWithRetry(
+          keypair,
+          swapAmount,
+          currentComputeUnitPrice,
+          blockHash,
+          3 // Max 3 retries
+        )
       );
-      const ataIx = createAssociatedTokenAccountIdempotentInstruction(
-        keypair.publicKey,
-        ata,
-        keypair.publicKey,
-        mintKeypair.publicKey,
-      );
-      const { tokenOut } = quoteBuy(
-        swapAmount,
-        virtualTokenReserve,
-        virtualSolReserve,
-        realTokenReserve,
-      );
-      const tokenOutWithSlippage = applySlippage(tokenOut, 3);
-      const buyIx = buyInstruction(
-        mintKeypair.publicKey,
-        devKeypair.publicKey,
-        keypair.publicKey,
-        tokenOutWithSlippage,
-        swapAmount,
-      );
-      const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: currentComputeUnitPrice,
-      });
-      const buyTx = new VersionedTransaction(
-        new TransactionMessage({
-          instructions: [addPriorityFee, ataIx, buyIx],
-          payerKey: keypair.publicKey,
-          recentBlockhash: blockHash.blockhash,
-        }).compileToV0Message(),
-      );
-      buyTx.sign([keypair]);
-      snipeSetups.push({
-        signedTx: buyTx,
-        setup: {
-          instructions: [ataIx, buyIx],
-          signers: [keypair],
-          payer: keypair.publicKey,
-        },
-      });
       currentComputeUnitPrice -= computeUnitPriceDecrement;
     }
-    const tasks = snipeSetups.map((setup) =>
-      sendAndConfirmTransactionWithRetry(
-        setup.signedTx,
-        setup.setup,
-        10_000,
-        3,
-        1000,
-        logIdentifier,
-      ),
-    );
-    const results = await Promise.all(tasks);
+    
+    const results = await Promise.all(buyTasks);
     const success = results.filter((res) => res.success);
     const failed = results.filter((res) => !res.success);
-    logger.info(`[${logIdentifier}]: Snipe Results`, {
+    logger.info(`[${logIdentifier}]: Enhanced Snipe Results`, {
       success,
       failed,
     });
