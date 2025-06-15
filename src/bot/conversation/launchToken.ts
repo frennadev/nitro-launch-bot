@@ -16,7 +16,7 @@ import {
   calculateTotalLaunchCost,
   getDefaultDevWallet,
   getDevWallet,
-} from "../../backend/functions-main";
+} from "../../backend/functions";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 import { decryptPrivateKey } from "../../backend/utils";
@@ -94,18 +94,53 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   }
 
   // -------- FOR RETRIES -------
+  // Instead of automatically retrying with old values, let user enter new values
   if ((token.launchData?.launchStage || 1) > 1) {
-    const result = await enqueueTokenLaunchRetry(user.id, Number(user.telegramId), token.tokenAddress);
-    if (!result.success) {
-      await sendMessage(ctx, "An error occurred while submitting token launch for retry ❌. Please try again..");
-    } else {
-      await sendMessage(
-        ctx,
-        "Token Launch details has been submitted for retry ✅.\nYou would get a message once your launch has been completed."
-      );
+    await sendMessage(ctx, `🔄 <b>Previous launch attempt detected</b>
+
+This token has a previous launch attempt. You can:
+• Enter new launch amounts (recommended)
+• Or continue with previous values
+
+<b>Previous values:</b>
+• Buy Amount: ${token.launchData?.buyAmount || 0} SOL  
+• Dev Buy: ${token.launchData?.devBuy || 0} SOL
+
+Would you like to enter new values or use previous ones?`, { 
+      parse_mode: "HTML", 
+      reply_markup: new InlineKeyboard()
+        .text("🆕 Enter New Values", "NEW_VALUES")
+        .text("🔄 Use Previous Values", "USE_PREVIOUS")
+        .row()
+        .text("❌ Cancel", LaunchCallBackQueries.CANCEL)
+    });
+
+    const retryChoice = await conversation.waitFor("callback_query:data");
+    await retryChoice.answerCallbackQuery();
+    
+    if (retryChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+      await sendMessage(ctx, "Launch cancelled.");
+      await conversation.halt();
+      return;
     }
-    await conversation.halt();
-    return;
+    
+    if (retryChoice.callbackQuery?.data === "USE_PREVIOUS") {
+      // Use the automatic retry with stored values
+      const result = await enqueueTokenLaunchRetry(user.id, Number(user.telegramId), token.tokenAddress);
+      if (!result.success) {
+        await sendMessage(ctx, "An error occurred while submitting token launch for retry ❌. Please try again..");
+      } else {
+        await sendMessage(
+          ctx,
+          "Token Launch details has been submitted for retry ✅.\nYou would get a message once your launch has been completed."
+        );
+      }
+      await conversation.halt();
+      return;
+    }
+    
+    // If "NEW_VALUES" selected, continue with the normal flow to get new input
+    await sendMessage(ctx, "✅ You can now enter new launch amounts.");
   }
 
   // -------- GET FUNDING WALLET ----------
