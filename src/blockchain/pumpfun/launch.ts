@@ -549,8 +549,17 @@ export const executeTokenLaunch = async (
 
         console.log("SOL balance", {walletSolBalance, keypair: keypair.publicKey.toBase58()});
         const swapAmount = BigInt(
-          Math.floor((walletSolBalance - 0.01) * LAMPORTS_PER_SOL),
+          Math.floor((walletSolBalance - 0.005) * LAMPORTS_PER_SOL),
         );
+        
+        console.log("Buy calculation", {
+          wallet: keypair.publicKey.toBase58(),
+          totalBalance: walletSolBalance,
+          buffer: 0.005,
+          usableBalance: walletSolBalance - 0.005,
+          swapAmountSOL: Number(swapAmount) / LAMPORTS_PER_SOL,
+          percentageUsed: ((Number(swapAmount) / LAMPORTS_PER_SOL) / walletSolBalance * 100).toFixed(1) + "%"
+        });
         
         buyTasks.push(
           executeBuyWithRetry(
@@ -603,7 +612,7 @@ export const executeTokenLaunch = async (
           const walletPrivateKey = buyWallets[walletIndex];
           const keypair = buyKeypairs[walletIndex];
           const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
-          const transactionAmount = Math.max(0, walletSolBalance - 0.01); // Amount used for buying (minus buffer)
+          const transactionAmount = Math.max(0, walletSolBalance - 0.005); // Amount used for buying (minus buffer)
           
           if (transactionAmount > 0) {
             feeCollectionPromises.push(
