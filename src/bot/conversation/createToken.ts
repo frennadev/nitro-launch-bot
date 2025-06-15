@@ -1,7 +1,7 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { createToken, getUser } from "../../backend/functions-main";
+import { createToken, getUser, getDefaultDevWallet, getOrCreateFundingWallet } from "../../backend/functions";
 import axios from "axios";
 import { CallBackQueries } from "../types";
 import { env } from "../../config";
@@ -16,13 +16,19 @@ const createTokenConversation = async (conversation: Conversation, ctx: Context)
     return conversation.halt();
   }
 
+  // Get wallet addresses
+  const devWalletAddress = await getDefaultDevWallet(user.id);
+  const fundingWalletAddress = await getOrCreateFundingWallet(user.id);
+
   await ctx.reply(
     "🚀 <b>Token Launch Setup Instructions</b>\n\n" +
       "📝 Please send your token details as <b>name, symbol, description</b>, separated by commas.\n" +
       "<i>Example: <code>TokenName,TKN,My great token</code></i>\n\n" +
       "<b>Launch Instructions:</b>\n" +
       "🤖 Fund dev wallet with a minimum of <b>0.15 SOL</b> + your desired dev‐buy amount (optional)\n" +
-      "💰 Fund your funding wallet with buyer amount + <b>0.1 SOL</b>\n",
+      `<code>${devWalletAddress}</code>\n\n` +
+      "💰 Fund your funding wallet with buyer amount + <b>0.1 SOL</b>\n" +
+      `<code>${fundingWalletAddress}</code>\n`,
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
 

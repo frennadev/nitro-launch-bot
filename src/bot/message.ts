@@ -1,6 +1,7 @@
 import bot from ".";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
+import { getTokenInfo } from "../backend/utils";
 
 export const sendLaunchSuccessNotification = async (
   chatId: number,
@@ -8,13 +9,19 @@ export const sendLaunchSuccessNotification = async (
   tokenName: string,
   symbol: string,
 ) => {
+  // Get token info for market cap and price
+  const tokenInfo = await getTokenInfo(tokenAddress);
+  
   const msg = [
     `🎉 *Token launched successfully* \n`,
     `*Name*: ${escape(tokenName)}`,
     `*Symbol*: $\`${escape(symbol)}\``,
     `*Token Address*: \`${tokenAddress}\``,
+    tokenInfo ? `*Market Cap*: $${tokenInfo.marketCap.toLocaleString()}` : "",
+    tokenInfo ? `*Price*: $${tokenInfo.price}` : "",
     `\nClick the buttons below to perform other actions ⬇️`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
+  
   await bot.api.sendMessage(chatId, msg, {
     parse_mode: "MarkdownV2",
     reply_markup: {
