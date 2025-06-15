@@ -141,7 +141,7 @@ Proceed with withdrawal?`, {
       await sendMessage(confirmation, "🔄 Processing withdrawal...");
 
       // Create and send transaction
-      const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWalletPrivateKey));
+      const devKeypair = secretKeyToKeypair(devWalletPrivateKey);
       const destinationPubkey = new PublicKey(destinationAddress);
       
       const transaction = new Transaction().add(
