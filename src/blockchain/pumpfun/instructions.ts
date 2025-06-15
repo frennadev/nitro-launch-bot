@@ -102,6 +102,45 @@ export const buyInstruction = (
   });
 };
 
+export const marketOrderBuyInstruction = (
+  mint: PublicKey,
+  tokenCreator: PublicKey,
+  buyer: PublicKey,
+  exactSolAmount: bigint,
+) => {
+  const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint);
+  const buyerAta = getAssociatedTokenAddressSync(mint, buyer);
+  const creatorVault = getCreatorVault(tokenCreator);
+  const keys: AccountMeta[] = [
+    { pubkey: PUMPFUN_GLOBAL_SETTINGS, isSigner: false, isWritable: false },
+    { pubkey: PUMPFUN_FEE_ACCOUNT, isSigner: false, isWritable: true },
+    { pubkey: mint, isSigner: false, isWritable: false },
+    { pubkey: bondingCurve, isSigner: false, isWritable: true },
+    { pubkey: associatedBondingCurve, isSigner: false, isWritable: true },
+    { pubkey: buyerAta, isSigner: false, isWritable: true },
+    { pubkey: buyer, isSigner: true, isWritable: true },
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    { pubkey: creatorVault, isSigner: false, isWritable: true },
+    { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false },
+    { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false },
+  ];
+  
+  // Market order: buy maximum possible tokens with exact SOL amount
+  const maxTokenAmount = BigInt("18446744073709551615"); // Max uint64 - buy as many tokens as possible
+  
+  const data = BuyCodec.encode({
+    instruction: Buffer.from(BUY_DISCRIMINATOR).readBigUint64LE(),
+    amount: maxTokenAmount,
+    maxSolCost: exactSolAmount,
+  });
+  return new TransactionInstruction({
+    data: Buffer.from(data),
+    keys,
+    programId: PUMPFUN_PROGRAM,
+  });
+};
+
 export const sellInstruction = (
   mint: PublicKey,
   tokenCreator: PublicKey,

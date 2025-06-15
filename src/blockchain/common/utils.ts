@@ -180,16 +180,60 @@ export const sendAndConfirmTransactionWithRetry = async (
   maxRetries: number,
   retryInterval: number,
   logIdentifier: string,
+  options?: {
+    useSmartPriorityFees?: boolean;
+    transactionType?: "token_creation" | "buy" | "sell" | "transfer";
+    basePriorityFee?: number;
+  }
 ) => {
   let success = false;
   let signature: string | null = null;
   let retryCount = 0;
+  
   while (retryCount < maxRetries && !success) {
-    signature = await sendTransaction(signedTx, setup, retryCount > 0);
+    let currentTx = signedTx;
+    
+    // Apply smart priority fees if enabled
+    if (options?.useSmartPriorityFees && retryCount > 0) {
+      const { 
+        createSmartPriorityFeeInstruction, 
+        getTransactionTypePriorityConfig,
+        logPriorityFeeInfo 
+      } = await import("./priority-fees");
+      
+      const config = options.transactionType 
+        ? getTransactionTypePriorityConfig(options.transactionType)
+        : { baseFee: options.basePriorityFee || 1_000_000, retryMultiplier: 1.5, maxFee: 10_000_000, minFee: 100_000 };
+      
+      const smartPriorityFeeIx = createSmartPriorityFeeInstruction(retryCount, config);
+      const priorityFee = smartPriorityFeeIx.data.readUInt32LE(4); // Extract microLamports from instruction data
+      
+      logPriorityFeeInfo(
+        options.transactionType || "unknown",
+        retryCount,
+        priorityFee,
+        logIdentifier
+      );
+      
+      // Rebuild transaction with new priority fee
+      const blockhash = await connection.getLatestBlockhash("confirmed");
+      const newInstructions = [smartPriorityFeeIx, ...setup.instructions];
+      const message = new TransactionMessage({
+        instructions: newInstructions,
+        payerKey: setup.payer,
+        recentBlockhash: blockhash.blockhash,
+      }).compileToV0Message();
+      
+      currentTx = new VersionedTransaction(message);
+      currentTx.sign(setup.signers);
+    }
+    
+    signature = await sendTransaction(currentTx, setup, retryCount > 0);
     if (!signature) {
       logger.error(`[${logIdentifier}]: Failed to send transaction`);
       break;
     }
+    
     success = await confirmTransaction(
       signature,
       "confirmed",
@@ -198,6 +242,7 @@ export const sendAndConfirmTransactionWithRetry = async (
       false,
       logIdentifier,
     );
+    
     if (!success) {
       logger.error(
         `[${logIdentifier}]: transaction confirmation failed❌. Retrying in ${retryInterval} ms...`,
@@ -207,6 +252,7 @@ export const sendAndConfirmTransactionWithRetry = async (
       continue;
     }
   }
+  
   return {
     success,
     signature,

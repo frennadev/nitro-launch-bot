@@ -15,7 +15,7 @@ import {
   secretKeyToKeypair,
   sendAndConfirmTransactionWithRetry,
 } from "../common/utils";
-import { buyInstruction, tokenCreateInstruction } from "./instructions";
+import { buyInstruction, tokenCreateInstruction, marketOrderBuyInstruction } from "./instructions";
 import {
   applySlippage,
   getBondingCurve,
@@ -43,6 +43,11 @@ import { logger } from "../common/logger";
 import { initializeMixer } from "../mixer/init-mixer";
 import bs58 from "bs58";
 import { getSolBalance, getTokenBalance } from "../../backend/utils";
+import { 
+  createSmartPriorityFeeInstruction, 
+  getTransactionTypePriorityConfig,
+  logPriorityFeeInfo 
+} from "../common/priority-fees";
 
 export const prepareTokenLaunch = async (
   mint: string,
@@ -244,6 +249,10 @@ export const executeTokenLaunch = async (
       3,
       1000,
       logIdentifier,
+      {
+        useSmartPriorityFees: true,
+        transactionType: "token_creation",
+      }
     );
     logger.info(`[${logIdentifier}]: Token creation result`, result);
     
@@ -355,195 +364,118 @@ export const executeTokenLaunch = async (
     if (walletsToProcess.length === 0) {
       logger.info(`[${logIdentifier}]: All wallets already have successful snipe transactions, skipping snipe stage`);
     } else {
-      const computeUnitPriceDecrement = Math.round(
-        (maxComputeUnitPrice - baseComputeUnitPrice) / walletsToProcess.length,
-      );
-      let currentComputeUnitPrice = maxComputeUnitPrice;
-      
-      // Enhanced curve data fetching with better retry logic
-      let curveData = null;
-      let retries = 0;
-      const maxRetries = 15; // Increased from 5 to 15
-      const baseDelay = 1000; // Start with 1 second
-      
-      logger.info(`[${logIdentifier}]: Fetching bonding curve data...`);
-      
-      while (!curveData && retries < maxRetries) {
-        try {
-          // Try different commitment levels for better reliability
-          const commitmentLevel = retries < 5 ? "processed" : retries < 10 ? "confirmed" : "finalized";
-          
-          // Get fresh account info with specific commitment
-          const accountInfo = await connection.getAccountInfo(bondingCurve, commitmentLevel);
-          if (accountInfo && accountInfo.data) {
-            curveData = await getBondingCurveData(bondingCurve);
-            if (curveData) {
-              logger.info(`[${logIdentifier}]: Successfully fetched curve data on attempt ${retries + 1} with ${commitmentLevel} commitment`);
-              break;
-            }
-          }
-        } catch (error: any) {
-          logger.warn(`[${logIdentifier}]: Curve data fetch attempt ${retries + 1} failed: ${error.message}`);
-        }
-        
-        retries += 1;
-        if (!curveData && retries < maxRetries) {
-          // Exponential backoff with jitter
-          const delay = Math.min(baseDelay * Math.pow(1.5, retries), 5000) + Math.random() * 1000;
-          logger.info(`[${logIdentifier}]: Retrying curve data fetch in ${Math.round(delay)}ms (attempt ${retries}/${maxRetries})`);
-          await randomizedSleep(delay, delay + 500);
-        }
-      }
-      
-      if (!curveData) {
-        logger.error(`[${logIdentifier}]: Failed to fetch curve data after ${maxRetries} attempts`);
-        
-        // Additional debugging - check if bonding curve account exists
-        try {
-          const accountInfo = await connection.getAccountInfo(bondingCurve, "finalized");
-          if (!accountInfo) {
-            throw new Error(`Bonding curve account does not exist: ${bondingCurve.toBase58()}`);
-          } else {
-            throw new Error(`Bonding curve account exists but data is invalid. Account owner: ${accountInfo.owner.toBase58()}, Data length: ${accountInfo.data.length}`);
-          }
-        } catch (debugError: any) {
-          logger.error(`[${logIdentifier}]: Bonding curve debug info: ${debugError.message}`);
-          throw new Error(`Unable to fetch curve data: ${debugError.message}`);
-        }
-      }
-
-      let virtualTokenReserve = curveData.virtualTokenReserves;
-      let virtualSolReserve = curveData.virtualSolReserves;
-      let realTokenReserve = curveData.realTokenReserves;
-      
-      // Enhanced buy transaction with retry logic and higher slippage
-      const executeBuyWithRetry = async (
+      // Enhanced buy transaction with market order approach (no slippage failures)
+      const executeMarketOrderBuy = async (
         keypair: any,
         swapAmount: bigint,
-        currentComputeUnitPrice: number,
-        blockHash: any,
-        maxRetries: number = 3
+        blockHash: any
       ) => {
-        let baseSlippage = 10; // Start with 10% slippage
-        
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
-            const currentSlippage = baseSlippage + (attempt * 5); // Increase by 5% each retry
-            logger.info(`[${logIdentifier}]: Attempting buy for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
-            
-            const ata = getAssociatedTokenAddressSync(
-              mintKeypair.publicKey,
-              keypair.publicKey,
-            );
-            const ataIx = createAssociatedTokenAccountIdempotentInstruction(
-              keypair.publicKey,
-              ata,
-              keypair.publicKey,
-              mintKeypair.publicKey,
-            );
-            
-            const { tokenOut } = quoteBuy(
-              swapAmount,
-              virtualTokenReserve,
-              virtualSolReserve,
-              realTokenReserve,
-            );
-            
-            const tokenOutWithSlippage = applySlippage(tokenOut, currentSlippage);
-            const buyIx = buyInstruction(
-              mintKeypair.publicKey,
-              devKeypair.publicKey,
-              keypair.publicKey,
-              tokenOutWithSlippage,
-              swapAmount,
-            );
-            
-            const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-              microLamports: currentComputeUnitPrice,
-            });
-            
-            const buyTx = new VersionedTransaction(
-              new TransactionMessage({
-                instructions: [addPriorityFee, ataIx, buyIx],
-                payerKey: keypair.publicKey,
-                recentBlockhash: blockHash.blockhash,
-              }).compileToV0Message(),
-            );
-            buyTx.sign([keypair]);
-            
-            const result = await sendAndConfirmTransactionWithRetry(
-              buyTx,
-              {
-                instructions: [ataIx, buyIx],
-                signers: [keypair],
-                payer: keypair.publicKey,
-              },
-              10_000,
-              3,
-              1000,
-              logIdentifier,
-            );
-            
-            // Record the transaction result
-            await recordTransaction(
-              tokenAddress,
-              keypair.publicKey.toBase58(),
-              "snipe_buy",
-              result.signature || "failed",
-              result.success,
-              currentLaunchAttempt,
-              {
-                slippageUsed: currentSlippage,
-                amountSol: Number(swapAmount) / LAMPORTS_PER_SOL,
-                amountTokens: tokenOut.toString(),
-                errorMessage: result.success ? undefined : `Buy failed on attempt ${attempt + 1}`,
-                retryAttempt: attempt,
-              }
-            );
-            
-            if (result.success) {
-              logger.info(`[${logIdentifier}]: Buy successful for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage on attempt ${attempt + 1}`);
-              return result;
-            } else {
-              logger.warn(`[${logIdentifier}]: Buy attempt ${attempt + 1} failed for ${keypair.publicKey.toBase58()}: ${result.signature || 'No signature'}`);
-              if (attempt === maxRetries) {
-                logger.error(`[${logIdentifier}]: All buy attempts failed for ${keypair.publicKey.toBase58()}`);
-                return result;
-              }
-              // Wait before retry
-              await randomizedSleep(500, 1000);
+        try {
+          // Use smart priority fees
+          const priorityConfig = getTransactionTypePriorityConfig("buy");
+          const smartPriorityFeeIx = createSmartPriorityFeeInstruction(0, priorityConfig);
+          const currentPriorityFee = smartPriorityFeeIx.data.readUInt32LE(4);
+          
+          logPriorityFeeInfo("buy", 0, currentPriorityFee, logIdentifier);
+          
+          logger.info(`[${logIdentifier}]: Market order buy for ${keypair.publicKey.toBase58()} spending ${(Number(swapAmount) / LAMPORTS_PER_SOL).toFixed(4)} SOL with ${(currentPriorityFee / 1_000_000).toFixed(3)} SOL priority fee`);
+          
+          const ata = getAssociatedTokenAddressSync(
+            mintKeypair.publicKey,
+            keypair.publicKey,
+          );
+          const ataIx = createAssociatedTokenAccountIdempotentInstruction(
+            keypair.publicKey,
+            ata,
+            keypair.publicKey,
+            mintKeypair.publicKey,
+          );
+          
+          // Market order: spend exact SOL amount, get whatever tokens possible
+          const marketBuyIx = marketOrderBuyInstruction(
+            mintKeypair.publicKey,
+            devKeypair.publicKey,
+            keypair.publicKey,
+            swapAmount,
+          );
+          
+          const buyTx = new VersionedTransaction(
+            new TransactionMessage({
+              instructions: [smartPriorityFeeIx, ataIx, marketBuyIx],
+              payerKey: keypair.publicKey,
+              recentBlockhash: blockHash.blockhash,
+            }).compileToV0Message(),
+          );
+          buyTx.sign([keypair]);
+          
+          const result = await sendAndConfirmTransactionWithRetry(
+            buyTx,
+            {
+              instructions: [ataIx, marketBuyIx],
+              signers: [keypair],
+              payer: keypair.publicKey,
+            },
+            10_000,
+            3,
+            1000,
+            logIdentifier,
+            {
+              useSmartPriorityFees: true,
+              transactionType: "buy",
             }
-          } catch (error: any) {
-            logger.error(`[${logIdentifier}]: Buy attempt ${attempt + 1} error for ${keypair.publicKey.toBase58()}: ${error.message}`);
-            
-            // Record the failed attempt
-            await recordTransaction(
-              tokenAddress,
-              keypair.publicKey.toBase58(),
-              "snipe_buy",
-              "error",
-              false,
-              currentLaunchAttempt,
-              {
-                slippageUsed: baseSlippage + (attempt * 5),
-                amountSol: Number(swapAmount) / LAMPORTS_PER_SOL,
-                errorMessage: error.message,
-                retryAttempt: attempt,
-              }
-            );
-            
-            if (attempt === maxRetries) {
-              return { success: false, error: error.message };
+          );
+          
+          // Record the transaction result
+          await recordTransaction(
+            tokenAddress,
+            keypair.publicKey.toBase58(),
+            "snipe_buy",
+            result.signature || "failed",
+            result.success,
+            currentLaunchAttempt,
+            {
+              slippageUsed: 0, // Market orders don't use slippage
+              amountSol: Number(swapAmount) / LAMPORTS_PER_SOL,
+              amountTokens: "market_order", // Variable amount based on current price
+              errorMessage: result.success ? undefined : "Market order buy failed",
+              retryAttempt: 0,
             }
-            await randomizedSleep(500, 1000);
+          );
+          
+          if (result.success) {
+            logger.info(`[${logIdentifier}]: Market order buy successful for ${keypair.publicKey.toBase58()}`);
+          } else {
+            logger.warn(`[${logIdentifier}]: Market order buy failed for ${keypair.publicKey.toBase58()}: ${result.signature || 'No signature'}`);
           }
+          
+          return result;
+        } catch (error: any) {
+          logger.error(`[${logIdentifier}]: Market order buy error for ${keypair.publicKey.toBase58()}: ${error.message}`);
+          
+          // Record the failed attempt
+          await recordTransaction(
+            tokenAddress,
+            keypair.publicKey.toBase58(),
+            "snipe_buy",
+            "error",
+            false,
+            currentLaunchAttempt,
+            {
+              slippageUsed: 0,
+              amountSol: Number(swapAmount) / LAMPORTS_PER_SOL,
+              errorMessage: error.message,
+              retryAttempt: 0,
+            }
+          );
+          
+          return { success: false, error: error.message };
         }
-        
-        return { success: false, error: "Max retries exceeded" };
       };
       
-      // Execute all buy transactions with enhanced retry logic
+      // Execute all buy transactions in parallel with market orders
+      logger.info(`[${logIdentifier}]: Starting parallel market order execution for ${walletsToProcess.length} wallets`);
       const buyTasks = [];
+      
       for (let i = 0; i < walletsToProcess.length; i++) {
         const keypair = walletsToProcess[i];
         const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
@@ -554,17 +486,15 @@ export const executeTokenLaunch = async (
         );
         
         buyTasks.push(
-          executeBuyWithRetry(
+          executeMarketOrderBuy(
             keypair,
             swapAmount,
-            currentComputeUnitPrice,
-            blockHash,
-            3 // Max 3 retries
+            blockHash
           )
         );
-        currentComputeUnitPrice -= computeUnitPriceDecrement;
       }
       
+      // Execute all market orders in parallel
       const results = await Promise.all(buyTasks);
       const success = results.filter((res) => res.success);
       const failed = results.filter((res) => !res.success);
@@ -572,7 +502,7 @@ export const executeTokenLaunch = async (
       // Get updated transaction stats
       const transactionStats = await getTransactionStats(tokenAddress, currentLaunchAttempt);
       
-      logger.info(`[${logIdentifier}]: Enhanced Snipe Results`, {
+      logger.info(`[${logIdentifier}]: Market Order Snipe Results`, {
         currentAttempt: {
           success: success.length,
           failed: failed.length,

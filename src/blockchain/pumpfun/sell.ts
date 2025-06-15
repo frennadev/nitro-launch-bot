@@ -17,6 +17,11 @@ import { connection } from "../common/connection";
 import { collectTransactionFee } from "../../backend/functions-main";
 import bs58 from "bs58";
 import { decryptPrivateKey } from "../../backend/utils";
+import { 
+  createSmartPriorityFeeInstruction, 
+  getTransactionTypePriorityConfig,
+  logPriorityFeeInfo 
+} from "../common/priority-fees";
 
 export const executeDevSell = async (
   tokenAddress: string,
@@ -53,13 +58,18 @@ export const executeDevSell = async (
   const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
     units: 151595,
   });
-  const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-    microLamports: 1_000_000,
-  });
+  
+  // Use smart priority fees for sell transactions
+  const priorityConfig = getTransactionTypePriorityConfig("sell");
+  const smartPriorityFeeIx = createSmartPriorityFeeInstruction(0, priorityConfig);
+  const priorityFee = smartPriorityFeeIx.data.readUInt32LE(4);
+  
+  logPriorityFeeInfo("sell", 0, priorityFee, logIdentifier);
+  
   const blockHash = await connection.getLatestBlockhash("processed");
   const sellTx = new VersionedTransaction(
     new TransactionMessage({
-      instructions: [modifyComputeUnits, addPriorityFee, sellIx],
+      instructions: [modifyComputeUnits, smartPriorityFeeIx, sellIx],
       payerKey: devKeypair.publicKey,
       recentBlockhash: blockHash.blockhash,
     }).compileToV0Message(),
@@ -70,12 +80,16 @@ export const executeDevSell = async (
     {
       payer: devKeypair.publicKey,
       signers: [devKeypair],
-      instructions: [modifyComputeUnits, addPriorityFee, sellIx],
+      instructions: [modifyComputeUnits, smartPriorityFeeIx, sellIx],
     },
     10_000,
     3,
     1000,
     logIdentifier,
+    {
+      useSmartPriorityFees: true,
+      transactionType: "sell",
+    }
   );
   logger.info(`[${logIdentifier}]: Dev Sell result`, result);
   if (!result.success) {
@@ -117,59 +131,45 @@ export const executeDevSell = async (
 
 export const executeWalletSell = async (
   tokenAddress: string,
-  buyWallets: string[],
   devWallet: string,
+  buyerWallets: string[],
   sellPercent: number,
 ) => {
   if (sellPercent < 1 || sellPercent > 100) {
     throw new Error("Sell % cannot be less than 1 or greater than 100");
   }
-  const logIdentifier = `sell-${tokenAddress}`;
-  logger.info("Starting wallets sell");
+  const logIdentifier = `sell-wallets-${tokenAddress}`;
+  logger.info("Starting wallet sell");
   const start = performance.now();
 
   const mintPublicKey = new PublicKey(tokenAddress);
-  // Decrypt the private keys before creating keypairs
-  const buyKeypairs = buyWallets.map((encryptedKey) => secretKeyToKeypair(decryptPrivateKey(encryptedKey)));
   const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet));
-
-  const walletBalances = (
-    await Promise.all(
-      buyKeypairs.map(async (kp) => {
-        const ata = getAssociatedTokenAddressSync(mintPublicKey, kp.publicKey);
-        let balance = 0;
-        try {
-          balance = Number(
-            (await connection.getTokenAccountBalance(ata)).value.amount,
-          );
-        } catch (error) {
-          logger.error(
-            `[${logIdentifier}] Error fetching token balance for: ${kp.publicKey.toBase58()} with ATA: ${ata.toBase58()}`,
-          );
-        }
-        return {
-          wallet: kp,
-          ata,
-          balance,
-        };
-      }),
-    )
-  ).filter(({ balance }) => BigInt(balance) > BigInt(0));
-  if (walletBalances.length == 0) {
-    throw new Error("No wallet has tokens");
+  const buyerKeypairs = buyerWallets.map((w) =>
+    secretKeyToKeypair(decryptPrivateKey(w)),
+  );
+  const walletBalances = [];
+  for (const wallet of buyerKeypairs) {
+    const ata = getAssociatedTokenAddressSync(mintPublicKey, wallet.publicKey);
+    const balance = (await connection.getTokenAccountBalance(ata)).value.amount;
+    walletBalances.push({
+      wallet,
+      ata,
+      balance,
+    });
   }
-  walletBalances.sort((a, b) => a.balance - b.balance);
-
-  const totalTokens = walletBalances.reduce(
-    (acc, { balance }) => acc + BigInt(balance),
+  const totalBalance = walletBalances.reduce(
+    (sum, { balance }) => sum + BigInt(balance),
     BigInt(0),
   );
   let tokensToSell =
     sellPercent === 100
-      ? totalTokens
-      : (BigInt(sellPercent) * BigInt(100) * totalTokens) / BigInt(10_000);
-
-  const sellSetups: { wallet: Keypair; ata: PublicKey; amount: bigint }[] = [];
+      ? totalBalance
+      : (BigInt(sellPercent) * BigInt(100) * totalBalance) / BigInt(10_000);
+  const sellSetups: {
+    wallet: Keypair;
+    ata: PublicKey;
+    amount: bigint;
+  }[] = [];
   for (const walletInfo of walletBalances) {
     if (tokensToSell <= BigInt(0)) {
       break;
@@ -201,12 +201,17 @@ export const executeWalletSell = async (
     const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
       units: 151595,
     });
-    const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-      microLamports: 1_000_000,
-    });
+    
+    // Use smart priority fees for wallet sell transactions
+    const priorityConfig = getTransactionTypePriorityConfig("sell");
+    const smartPriorityFeeIx = createSmartPriorityFeeInstruction(0, priorityConfig);
+    const priorityFee = smartPriorityFeeIx.data.readUInt32LE(4);
+    
+    logPriorityFeeInfo("sell", 0, priorityFee, `${logIdentifier}-${wallet.publicKey.toBase58().slice(0, 8)}`);
+    
     const sellTx = new VersionedTransaction(
       new TransactionMessage({
-        instructions: [modifyComputeUnits, addPriorityFee, sellIx],
+        instructions: [modifyComputeUnits, smartPriorityFeeIx, sellIx],
         payerKey: wallet.publicKey,
         recentBlockhash: blockHash.blockhash,
       }).compileToV0Message(),
@@ -217,12 +222,16 @@ export const executeWalletSell = async (
       {
         payer: devKeypair.publicKey,
         signers: [devKeypair],
-        instructions: [modifyComputeUnits, addPriorityFee, sellIx],
+        instructions: [modifyComputeUnits, smartPriorityFeeIx, sellIx],
       },
       10_000,
       3,
       1000,
-      logIdentifier,
+      `${logIdentifier}-${wallet.publicKey.toBase58().slice(0, 8)}`,
+      {
+        useSmartPriorityFees: true,
+        transactionType: "sell",
+      }
     );
   });
   const results = await Promise.all(tasks);
@@ -281,6 +290,7 @@ export const executeWalletSell = async (
   }
 
   logger.info(
-    `[${logIdentifier}]: Wallet Sells completed in ${formatMilliseconds(performance.now() - start)}`,
+    `[${logIdentifier}]: Wallet Sell completed in ${formatMilliseconds(performance.now() - start)}`,
   );
+  return results;
 };
