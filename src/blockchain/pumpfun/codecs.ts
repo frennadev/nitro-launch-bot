@@ -54,6 +54,7 @@ type BondingCurve = {
   realSolReserves: bigint;
   tokenTotalSupply: bigint;
   complete: boolean;
+  creator: string;
 };
 
 export const CreateCodec: Codec<CreateToken> = getStructCodec([
@@ -100,4 +101,5 @@ export const BondingCurveCodec: Codec<BondingCurve> = getStructCodec([
   ["realSolReserves", getU64Codec()],
   ["tokenTotalSupply", getU64Codec()],
   ["complete", getBooleanCodec()],
+  ["creator", fixCodecSize(getBase58Codec(), 32)],
 ]);

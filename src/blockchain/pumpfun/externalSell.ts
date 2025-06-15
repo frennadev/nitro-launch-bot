@@ -169,7 +169,7 @@ export const executeExternalTokenSell = async (
           // Create sell instruction
           const sellIx = sellInstruction(
             mintPublicKey,
-            setup.wallet.publicKey, // Use wallet as token creator for external tokens
+            new PublicKey(bondingCurveData.creator),
             setup.wallet.publicKey,
             setup.amount,
             solOutWithSlippage,
