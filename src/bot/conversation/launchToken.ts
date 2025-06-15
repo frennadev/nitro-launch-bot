@@ -160,7 +160,7 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
 
   // -------- CHECK FUNDING WALLET BALANCE ----------
   const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
-  await sendMessage(ctx, `💳 Using funding wallet: ${fundingWallet.publicKey}\n💰 Balance: ${fundingBalance.toFixed(4)} SOL\n👥 Using ${buyerWallets.length} buyer wallets`);
+  await sendMessage(ctx, `💳 Using funding wallet: <code>${fundingWallet.publicKey}</code>\n💰 Balance: ${fundingBalance.toFixed(4)} SOL\n👥 Using ${buyerWallets.length} buyer wallets`, { parse_mode: "HTML" });
 
   let buyAmount = 0;
   let devBuy = 0;
