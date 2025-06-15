@@ -107,6 +107,7 @@ export const marketOrderBuyInstruction = (
   tokenCreator: PublicKey,
   buyer: PublicKey,
   exactSolAmount: bigint,
+  maxTokenAmount?: bigint, // Optional parameter for calculated max tokens
 ) => {
   const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint);
   const buyerAta = getAssociatedTokenAddressSync(mint, buyer);
@@ -126,12 +127,13 @@ export const marketOrderBuyInstruction = (
     { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false },
   ];
   
-  // Market order: buy maximum possible tokens with exact SOL amount
-  const maxTokenAmount = BigInt("18446744073709551615"); // Max uint64 - buy as many tokens as possible
+  // Use provided maxTokenAmount or calculate a reasonable amount based on SOL
+  // Instead of max uint64 which causes "NotEnoughTokensToBuy" errors
+  const tokenAmount = maxTokenAmount || (exactSolAmount * BigInt(1000000)); // Rough estimate: 1M tokens per SOL
   
   const data = BuyCodec.encode({
     instruction: Buffer.from(BUY_DISCRIMINATOR).readBigUint64LE(),
-    amount: maxTokenAmount,
+    amount: tokenAmount,
     maxSolCost: exactSolAmount,
   });
   return new TransactionInstruction({

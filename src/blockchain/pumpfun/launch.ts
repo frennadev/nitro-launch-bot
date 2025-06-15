@@ -427,6 +427,20 @@ export const executeTokenLaunch = async (
       // Get fresh blockhash for transactions
       const blockHash = await connection.getLatestBlockhash("processed");
 
+      // Get bonding curve state to calculate available tokens
+      const { bondingCurve } = getBondingCurve(mintKeypair.publicKey);
+      const bondingCurveData = await getBondingCurveData(bondingCurve);
+      
+      if (!bondingCurveData) {
+        throw new Error("Could not fetch bonding curve data");
+      }
+      
+      logger.info(`[${logIdentifier}]: Bonding curve state`, {
+        realTokenReserves: bondingCurveData.realTokenReserves.toString(),
+        virtualTokenReserves: bondingCurveData.virtualTokenReserves.toString(),
+        complete: bondingCurveData.complete,
+      });
+
       const executeMarketOrderBuy = async (
         keypair: any,
         swapAmount: bigint,
@@ -458,12 +472,35 @@ export const executeTokenLaunch = async (
             mintKeypair.publicKey,
           );
           
-          // Market order: spend exact SOL amount, get whatever tokens possible
+          // Calculate maximum tokens we can get with our SOL amount
+          const { tokenOut } = quoteBuy(
+            swapAmount,
+            bondingCurveData.virtualTokenReserves,
+            bondingCurveData.virtualSolReserves,
+            bondingCurveData.realTokenReserves,
+          );
+          
+          // Add 10% buffer to account for price changes, but cap at available tokens
+          const maxTokenAmount = tokenOut + (tokenOut / BigInt(10));
+          const cappedTokenAmount = maxTokenAmount > bondingCurveData.realTokenReserves 
+            ? bondingCurveData.realTokenReserves 
+            : maxTokenAmount;
+          
+          logger.info(`[${logIdentifier}]: Token calculation for ${keypair.publicKey.toBase58()}`, {
+            solAmount: (Number(swapAmount) / LAMPORTS_PER_SOL).toFixed(4),
+            expectedTokens: tokenOut.toString(),
+            maxTokenAmount: maxTokenAmount.toString(),
+            cappedTokenAmount: cappedTokenAmount.toString(),
+            availableInCurve: bondingCurveData.realTokenReserves.toString(),
+          });
+          
+          // Market order: spend exact SOL amount, get calculated token amount
           const marketBuyIx = marketOrderBuyInstruction(
             mintKeypair.publicKey,
             devKeypair.publicKey,
             keypair.publicKey,
             swapAmount,
+            cappedTokenAmount, // Use calculated amount instead of max uint64
           );
           
           const buyTx = new VersionedTransaction(
