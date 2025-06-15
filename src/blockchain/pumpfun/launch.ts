@@ -423,11 +423,11 @@ export const executeTokenLaunch = async (
         blockHash: any,
         maxRetries: number = 3
       ) => {
-        let baseSlippage = 10; // Start with 10% slippage
+        let baseSlippage = 50; // Start with 50% slippage
         
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           try {
-            const currentSlippage = baseSlippage + (attempt * 5); // Increase by 5% each retry
+            const currentSlippage = baseSlippage + (attempt * 50); // Increase by 50% each retry
             logger.info(`[${logIdentifier}]: Attempting buy for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
             
             const ata = getAssociatedTokenAddressSync(
@@ -524,7 +524,7 @@ export const executeTokenLaunch = async (
               false,
               currentLaunchAttempt,
               {
-                slippageUsed: baseSlippage + (attempt * 5),
+                slippageUsed: baseSlippage + (attempt * 50),
                 amountSol: Number(swapAmount) / LAMPORTS_PER_SOL,
                 errorMessage: error.message,
                 retryAttempt: attempt,
