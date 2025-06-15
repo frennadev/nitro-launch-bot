@@ -11,6 +11,7 @@ import {
   getPumpAddressStats,
   markPumpAddressAsUsed,
   removeFailedToken,
+  getAllBuyerWallets,
 } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
@@ -26,7 +27,10 @@ import manageDevWalletsConversation from "./conversation/devWallets";
 import manageBuyerWalletsConversation from "./conversation/buyerWallets";
 import { withdrawDevWalletConversation, withdrawBuyerWalletsConversation, withdrawFundingWalletConversation } from "./conversation/withdrawal";
 import viewTokensConversation from "./conversation/viewTokenConversation";
+import externalTokenSellConversation from "./conversation/externalTokenSell";
 import { logger } from "../blockchain/common/logger";
+import { getTokenInfo, getTokenBalance } from "../backend/utils";
+import { getTransactionFinancialStats } from "../backend/functions-main";
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
@@ -86,6 +90,7 @@ bot.use(createConversation(withdrawDevWalletConversation));
 bot.use(createConversation(withdrawBuyerWalletsConversation));
 bot.use(createConversation(withdrawFundingWalletConversation));
 bot.use(createConversation(viewTokensConversation));
+bot.use(createConversation(externalTokenSellConversation));
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
@@ -393,4 +398,139 @@ bot.on("callback_query:data", async (ctx) => {
     logger.info(`${action} called`);
     // You can add further handling logic here if needed
   }
+});
+
+// Function to handle token contract address messages
+async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
+  const user = await getUser(ctx.chat!.id.toString());
+  if (!user) {
+    await ctx.reply("❌ Please start the bot first with /start");
+    return;
+  }
+
+  try {
+    // Get token information from DexScreener
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    
+    if (!tokenInfo) {
+      await ctx.reply(`❌ Token not found or not available on DexScreener\n\n🔍 Address: \`${tokenAddress}\``, {
+        parse_mode: "MarkdownV2"
+      });
+      return;
+    }
+
+    // Get buyer wallets for this user
+    const buyerWallets = await getAllBuyerWallets(user.id);
+    
+    // Check token balances in buyer wallets
+    let totalTokenBalance = 0;
+    let walletsWithBalance = 0;
+    const walletBalances: { publicKey: string, balance: number, value: number }[] = [];
+    
+    for (const wallet of buyerWallets) {
+      try {
+        const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        if (balance > 0) {
+          const value = balance * (tokenInfo.priceUsd || 0);
+          walletBalances.push({
+            publicKey: wallet.publicKey,
+            balance,
+            value
+          });
+          totalTokenBalance += balance;
+          walletsWithBalance++;
+        }
+      } catch (error) {
+        // Ignore individual wallet errors
+        logger.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
+      }
+    }
+
+    const totalValue = totalTokenBalance * (tokenInfo.priceUsd || 0);
+
+    // Get financial stats if this is a token we launched
+    let financialStats;
+    try {
+      financialStats = await getTransactionFinancialStats(tokenAddress);
+    } catch (error) {
+      // Token not in our database, which is fine
+    }
+
+    // Build the response message
+    const lines = [
+      `🪙 **Token Information**`,
+      ``,
+      `**Name:** ${escape(tokenInfo.name || "Unknown")}`,
+      `**Symbol:** ${escape(tokenInfo.symbol || "Unknown")}`,
+      `**Address:** \`${tokenAddress}\``,
+      ``,
+      `📊 **Market Data:**`,
+      `• Market Cap: ${escape(`$${tokenInfo.marketCap?.toLocaleString() || "0"}`)}`,
+      `• Price: ${escape(`$${tokenInfo.priceUsd || "0"}`)}`,
+      tokenInfo.liquidity?.usd ? `• Liquidity: ${escape(`$${tokenInfo.liquidity.usd.toLocaleString()}`)}` : "",
+      ``,
+      `💼 **Your Holdings:**`,
+      walletsWithBalance > 0 
+        ? [
+            `• Total Tokens: ${escape(totalTokenBalance.toLocaleString())}`,
+            `• Total Value: ${escape(`$${totalValue.toFixed(2)}`)}`,
+            `• Wallets Holding: ${walletsWithBalance}/${buyerWallets.length}`,
+          ].join("\n")
+        : `• No tokens found in your ${buyerWallets.length} buyer wallets`,
+      ``
+    ].filter(Boolean).join("\n");
+
+    // Create keyboard with sell button if user has tokens
+    const keyboard = new InlineKeyboard();
+    
+    if (walletsWithBalance > 0) {
+      keyboard
+        .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
+        .text("💸 Sell 50%", `sell_ca_50_${tokenAddress}`)
+        .row()
+        .text("💸 Sell 75%", `sell_ca_75_${tokenAddress}`)
+        .text("💸 Sell All", `sell_ca_100_${tokenAddress}`)
+        .row();
+    }
+    
+    keyboard.text("🔄 Refresh", `refresh_ca_${tokenAddress}`);
+
+    await ctx.reply(lines, {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    });
+
+  } catch (error: any) {
+    logger.error("Error handling token address message:", error);
+    await ctx.reply(`❌ Error fetching token information: ${error.message}`);
+  }
+}
+
+// Message handler for token contract addresses
+bot.on("message:text", async (ctx) => {
+  const text = ctx.message.text.trim();
+  
+  // Check if the message is a Solana token address (32-44 characters, alphanumeric)
+  const solanaAddressRegex = /^[A-Za-z0-9]{32,44}$/;
+  
+  if (solanaAddressRegex.test(text)) {
+    await handleTokenAddressMessage(ctx, text);
+  }
+});
+
+// Callback handlers for token CA sell buttons
+bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  const sellPercent = parseInt(ctx.match![1]);
+  const tokenAddress = ctx.match![2];
+  
+  // Start the external token sell conversation
+  await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, sellPercent);
+});
+
+// Callback handler for refresh button
+bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  const tokenAddress = ctx.match![1];
+  await handleTokenAddressMessage(ctx, tokenAddress);
 });
