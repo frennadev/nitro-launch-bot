@@ -480,18 +480,30 @@ export const executeTokenLaunch = async (
             bondingCurveData.realTokenReserves,
           );
           
-          // Add 10% buffer to account for price changes, but cap at available tokens
-          const maxTokenAmount = tokenOut + (tokenOut / BigInt(10));
-          const cappedTokenAmount = maxTokenAmount > bondingCurveData.realTokenReserves 
-            ? bondingCurveData.realTokenReserves 
-            : maxTokenAmount;
+          // For PumpFun launches, price can change dramatically (50-200%+) in seconds
+          // Instead of a small buffer, use a more aggressive approach:
+          // Request a reasonable portion of available tokens (up to 50% of reserves)
+          const maxReasonableTokens = bondingCurveData.realTokenReserves / BigInt(2); // 50% of available
+          const aggressiveTokenAmount = tokenOut * BigInt(3); // 3x expected (assumes up to 200% price increase)
+          
+          // Use the smaller of: aggressive amount or 50% of available tokens
+          const cappedTokenAmount = aggressiveTokenAmount > maxReasonableTokens 
+            ? maxReasonableTokens 
+            : aggressiveTokenAmount;
+          
+          // Ensure we don't request more than total available
+          const finalTokenAmount = cappedTokenAmount > bondingCurveData.realTokenReserves
+            ? bondingCurveData.realTokenReserves
+            : cappedTokenAmount;
           
           logger.info(`[${logIdentifier}]: Token calculation for ${keypair.publicKey.toBase58()}`, {
             solAmount: (Number(swapAmount) / LAMPORTS_PER_SOL).toFixed(4),
             expectedTokens: tokenOut.toString(),
-            maxTokenAmount: maxTokenAmount.toString(),
-            cappedTokenAmount: cappedTokenAmount.toString(),
+            aggressiveAmount: aggressiveTokenAmount.toString(),
+            maxReasonable: maxReasonableTokens.toString(),
+            finalTokenAmount: finalTokenAmount.toString(),
             availableInCurve: bondingCurveData.realTokenReserves.toString(),
+            strategy: "aggressive_market_order"
           });
           
           // Market order: spend exact SOL amount, get calculated token amount
@@ -500,7 +512,7 @@ export const executeTokenLaunch = async (
             devKeypair.publicKey,
             keypair.publicKey,
             swapAmount,
-            cappedTokenAmount, // Use calculated amount instead of max uint64
+            finalTokenAmount, // Use aggressive calculation for volatile PumpFun environment
           );
           
           const buyTx = new VersionedTransaction(
