@@ -334,37 +334,99 @@ export const executeTokenLaunch = async (
   }
 
   // ------- SNIPING STAGE -------
-  // Execute snipe stage if we just created the token OR if we're already at snipe stage
-  if (tokenCreated || currentStage === PumpLaunchStage.SNIPE) {
-    await randomizedSleep(1000, 1500);
-    logger.info(`[${logIdentifier}]: Starting token snipe stage`);
+  if (currentStage >= PumpLaunchStage.LAUNCH) {
+    logger.info(`[${logIdentifier}]: Starting snipe stage`);
     const snipeStart = performance.now();
-    const blockHash = await connection.getLatestBlockhash("processed");
-    const baseComputeUnitPrice = 1_000_000;
-    const maxComputeUnitPrice = 4_000_000;
+
+    await updateLaunchStage(
+      mintKeypair.publicKey.toBase58(),
+      PumpLaunchStage.SNIPE,
+    );
+
+    // ------- WALLET BALANCE VERIFICATION -------
+    logger.info(`[${logIdentifier}]: Verifying wallet balances before snipe`);
+    const minRequiredBalance = 0.015; // Minimum SOL needed per wallet
+    const walletBalanceChecks = [];
     
-    // Get wallets that already have successful snipe transactions
+    for (const keypair of buyKeypairs) {
+      walletBalanceChecks.push(
+        getSolBalance(keypair.publicKey.toBase58()).then(balance => ({
+          address: keypair.publicKey.toBase58(),
+          balance,
+          sufficient: balance >= minRequiredBalance
+        }))
+      );
+    }
+    
+    const balanceResults = await Promise.all(walletBalanceChecks);
+    const insufficientWallets = balanceResults.filter(result => !result.sufficient);
+    const sufficientWallets = balanceResults.filter(result => result.sufficient);
+    
+    logger.info(`[${logIdentifier}]: Wallet balance check results`, {
+      total: balanceResults.length,
+      sufficient: sufficientWallets.length,
+      insufficient: insufficientWallets.length,
+      minRequired: minRequiredBalance
+    });
+    
+    if (insufficientWallets.length > 0) {
+      logger.warn(`[${logIdentifier}]: ${insufficientWallets.length} wallets have insufficient balance:`, 
+        insufficientWallets.map(w => `${w.address}: ${w.balance.toFixed(6)} SOL`)
+      );
+      
+      // If more than 50% of wallets are underfunded, wait a bit for mixer to complete
+      if (insufficientWallets.length > balanceResults.length * 0.5) {
+        logger.info(`[${logIdentifier}]: Majority of wallets underfunded, waiting 10 seconds for mixer to complete...`);
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        
+        // Re-check balances after waiting
+        const recheckResults = await Promise.all(walletBalanceChecks);
+        const stillInsufficient = recheckResults.filter(result => !result.sufficient);
+        
+        if (stillInsufficient.length > 0) {
+          logger.warn(`[${logIdentifier}]: After waiting, ${stillInsufficient.length} wallets still have insufficient balance`);
+        } else {
+          logger.info(`[${logIdentifier}]: All wallets now have sufficient balance after waiting`);
+        }
+      }
+    }
+
+    // Filter wallets to only use those with sufficient balance
+    const walletsToProcess = buyKeypairs.filter(keypair => {
+      const result = balanceResults.find(r => r.address === keypair.publicKey.toBase58());
+      return result && result.sufficient;
+    });
+    
+    if (walletsToProcess.length === 0) {
+      throw new Error("No wallets have sufficient balance for sniping");
+    }
+    
+    logger.info(`[${logIdentifier}]: Proceeding with ${walletsToProcess.length} wallets that have sufficient balance`);
+
+    // Get successful snipe wallets from previous attempts
     const successfulSnipeWallets = await getSuccessfulTransactions(
       tokenAddress,
       "snipe_buy"
     );
-    
-    // Filter out wallets that already succeeded
-    const walletsToProcess = buyKeypairs.filter(
+
+    // Filter out wallets that already succeeded from our sufficient balance wallets
+    const finalWalletsToProcess = walletsToProcess.filter(
       keypair => !successfulSnipeWallets.includes(keypair.publicKey.toBase58())
     );
     
-    logger.info(`[${logIdentifier}]: Snipe wallet status`, {
+    logger.info(`[${logIdentifier}]: Final snipe wallet status`, {
       total: buyKeypairs.length,
+      sufficientBalance: walletsToProcess.length,
       alreadySuccessful: successfulSnipeWallets.length,
-      toProcess: walletsToProcess.length,
-      successfulWallets: successfulSnipeWallets,
+      toProcess: finalWalletsToProcess.length,
     });
     
-    if (walletsToProcess.length === 0) {
-      logger.info(`[${logIdentifier}]: All wallets already have successful snipe transactions, skipping snipe stage`);
+    if (finalWalletsToProcess.length === 0) {
+      logger.info(`[${logIdentifier}]: All wallets with sufficient balance already have successful snipe transactions, skipping snipe stage`);
     } else {
-      // Enhanced buy transaction with market order approach (no slippage failures)
+      // Get fresh blockhash for transactions
+      const blockHash = await connection.getLatestBlockhash("processed");
+
       const executeMarketOrderBuy = async (
         keypair: any,
         swapAmount: bigint,
@@ -379,6 +441,11 @@ export const executeTokenLaunch = async (
           logPriorityFeeInfo("buy", 0, currentPriorityFee, logIdentifier);
           
           logger.info(`[${logIdentifier}]: Market order buy for ${keypair.publicKey.toBase58()} spending ${(Number(swapAmount) / LAMPORTS_PER_SOL).toFixed(4)} SOL with ${(currentPriorityFee / 1_000_000).toFixed(3)} SOL priority fee`);
+          
+          // Validate inputs
+          if (swapAmount <= 0) {
+            throw new Error(`Invalid swap amount: ${swapAmount}`);
+          }
           
           const ata = getAssociatedTokenAddressSync(
             mintKeypair.publicKey,
@@ -473,17 +540,62 @@ export const executeTokenLaunch = async (
       };
       
       // Execute all buy transactions in parallel with market orders
-      logger.info(`[${logIdentifier}]: Starting parallel market order execution for ${walletsToProcess.length} wallets`);
+      logger.info(`[${logIdentifier}]: Starting parallel market order execution for ${finalWalletsToProcess.length} wallets`);
       const buyTasks = [];
       
-      for (let i = 0; i < walletsToProcess.length; i++) {
-        const keypair = walletsToProcess[i];
+      for (let i = 0; i < finalWalletsToProcess.length; i++) {
+        const keypair = finalWalletsToProcess[i];
         const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
 
         console.log("SOL balance", {walletSolBalance, keypair: keypair.publicKey.toBase58()});
-        const swapAmount = BigInt(
-          Math.floor((walletSolBalance - 0.01) * LAMPORTS_PER_SOL),
-        );
+        
+        // Ensure we have enough SOL for the transaction (minimum 0.015 SOL needed)
+        const minRequiredBalance = 0.015; // 0.01 for buffer + 0.005 for transaction fees
+        if (walletSolBalance < minRequiredBalance) {
+          logger.warn(`[${logIdentifier}]: Wallet ${keypair.publicKey.toBase58()} has insufficient balance: ${walletSolBalance} SOL (minimum required: ${minRequiredBalance} SOL)`);
+          
+          // Record the failed attempt due to insufficient balance
+          await recordTransaction(
+            tokenAddress,
+            keypair.publicKey.toBase58(),
+            "snipe_buy",
+            "error",
+            false,
+            currentLaunchAttempt,
+            {
+              slippageUsed: 0,
+              amountSol: walletSolBalance,
+              errorMessage: `Insufficient balance: ${walletSolBalance} SOL (minimum required: ${minRequiredBalance} SOL)`,
+              retryAttempt: 0,
+            }
+          );
+          continue;
+        }
+        
+        // Calculate swap amount with proper validation
+        const availableBalance = walletSolBalance - 0.01; // Leave 0.01 SOL as buffer
+        const swapAmount = BigInt(Math.floor(availableBalance * LAMPORTS_PER_SOL));
+        
+        // Additional validation to ensure positive amount
+        if (swapAmount <= 0) {
+          logger.warn(`[${logIdentifier}]: Calculated swap amount is not positive for wallet ${keypair.publicKey.toBase58()}: ${swapAmount}`);
+          
+          await recordTransaction(
+            tokenAddress,
+            keypair.publicKey.toBase58(),
+            "snipe_buy",
+            "error",
+            false,
+            currentLaunchAttempt,
+            {
+              slippageUsed: 0,
+              amountSol: walletSolBalance,
+              errorMessage: `Invalid swap amount calculated: ${swapAmount}`,
+              retryAttempt: 0,
+            }
+          );
+          continue;
+        }
         
         buyTasks.push(
           executeMarketOrderBuy(
@@ -513,70 +625,70 @@ export const executeTokenLaunch = async (
       if (success.length == 0 && successfulSnipeWallets.length == 0) {
         throw new Error("Snipe Failed - No successful transactions");
       }
-    }
 
-    // ------- COLLECT TRANSACTION FEES FROM SUCCESSFUL BUYS -------
-    logger.info(`[${logIdentifier}]: Collecting transaction fees from successful buys`);
-    try {
-      // Get all successful snipe wallets (including previous attempts)
-      const allSuccessfulSnipeWallets = await getSuccessfulTransactions(
-        tokenAddress,
-        "snipe_buy"
-      );
-      
-      // Collect transaction fees from successful buy wallets
-      const feeCollectionPromises = [];
-      
-      for (const walletPublicKey of allSuccessfulSnipeWallets) {
-        // Find the corresponding private key
-        const walletIndex = buyKeypairs.findIndex(kp => kp.publicKey.toBase58() === walletPublicKey);
-        if (walletIndex !== -1) {
-          const walletPrivateKey = buyWallets[walletIndex];
-          const keypair = buyKeypairs[walletIndex];
-          const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
-          const transactionAmount = Math.max(0, walletSolBalance - 0.01); // Amount used for buying (minus buffer)
-          
-          if (transactionAmount > 0) {
-            feeCollectionPromises.push(
-              collectTransactionFee(walletPrivateKey, transactionAmount, "buy")
-            );
+      // ------- COLLECT TRANSACTION FEES FROM SUCCESSFUL BUYS -------
+      logger.info(`[${logIdentifier}]: Collecting transaction fees from successful buys`);
+      try {
+        // Get all successful snipe wallets (including previous attempts)
+        const allSuccessfulSnipeWallets = await getSuccessfulTransactions(
+          tokenAddress,
+          "snipe_buy"
+        );
+        
+        // Collect transaction fees from successful buy wallets
+        const feeCollectionPromises = [];
+        
+        for (const walletPublicKey of allSuccessfulSnipeWallets) {
+          // Find the corresponding private key
+          const walletIndex = buyKeypairs.findIndex(kp => kp.publicKey.toBase58() === walletPublicKey);
+          if (walletIndex !== -1) {
+            const walletPrivateKey = buyWallets[walletIndex];
+            const keypair = buyKeypairs[walletIndex];
+            const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
+            const transactionAmount = Math.max(0, walletSolBalance - 0.01); // Amount used for buying (minus buffer)
+            
+            if (transactionAmount > 0) {
+              feeCollectionPromises.push(
+                collectTransactionFee(walletPrivateKey, transactionAmount, "buy")
+              );
+            }
           }
         }
-      }
 
-      if (feeCollectionPromises.length > 0) {
-        const feeResults = await Promise.all(feeCollectionPromises);
-        const successfulFees = feeResults.filter((result: any) => result.success);
-        const failedFees = feeResults.filter((result: any) => !result.success);
-        
-        const totalFeesCollected = successfulFees.reduce((sum: number, result: any) => {
-          return sum + (result.feeAmount || 0);
-        }, 0);
-        
-        logger.info(`[${logIdentifier}]: Transaction fee collection results`, {
-          successful: successfulFees.length,
-          failed: failedFees.length,
-          totalFeesCollected
-        });
+        if (feeCollectionPromises.length > 0) {
+          const feeResults = await Promise.all(feeCollectionPromises);
+          const successfulFees = feeResults.filter((result: any) => result.success);
+          const failedFees = feeResults.filter((result: any) => !result.success);
+          
+          const totalFeesCollected = successfulFees.reduce((sum: number, result: any) => {
+            return sum + (result.feeAmount || 0);
+          }, 0);
+          
+          logger.info(`[${logIdentifier}]: Transaction fee collection results`, {
+            successful: successfulFees.length,
+            failed: failedFees.length,
+            totalFeesCollected
+          });
 
-        if (failedFees.length > 0) {
-          logger.warn(`[${logIdentifier}]: Some transaction fees failed to collect`, failedFees);
+          if (failedFees.length > 0) {
+            logger.warn(`[${logIdentifier}]: Some transaction fees failed to collect`, failedFees);
+          }
+        } else {
+          logger.info(`[${logIdentifier}]: No transaction fees to collect (no successful buys with sufficient balance)`);
         }
-      } else {
-        logger.info(`[${logIdentifier}]: No transaction fees to collect (no successful buys with sufficient balance)`);
+      } catch (error: any) {
+        logger.error(`[${logIdentifier}]: Error collecting transaction fees:`, error);
+        // Don't throw error here - transaction fees are secondary to main launch success
       }
-    } catch (error: any) {
-      logger.error(`[${logIdentifier}]: Error collecting transaction fees:`, error);
-      // Don't throw error here - transaction fees are secondary to main launch success
-    }
 
-    await updateLaunchStage(
-      mintKeypair.publicKey.toBase58(),
-      PumpLaunchStage.COMPLETE,
-    );
-    logger.info(
-      `[${logIdentifier}]: Snipe completed in ${formatMilliseconds(performance.now() - snipeStart)}`,
-    );
+      await updateLaunchStage(
+        mintKeypair.publicKey.toBase58(),
+        PumpLaunchStage.COMPLETE,
+      );
+      logger.info(
+        `[${logIdentifier}]: Snipe completed in ${formatMilliseconds(performance.now() - snipeStart)}`,
+      );
+    }
   }
 
   logger.info(
