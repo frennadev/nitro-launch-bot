@@ -7,6 +7,7 @@ import { env } from "../config";
 import { ENCRYPTION_ALGORITHM, ENCRYPTION_IV_LENGTH } from "./constants";
 import axios from "axios";
 import { TokenModel, UserModel } from "./models";
+import { redisClient } from "../jobs/db";
 
 export function encryptPrivateKey(privateKey: string): string {
   const SECRET_KEY = crypto.scryptSync(env.ENCRYPTION_SECRET, "salt", ENCRYPTION_IV_LENGTH * 2);
@@ -145,3 +146,20 @@ export async function getSolBalance(walletAddress: string): Promise<number> {
   const lamports = await connection.getBalance(pubkey);
   return lamports / LAMPORTS_PER_SOL;
 }
+
+export const getTokenInfo = async (tokenAddress: string) => {
+  const cacheKey = `${tokenAddress}::data`;
+  try {
+    const cached = await redisClient.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached)[0];
+    }
+    const response = await axios.get(`https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`);
+    const data = response.data || [];
+    await redisClient.set(cacheKey, JSON.stringify(data), "EX", 180);
+
+    return data[0];
+  } catch (error) {
+    console.error("Error fetching token market cap:", error);
+  }
+};
