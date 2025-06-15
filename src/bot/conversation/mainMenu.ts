@@ -18,7 +18,7 @@ export default async function mainMenuConversation(conversation: Conversation<Co
   const welcomeMsg = `
 👋 *Welcome to Nitro Bot*
 
-Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.  
+Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.
 Here's what you can do right from this chat:
 
 💳 *Your current dev wallet:*  

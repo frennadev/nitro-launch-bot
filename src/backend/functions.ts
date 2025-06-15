@@ -453,19 +453,19 @@ export const createToken = async (
   }
   
   try {
-    const token = await TokenModel.create({
-      user: userId,
-      name,
-      symbol,
-      description,
-      launchData: {
-        devWallet: devWallet?.id,
-      },
-      tokenAddress: tokenKey.publicKey,
-      tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
-      tokenMetadataUrl: metadataUri,
-    });
-    return token;
+  const token = await TokenModel.create({
+    user: userId,
+    name,
+    symbol,
+    description,
+    launchData: {
+      devWallet: devWallet?.id,
+    },
+    tokenAddress: tokenKey.publicKey,
+    tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
+    tokenMetadataUrl: metadataUri,
+  });
+  return token;
   } catch (error) {
     // If token creation fails and we used a pump address, release it
     if (isPumpAddress) {

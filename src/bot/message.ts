@@ -17,8 +17,8 @@ export const sendLaunchSuccessNotification = async (
     `*Name*: ${escape(tokenName)}`,
     `*Symbol*: $\`${escape(symbol)}\``,
     `*Token Address*: \`${tokenAddress}\``,
-    tokenInfo ? `*Market Cap*: $${tokenInfo.marketCap.toLocaleString()}` : "",
-    tokenInfo ? `*Price*: $${tokenInfo.price}` : "",
+    tokenInfo ? `*Market Cap*: ${escape(`$${tokenInfo.marketCap.toLocaleString()}`)}` : "",
+    tokenInfo && tokenInfo.price !== undefined ? `*Price*: ${escape(`$${tokenInfo.price}`)}` : "",
     `\nClick the buttons below to perform other actions ⬇️`,
   ].filter(Boolean).join("\n");
   

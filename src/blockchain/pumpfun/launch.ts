@@ -229,15 +229,48 @@ export const executeTokenLaunch = async (
       logIdentifier,
     );
     logger.info(`[${logIdentifier}]: Token creation result`, result);
+    
+    // Check if token creation failed due to token already existing
     if (!result.success) {
-      throw new Error("Token creation failed");
+      // For failed transactions, we need to check the signature status to get error details
+      let isTokenAlreadyExists = false;
+      
+      if (result.signature) {
+        try {
+          const { value: statuses } = await connection.getSignatureStatuses([result.signature]);
+          if (statuses && statuses[0] && statuses[0].err) {
+            const errorStr = JSON.stringify(statuses[0].err);
+            isTokenAlreadyExists = errorStr.includes('{"InstructionError":[0,{"Custom":0}]}') || 
+                                   errorStr.includes('Custom:0');
+          }
+        } catch (statusError: any) {
+          logger.warn(`[${logIdentifier}]: Could not get transaction status: ${statusError.message}`);
+        }
+      }
+      
+      if (isTokenAlreadyExists) {
+        logger.info(`[${logIdentifier}]: Token already exists, skipping creation and proceeding to snipe stage`);
+        // Token already exists, proceed to snipe stage
+        await updateLaunchStage(
+          mintKeypair.publicKey.toBase58(),
+          PumpLaunchStage.SNIPE,
+        );
+        currentStage = PumpLaunchStage.SNIPE;
+        tokenCreated = true; // Set to true to proceed with sniping
+      } else {
+        // Other error, fail the launch
+        throw new Error("Token creation failed");
+      }
+    } else {
+      // Token creation successful
+      await updateLaunchStage(
+        mintKeypair.publicKey.toBase58(),
+        PumpLaunchStage.SNIPE,
+      );
+      currentStage = PumpLaunchStage.SNIPE;
+      tokenCreated = true;
     }
-    await updateLaunchStage(
-      mintKeypair.publicKey.toBase58(),
-      PumpLaunchStage.SNIPE,
-    );
-    currentStage = PumpLaunchStage.SNIPE;
-    tokenCreated = true;
+    
     logger.info(
       `[${logIdentifier}]: Token creation completed in ${formatMilliseconds(performance.now() - tokenStart)}`,
     );

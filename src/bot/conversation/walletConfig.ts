@@ -71,7 +71,7 @@ ${buyerWallets.length > 0 ? '✅ Ready for launches' : '⚠️ No buyer wallets 
   const data = next.callbackQuery?.data;
   if (!data) return conversation.halt();
 
-  await next.answerCallbackQuery();
+    await next.answerCallbackQuery();
 
   if (data === CallBackQueries.BACK) {
     return conversation.halt();
