@@ -2,7 +2,7 @@ import bot from ".";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import { getTokenInfo } from "../backend/utils";
-import { getTransactionStats } from "../backend/functions-main";
+import { getTransactionStats, getTransactionFinancialStats } from "../backend/functions-main";
 
 export const sendLaunchSuccessNotification = async (
   chatId: number,
@@ -16,19 +16,42 @@ export const sendLaunchSuccessNotification = async (
   // Get transaction statistics
   const transactionStats = await getTransactionStats(tokenAddress);
   
+  // Get financial statistics
+  const financialStats = await getTransactionFinancialStats(tokenAddress);
+  
+  // Calculate token value if we have price and token amounts
+  let totalTokenValue = 0;
+  let profitLoss = 0;
+  let profitLossPercentage = 0;
+  
+  if (tokenInfo && tokenInfo.price && financialStats.totalTokens !== "0") {
+    const totalTokensNumber = Number(financialStats.totalTokens) / 1e6; // Convert from raw token amount to human readable
+    totalTokenValue = totalTokensNumber * tokenInfo.price;
+    profitLoss = totalTokenValue - financialStats.totalSpent;
+    profitLossPercentage = financialStats.totalSpent > 0 ? (profitLoss / financialStats.totalSpent) * 100 : 0;
+  }
+  
   const msg = [
     `🎉 *Token launched successfully* \n`,
     `*Name*: ${escape(tokenName)}`,
     `*Symbol*: $\`${escape(symbol)}\``,
     `*Token Address*: \`${tokenAddress}\``,
-    tokenInfo ? `*Market Cap*: ${escape(`$${tokenInfo.marketCap.toLocaleString()}`)}` : "",
-    tokenInfo && tokenInfo.price !== undefined ? `*Price*: ${escape(`$${tokenInfo.price}`)}` : "",
+    ``,
+    `💰 *Financial Summary*:`,
+    `• Total Spent: ${financialStats.totalSpent} SOL`,
+    `• Dev Buy: ${financialStats.totalDevSpent} SOL`,
+    `• Snipe Buys: ${financialStats.totalSnipeSpent} SOL`,
+    tokenInfo ? `• Market Cap: ${escape(`$${tokenInfo.marketCap.toLocaleString()}`)}` : "",
+    tokenInfo && tokenInfo.price !== undefined ? `• Token Price: ${escape(`$${tokenInfo.price}`)}` : "",
+    totalTokenValue > 0 ? `• Token Value: $${totalTokenValue.toFixed(2)}` : "",
+    profitLoss !== 0 ? `• P&L: ${profitLoss >= 0 ? '🟢' : '🔴'} $${profitLoss.toFixed(2)} (${profitLossPercentage >= 0 ? '+' : ''}${profitLossPercentage.toFixed(1)}%)` : "",
     ``,
     `📊 *Launch Statistics*:`,
     `• Total Wallets: ${transactionStats.byType.snipe_buy.length}`,
     `• Successful: ${transactionStats.byType.snipe_buy.filter((t: any) => t.success).length}`,
     `• Failed: ${transactionStats.byType.snipe_buy.filter((t: any) => !t.success).length}`,
     `• Success Rate: ${transactionStats.byType.snipe_buy.length > 0 ? Math.round((transactionStats.byType.snipe_buy.filter((t: any) => t.success).length / transactionStats.byType.snipe_buy.length) * 100) : 0}%`,
+    financialStats.averageSpentPerWallet > 0 ? `• Avg per Wallet: ${financialStats.averageSpentPerWallet} SOL` : "",
     `\nClick the buttons below to perform other actions ⬇️`,
   ].filter(Boolean).join("\n");
   

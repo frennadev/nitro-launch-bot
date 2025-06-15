@@ -188,6 +188,8 @@ export const executeTokenLaunch = async (
     logger.info(`[${logIdentifier}]: Starting token creation stage`);
     const tokenStart = performance.now();
     const launchInstructions: TransactionInstruction[] = [];
+    let devBuyTokenAmount: string | undefined;
+    
     const createIx = tokenCreateInstruction(
       mintKeypair,
       devKeypair,
@@ -223,6 +225,9 @@ export const executeTokenLaunch = async (
         devBuyLamports,
       );
       launchInstructions.push(...[createDevAtaIx, devBuyIx]);
+      
+      // Store dev buy token amount for later recording
+      devBuyTokenAmount = tokenOut.toString();
     }
     const blockHash = await connection.getLatestBlockhash("confirmed");
     const launchTx = new VersionedTransaction(
@@ -260,6 +265,22 @@ export const executeTokenLaunch = async (
         errorMessage: result.success ? undefined : "Token creation failed",
       }
     );
+    
+    // Record dev buy separately if it was included and successful
+    if (result.success && devBuy > 0 && devBuyTokenAmount) {
+      await recordTransaction(
+        tokenAddress,
+        devKeypair.publicKey.toBase58(),
+        "dev_buy",
+        result.signature || "dev_buy_success",
+        true,
+        currentLaunchAttempt,
+        {
+          amountSol: devBuy,
+          amountTokens: devBuyTokenAmount,
+        }
+      );
+    }
     
     // Check if token creation failed due to token already existing
     if (!result.success) {

@@ -117,4 +117,5 @@ export const recordTransaction = originalFunctions.recordTransaction;
 export const getSuccessfulTransactions = originalFunctions.getSuccessfulTransactions;
 export const getFailedTransactions = originalFunctions.getFailedTransactions;
 export const isTransactionAlreadySuccessful = originalFunctions.isTransactionAlreadySuccessful;
-export const getTransactionStats = originalFunctions.getTransactionStats; 
+export const getTransactionStats = originalFunctions.getTransactionStats;
+export const getTransactionFinancialStats = originalFunctions.getTransactionFinancialStats; 

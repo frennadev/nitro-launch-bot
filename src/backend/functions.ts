@@ -1649,3 +1649,58 @@ export const getTransactionStats = async (
   
   return stats;
 };
+
+// ========== TRANSACTION FINANCIAL STATS FUNCTIONS ==========
+
+export const getTransactionFinancialStats = async (
+  tokenAddress: string,
+  launchAttempt?: number
+) => {
+  const { TransactionRecordModel } = await import("./models");
+  
+  const query: any = { 
+    tokenAddress,
+    success: true // Only count successful transactions
+  };
+  if (launchAttempt !== undefined) {
+    query.launchAttempt = launchAttempt;
+  }
+  
+  const records = await TransactionRecordModel.find(query).lean();
+  
+  // Calculate totals by transaction type
+  const devBuyRecords = records.filter(r => r.transactionType === "dev_buy");
+  const snipeBuyRecords = records.filter(r => r.transactionType === "snipe_buy");
+  
+  const totalDevSpent = devBuyRecords.reduce((sum, record) => {
+    return sum + (record.amountSol || 0);
+  }, 0);
+  
+  const totalSnipeSpent = snipeBuyRecords.reduce((sum, record) => {
+    return sum + (record.amountSol || 0);
+  }, 0);
+  
+  const totalSpent = totalDevSpent + totalSnipeSpent;
+  
+  // Calculate total tokens acquired
+  const totalDevTokens = devBuyRecords.reduce((sum, record) => {
+    return sum + BigInt(record.amountTokens || "0");
+  }, BigInt(0));
+  
+  const totalSnipeTokens = snipeBuyRecords.reduce((sum, record) => {
+    return sum + BigInt(record.amountTokens || "0");
+  }, BigInt(0));
+  
+  const totalTokens = totalDevTokens + totalSnipeTokens;
+  
+  return {
+    totalSpent: Number(totalSpent.toFixed(6)),
+    totalDevSpent: Number(totalDevSpent.toFixed(6)),
+    totalSnipeSpent: Number(totalSnipeSpent.toFixed(6)),
+    totalTokens: totalTokens.toString(),
+    totalDevTokens: totalDevTokens.toString(),
+    totalSnipeTokens: totalSnipeTokens.toString(),
+    successfulBuys: snipeBuyRecords.length,
+    averageSpentPerWallet: snipeBuyRecords.length > 0 ? Number((totalSnipeSpent / snipeBuyRecords.length).toFixed(6)) : 0,
+  };
+};

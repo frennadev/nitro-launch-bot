@@ -7,6 +7,7 @@ import { CallBackQueries } from "../types";
 import { sendMessage } from "../../backend/sender";
 import { TokenState } from "../../backend/types";
 import { getTokenInfo } from "../../backend/utils";
+import { getTransactionFinancialStats } from "../../backend/functions-main";
 
 const viewTokensConversation = async (conversation: Conversation<Context>, ctx: Context) => {
   const user = await getUser(ctx.chat!.id.toString());
@@ -55,8 +56,22 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     const { buyWallets, buyAmount, devBuy } = launchData!;
 
     let tokenInfo;
+    let financialStats;
     if (state === TokenState.LAUNCHED) {
       tokenInfo = await getTokenInfo(tokenAddress);
+      financialStats = await getTransactionFinancialStats(tokenAddress);
+    }
+
+    // Calculate token value and P&L if we have the data
+    let totalTokenValue = 0;
+    let profitLoss = 0;
+    let profitLossPercentage = 0;
+    
+    if (tokenInfo && tokenInfo.price && financialStats && financialStats.totalTokens !== "0") {
+      const totalTokensNumber = Number(financialStats.totalTokens) / 1e6; // Convert from raw token amount to human readable
+      totalTokenValue = totalTokensNumber * tokenInfo.price;
+      profitLoss = totalTokenValue - financialStats.totalSpent;
+      profitLossPercentage = financialStats.totalSpent > 0 ? (profitLoss / financialStats.totalSpent) * 100 : 0;
     }
 
     const lines = [
@@ -71,6 +86,9 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
       "",
       state === TokenState.LAUNCHED && tokenInfo
         ? `📊 Market Cap: $${tokenInfo.marketCap.toLocaleString() ?? 0} \n💸 Price: $${tokenInfo.priceUsd} \n`
+        : "",
+      state === TokenState.LAUNCHED && financialStats
+        ? `💰 **Financial Summary:**\n• Total Spent: ${financialStats.totalSpent} SOL\n• Successful Buys: ${financialStats.successfulBuys}\n${totalTokenValue > 0 ? `• Token Value: $${totalTokenValue.toFixed(2)}\n` : ""}${profitLoss !== 0 ? `• P&L: ${profitLoss >= 0 ? '🟢' : '🔴'} $${profitLoss.toFixed(2)} (${profitLossPercentage >= 0 ? '+' : ''}${profitLossPercentage.toFixed(1)}%)\n` : ""}`
         : "",
       `📊 Status: ${state === TokenState.LAUNCHED ? "✅ Launched" : "⌛ Pending"}`,
       "",
