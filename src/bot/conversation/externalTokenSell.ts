@@ -1,7 +1,7 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { getUser, getAllBuyerWallets } from "../../backend/functions-main";
+import { getUser, getAllBuyerWallets } from "../../backend/functions";
 import { getTokenBalance, getTokenInfo } from "../../backend/utils";
 import { sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
