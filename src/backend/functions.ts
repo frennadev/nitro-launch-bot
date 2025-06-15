@@ -1529,3 +1529,123 @@ export const removeFailedToken = async (tokenAddress: string) => {
     await session.endSession();
   }
 };
+
+// ========== TRANSACTION RECORDING FUNCTIONS ==========
+
+export const recordTransaction = async (
+  tokenAddress: string,
+  walletPublicKey: string,
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy",
+  signature: string,
+  success: boolean,
+  launchAttempt: number,
+  options: {
+    slippageUsed?: number;
+    amountSol?: number;
+    amountTokens?: string;
+    errorMessage?: string;
+    retryAttempt?: number;
+  } = {}
+) => {
+  const { TransactionRecordModel } = await import("./models");
+  
+  await TransactionRecordModel.create({
+    tokenAddress,
+    walletPublicKey,
+    transactionType,
+    signature,
+    success,
+    launchAttempt,
+    slippageUsed: options.slippageUsed,
+    amountSol: options.amountSol,
+    amountTokens: options.amountTokens,
+    errorMessage: options.errorMessage,
+    retryAttempt: options.retryAttempt || 0,
+  });
+};
+
+export const getSuccessfulTransactions = async (
+  tokenAddress: string,
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy",
+  launchAttempt?: number
+) => {
+  const { TransactionRecordModel } = await import("./models");
+  
+  const query: any = {
+    tokenAddress,
+    transactionType,
+    success: true,
+  };
+  
+  if (launchAttempt !== undefined) {
+    query.launchAttempt = launchAttempt;
+  }
+  
+  const records = await TransactionRecordModel.find(query).lean();
+  return records.map(record => record.walletPublicKey);
+};
+
+export const getFailedTransactions = async (
+  tokenAddress: string,
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy",
+  launchAttempt?: number
+) => {
+  const { TransactionRecordModel } = await import("./models");
+  
+  const query: any = {
+    tokenAddress,
+    transactionType,
+    success: false,
+  };
+  
+  if (launchAttempt !== undefined) {
+    query.launchAttempt = launchAttempt;
+  }
+  
+  const records = await TransactionRecordModel.find(query).lean();
+  return records;
+};
+
+export const isTransactionAlreadySuccessful = async (
+  tokenAddress: string,
+  walletPublicKey: string,
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy"
+) => {
+  const { TransactionRecordModel } = await import("./models");
+  
+  const record = await TransactionRecordModel.findOne({
+    tokenAddress,
+    walletPublicKey,
+    transactionType,
+    success: true,
+  }).lean();
+  
+  return record !== null;
+};
+
+export const getTransactionStats = async (
+  tokenAddress: string,
+  launchAttempt?: number
+) => {
+  const { TransactionRecordModel } = await import("./models");
+  
+  const query: any = { tokenAddress };
+  if (launchAttempt !== undefined) {
+    query.launchAttempt = launchAttempt;
+  }
+  
+  const records = await TransactionRecordModel.find(query).lean();
+  
+  const stats = {
+    total: records.length,
+    successful: records.filter(r => r.success).length,
+    failed: records.filter(r => !r.success).length,
+    byType: {
+      token_creation: records.filter(r => r.transactionType === "token_creation"),
+      dev_buy: records.filter(r => r.transactionType === "dev_buy"),
+      snipe_buy: records.filter(r => r.transactionType === "snipe_buy"),
+    }
+  };
+  
+  return stats;
+};

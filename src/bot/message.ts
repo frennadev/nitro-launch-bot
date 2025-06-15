@@ -2,6 +2,7 @@ import bot from ".";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import { getTokenInfo } from "../backend/utils";
+import { getTransactionStats } from "../backend/functions-main";
 
 export const sendLaunchSuccessNotification = async (
   chatId: number,
@@ -12,6 +13,9 @@ export const sendLaunchSuccessNotification = async (
   // Get token info for market cap and price
   const tokenInfo = await getTokenInfo(tokenAddress);
   
+  // Get transaction statistics
+  const transactionStats = await getTransactionStats(tokenAddress);
+  
   const msg = [
     `🎉 *Token launched successfully* \n`,
     `*Name*: ${escape(tokenName)}`,
@@ -19,6 +23,12 @@ export const sendLaunchSuccessNotification = async (
     `*Token Address*: \`${tokenAddress}\``,
     tokenInfo ? `*Market Cap*: ${escape(`$${tokenInfo.marketCap.toLocaleString()}`)}` : "",
     tokenInfo && tokenInfo.price !== undefined ? `*Price*: ${escape(`$${tokenInfo.price}`)}` : "",
+    ``,
+    `📊 *Launch Statistics*:`,
+    `• Total Wallets: ${transactionStats.byType.snipe_buy.length}`,
+    `• Successful: ${transactionStats.byType.snipe_buy.filter((t: any) => t.success).length}`,
+    `• Failed: ${transactionStats.byType.snipe_buy.filter((t: any) => !t.success).length}`,
+    `• Success Rate: ${transactionStats.byType.snipe_buy.length > 0 ? Math.round((transactionStats.byType.snipe_buy.filter((t: any) => t.success).length / transactionStats.byType.snipe_buy.length) * 100) : 0}%`,
     `\nClick the buttons below to perform other actions ⬇️`,
   ].filter(Boolean).join("\n");
   

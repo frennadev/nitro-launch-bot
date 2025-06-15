@@ -103,6 +103,27 @@ const retryDataSchema = new Schema(
   { timestamps: true },
 );
 
+const transactionRecordSchema = new Schema(
+  {
+    tokenAddress: { type: String, required: true },
+    walletPublicKey: { type: String, required: true },
+    transactionType: { type: String, enum: ["token_creation", "dev_buy", "snipe_buy"], required: true },
+    signature: { type: String, required: true },
+    success: { type: Boolean, required: true },
+    launchAttempt: { type: Number, required: true },
+    slippageUsed: { type: Number }, // For buy transactions
+    amountSol: { type: Number }, // SOL amount for the transaction
+    amountTokens: { type: String }, // Token amount as string (for large numbers)
+    errorMessage: { type: String }, // If failed
+    retryAttempt: { type: Number, default: 0 }, // Which retry attempt this was
+  },
+  { timestamps: true },
+);
+
+// Add index for efficient queries
+transactionRecordSchema.index({ tokenAddress: 1, launchAttempt: 1 });
+transactionRecordSchema.index({ walletPublicKey: 1, tokenAddress: 1 });
+
 // ----------- DB MODELS & TYPES ------------
 export type User = InferSchemaType<typeof userSchema>;
 export const UserModel = model<User>("User", userSchema);
@@ -114,3 +135,4 @@ export type Token = InferSchemaType<typeof tokenSchema>;
 export const TokenModel = model<Token>("Token", tokenSchema);
 export type RetryData = InferSchemaType<typeof retryDataSchema>;
 export const RetryDataModel = model<RetryData>("RetryData", retryDataSchema);
+export const TransactionRecordModel = model<InferSchemaType<typeof transactionRecordSchema>>("TransactionRecord", transactionRecordSchema);

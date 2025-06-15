@@ -110,4 +110,11 @@ export const handleTokenLaunchFailure = originalFunctions.handleTokenLaunchFailu
 export const saveRetryData = originalFunctions.saveRetryData;
 export const getRetryData = originalFunctions.getRetryData;
 export const clearRetryData = originalFunctions.clearRetryData;
-export const clearAllRetryData = originalFunctions.clearAllRetryData; 
+export const clearAllRetryData = originalFunctions.clearAllRetryData;
+
+// ========== TRANSACTION RECORDING FUNCTIONS ==========
+export const recordTransaction = originalFunctions.recordTransaction;
+export const getSuccessfulTransactions = originalFunctions.getSuccessfulTransactions;
+export const getFailedTransactions = originalFunctions.getFailedTransactions;
+export const isTransactionAlreadySuccessful = originalFunctions.isTransactionAlreadySuccessful;
+export const getTransactionStats = originalFunctions.getTransactionStats; 
