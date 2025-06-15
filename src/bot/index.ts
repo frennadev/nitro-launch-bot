@@ -327,10 +327,6 @@ bot.callbackQuery(/^confirm_delete_token_(.+)$/, async (ctx) => {
   await ctx.conversation.enter("viewTokensConversation");
 });
 
-bot.api.setMyCommands([
-  { command: "menu", description: "Bot Menu" }
-]);
-
 bot.callbackQuery(CallBackQueries.WALLET_CONFIG, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("walletConfigConversation");
@@ -366,6 +362,23 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_BUYER_WALLETS, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
 });
 
+// Callback handlers for token CA sell buttons
+bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  const sellPercent = parseInt(ctx.match![1]);
+  const tokenAddress = ctx.match![2];
+  
+  // Start the external token sell conversation
+  await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, sellPercent);
+});
+
+// Callback handler for refresh button
+bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  const tokenAddress = ctx.match![1];
+  await handleTokenAddressMessage(ctx, tokenAddress);
+});
+
 // Retry callback handlers
 bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
@@ -389,7 +402,21 @@ bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
   }
 });
 
-export default bot;
+bot.api.setMyCommands([
+  { command: "menu", description: "Bot Menu" }
+]);
+
+// Message handler for token contract addresses
+bot.on("message:text", async (ctx) => {
+  const text = ctx.message.text.trim();
+  
+  // Check if the message is a Solana token address (32-44 characters, alphanumeric)
+  const solanaAddressRegex = /^[A-Za-z0-9]{32,44}$/;
+  
+  if (solanaAddressRegex.test(text)) {
+    await handleTokenAddressMessage(ctx, text);
+  }
+});
 
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
@@ -399,6 +426,8 @@ bot.on("callback_query:data", async (ctx) => {
     // You can add further handling logic here if needed
   }
 });
+
+export default bot;
 
 // Function to handle token contract address messages
 async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
@@ -505,32 +534,3 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
     await ctx.reply(`❌ Error fetching token information: ${error.message}`);
   }
 }
-
-// Message handler for token contract addresses
-bot.on("message:text", async (ctx) => {
-  const text = ctx.message.text.trim();
-  
-  // Check if the message is a Solana token address (32-44 characters, alphanumeric)
-  const solanaAddressRegex = /^[A-Za-z0-9]{32,44}$/;
-  
-  if (solanaAddressRegex.test(text)) {
-    await handleTokenAddressMessage(ctx, text);
-  }
-});
-
-// Callback handlers for token CA sell buttons
-bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
-  await safeAnswerCallbackQuery(ctx);
-  const sellPercent = parseInt(ctx.match![1]);
-  const tokenAddress = ctx.match![2];
-  
-  // Start the external token sell conversation
-  await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, sellPercent);
-});
-
-// Callback handler for refresh button
-bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
-  await safeAnswerCallbackQuery(ctx);
-  const tokenAddress = ctx.match![1];
-  await handleTokenAddressMessage(ctx, tokenAddress);
-});
