@@ -12,6 +12,7 @@ import {
   markPumpAddressAsUsed,
   removeFailedToken,
   getAllBuyerWallets,
+  getUserTokenWithBuyWallets,
 } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
@@ -35,6 +36,8 @@ import externalTokenSellConversation from "./conversation/externalTokenSell";
 import { logger } from "../blockchain/common/logger";
 import { getTokenInfo, getTokenBalance } from "../backend/utils";
 import { getTransactionFinancialStats } from "../backend/functions-main";
+import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
+import { PublicKey } from "@solana/web3.js";
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
@@ -99,6 +102,7 @@ bot.use(createConversation(withdrawBuyerWalletsConversation));
 bot.use(createConversation(withdrawFundingWalletConversation));
 bot.use(createConversation(viewTokensConversation));
 bot.use(createConversation(externalTokenSellConversation));
+bot.use(createConversation(buyExternalTokenConversation));
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
@@ -431,17 +435,64 @@ bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
   }
 });
 
+// Command to buy external tokens
+bot.command("buyexternal", async (ctx) => {
+  await ctx.conversation.enter("buy-external-token");
+});
+
 bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
 
 // Message handler for token contract addresses
 bot.on("message:text", async (ctx) => {
-  const text = ctx.message.text.trim();
+  try {
+    // Check if the message is a Solana token address (32-44 characters, alphanumeric)
+    const text = ctx.message.text.trim();
+    if (/^[A-Za-z0-9]{32,44}$/.test(text)) {
+      try {
+        new PublicKey(text); // Validate if it's a valid Solana address
+        logger.info(`User sent token address: ${text}`);
+        // Check if this token belongs to user's created tokens
+        const user = await getUser(ctx.chat.id.toString());
+        if (user) {
+          const userToken = await getUserTokenWithBuyWallets(user.id, text);
+          if (userToken) {
+            // Token belongs to user, show token details
+            await ctx.reply(`✅ Token found in your list: ${userToken.name} ($${userToken.symbol})
 
-  // Check if the message is a Solana token address (32-44 characters, alphanumeric)
-  const solanaAddressRegex = /^[A-Za-z0-9]{32,44}$/;
+Would you like to view details or perform actions on this token?`, {
+              reply_markup: new InlineKeyboard()
+                .text("📊 View Details", `${CallBackQueries.VIEW_TOKEN_DETAILS}_${text}`)
+                .row()
+                .text("💰 Sell Dev Supply", `${CallBackQueries.SELL_DEV_SUPPLY}_${text}`)
+                .row()
+                .text("💸 Sell from Wallets", `${CallBackQueries.SELL_WALLET_SUPPLY}_${text}`)
+                .row()
+                .text("❌ Cancel", CallBackQueries.CANCEL)
+            });
+            return;
+          } else {
+            // External token, offer to buy or sell
+            await ctx.reply(`🔍 External token detected: <code>${text}</code>
 
-  if (solanaAddressRegex.test(text)) {
-    await handleTokenAddressMessage(ctx, text);
+What would you like to do with this token?`, {
+              parse_mode: "HTML",
+              reply_markup: new InlineKeyboard()
+                .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                .row()
+                .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
+                .row()
+                .text("❌ Cancel", CallBackQueries.CANCEL)
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        // Not a valid Solana address, ignore or handle as regular text
+      }
+    }
+    // If not a token address, do nothing or handle other text commands
+  } catch (error) {
+    logger.error("Error handling token address message:", error);
   }
 });
 
@@ -556,3 +607,21 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
     await ctx.reply(`❌ Error fetching token information: ${error.message}`);
   }
 }
+
+// Callback query handlers for external token actions
+bot.callbackQuery(new RegExp(`^${CallBackQueries.BUY_EXTERNAL_TOKEN}_`), async (ctx) => {
+  try {
+    await ctx.answerCallbackQuery();
+    const tokenAddress = ctx.callbackQuery.data.split("_").pop();
+    if (tokenAddress) {
+      // Store token address in session or context if needed
+      await ctx.conversation.enter("buy-external-token", { overwrite: true });
+      // You might need to pass the token address to the conversation
+      // This is a simple way; adjust based on your conversation setup
+      await sendMessage(ctx, `💰 Buying external token: <code>${tokenAddress}</code>`, { parse_mode: "HTML" });
+    }
+  } catch (error) {
+    logger.error("Error handling buy external token callback:", error);
+    await ctx.answerCallbackQuery({ text: "❌ Error occurred. Please try again." });
+  }
+});
