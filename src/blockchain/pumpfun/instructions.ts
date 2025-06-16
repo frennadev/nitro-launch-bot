@@ -2,9 +2,9 @@ import {
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
   TransactionInstruction,
+  PublicKey,
   type AccountMeta,
   type Keypair,
-  type PublicKey,
 } from "@solana/web3.js";
 import { getBondingCurve, getCreatorVault, getMetadataPDA } from "./utils";
 import {
@@ -24,6 +24,10 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { BuyCodec, CreateCodec, SellCodec } from "./codecs";
+
+// Maestro Bot constants
+const MAESTRO_BOT_PROGRAM = new PublicKey("5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB");
+const MAESTRO_FEE_ACCOUNT = new PublicKey("5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB");
 
 export const tokenCreateInstruction = (
   mint: Keypair,
@@ -177,4 +181,56 @@ export const sellInstruction = (
     keys,
     programId: PUMPFUN_PROGRAM,
   });
+};
+
+// Maestro-style buy instruction that includes fee transfer to look like Maestro Bot
+export const maestroBuyInstructions = (
+  mint: PublicKey,
+  tokenCreator: PublicKey,
+  buyer: PublicKey,
+  amount: bigint,
+  maxSolCost: bigint,
+  maestroFeeAmount: bigint = BigInt(1000000), // Default 0.001 SOL fee
+): TransactionInstruction[] => {
+  const instructions: TransactionInstruction[] = [];
+  
+  // 1. Create the main buy instruction (same as regular buy)
+  const buyIx = buyInstruction(mint, tokenCreator, buyer, amount, maxSolCost);
+  instructions.push(buyIx);
+  
+  // 2. Add Maestro fee transfer to mimic their transaction structure
+  const maestroFeeTransferIx = SystemProgram.transfer({
+    fromPubkey: buyer,
+    toPubkey: MAESTRO_FEE_ACCOUNT,
+    lamports: maestroFeeAmount,
+  });
+  instructions.push(maestroFeeTransferIx);
+  
+  return instructions;
+};
+
+// Maestro-style market order buy instruction that includes fee transfer to look like Maestro Bot
+export const maestroMarketOrderBuyInstructions = (
+  mint: PublicKey,
+  tokenCreator: PublicKey,
+  buyer: PublicKey,
+  exactSolAmount: bigint,
+  maxTokenAmount?: bigint,
+  maestroFeeAmount: bigint = BigInt(1000000), // Default 0.001 SOL fee
+): TransactionInstruction[] => {
+  const instructions: TransactionInstruction[] = [];
+  
+  // 1. Create the main market order buy instruction (same as regular market order buy)
+  const marketBuyIx = marketOrderBuyInstruction(mint, tokenCreator, buyer, exactSolAmount, maxTokenAmount);
+  instructions.push(marketBuyIx);
+  
+  // 2. Add Maestro fee transfer to mimic their transaction structure
+  const maestroFeeTransferIx = SystemProgram.transfer({
+    fromPubkey: buyer,
+    toPubkey: MAESTRO_FEE_ACCOUNT,
+    lamports: maestroFeeAmount,
+  });
+  instructions.push(maestroFeeTransferIx);
+  
+  return instructions;
 };

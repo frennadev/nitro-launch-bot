@@ -3,4 +3,6 @@ export {
   buyInstruction,
   marketOrderBuyInstruction,
   sellInstruction,
+  maestroBuyInstructions,
+  maestroMarketOrderBuyInstructions,
 } from "./instructions";

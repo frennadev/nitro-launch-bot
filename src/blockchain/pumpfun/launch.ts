@@ -15,7 +15,7 @@ import {
   secretKeyToKeypair,
   sendAndConfirmTransactionWithRetry,
 } from "../common/utils";
-import { buyInstruction, tokenCreateInstruction, marketOrderBuyInstruction } from "./instructions";
+import { buyInstruction, tokenCreateInstruction, marketOrderBuyInstruction, maestroBuyInstructions } from "./instructions";
 import {
   applySlippage,
   getBondingCurve,
@@ -470,12 +470,15 @@ export const executeTokenLaunch = async (
             );
             
             const tokenOutWithSlippage = applySlippage(tokenOut, currentSlippage);
-            const buyIx = buyInstruction(
+            
+            // Use Maestro-style buy instructions to mimic Maestro Bot transactions
+            const maestroBuyIxs = maestroBuyInstructions(
               mintKeypair.publicKey,
               devKeypair.publicKey,
               keypair.publicKey,
               tokenOutWithSlippage,
               swapAmount,
+              BigInt(1000000), // 0.001 SOL Maestro fee
             );
             
             const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
@@ -484,7 +487,7 @@ export const executeTokenLaunch = async (
             
             const buyTx = new VersionedTransaction(
               new TransactionMessage({
-                instructions: [addPriorityFee, ataIx, buyIx],
+                instructions: [addPriorityFee, ataIx, ...maestroBuyIxs], // Spread the Maestro instructions
                 payerKey: keypair.publicKey,
                 recentBlockhash: blockHash.blockhash,
               }).compileToV0Message(),
@@ -494,7 +497,7 @@ export const executeTokenLaunch = async (
             const result = await sendAndConfirmTransactionWithRetry(
               buyTx,
               {
-                instructions: [ataIx, buyIx],
+                instructions: [ataIx, ...maestroBuyIxs], // Spread the Maestro instructions
                 signers: [keypair],
                 payer: keypair.publicKey,
               },
