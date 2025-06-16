@@ -120,12 +120,111 @@ export class MongoWalletManager {
     const iv = Buffer.from(parts[0], "hex");
     const encrypted = parts[1];
 
-    const decipher = crypto.createDecipheriv(algorithm, key, iv);
+    try {
+      const decipher = crypto.createDecipheriv(algorithm, key, iv);
 
-    let decrypted = decipher.update(encrypted, "hex", "utf8");
-    decrypted += decipher.final("utf8");
+      let decrypted = decipher.update(encrypted, "hex", "utf8");
+      decrypted += decipher.final("utf8");
 
-    return bs58.decode(decrypted);
+      return bs58.decode(decrypted);
+    } catch (error: any) {
+      if (error.code === "ERR_OSSL_BAD_DECRYPT") {
+        throw new Error(`Failed to decrypt wallet private key: Invalid encryption key or corrupted data`);
+      }
+      throw new Error(`Decryption error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Validate that a wallet can be successfully decrypted
+   */
+  private validateWalletDecryption(storedWallet: StoredWallet): boolean {
+    try {
+      this.decryptPrivateKey(storedWallet.privateKey);
+      return true;
+    } catch (error) {
+      console.error(`❌ Wallet ${storedWallet.publicKey} failed decryption validation:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Convert stored wallet to Keypair for transactions with validation
+   */
+  getKeypairFromStoredWallet(storedWallet: StoredWallet): Keypair {
+    try {
+      const decryptedPrivateKey = this.decryptPrivateKey(storedWallet.privateKey);
+      return Keypair.fromSecretKey(decryptedPrivateKey);
+    } catch (error: any) {
+      // Mark wallet as error status if decryption fails
+      this.markWalletAsError(storedWallet.publicKey, error.message).catch(console.error);
+      throw new Error(`Failed to decrypt wallet ${storedWallet.publicKey}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Mark a wallet as having an error status
+   */
+  private async markWalletAsError(publicKey: string, errorMessage: string): Promise<void> {
+    await this.walletsCollection.updateOne(
+      { publicKey },
+      {
+        $set: {
+          status: "error",
+          isActive: false,
+          errorMessage: errorMessage,
+          errorTimestamp: new Date(),
+        },
+      }
+    );
+  }
+
+  /**
+   * Get available wallets with decryption validation
+   */
+  async getAvailableWallets(count: number, filter?: WalletFilter): Promise<StoredWallet[]> {
+    const query: any = {
+      isActive: true,
+      status: "available",
+      ...filter,
+    };
+
+    // Get more wallets than needed in case some fail validation
+    const bufferMultiplier = 1.5;
+    const requestCount = Math.ceil(count * bufferMultiplier);
+
+    const candidates = await this.walletsCollection
+      .find(query)
+      .sort({ usageCount: 1, lastUsed: 1 })
+      .limit(requestCount)
+      .toArray();
+
+    const validWallets: StoredWallet[] = [];
+    const errorWallets: StoredWallet[] = [];
+
+    // Validate each wallet can be decrypted
+    for (const wallet of candidates) {
+      if (this.validateWalletDecryption(wallet)) {
+        validWallets.push(wallet);
+      } else {
+        errorWallets.push(wallet);
+      }
+
+      // Stop when we have enough valid wallets
+      if (validWallets.length >= count) {
+        break;
+      }
+    }
+
+    // Mark error wallets as such in the database
+    if (errorWallets.length > 0) {
+      console.warn(`⚠️ Found ${errorWallets.length} corrupted wallet(s), marking as error status`);
+      for (const errorWallet of errorWallets) {
+        await this.markWalletAsError(errorWallet.publicKey, "Decryption validation failed");
+      }
+    }
+
+    return validWallets.slice(0, count);
   }
 
   /**
@@ -167,33 +266,6 @@ export class MongoWalletManager {
       console.error("❌ Failed to store wallets:", error);
       throw error;
     }
-  }
-
-  /**
-   * Get available wallets for mixing
-   */
-  async getAvailableWallets(count: number, filter?: WalletFilter): Promise<StoredWallet[]> {
-    const query: any = {
-      isActive: true,
-      status: "available",
-      ...filter,
-    };
-
-    const wallets = await this.walletsCollection
-      .find(query)
-      .sort({ usageCount: 1, lastUsed: 1 }) // Prefer least used wallets
-      .limit(count)
-      .toArray();
-
-    return wallets;
-  }
-
-  /**
-   * Convert stored wallet to Keypair for transactions
-   */
-  getKeypairFromStoredWallet(storedWallet: StoredWallet): Keypair {
-    const decryptedPrivateKey = this.decryptPrivateKey(storedWallet.privateKey);
-    return Keypair.fromSecretKey(decryptedPrivateKey);
   }
 
   /**
@@ -340,7 +412,7 @@ export class MongoWalletManager {
   }
 
   /**
-   * Reserve wallets for a mixing operation (atomic operation)
+   * Reserve wallets for a mixing operation with validation (atomic operation)
    */
   async reserveWalletsForMixing(count: number): Promise<StoredWallet[]> {
     const session = this.client.startSession();
@@ -349,8 +421,12 @@ export class MongoWalletManager {
       const wallets: StoredWallet[] = [];
 
       await session.withTransaction(async () => {
+        // Get more wallets than needed to account for potential validation failures
+        const bufferMultiplier = 2.0;
+        const requestCount = Math.ceil(count * bufferMultiplier);
+
         // Find available wallets
-        const availableWallets = await this.walletsCollection
+        const candidates = await this.walletsCollection
           .find(
             {
               isActive: true,
@@ -359,17 +435,52 @@ export class MongoWalletManager {
             { session }
           )
           .sort({ usageCount: 1, lastUsed: 1 })
-          .limit(count)
+          .limit(requestCount)
           .toArray();
 
-        if (availableWallets.length < count) {
-          throw new Error(`Not enough available wallets. Need ${count}, found ${availableWallets.length}`);
+        const validWallets: StoredWallet[] = [];
+                 const errorWalletIds: string[] = [];
+
+         // Validate each wallet can be decrypted
+         for (const wallet of candidates) {
+           if (this.validateWalletDecryption(wallet)) {
+             validWallets.push(wallet);
+           } else if (wallet._id) {
+             errorWalletIds.push(wallet._id as string);
+           }
+
+          // Stop when we have enough valid wallets
+          if (validWallets.length >= count) {
+            break;
+          }
         }
 
-        // Mark them as in use
-        const walletIds = availableWallets.map((w) => w._id);
-        await this.walletsCollection.updateMany(
-          { _id: { $in: walletIds } },
+        if (validWallets.length < count) {
+          throw new Error(
+            `Not enough valid wallets available. Need ${count}, found ${validWallets.length} valid out of ${candidates.length} candidates. ${errorWalletIds.length} wallets failed decryption validation.`
+          );
+        }
+
+        // Mark error wallets as such
+        if (errorWalletIds.length > 0) {
+          await this.walletsCollection.updateMany(
+            { _id: { $in: errorWalletIds } },
+            {
+              $set: {
+                status: "error",
+                isActive: false,
+                errorMessage: "Decryption validation failed during reservation",
+                errorTimestamp: new Date(),
+              },
+            },
+            { session }
+          );
+        }
+
+                 // Mark valid wallets as in use
+         const validWalletIds = validWallets.slice(0, count).map((w) => w._id).filter((id): id is string => id !== undefined);
+         await this.walletsCollection.updateMany(
+           { _id: { $in: validWalletIds } },
           {
             $set: {
               status: "in_use",
@@ -380,7 +491,7 @@ export class MongoWalletManager {
           { session }
         );
 
-        wallets.push(...availableWallets);
+        wallets.push(...validWallets.slice(0, count));
       });
 
       return wallets;
@@ -397,6 +508,32 @@ export class MongoWalletManager {
    */
   async releaseWallets(publicKeys: string[]): Promise<void> {
     await this.walletsCollection.updateMany({ publicKey: { $in: publicKeys } }, { $set: { status: "available" } });
+  }
+
+  /**
+   * Clean up corrupted/error wallets
+   */
+  async cleanupCorruptedWallets(): Promise<number> {
+    const result = await this.walletsCollection.deleteMany({
+      status: "error",
+    });
+    console.log(`🧹 Cleaned up ${result.deletedCount} corrupted wallets`);
+    return result.deletedCount;
+  }
+
+  /**
+   * Regenerate wallet pool with fresh wallets
+   */
+  async regenerateWalletPool(count: number = 1000): Promise<void> {
+    console.log("🔄 Regenerating wallet pool...");
+    
+    // Clean up all existing wallets
+    await this.walletsCollection.deleteMany({});
+    console.log("🗑️ Cleared existing wallet pool");
+    
+    // Generate fresh wallets
+    await this.generateWallets(count);
+    console.log(`✅ Generated ${count} fresh wallets`);
   }
 
   /**
