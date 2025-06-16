@@ -171,7 +171,7 @@ export const sellDevWorker = new Worker<SellDevJob>(
         `🎉 **Dev Sell completed successfully\\!**\n\n` +
         `💰 **Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\\.')} SOL\n` +
         `🪙 **Sold:** ${tokensSoldFormatted.replace(/\./g, '\\.')} tokens \\(${data.sellPercent}%\\)\n` +
-        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : ''}${sellSummary.netProfitLoss.toFixed(6).replace(/\./g, '\\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : ''}${sellSummary.profitLossPercentage.toFixed(1).replace(/\./g, '\\.')}%\\)\n\n` +
+        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\\.')}%\\)\n\n` +
         `[View Transaction](https://solscan\\.io/tx/${result.signature})`,
       );
     } catch (error: any) {
@@ -281,7 +281,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         `✅ **Success Rate:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets \\(${sellSummary.successRate}%\\)\n` +
         `💰 **Total Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\\.')} SOL\n` +
         `🪙 **Tokens Sold:** ${tokensSoldFormatted.replace(/\./g, '\\.')} tokens \\(${data.sellPercent}%\\)\n` +
-        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : ''}${sellSummary.netProfitLoss.toFixed(6).replace(/\./g, '\\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : ''}${sellSummary.profitLossPercentage.toFixed(1).replace(/\./g, '\\.')}%\\)\n\n` +
+        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\\.')}%\\)\n\n` +
         `${sellSummary.failedWallets > 0 ? `⚠️ ${sellSummary.failedWallets} wallet\\(s\\) failed to sell\n\n` : ''}` +
         `💡 View individual transactions in your token list for more details\\.`,
       );
