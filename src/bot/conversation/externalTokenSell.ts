@@ -88,7 +88,6 @@ const externalTokenSellConversation = async (
       `⚠️ **Important Notes:**`,
       `• This is an external token sell (not launched via our bot)`,
       `• Slippage may be higher than expected`,
-      `• Transaction fees will be deducted from each wallet`,
       `• This operation cannot be undone`,
       ``,
       `Do you want to proceed with the sell?`

@@ -271,17 +271,15 @@ Would you like to enter new values or use previous ones?`, {
 
   // -------- CALCULATE TOTAL COSTS --------
   const costBreakdown = calculateTotalLaunchCost(buyAmount, devBuy, buyerWallets.length, false); // Don't show platform fee to user
-  const requiredFundingAmount = costBreakdown.totalCost; // User sees total without knowing about hidden fee
+  const requiredFundingAmount = costBreakdown.totalCost; // User sees total without knowing about hidden fees
 
   // Check funding wallet balance
   if (fundingBalance < requiredFundingAmount) {
     await sendMessage(ctx, `❌ <b>Insufficient funding wallet balance!</b>
 
-💰 <b>Cost Breakdown:</b>
+💰 <b>Required Amount:</b>
 • Buy Amount: ${costBreakdown.breakdown.buyAmount} SOL
-• Dev Buy: ${costBreakdown.breakdown.devBuy} SOL  
-• Wallet Fees: ${costBreakdown.breakdown.walletFees} SOL
-• Buffer: ${costBreakdown.breakdown.buffer} SOL
+• Dev Buy: ${costBreakdown.breakdown.devBuy} SOL
 
 <b>Funding Wallet Required:</b> ${requiredFundingAmount.toFixed(4)} SOL
 <b>Funding Wallet Available:</b> ${fundingBalance.toFixed(4)} SOL

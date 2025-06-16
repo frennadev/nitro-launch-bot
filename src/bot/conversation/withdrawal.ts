@@ -34,7 +34,7 @@ export const withdrawDevWalletConversation = async (conversation: Conversation<C
     await sendMessage(ctx, `❌ Dev wallet has insufficient balance to withdraw.
     
 <b>Current balance:</b> ${devBalance.toFixed(6)} SOL
-<b>Minimum required:</b> 0.001 SOL (for transaction fees)`, { parse_mode: "HTML" });
+<b>Minimum required:</b> 0.001 SOL`, { parse_mode: "HTML" });
     return conversation.halt();
   }
 
@@ -104,11 +104,11 @@ Where would you like to withdraw the funds?`, {
     return conversation.halt();
   }
 
-  // Calculate withdrawal amount (leave 0.001 SOL for fees)
+  // Calculate withdrawal amount (leave 0.001 SOL for network costs)
   const withdrawAmount = Math.max(0, devBalance - 0.001);
   
   if (withdrawAmount <= 0) {
-    await sendMessage(destinationChoice, "❌ Insufficient balance after accounting for transaction fees.");
+    await sendMessage(destinationChoice, "❌ Insufficient balance to withdraw.");
     return conversation.halt();
   }
 
@@ -118,7 +118,6 @@ Where would you like to withdraw the funds?`, {
 <b>From:</b> Dev Wallet
 <b>To:</b> ${destinationLabel}
 <b>Amount:</b> ${withdrawAmount.toFixed(6)} SOL
-<b>Remaining in dev wallet:</b> ~0.001 SOL (for fees)
 
 Proceed with withdrawal?`, {
     parse_mode: "HTML",
@@ -197,11 +196,11 @@ export const withdrawBuyerWalletsConversation = async (conversation: Conversatio
     totalBalance += balance;
   }
 
-  if (totalBalance < 0.005) { // Need at least 0.001 per wallet for fees
+  if (totalBalance < 0.005) { // Need at least 0.001 per wallet for network costs
     await sendMessage(ctx, `❌ Buyer wallets have insufficient total balance to withdraw.
     
 <b>Total balance:</b> ${totalBalance.toFixed(6)} SOL
-<b>Minimum required:</b> 0.005 SOL (for transaction fees across wallets)`, { parse_mode: "HTML" });
+<b>Minimum required:</b> 0.005 SOL`, { parse_mode: "HTML" });
     return conversation.halt();
   }
 
@@ -280,10 +279,10 @@ Where would you like to withdraw all funds?`, {
 
   // Calculate total withdrawal amount
   const withdrawableWallets = walletBalances.filter(wb => wb.balance > 0.001);
-  const totalWithdrawAmount = withdrawableWallets.reduce((sum, wb) => sum + Math.max(0, wb.balance - 0.001), 0);
+  const totalWithdrawable = withdrawableWallets.reduce((sum, wb) => sum + Math.max(0, wb.balance - 0.001), 0);
 
-  if (totalWithdrawAmount <= 0) {
-    await sendMessage(destinationChoice, "❌ No withdrawable balance after accounting for transaction fees.");
+  if (totalWithdrawable <= 0) {
+    await sendMessage(destinationChoice, "❌ No withdrawable balance available.");
     return conversation.halt();
   }
 
@@ -292,10 +291,9 @@ Where would you like to withdraw all funds?`, {
 
 <b>From:</b> ${withdrawableWallets.length} Buyer Wallets
 <b>To:</b> ${destinationLabel}
-<b>Total Amount:</b> ${totalWithdrawAmount.toFixed(6)} SOL
-<b>Transactions:</b> ${withdrawableWallets.length}
+<b>Total Amount:</b> ${totalWithdrawable.toFixed(6)} SOL
 
-<i>💡 Each wallet will keep ~0.001 SOL for transaction fees</i>
+<i>💡 Small amounts will remain in each wallet for network operations</i>
 
 Proceed with withdrawal?`, {
     parse_mode: "HTML",
@@ -417,7 +415,7 @@ export const withdrawFundingWalletConversation = async (conversation: Conversati
     await sendMessage(ctx, `❌ Funding wallet has insufficient balance to withdraw.
     
 <b>Current balance:</b> ${fundingBalance.toFixed(6)} SOL
-<b>Minimum required:</b> 0.001 SOL (for transaction fees)`, { parse_mode: "HTML" });
+<b>Minimum required:</b> 0.001 SOL`, { parse_mode: "HTML" });
     return conversation.halt();
   }
 
@@ -475,11 +473,11 @@ Where would you like to withdraw the funds?`, {
     return conversation.halt();
   }
 
-  // Calculate withdrawal amount (leave 0.001 SOL for fees)
+  // Calculate withdrawal amount (leave 0.001 SOL for network costs)
   const withdrawAmount = Math.max(0, fundingBalance - 0.001);
   
   if (withdrawAmount <= 0) {
-    await sendMessage(destinationChoice, "❌ Insufficient balance after accounting for transaction fees.");
+    await sendMessage(destinationChoice, "❌ Insufficient balance to withdraw.");
     return conversation.halt();
   }
 
@@ -489,7 +487,6 @@ Where would you like to withdraw the funds?`, {
 <b>From:</b> Funding Wallet
 <b>To:</b> ${destinationLabel}
 <b>Amount:</b> ${withdrawAmount.toFixed(6)} SOL
-<b>Remaining in funding wallet:</b> ~0.001 SOL (for fees)
 
 Proceed with withdrawal?`, {
     parse_mode: "HTML",
