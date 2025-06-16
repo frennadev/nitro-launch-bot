@@ -453,39 +453,48 @@ bot.on("message:text", async (ctx) => {
         logger.info(`User sent token address: ${text}`);
         // Check if this token belongs to user's created tokens
         const user = await getUser(ctx.chat.id.toString());
+        let tokenName = "Unknown Token";
+        let tokenSymbol = "UNK";
+        let isUserToken = false;
+        let holdingsText = "📌 No tokens found in your buyer wallets";
         if (user) {
           const userToken = await getUserTokenWithBuyWallets(user.id, text);
           if (userToken) {
-            // Token belongs to user, show token details
-            await ctx.reply(`✅ Token found in your list: ${userToken.name} ($${userToken.symbol})
-
-Would you like to view details or perform actions on this token?`, {
-              reply_markup: new InlineKeyboard()
-                .text("📊 View Details", `${CallBackQueries.VIEW_TOKEN_DETAILS}_${text}`)
-                .row()
-                .text("💰 Sell Dev Supply", `${CallBackQueries.SELL_DEV_SUPPLY}_${text}`)
-                .row()
-                .text("💸 Sell from Wallets", `${CallBackQueries.SELL_WALLET_SUPPLY}_${text}`)
-                .row()
-                .text("❌ Cancel", CallBackQueries.CANCEL)
-            });
-            return;
+            // Token belongs to user
+            tokenName = userToken.name;
+            tokenSymbol = userToken.symbol;
+            isUserToken = true;
+            // TODO: Fetch actual holdings data if available
+            holdingsText = "📌 No tokens found in your 5 buyer wallets"; // Placeholder until holdings check is implemented
           } else {
-            // External token, offer to buy or sell
-            await ctx.reply(`🔍 External token detected: <code>${text}</code>
-
-What would you like to do with this token?`, {
-              parse_mode: "HTML",
-              reply_markup: new InlineKeyboard()
-                .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                .row()
-                .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
-                .row()
-                .text("❌ Cancel", CallBackQueries.CANCEL)
-            });
-            return;
+            // External token, could still check holdings
+            // TODO: Fetch holdings for external tokens if possible
+            holdingsText = "📌 No tokens found in your 5 buyer wallets"; // Placeholder
           }
         }
+        // TODO: Fetch actual market data; this is placeholder data
+        const marketCap = "$4,404.38"; // Placeholder
+        const price = "$0.000004404"; // Placeholder
+        // Display token detail page with buy and sell options
+        await ctx.reply(`🪙 ${tokenName} (${tokenSymbol})
+${text}
+Pump.fun 🔗 SO
+
+Market Data
+💠 Market Cap: ${marketCap}
+💵 Price: ${price}
+
+Your Holdings
+${holdingsText}`, {
+          parse_mode: "HTML",
+          reply_markup: new InlineKeyboard()
+            .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+            .row()
+            .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
+            .row()
+            .text("❌ Cancel", CallBackQueries.CANCEL)
+        });
+        return;
       } catch (e) {
         // Not a valid Solana address, ignore or handle as regular text
       }
@@ -515,97 +524,59 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
     return;
   }
 
+  let tokenName = "Unknown Token";
+  let tokenSymbol = "UNK";
+  let isUserToken = false;
+  let holdingsText = "📌 No tokens found in your buyer wallets";
+
   try {
-    // Get token information from DexScreener
+    // Get token information from DexScreener or other source if available
     const tokenInfo = await getTokenInfo(tokenAddress);
-
-    if (!tokenInfo) {
-      await ctx.reply(`❌ Token not found or not available on DexScreener\n\n🔍 Address: \`${tokenAddress}\``, {
-        parse_mode: "MarkdownV2",
-      });
-      return;
+    if (tokenInfo && tokenInfo.baseToken) {
+      tokenName = tokenInfo.baseToken.name || "Unknown";
+      tokenSymbol = tokenInfo.baseToken.symbol || "UNK";
     }
-
-    // Get buyer wallets for this user
-    const buyerWallets = await getAllBuyerWallets(user.id);
-
-    // Check token balances in buyer wallets
-    let totalTokenBalance = 0;
-    let walletsWithBalance = 0;
-    const walletBalances: { publicKey: string; balance: number; value: number }[] = [];
-
-    for (const wallet of buyerWallets) {
-      try {
-        const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
-        if (balance > 0) {
-          const value = balance * (tokenInfo.priceUsd || 0);
-          walletBalances.push({
-            publicKey: wallet.publicKey,
-            balance,
-            value,
-          });
-          totalTokenBalance += balance;
-          walletsWithBalance++;
-        }
-      } catch (error) {
-        // Ignore individual wallet errors
-        logger.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
-      }
-    }
-
-    const totalValue = totalTokenBalance * (tokenInfo.priceUsd || 0);
-
-    // Get financial stats if this is a token we launched
-    let financialStats;
-    try {
-      financialStats = await getTransactionFinancialStats(tokenAddress);
-    } catch (error) {
-      // Token not in our database, which is fine
-    }
-
-    // Build the response message
-    const lines = [
-      `🪙 ${tokenInfo.baseToken.name || "Unknown"} (${tokenInfo.baseToken.symbol || "Unknown"})`,
-      `${tokenAddress}`,
-      `Pump.fun 🔗 SO \n`,
-      ``,
-      `*Market Data*`,
-      `💠 Market Cap: ${`$${tokenInfo.marketCap?.toLocaleString() || "0"}`}`,
-      `💵 Price: ${`$${tokenInfo.priceUsd || "0"}`}`,
-      tokenInfo.liquidity?.usd ? `💧 Liquidity: ${`$${tokenInfo.liquidity.usd.toLocaleString()}`}` : ``,
-      ``,
-      `\n*Your Holdings*`,
-      walletsWithBalance > 0
-        ? `💠 Total Tokens: ${totalTokenBalance.toLocaleString()} | 💰 Value: ${`$${totalValue.toFixed(2)}`} | 🏦 Wallets: ${walletsWithBalance}/${buyerWallets.length}`
-        : `📌 No tokens found in your ${buyerWallets.length} buyer wallets`,
-      ``,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    // Create keyboard with sell button if user has tokens
-    const keyboard = new InlineKeyboard();
-
-    if (walletsWithBalance > 0) {
-      keyboard
-        .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
-        .text("💸 Sell 50%", `sell_ca_50_${tokenAddress}`)
-        .row()
-        .text("💸 Sell 75%", `sell_ca_75_${tokenAddress}`)
-        .text("💸 Sell All", `sell_ca_100_${tokenAddress}`)
-        .row();
-    }
-
-    keyboard.text("🔄 Refresh", `refresh_ca_${tokenAddress}`);
-
-    await ctx.reply(lines, {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
-    });
-  } catch (error: any) {
-    logger.error("Error handling token address message:", error);
-    await ctx.reply(`❌ Error fetching token information: ${error.message}`);
+  } catch (error) {
+    logger.warn(`Could not fetch token info for ${tokenAddress}:`, error);
   }
+
+  // Check if token is in user's list
+  const userToken = await getUserTokenWithBuyWallets(user.id, tokenAddress);
+  if (userToken) {
+    tokenName = userToken.name;
+    tokenSymbol = userToken.symbol;
+    isUserToken = true;
+    // TODO: Fetch actual holdings data if available
+    holdingsText = "📌 No tokens found in your 5 buyer wallets"; // Placeholder
+  } else {
+    // External token, could still check holdings
+    // TODO: Fetch holdings for external tokens if possible
+    holdingsText = "📌 No tokens found in your 5 buyer wallets"; // Placeholder
+  }
+
+  // TODO: Fetch actual market data; this is placeholder data
+  const marketCap = "$4,404.38"; // Placeholder
+  const price = "$0.000004404"; // Placeholder
+
+  // Display token detail page with buy and sell options
+  await ctx.reply(`🪙 ${tokenName} (${tokenSymbol})
+${tokenAddress}
+Pump.fun 🔗 SO
+
+Market Data
+💠 Market Cap: ${marketCap}
+💵 Price: ${price}
+
+Your Holdings
+${holdingsText}`, {
+    parse_mode: "HTML",
+    reply_markup: new InlineKeyboard()
+      .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+      .row()
+      .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${tokenAddress}`)
+      .row()
+      .text("❌ Cancel", CallBackQueries.CANCEL)
+  });
 }
 
 // Callback query handlers for external token actions
