@@ -203,7 +203,7 @@ function startLoadingAnimation(loadingKey: string): void {
     const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
     const frame = loadingFrames[Math.floor(Date.now() / 800) % loadingFrames.length];
     
-    const message = `🚀 **${state.operation.replace('_', ' ').toUpperCase()}**\n\n${frame} Preparing launch sequence...\n\n⏱️ Elapsed: ${elapsed}s`;
+    const message = `🚀 **${state.operation.replace('_', ' ').toUpperCase()}**\n\n${frame} Preparing launch sequence...\n\n⏱️ Elapsed: ${elapsed}s\n\n💡 *May take up to a minute dependent on your buy amount, we're trying to mix the funds and ensure it is untraceable*`;
     
     try {
       await bot.api.editMessageText(state.chatId, state.messageId, message, {
