@@ -514,25 +514,19 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
 
     // Build the response message
     const lines = [
-      `🪙 **Token Information**`,
+      `🪙 ${escape(tokenInfo.baseToken.name || "Unknown")} (${escape(tokenInfo.baseToken.symbol || "Unknown")})`,
+      `${tokenAddress}`,
+      `Pump.fun 🔗 SO \n`,
       ``,
-      `**Name:** ${escape(tokenInfo.name || "Unknown")}`,
-      `**Symbol:** ${escape(tokenInfo.symbol || "Unknown")}`,
-      `**Address:** \`${tokenAddress}\``,
+      `*Market Data*`,
+      `💠 Market Cap: ${escape(`$${tokenInfo.marketCap?.toLocaleString() || "0"}`)}`,
+      `💵 Price: ${escape(`$${tokenInfo.priceUsd || "0"}`)} /n`,
+      tokenInfo.liquidity?.usd ? `💧 Liquidity: ${escape(`$${tokenInfo.liquidity.usd.toLocaleString()}`)}` : ``,
       ``,
-      `📊 **Market Data:**`,
-      `• Market Cap: ${escape(`$${tokenInfo.marketCap?.toLocaleString() || "0"}`)}`,
-      `• Price: ${escape(`$${tokenInfo.priceUsd || "0"}`)}`,
-      tokenInfo.liquidity?.usd ? `• Liquidity: ${escape(`$${tokenInfo.liquidity.usd.toLocaleString()}`)}` : "",
-      ``,
-      `💼 **Your Holdings:**`,
+      `\n*Your Holdings*`,
       walletsWithBalance > 0
-        ? [
-            `• Total Tokens: ${escape(totalTokenBalance.toLocaleString())}`,
-            `• Total Value: ${escape(`$${totalValue.toFixed(2)}`)}`,
-            `• Wallets Holding: ${walletsWithBalance}/${buyerWallets.length}`,
-          ].join("\n")
-        : `• No tokens found in your ${buyerWallets.length} buyer wallets`,
+        ? `💠 Total Tokens: ${escape(totalTokenBalance.toLocaleString())} | 💰 Value: ${escape(`$${totalValue.toFixed(2)}`)} | 🏦 Wallets: ${walletsWithBalance}/${buyerWallets.length}`
+        : `📌 No tokens found in your ${buyerWallets.length} buyer wallets`,
       ``,
     ]
       .filter(Boolean)
