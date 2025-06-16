@@ -514,18 +514,18 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
 
     // Build the response message
     const lines = [
-      `🪙 ${escape(tokenInfo.baseToken.name || "Unknown")} (${escape(tokenInfo.baseToken.symbol || "Unknown")})`,
+      `🪙 ${tokenInfo.baseToken.name || "Unknown"} (${tokenInfo.baseToken.symbol || "Unknown"})`,
       `${tokenAddress}`,
       `Pump.fun 🔗 SO \n`,
       ``,
       `*Market Data*`,
-      `💠 Market Cap: ${escape(`$${tokenInfo.marketCap?.toLocaleString() || "0"}`)}`,
-      `💵 Price: ${escape(`$${tokenInfo.priceUsd || "0"}`)} /n`,
-      tokenInfo.liquidity?.usd ? `💧 Liquidity: ${escape(`$${tokenInfo.liquidity.usd.toLocaleString()}`)}` : ``,
+      `💠 Market Cap: ${`$${tokenInfo.marketCap?.toLocaleString() || "0"}`}`,
+      `💵 Price: ${`$${tokenInfo.priceUsd || "0"}`}`,
+      tokenInfo.liquidity?.usd ? `💧 Liquidity: ${`$${tokenInfo.liquidity.usd.toLocaleString()}`}` : ``,
       ``,
       `\n*Your Holdings*`,
       walletsWithBalance > 0
-        ? `💠 Total Tokens: ${escape(totalTokenBalance.toLocaleString())} | 💰 Value: ${escape(`$${totalValue.toFixed(2)}`)} | 🏦 Wallets: ${walletsWithBalance}/${buyerWallets.length}`
+        ? `💠 Total Tokens: ${totalTokenBalance.toLocaleString()} | 💰 Value: ${`$${totalValue.toFixed(2)}`} | 🏦 Wallets: ${walletsWithBalance}/${buyerWallets.length}`
         : `📌 No tokens found in your ${buyerWallets.length} buyer wallets`,
       ``,
     ]
