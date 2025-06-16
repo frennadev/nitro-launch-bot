@@ -110,14 +110,18 @@ web_modules/
 .env.production.local
 .env.local
 
-# Additional security patterns
-.env.*
-*.env
+# Additional security patterns - specific patterns first
 setup-env.sh
 config.env
 secrets.env
 credentials.env
 keys.env
+
+# Broader patterns for environment files (but allow examples)
+.env.*
+!.env.example
+!.env.sample
+!.env.template
 
 # Private keys and certificates
 *.pem
