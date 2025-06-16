@@ -39,7 +39,7 @@ export class MongoWalletManager {
   constructor(mongoUri: string, databaseName: string, encryptionKey?: string) {
     this.client = new MongoClient(mongoUri);
     this.db = this.client.db(databaseName);
-    this.walletsCollection = this.db.collection("intermediate_wallets");
+    this.walletsCollection = this.db.collection("mixer_wallets");
     this.encryptionKey = encryptionKey || this.generateEncryptionKey();
   }
 
