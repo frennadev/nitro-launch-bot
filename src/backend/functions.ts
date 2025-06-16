@@ -1,17 +1,17 @@
 import mongoose from "mongoose";
 import { connection } from "../blockchain/common/connection";
-import {
-  generateKeypairs,
-  secretKeyToKeypair,
-} from "../blockchain/common/utils";
+import { generateKeypairs, secretKeyToKeypair } from "../blockchain/common/utils";
 import { env } from "../config";
-import { TokenModel, UserModel, WalletModel, type User, PumpAddressModel, RetryDataModel, type RetryData } from "./models";
 import {
-  decryptPrivateKey,
-  encryptPrivateKey,
-  uploadFileToPinata,
-  uploadJsonToPinata,
-} from "./utils";
+  TokenModel,
+  UserModel,
+  WalletModel,
+  type User,
+  PumpAddressModel,
+  RetryDataModel,
+  type RetryData,
+} from "./models";
+import { decryptPrivateKey, encryptPrivateKey, uploadFileToPinata, uploadJsonToPinata } from "./utils";
 import { TokenState } from "./types";
 import {
   devSellQueue,
@@ -35,8 +35,8 @@ export const getUser = async (telegramId: String) => {
 export const getDevWallet = async (userId: String) => {
   const wallet = await WalletModel.findOne({
     user: userId,
-    isDev: true
-  })
+    isDev: true,
+  });
   return {
     wallet: decryptPrivateKey(wallet?.privateKey!),
   };
@@ -66,10 +66,7 @@ export const getUserToken = async (userId: string, tokenAddress: string) => {
   return token;
 };
 
-export const getUserTokenWithBuyWallets = async (
-  userId: string,
-  tokenAddress: string,
-) => {
+export const getUserTokenWithBuyWallets = async (userId: string, tokenAddress: string) => {
   const token = await TokenModel.findOne({
     user: userId,
     tokenAddress,
@@ -83,7 +80,7 @@ export const createUser = async (
   firstName: string | undefined,
   lastName: string | undefined,
   userName: string,
-  telegramId: string,
+  telegramId: string
 ) => {
   return await UserModel.create({
     firstName,
@@ -112,8 +109,10 @@ export const getAllDevWallets = async (userId: string) => {
   const wallets = await WalletModel.find({
     user: userId,
     isDev: true,
-  }).sort({ createdAt: 1 }).lean();
-  
+  })
+    .sort({ createdAt: 1 })
+    .lean();
+
   return wallets.map((wallet) => ({
     id: String(wallet._id),
     publicKey: wallet.publicKey,
@@ -128,24 +127,21 @@ export const getDefaultDevWallet = async (userId: string) => {
     isDev: true,
     isDefault: true,
   }).exec();
-  
+
   if (!wallet) {
     const firstWallet = await WalletModel.findOne({
       user: userId,
       isDev: true,
     }).exec();
-    
+
     if (firstWallet) {
-      await WalletModel.updateOne(
-        { _id: firstWallet._id },
-        { isDefault: true }
-      );
+      await WalletModel.updateOne({ _id: firstWallet._id }, { isDefault: true });
       return firstWallet.publicKey;
     }
-    
+
     return await getOrCreateDevWallet(userId);
   }
-  
+
   return wallet.publicKey;
 };
 
@@ -154,24 +150,24 @@ export const addDevWallet = async (userId: string, privateKey: string) => {
     user: userId,
     isDev: true,
   });
-  
+
   if (existingWallets >= 5) {
     throw new Error("Maximum of 5 dev wallets allowed");
   }
-  
+
   const keypair = secretKeyToKeypair(privateKey);
   const publicKey = keypair.publicKey.toBase58();
-  
+
   const existingWallet = await WalletModel.findOne({
     user: userId,
     publicKey: publicKey,
     isDev: true,
   });
-  
+
   if (existingWallet) {
     throw new Error("This wallet is already added");
   }
-  
+
   const wallet = await WalletModel.create({
     user: userId,
     publicKey: publicKey,
@@ -179,7 +175,7 @@ export const addDevWallet = async (userId: string, privateKey: string) => {
     isDev: true,
     isDefault: false,
   });
-  
+
   return {
     id: String(wallet._id),
     publicKey: wallet.publicKey,
@@ -195,7 +191,7 @@ export const setDefaultDevWallet = async (userId: string, walletId: string) => {
     },
     { isDefault: false }
   );
-  
+
   const updatedWallet = await WalletModel.findOneAndUpdate(
     {
       _id: walletId,
@@ -205,11 +201,11 @@ export const setDefaultDevWallet = async (userId: string, walletId: string) => {
     { isDefault: true },
     { new: true }
   );
-  
+
   if (!updatedWallet) {
     throw new Error("Wallet not found");
   }
-  
+
   return updatedWallet.publicKey;
 };
 
@@ -218,43 +214,40 @@ export const deleteDevWallet = async (userId: string, walletId: string) => {
     user: userId,
     isDev: true,
   });
-  
+
   if (devWalletCount <= 1) {
     throw new Error("Cannot delete the last dev wallet");
   }
-  
+
   const walletToDelete = await WalletModel.findOne({
     _id: walletId,
     user: userId,
     isDev: true,
   });
-  
+
   if (!walletToDelete) {
     throw new Error("Wallet not found");
   }
-  
+
   const wasDefault = walletToDelete.isDefault;
-  
+
   await WalletModel.deleteOne({
     _id: walletId,
     user: userId,
     isDev: true,
   });
-  
+
   if (wasDefault) {
     const firstRemainingWallet = await WalletModel.findOne({
       user: userId,
       isDev: true,
     });
-    
+
     if (firstRemainingWallet) {
-      await WalletModel.updateOne(
-        { _id: firstRemainingWallet._id },
-        { isDefault: true }
-      );
+      await WalletModel.updateOne({ _id: firstRemainingWallet._id }, { isDefault: true });
     }
   }
-  
+
   return true;
 };
 
@@ -263,13 +256,13 @@ export const generateNewDevWallet = async (userId: string) => {
     user: userId,
     isDev: true,
   });
-  
+
   if (existingWallets >= 5) {
     throw new Error("Maximum of 5 dev wallets allowed");
   }
-  
+
   const [devWallet] = generateKeypairs(1);
-  
+
   const wallet = await WalletModel.create({
     user: userId,
     publicKey: devWallet.publicKey,
@@ -277,7 +270,7 @@ export const generateNewDevWallet = async (userId: string) => {
     isDev: true,
     isDefault: false,
   });
-  
+
   return {
     id: String(wallet._id),
     publicKey: wallet.publicKey,
@@ -290,17 +283,11 @@ export const addWallet = async (publickKey: string, secretKey: string) => {};
 
 export const generateWallets = async () => {};
 
-const createTokenMetadata = async (
-  name: string,
-  symbol: string,
-  description: string,
-  image: any,
-) => {
+const createTokenMetadata = async (name: string, symbol: string, description: string, image: any) => {
   try {
-    const ipfsImage = await uploadFileToPinata(
-      image,
-      `token-${name}-${symbol}-${Date.now()}.png`,
-    ).then((hash) => `${env.PINATA_GATEWAY_URL}/ipfs/${hash}`);
+    const ipfsImage = await uploadFileToPinata(image, `token-${name}-${symbol}-${Date.now()}.png`).then(
+      (hash) => `${env.PINATA_GATEWAY_URL}/ipfs/${hash}`
+    );
     if (!ipfsImage) {
       return null;
     }
@@ -310,10 +297,7 @@ const createTokenMetadata = async (
       description,
       image: ipfsImage,
     };
-    const ipfsMetadataResult = await uploadJsonToPinata(
-      data,
-      `metadata-${name}-${symbol}-${Date.now()}.json`,
-    );
+    const ipfsMetadataResult = await uploadJsonToPinata(data, `metadata-${name}-${symbol}-${Date.now()}.json`);
     if (!ipfsMetadataResult) {
       return null;
     }
@@ -327,33 +311,33 @@ const createTokenMetadata = async (
 
 export const getAvailablePumpAddress = async (userId: string) => {
   const session = await mongoose.startSession();
-  
+
   try {
     return await session.withTransaction(async () => {
       // Find an unused pump address
       const pumpAddress = await PumpAddressModel.findOneAndUpdate(
         { isUsed: false },
-        { 
-          $set: { 
-            isUsed: true, 
-            usedBy: userId, 
-            usedAt: new Date() 
-          } 
+        {
+          $set: {
+            isUsed: true,
+            usedBy: userId,
+            usedAt: new Date(),
+          },
         },
-        { 
-          new: true, 
+        {
+          new: true,
           session,
-          sort: { createdAt: 1 } // Use oldest first
+          sort: { createdAt: 1 }, // Use oldest first
         }
       );
-      
+
       if (!pumpAddress) {
         throw new Error("No available pump addresses found. Please contact support.");
       }
-      
+
       return {
         publicKey: pumpAddress.publicKey,
-        secretKey: pumpAddress.secretKey
+        secretKey: pumpAddress.secretKey,
       };
     });
   } finally {
@@ -364,12 +348,12 @@ export const getAvailablePumpAddress = async (userId: string) => {
 export const releasePumpAddress = async (publicKey: string) => {
   await PumpAddressModel.findOneAndUpdate(
     { publicKey },
-    { 
-      $set: { 
-        isUsed: false, 
-        usedBy: null, 
-        usedAt: null 
-      } 
+    {
+      $set: {
+        isUsed: false,
+        usedBy: null,
+        usedAt: null,
+      },
     }
   );
 };
@@ -377,21 +361,21 @@ export const releasePumpAddress = async (publicKey: string) => {
 export const markPumpAddressAsUsed = async (publicKey: string, userId?: string) => {
   const result = await PumpAddressModel.findOneAndUpdate(
     { publicKey },
-    { 
-      $set: { 
-        isUsed: true, 
-        usedBy: userId || null, 
-        usedAt: new Date() 
-      } 
+    {
+      $set: {
+        isUsed: true,
+        usedBy: userId || null,
+        usedAt: new Date(),
+      },
     },
     { new: true }
   );
-  
+
   if (!result) {
     throw new Error(`Pump address ${publicKey} not found in database`);
   }
-  
-  logger.info(`Marked pump address ${publicKey} as used${userId ? ` by user ${userId}` : ''}`);
+
+  logger.info(`Marked pump address ${publicKey} as used${userId ? ` by user ${userId}` : ""}`);
   return result;
 };
 
@@ -399,46 +383,35 @@ export const getPumpAddressStats = async () => {
   const total = await PumpAddressModel.countDocuments();
   const used = await PumpAddressModel.countDocuments({ isUsed: true });
   const available = total - used;
-  
+
   return {
     total,
     used,
     available,
-    usagePercentage: total > 0 ? Math.round((used / total) * 100) : 0
+    usagePercentage: total > 0 ? Math.round((used / total) * 100) : 0,
   };
 };
 
 export const getUserPumpAddresses = async (userId: string) => {
-  return await PumpAddressModel.find({ usedBy: userId }).select('publicKey usedAt');
+  return await PumpAddressModel.find({ usedBy: userId }).select("publicKey usedAt");
 };
 
-export const createToken = async (
-  userId: string,
-  name: string,
-  symbol: string,
-  description: string,
-  image: any,
-) => {
+export const createToken = async (userId: string, name: string, symbol: string, description: string, image: any) => {
   const devWallet = await WalletModel.findOne({
     user: userId,
     isDev: true,
     isDefault: true,
   });
-  
+
   if (!devWallet) {
     throw new Error("No default dev wallet found");
   }
-  
-  const metadataUri = await createTokenMetadata(
-    name,
-    symbol,
-    description,
-    image,
-  );
+
+  const metadataUri = await createTokenMetadata(name, symbol, description, image);
   if (!metadataUri) {
     throw new Error("Token metadata uri not uploaded");
   }
-  
+
   // Use pump address instead of generating random keypair
   let tokenKey;
   let isPumpAddress = false;
@@ -451,21 +424,21 @@ export const createToken = async (
     const [randomKey] = generateKeypairs(1);
     tokenKey = randomKey;
   }
-  
+
   try {
-  const token = await TokenModel.create({
-    user: userId,
-    name,
-    symbol,
-    description,
-    launchData: {
-      devWallet: devWallet?.id,
-    },
-    tokenAddress: tokenKey.publicKey,
-    tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
-    tokenMetadataUrl: metadataUri,
-  });
-  return token;
+    const token = await TokenModel.create({
+      user: userId,
+      name,
+      symbol,
+      description,
+      launchData: {
+        devWallet: devWallet?.id,
+      },
+      tokenAddress: tokenKey.publicKey,
+      tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
+      tokenMetadataUrl: metadataUri,
+    });
+    return token;
   } catch (error) {
     // If token creation fails and we used a pump address, release it
     if (isPumpAddress) {
@@ -480,15 +453,14 @@ export const preLaunchChecks = async (
   devWallet: string,
   buyAmount: number,
   devBuy: number,
-  walletCount: number,
+  walletCount: number
 ) => {
   let success = true;
   const funderKeypair = secretKeyToKeypair(funderWallet);
   const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet));
 
   // expectations
-  const expectedFunderBalance =
-    (buyAmount + walletCount * 0.05) * LAMPORTS_PER_SOL;
+  const expectedFunderBalance = (buyAmount + walletCount * 0.05) * LAMPORTS_PER_SOL;
   const expectedDevBalance = (0.01 + devBuy + 0.05) * LAMPORTS_PER_SOL;
 
   // balances
@@ -521,7 +493,7 @@ export const enqueueTokenLaunch = async (
   devWallet: string,
   buyWallets: string[],
   devBuy: number,
-  buyAmount: number,
+  buyAmount: number
 ) => {
   const session = await mongoose.startSession();
 
@@ -576,30 +548,27 @@ export const enqueueTokenLaunch = async (
             "launchData.launchAttempt": 1,
           },
         },
-        { new: true },
+        { new: true }
       ).lean();
       if (!updatedToken) {
         throw new Error("Failed to update token");
       }
-      await tokenLaunchQueue.add(
-        `launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
-        {
-          userId,
-          tokenAddress,
-          tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
-          userChatId: chatId,
-          tokenName: updatedToken.name,
-          tokenMetadataUri: updatedToken.tokenMetadataUrl,
-          tokenSymbol: updatedToken.symbol,
-          buyAmount,
-          buyerWallets: buyWallets,
-          devBuy,
-          devWallet: decryptPrivateKey(devWallet),
-          funderWallet: funderWallet,
-          buyDistribution: [],
-          launchStage: 1,
-        },
-      );
+      await tokenLaunchQueue.add(`launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`, {
+        userId,
+        tokenAddress,
+        tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
+        userChatId: chatId,
+        tokenName: updatedToken.name,
+        tokenMetadataUri: updatedToken.tokenMetadataUrl,
+        tokenSymbol: updatedToken.symbol,
+        buyAmount,
+        buyerWallets: buyWallets,
+        devBuy,
+        devWallet: decryptPrivateKey(devWallet),
+        funderWallet: funderWallet,
+        buyDistribution: [],
+        launchStage: 1,
+      });
     });
     return { success: true, message: "" };
   } catch (error: any) {
@@ -613,11 +582,7 @@ export const enqueueTokenLaunch = async (
   }
 };
 
-export const enqueueTokenLaunchRetry = async (
-  userId: string,
-  chatId: number,
-  tokenAddress: string,
-) => {
+export const enqueueTokenLaunchRetry = async (userId: string, chatId: number, tokenAddress: string) => {
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -634,7 +599,7 @@ export const enqueueTokenLaunchRetry = async (
             "launchData.launchAttempt": 1,
           },
         },
-        { new: true },
+        { new: true }
       )
         .populate(["launchData.buyWallets", "launchData.devWallet"])
         .lean();
@@ -651,28 +616,21 @@ export const enqueueTokenLaunchRetry = async (
         tokenSymbol: updatedToken.symbol,
         buyAmount: updatedToken.launchData!.buyAmount,
         buyerWallets: updatedToken.launchData!.buyWallets.map((w) =>
-          decryptPrivateKey(
-            (w as unknown as { privateKey: string }).privateKey,
-          ),
+          decryptPrivateKey((w as unknown as { privateKey: string }).privateKey)
         ),
         devWallet: decryptPrivateKey(
           (
             updatedToken.launchData!.devWallet as unknown as {
               privateKey: string;
             }
-          ).privateKey,
+          ).privateKey
         ),
-        funderWallet: decryptPrivateKey(
-          updatedToken.launchData!.funderPrivateKey,
-        ),
+        funderWallet: decryptPrivateKey(updatedToken.launchData!.funderPrivateKey),
         devBuy: updatedToken.launchData!.devBuy,
         buyDistribution: updatedToken.launchData!.buyDistribution || [],
         launchStage: updatedToken.launchData!.launchStage || 1,
       };
-      await tokenLaunchQueue.add(
-        `launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
-        data,
-      );
+      await tokenLaunchQueue.add(`launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`, data);
     });
     return { success: true, message: "" };
   } catch (error: any) {
@@ -691,7 +649,7 @@ export const enqueueDevSell = async (
   chatId: number,
   tokenAddress: string,
   devWallet: string,
-  sellPercent: number,
+  sellPercent: number
 ) => {
   const session = await mongoose.startSession();
   try {
@@ -709,21 +667,18 @@ export const enqueueDevSell = async (
             "launchData.devSellAttempt": 1,
           },
         },
-        { new: true },
+        { new: true }
       ).lean();
       if (!updatedToken) {
         throw new Error("Failed to update token");
       }
-      await devSellQueue.add(
-        `dev-sell-${tokenAddress}-${updatedToken.launchData?.devSellAttempt}`,
-        {
-          userId,
-          tokenAddress,
-          userChatId: chatId,
-          devWallet,
-          sellPercent,
-        },
-      );
+      await devSellQueue.add(`dev-sell-${tokenAddress}-${updatedToken.launchData?.devSellAttempt}`, {
+        userId,
+        tokenAddress,
+        userChatId: chatId,
+        devWallet,
+        sellPercent,
+      });
     });
     return { success: true, message: "" };
   } catch (error: any) {
@@ -743,7 +698,7 @@ export const enqueueWalletSell = async (
   tokenAddress: string,
   devWallet: string,
   buyerWallets: string[],
-  sellPercent: number,
+  sellPercent: number
 ) => {
   const session = await mongoose.startSession();
   try {
@@ -761,22 +716,19 @@ export const enqueueWalletSell = async (
             "launchData.walletSellAttempt": 1,
           },
         },
-        { new: true },
+        { new: true }
       ).lean();
       if (!updatedToken) {
         throw new Error("Failed to update token");
       }
-      await walletSellQueue.add(
-        `wallet-sell-${tokenAddress}-${updatedToken.launchData?.walletSellAttempt}`,
-        {
-          userId,
-          tokenAddress,
-          userChatId: chatId,
-          devWallet,
-          buyerWallets,
-          sellPercent,
-        },
-      );
+      await walletSellQueue.add(`wallet-sell-${tokenAddress}-${updatedToken.launchData?.walletSellAttempt}`, {
+        userId,
+        tokenAddress,
+        userChatId: chatId,
+        devWallet,
+        buyerWallets,
+        sellPercent,
+      });
     });
     return { success: true, message: "" };
   } catch (error: any) {
@@ -790,32 +742,22 @@ export const enqueueWalletSell = async (
   }
 };
 
-export const updateTokenState = async (
-  tokenAddress: string,
-  state: TokenState,
-  userId?: string,
-) => {
+export const updateTokenState = async (tokenAddress: string, state: TokenState, userId?: string) => {
   const filter: any = { tokenAddress };
-  
+
   // If userId is provided, filter by user as well to avoid cross-user state updates
   if (userId) {
     filter.user = userId;
   }
-  
-  await TokenModel.findOneAndUpdate(
-    filter,
-    {
-      $set: {
-        state,
-      },
+
+  await TokenModel.findOneAndUpdate(filter, {
+    $set: {
+      state,
     },
-  );
+  });
 };
 
-export const updateLaunchStage = async (
-  tokenAddress: string,
-  stage: Number,
-) => {
+export const updateLaunchStage = async (tokenAddress: string, stage: Number) => {
   await TokenModel.findOneAndUpdate(
     {
       tokenAddress,
@@ -824,14 +766,11 @@ export const updateLaunchStage = async (
       $set: {
         "launchData.launchStage": stage,
       },
-    },
+    }
   );
 };
 
-export const updateBuyDistribution = async (
-  tokenAddress: string,
-  dist: Number[],
-) => {
+export const updateBuyDistribution = async (tokenAddress: string, dist: Number[]) => {
   await TokenModel.findOneAndUpdate(
     {
       tokenAddress,
@@ -840,7 +779,7 @@ export const updateBuyDistribution = async (
       $set: {
         "launchData.buyDistribution": dist,
       },
-    },
+    }
   );
 };
 
@@ -853,7 +792,7 @@ export const acquireDevSellLock = async (tokenAddress: string) => {
       $set: {
         "launchData.lockDevSell": true,
       },
-    },
+    }
   );
 };
 
@@ -866,7 +805,7 @@ export const releaseDevSellLock = async (tokenAddress: string) => {
       $set: {
         "launchData.lockDevSell": false,
       },
-    },
+    }
   );
 };
 
@@ -879,7 +818,7 @@ export const acquireWalletSellLock = async (tokenAddress: string) => {
       $set: {
         "launchData.lockWalletSell": true,
       },
-    },
+    }
   );
 };
 
@@ -892,18 +831,18 @@ export const releaseWalletSellLock = async (tokenAddress: string) => {
       $set: {
         "launchData.lockWalletSell": false,
       },
-    },
+    }
   );
 };
 
 // ========== FUNDING WALLET FUNCTIONS ==========
 
 export const getOrCreateFundingWallet = async (userId: string) => {
-  let user = await UserModel.findById(userId).populate('fundingWallet').exec();
+  let user = await UserModel.findById(userId).populate("fundingWallet").exec();
   if (!user) {
     throw new Error("User not found");
   }
-  
+
   if (!user.fundingWallet) {
     const [fundingWallet] = generateKeypairs(1);
     const wallet = await WalletModel.create({
@@ -914,24 +853,21 @@ export const getOrCreateFundingWallet = async (userId: string) => {
       isBuyer: false,
       isFunding: true,
     });
-    
-    await UserModel.updateOne(
-      { _id: userId },
-      { fundingWallet: wallet._id }
-    );
-    
+
+    await UserModel.updateOne({ _id: userId }, { fundingWallet: wallet._id });
+
     return wallet.publicKey;
   }
-  
+
   return (user.fundingWallet as any).publicKey;
 };
 
 export const getFundingWallet = async (userId: string) => {
-  const user = await UserModel.findById(userId).populate('fundingWallet').exec();
+  const user = await UserModel.findById(userId).populate("fundingWallet").exec();
   if (!user || !user.fundingWallet) {
     return null;
   }
-  
+
   return {
     id: String((user.fundingWallet as any)._id),
     publicKey: (user.fundingWallet as any).publicKey,
@@ -940,16 +876,16 @@ export const getFundingWallet = async (userId: string) => {
 };
 
 export const generateNewFundingWallet = async (userId: string) => {
-  const user = await UserModel.findById(userId).populate('fundingWallet').exec();
+  const user = await UserModel.findById(userId).populate("fundingWallet").exec();
   if (!user) {
     throw new Error("User not found");
   }
-  
+
   // Delete old funding wallet if exists
   if (user.fundingWallet) {
     await WalletModel.deleteOne({ _id: (user.fundingWallet as any)._id });
   }
-  
+
   // Create new funding wallet
   const [fundingWallet] = generateKeypairs(1);
   const wallet = await WalletModel.create({
@@ -960,12 +896,9 @@ export const generateNewFundingWallet = async (userId: string) => {
     isBuyer: false,
     isFunding: true,
   });
-  
-  await UserModel.updateOne(
-    { _id: userId },
-    { fundingWallet: wallet._id }
-  );
-  
+
+  await UserModel.updateOne({ _id: userId }, { fundingWallet: wallet._id });
+
   return {
     id: String(wallet._id),
     publicKey: wallet.publicKey,
@@ -979,8 +912,10 @@ export const getAllBuyerWallets = async (userId: string) => {
   const wallets = await WalletModel.find({
     user: userId,
     isBuyer: true,
-  }).sort({ createdAt: 1 }).lean();
-  
+  })
+    .sort({ createdAt: 1 })
+    .lean();
+
   return wallets.map((wallet) => ({
     id: String(wallet._id),
     publicKey: wallet.publicKey,
@@ -993,24 +928,24 @@ export const addBuyerWallet = async (userId: string, privateKey: string) => {
     user: userId,
     isBuyer: true,
   });
-  
+
   if (existingWallets >= 10) {
     throw new Error("Maximum of 10 buyer wallets allowed");
   }
-  
+
   const keypair = secretKeyToKeypair(privateKey);
   const publicKey = keypair.publicKey.toBase58();
-  
+
   const existingWallet = await WalletModel.findOne({
     user: userId,
     publicKey: publicKey,
     isBuyer: true,
   });
-  
+
   if (existingWallet) {
     throw new Error("This wallet is already added");
   }
-  
+
   const wallet = await WalletModel.create({
     user: userId,
     publicKey: publicKey,
@@ -1019,7 +954,7 @@ export const addBuyerWallet = async (userId: string, privateKey: string) => {
     isBuyer: true,
     isFunding: false,
   });
-  
+
   return {
     id: String(wallet._id),
     publicKey: wallet.publicKey,
@@ -1031,13 +966,13 @@ export const generateNewBuyerWallet = async (userId: string) => {
     user: userId,
     isBuyer: true,
   });
-  
+
   if (existingWallets >= 10) {
     throw new Error("Maximum of 10 buyer wallets allowed");
   }
-  
+
   const [buyerWallet] = generateKeypairs(1);
-  
+
   const wallet = await WalletModel.create({
     user: userId,
     publicKey: buyerWallet.publicKey,
@@ -1046,7 +981,7 @@ export const generateNewBuyerWallet = async (userId: string) => {
     isBuyer: true,
     isFunding: false,
   });
-  
+
   return {
     id: String(wallet._id),
     publicKey: wallet.publicKey,
@@ -1060,11 +995,11 @@ export const deleteBuyerWallet = async (userId: string, walletId: string) => {
     user: userId,
     isBuyer: true,
   });
-  
+
   if (!deletedWallet) {
     throw new Error("Buyer wallet not found");
   }
-  
+
   return true;
 };
 
@@ -1074,11 +1009,11 @@ export const getBuyerWalletPrivateKey = async (userId: string, walletId: string)
     user: userId,
     isBuyer: true,
   });
-  
+
   if (!wallet) {
     throw new Error("Buyer wallet not found");
   }
-  
+
   return decryptPrivateKey(wallet.privateKey);
 };
 
@@ -1095,50 +1030,38 @@ export const getWalletBalance = async (publicKey: string) => {
 };
 
 export const deleteToken = async (userId: string, tokenAddress: string) => {
-  const session = await mongoose.startSession();
-  
   try {
-    return await session.withTransaction(async () => {
-      // Find the token
-      const token = await TokenModel.findOne({
-        user: userId,
-        tokenAddress
-      }).session(session);
-      
-      if (!token) {
-        throw new Error("Token not found");
-      }
-      
-      // Check if token is using a pump address and release it
-      const pumpAddress = await PumpAddressModel.findOne({
-        publicKey: tokenAddress,
-        usedBy: userId
-      }).session(session);
-      
-      if (pumpAddress) {
-        await PumpAddressModel.findOneAndUpdate(
-          { publicKey: tokenAddress },
-          { 
-            $set: { 
-              isUsed: false, 
-              usedBy: null, 
-              usedAt: null 
-            } 
-          },
-          { session }
-        );
-      }
-      
-      // Delete the token
-      await TokenModel.deleteOne({ _id: token._id }).session(session);
-      
-      return { success: true, message: "Token deleted successfully" };
+    // 1. Find the token for this user
+    const token = await TokenModel.findOne({ user: userId, tokenAddress });
+    if (!token) {
+      throw new Error("Token not found");
+    }
+
+    // 2. If a pump address was reserved, release it
+    const pumpAddress = await PumpAddressModel.findOne({
+      publicKey: tokenAddress,
+      usedBy: userId,
     });
+    if (pumpAddress) {
+      await PumpAddressModel.updateOne(
+        { publicKey: tokenAddress },
+        {
+          $set: {
+            isUsed: false,
+            usedBy: null,
+            usedAt: null,
+          },
+        }
+      );
+    }
+
+    // 3. Delete the token document
+    await TokenModel.deleteOne({ _id: token._id });
+
+    return { success: true, message: "Token deleted successfully" };
   } catch (error: any) {
     logger.error("Error deleting token:", error);
     return { success: false, message: error.message };
-  } finally {
-    await session.endSession();
   }
 };
 
@@ -1146,26 +1069,28 @@ export const handleTokenLaunchFailure = async (tokenAddress: string, error?: any
   // Release pump address if launch fails permanently
   const pumpAddress = await PumpAddressModel.findOne({
     publicKey: tokenAddress,
-    isUsed: true
+    isUsed: true,
   });
-  
+
   if (pumpAddress) {
     const token = await TokenModel.findOne({ tokenAddress });
     const launchAttempt = token?.launchData?.launchAttempt || 0;
-    
+
     // Check for specific errors that indicate the address is permanently unusable
-    const shouldReleaseImmediately = error && (
+    const shouldReleaseImmediately =
+      error &&
       // Pump.fun Custom:0 error (NotAuthorized/AlreadyInitialized)
-      error.message?.includes('{"InstructionError":[0,{"Custom":0}]}') ||
-      error.message?.includes('Custom:0') ||
-      // Token creation failed with bonding curve errors
-      error.message?.includes('Token creation failed') ||
-      // Unable to fetch curve data (indicates token might already exist)
-      error.message?.includes('Unable to fetch curve data')
-    );
-    
+      (error.message?.includes('{"InstructionError":[0,{"Custom":0}]}') ||
+        error.message?.includes("Custom:0") ||
+        // Token creation failed with bonding curve errors
+        error.message?.includes("Token creation failed") ||
+        // Unable to fetch curve data (indicates token might already exist)
+        error.message?.includes("Unable to fetch curve data"));
+
     if (shouldReleaseImmediately) {
-      logger.info(`Releasing pump address ${tokenAddress} immediately due to permanent error: ${error?.message || 'Unknown error'}`);
+      logger.info(
+        `Releasing pump address ${tokenAddress} immediately due to permanent error: ${error?.message || "Unknown error"}`
+      );
       await releasePumpAddress(tokenAddress);
     } else if (launchAttempt > 3) {
       logger.info(`Releasing pump address ${tokenAddress} after ${launchAttempt} failed launch attempts`);
@@ -1213,10 +1138,7 @@ export const saveRetryData = async (
   return retryData;
 };
 
-export const getRetryData = async (
-  userId: string,
-  conversationType: "launch_token" | "quick_launch"
-): Promise<any> => {
+export const getRetryData = async (userId: string, conversationType: "launch_token" | "quick_launch"): Promise<any> => {
   const retryData = await RetryDataModel.findOne({
     user: userId,
     conversationType,
@@ -1225,10 +1147,7 @@ export const getRetryData = async (
   return retryData;
 };
 
-export const clearRetryData = async (
-  userId: string,
-  conversationType: "launch_token" | "quick_launch"
-) => {
+export const clearRetryData = async (userId: string, conversationType: "launch_token" | "quick_launch") => {
   await RetryDataModel.deleteMany({
     user: userId,
     conversationType,
@@ -1249,7 +1168,7 @@ export const collectPlatformFee = async (
 ): Promise<{ success: boolean; signature?: string; error?: string }> => {
   try {
     const { env } = await import("../config");
-    
+
     const devKeypair = secretKeyToKeypair(devWalletPrivateKey);
     const platformFeeWallet = new PublicKey(env.PLATFORM_FEE_WALLET);
     const feeAmountLamports = Math.floor(feeAmountSol * LAMPORTS_PER_SOL);
@@ -1262,7 +1181,7 @@ export const collectPlatformFee = async (
     if (devBalance < totalRequired) {
       return {
         success: false,
-        error: `Insufficient balance for platform fee. Required: ${(totalRequired / LAMPORTS_PER_SOL).toFixed(6)} SOL, Available: ${(devBalance / LAMPORTS_PER_SOL).toFixed(6)} SOL`
+        error: `Insufficient balance for platform fee. Required: ${(totalRequired / LAMPORTS_PER_SOL).toFixed(6)} SOL, Available: ${(devBalance / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
       };
     }
 
@@ -1276,15 +1195,14 @@ export const collectPlatformFee = async (
     );
 
     // Send transaction
-    const signature = await sendAndConfirmTransaction(
-      connection,
-      transaction,
-      [devKeypair],
-      { commitment: "confirmed" }
+    const signature = await sendAndConfirmTransaction(connection, transaction, [devKeypair], {
+      commitment: "confirmed",
+    });
+
+    logger.info(
+      `Platform fee collected: ${feeAmountSol} SOL from ${devKeypair.publicKey.toBase58()} to ${platformFeeWallet.toBase58()}`
     );
 
-    logger.info(`Platform fee collected: ${feeAmountSol} SOL from ${devKeypair.publicKey.toBase58()} to ${platformFeeWallet.toBase58()}`);
-    
     return { success: true, signature };
   } catch (error: any) {
     logger.error("Error collecting platform fee:", error);
@@ -1340,7 +1258,7 @@ export const enqueuePrepareTokenLaunch = async (
   devWallet: string,
   buyWallets: string[],
   devBuy: number,
-  buyAmount: number,
+  buyAmount: number
 ) => {
   const session = await mongoose.startSession();
 
@@ -1384,28 +1302,25 @@ export const enqueuePrepareTokenLaunch = async (
             "launchData.launchAttempt": 1,
           },
         },
-        { new: true },
+        { new: true }
       ).lean();
       if (!updatedToken) {
         throw new Error("Failed to update token");
       }
-      await prepareLaunchQueue.add(
-        `prepare-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
-        {
-          userId,
-          tokenAddress,
-          tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
-          userChatId: chatId,
-          tokenName: updatedToken.name,
-          tokenMetadataUri: updatedToken.tokenMetadataUrl,
-          tokenSymbol: updatedToken.symbol,
-          buyAmount,
-          buyerWallets: buyWallets,
-          devBuy,
-          devWallet: decryptPrivateKey(devWallet),
-          funderWallet: funderWallet,
-        },
-      );
+      await prepareLaunchQueue.add(`prepare-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`, {
+        userId,
+        tokenAddress,
+        tokenPrivateKey: decryptPrivateKey(updatedToken.tokenPrivateKey),
+        userChatId: chatId,
+        tokenName: updatedToken.name,
+        tokenMetadataUri: updatedToken.tokenMetadataUrl,
+        tokenSymbol: updatedToken.symbol,
+        buyAmount,
+        buyerWallets: buyWallets,
+        devBuy,
+        devWallet: decryptPrivateKey(devWallet),
+        funderWallet: funderWallet,
+      });
     });
     return { success: true, message: "" };
   } catch (error: any) {
@@ -1419,11 +1334,7 @@ export const enqueuePrepareTokenLaunch = async (
   }
 };
 
-export const enqueueExecuteTokenLaunch = async (
-  userId: string,
-  chatId: number,
-  tokenAddress: string,
-) => {
+export const enqueueExecuteTokenLaunch = async (userId: string, chatId: number, tokenAddress: string) => {
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -1440,7 +1351,7 @@ export const enqueueExecuteTokenLaunch = async (
             "launchData.launchAttempt": 1,
           },
         },
-        { new: true },
+        { new: true }
       )
         .populate(["launchData.buyWallets", "launchData.devWallet"])
         .lean();
@@ -1457,24 +1368,19 @@ export const enqueueExecuteTokenLaunch = async (
         tokenSymbol: updatedToken.symbol,
         buyAmount: updatedToken.launchData!.buyAmount,
         buyerWallets: updatedToken.launchData!.buyWallets.map((w) =>
-          decryptPrivateKey(
-            (w as unknown as { privateKey: string }).privateKey,
-          ),
+          decryptPrivateKey((w as unknown as { privateKey: string }).privateKey)
         ),
         devWallet: decryptPrivateKey(
           (
             updatedToken.launchData!.devWallet as unknown as {
               privateKey: string;
             }
-          ).privateKey,
+          ).privateKey
         ),
         devBuy: updatedToken.launchData!.devBuy,
         launchStage: updatedToken.launchData!.launchStage || 3, // Start from LAUNCH stage
       };
-      await executeLaunchQueue.add(
-        `execute-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
-        data,
-      );
+      await executeLaunchQueue.add(`execute-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`, data);
     });
     return { success: true, message: "" };
   } catch (error: any) {
@@ -1490,12 +1396,12 @@ export const enqueueExecuteTokenLaunch = async (
 
 export const removeFailedToken = async (tokenAddress: string) => {
   const session = await mongoose.startSession();
-  
+
   try {
     await session.withTransaction(async () => {
       // Find and remove the token
       const deletedToken = await TokenModel.findOneAndDelete({
-        tokenAddress: tokenAddress
+        tokenAddress: tokenAddress,
       }).session(session);
 
       if (!deletedToken) {
@@ -1505,7 +1411,7 @@ export const removeFailedToken = async (tokenAddress: string) => {
       // Mark the pump address as used to prevent reuse
       await PumpAddressModel.findOneAndUpdate(
         { publicKey: tokenAddress },
-        { 
+        {
           isUsed: true,
           usedAt: new Date(),
           // Don't set usedBy since we're removing the token
@@ -1517,7 +1423,7 @@ export const removeFailedToken = async (tokenAddress: string) => {
         tokenAddress,
         tokenName: deletedToken.name,
         tokenSymbol: deletedToken.symbol,
-        userId: deletedToken.user
+        userId: deletedToken.user,
       });
     });
 
@@ -1550,7 +1456,7 @@ export const recordTransaction = async (
   } = {}
 ) => {
   const { TransactionRecordModel } = await import("./models");
-  
+
   await TransactionRecordModel.create({
     tokenAddress,
     walletPublicKey,
@@ -1584,7 +1490,7 @@ export const recordSellTransaction = async (
   } = {}
 ) => {
   const { TransactionRecordModel } = await import("./models");
-  
+
   await TransactionRecordModel.create({
     tokenAddress,
     walletPublicKey,
@@ -1607,19 +1513,19 @@ export const getSuccessfulTransactions = async (
   launchAttempt?: number
 ) => {
   const { TransactionRecordModel } = await import("./models");
-  
+
   const query: any = {
     tokenAddress,
     transactionType,
     success: true,
   };
-  
+
   if (launchAttempt !== undefined) {
     query.launchAttempt = launchAttempt;
   }
-  
+
   const records = await TransactionRecordModel.find(query).lean();
-  return records.map(record => record.walletPublicKey);
+  return records.map((record) => record.walletPublicKey);
 };
 
 export const getFailedTransactions = async (
@@ -1628,17 +1534,17 @@ export const getFailedTransactions = async (
   launchAttempt?: number
 ) => {
   const { TransactionRecordModel } = await import("./models");
-  
+
   const query: any = {
     tokenAddress,
     transactionType,
     success: false,
   };
-  
+
   if (launchAttempt !== undefined) {
     query.launchAttempt = launchAttempt;
   }
-  
+
   const records = await TransactionRecordModel.find(query).lean();
   return records;
 };
@@ -1649,129 +1555,123 @@ export const isTransactionAlreadySuccessful = async (
   transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell"
 ) => {
   const { TransactionRecordModel } = await import("./models");
-  
+
   const record = await TransactionRecordModel.findOne({
     tokenAddress,
     walletPublicKey,
     transactionType,
     success: true,
   }).lean();
-  
+
   return record !== null;
 };
 
-export const getTransactionStats = async (
-  tokenAddress: string,
-  launchAttempt?: number
-) => {
+export const getTransactionStats = async (tokenAddress: string, launchAttempt?: number) => {
   const { TransactionRecordModel } = await import("./models");
-  
+
   const query: any = { tokenAddress };
   if (launchAttempt !== undefined) {
     query.launchAttempt = launchAttempt;
   }
-  
+
   const records = await TransactionRecordModel.find(query).lean();
-  
+
   const stats = {
     total: records.length,
-    successful: records.filter(r => r.success).length,
-    failed: records.filter(r => !r.success).length,
+    successful: records.filter((r) => r.success).length,
+    failed: records.filter((r) => !r.success).length,
     byType: {
-      token_creation: records.filter(r => r.transactionType === "token_creation"),
-      dev_buy: records.filter(r => r.transactionType === "dev_buy"),
-      snipe_buy: records.filter(r => r.transactionType === "snipe_buy"),
-      dev_sell: records.filter(r => r.transactionType === "dev_sell"),
-      wallet_sell: records.filter(r => r.transactionType === "wallet_sell"),
-      external_sell: records.filter(r => r.transactionType === "external_sell"),
-    }
+      token_creation: records.filter((r) => r.transactionType === "token_creation"),
+      dev_buy: records.filter((r) => r.transactionType === "dev_buy"),
+      snipe_buy: records.filter((r) => r.transactionType === "snipe_buy"),
+      dev_sell: records.filter((r) => r.transactionType === "dev_sell"),
+      wallet_sell: records.filter((r) => r.transactionType === "wallet_sell"),
+      external_sell: records.filter((r) => r.transactionType === "external_sell"),
+    },
   };
-  
+
   return stats;
 };
 
 // ========== TRANSACTION FINANCIAL STATS FUNCTIONS ==========
 
-export const getTransactionFinancialStats = async (
-  tokenAddress: string,
-  launchAttempt?: number
-) => {
+export const getTransactionFinancialStats = async (tokenAddress: string, launchAttempt?: number) => {
   const { TransactionRecordModel } = await import("./models");
-  
-  const query: any = { 
+
+  const query: any = {
     tokenAddress,
-    success: true // Only count successful transactions
+    success: true, // Only count successful transactions
   };
   if (launchAttempt !== undefined) {
     query.launchAttempt = launchAttempt;
   }
-  
+
   const records = await TransactionRecordModel.find(query).lean();
-  
+
   // Calculate totals by transaction type
-  const devBuyRecords = records.filter(r => r.transactionType === "dev_buy");
-  const snipeBuyRecords = records.filter(r => r.transactionType === "snipe_buy");
-  const devSellRecords = records.filter(r => r.transactionType === "dev_sell");
-  const walletSellRecords = records.filter(r => r.transactionType === "wallet_sell");
-  const externalSellRecords = records.filter(r => r.transactionType === "external_sell");
-  
+  const devBuyRecords = records.filter((r) => r.transactionType === "dev_buy");
+  const snipeBuyRecords = records.filter((r) => r.transactionType === "snipe_buy");
+  const devSellRecords = records.filter((r) => r.transactionType === "dev_sell");
+  const walletSellRecords = records.filter((r) => r.transactionType === "wallet_sell");
+  const externalSellRecords = records.filter((r) => r.transactionType === "external_sell");
+
   // Calculate spending (buys)
   const totalDevSpent = devBuyRecords.reduce((sum, record) => {
     return sum + (record.amountSol || 0);
   }, 0);
-  
+
   const totalSnipeSpent = snipeBuyRecords.reduce((sum, record) => {
     return sum + (record.amountSol || 0);
   }, 0);
-  
+
   const totalSpent = totalDevSpent + totalSnipeSpent;
-  
+
   // Calculate earnings (sells)
   const totalDevEarned = devSellRecords.reduce((sum, record) => {
     return sum + (record.amountSol || 0);
   }, 0);
-  
+
   const totalWalletEarned = walletSellRecords.reduce((sum, record) => {
     return sum + (record.amountSol || 0);
   }, 0);
-  
+
   const totalExternalEarned = externalSellRecords.reduce((sum, record) => {
     return sum + (record.amountSol || 0);
   }, 0);
-  
+
   const totalEarned = totalDevEarned + totalWalletEarned + totalExternalEarned;
-  
+
   // Calculate P&L
   const netProfitLoss = totalEarned - totalSpent;
   const profitLossPercentage = totalSpent > 0 ? (netProfitLoss / totalSpent) * 100 : 0;
-  
+
   // Calculate total tokens acquired (buys)
   const totalDevTokens = devBuyRecords.reduce((sum, record) => {
     return sum + BigInt(record.amountTokens || "0");
   }, BigInt(0));
-  
+
   const totalSnipeTokens = snipeBuyRecords.reduce((sum, record) => {
     return sum + BigInt(record.amountTokens || "0");
   }, BigInt(0));
-  
+
   const totalTokens = totalDevTokens + totalSnipeTokens;
-  
+
   // Calculate total tokens sold
   const totalDevTokensSold = devSellRecords.reduce((sum, record) => {
     return sum + BigInt(record.amountTokens || "0");
   }, BigInt(0));
-  
+
   const totalWalletTokensSold = walletSellRecords.reduce((sum, record) => {
     return sum + BigInt(record.amountTokens || "0");
   }, BigInt(0));
-  
+
   const totalExternalTokensSold = externalSellRecords.reduce((sum, record) => {
     return sum + BigInt(record.amountTokens || "0");
   }, BigInt(0));
-  
+
   const totalTokensSold = totalDevTokensSold + totalWalletTokensSold + totalExternalTokensSold;
   const remainingTokens = totalTokens - totalTokensSold;
-  
+
   return {
     // Buy data
     totalSpent: Number(totalSpent.toFixed(6)),
@@ -1781,8 +1681,9 @@ export const getTransactionFinancialStats = async (
     totalDevTokens: totalDevTokens.toString(),
     totalSnipeTokens: totalSnipeTokens.toString(),
     successfulBuys: snipeBuyRecords.length,
-    averageSpentPerWallet: snipeBuyRecords.length > 0 ? Number((totalSnipeSpent / snipeBuyRecords.length).toFixed(6)) : 0,
-    
+    averageSpentPerWallet:
+      snipeBuyRecords.length > 0 ? Number((totalSnipeSpent / snipeBuyRecords.length).toFixed(6)) : 0,
+
     // Sell data
     totalEarned: Number(totalEarned.toFixed(6)),
     totalDevEarned: Number(totalDevEarned.toFixed(6)),
@@ -1794,7 +1695,7 @@ export const getTransactionFinancialStats = async (
     totalExternalTokensSold: totalExternalTokensSold.toString(),
     remainingTokens: remainingTokens.toString(),
     successfulSells: devSellRecords.length + walletSellRecords.length + externalSellRecords.length,
-    
+
     // P&L data
     netProfitLoss: Number(netProfitLoss.toFixed(6)),
     profitLossPercentage: Number(profitLossPercentage.toFixed(2)),
@@ -1809,17 +1710,17 @@ export const getSellTransactionHistory = async (
   transactionType?: "dev_sell" | "wallet_sell" | "external_sell"
 ) => {
   const { TransactionRecordModel } = await import("./models");
-  
-  const query: any = { 
+
+  const query: any = {
     tokenAddress,
-    transactionType: transactionType || { $in: ["dev_sell", "wallet_sell", "external_sell"] }
+    transactionType: transactionType || { $in: ["dev_sell", "wallet_sell", "external_sell"] },
   };
-  
+
   const records = await TransactionRecordModel.find(query)
     .sort({ createdAt: -1 }) // Most recent first
     .lean();
-  
-  return records.map(record => ({
+
+  return records.map((record) => ({
     walletAddress: record.walletPublicKey,
     transactionType: record.transactionType,
     signature: record.signature,
@@ -1835,13 +1736,15 @@ export const getSellTransactionHistory = async (
 
 export const getDetailedSellSummary = async (tokenAddress: string) => {
   const { TransactionRecordModel } = await import("./models");
-  
+
   // Get all sell transactions
   const sellRecords = await TransactionRecordModel.find({
     tokenAddress,
-    transactionType: { $in: ["dev_sell", "wallet_sell", "external_sell"] }
-  }).sort({ createdAt: -1 }).lean();
-  
+    transactionType: { $in: ["dev_sell", "wallet_sell", "external_sell"] },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+
   if (sellRecords.length === 0) {
     return {
       hasSells: false,
@@ -1850,26 +1753,26 @@ export const getDetailedSellSummary = async (tokenAddress: string) => {
       failedSells: 0,
       totalSolEarned: 0,
       totalTokensSold: "0",
-      sellHistory: []
+      sellHistory: [],
     };
   }
-  
-  const successful = sellRecords.filter(r => r.success);
-  const failed = sellRecords.filter(r => !r.success);
-  
+
+  const successful = sellRecords.filter((r) => r.success);
+  const failed = sellRecords.filter((r) => !r.success);
+
   const totalSolEarned = successful.reduce((sum, record) => {
     return sum + (record.amountSol || 0);
   }, 0);
-  
+
   const totalTokensSold = successful.reduce((sum, record) => {
     return sum + BigInt(record.amountTokens || "0");
   }, BigInt(0));
-  
+
   // Group sells by attempt/batch
   const sellBatches = sellRecords.reduce((batches: any[], record) => {
-    const batchKey = `${record.transactionType}-${record.sellAttempt}-${record.createdAt?.toISOString().split('T')[0]}`;
-    const existingBatch = batches.find(b => b.batchKey === batchKey);
-    
+    const batchKey = `${record.transactionType}-${record.sellAttempt}-${record.createdAt?.toISOString().split("T")[0]}`;
+    const existingBatch = batches.find((b) => b.batchKey === batchKey);
+
     if (existingBatch) {
       existingBatch.transactions.push(record);
       existingBatch.totalSol += record.amountSol || 0;
@@ -1890,10 +1793,10 @@ export const getDetailedSellSummary = async (tokenAddress: string) => {
         sellPercent: record.sellPercent || 0,
       });
     }
-    
+
     return batches;
   }, []);
-  
+
   return {
     hasSells: true,
     totalSells: sellRecords.length,
@@ -1901,7 +1804,7 @@ export const getDetailedSellSummary = async (tokenAddress: string) => {
     failedSells: failed.length,
     totalSolEarned: Number(totalSolEarned.toFixed(6)),
     totalTokensSold: totalTokensSold.toString(),
-    sellHistory: sellBatches.map(batch => ({
+    sellHistory: sellBatches.map((batch) => ({
       type: batch.type,
       timestamp: batch.timestamp,
       totalWallets: batch.transactions.length,
@@ -1913,6 +1816,6 @@ export const getDetailedSellSummary = async (tokenAddress: string) => {
       tokensDisplayed: (Number(batch.totalTokens) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 }),
       sellPercent: batch.sellPercent,
       signatures: batch.transactions.filter((t: any) => t.success).map((t: any) => t.signature),
-    }))
+    })),
   };
 };

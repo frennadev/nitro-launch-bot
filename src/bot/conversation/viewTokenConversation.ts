@@ -8,7 +8,7 @@ import { sendMessage } from "../../backend/sender";
 import { TokenState } from "../../backend/types";
 import { getTokenInfo } from "../../backend/utils";
 import { getTransactionFinancialStats } from "../../backend/functions-main";
-import { escape } from "../utils";
+// import {  } from "../utils";
 
 const viewTokensConversation = async (conversation: Conversation<Context>, ctx: Context) => {
   const user = await getUser(ctx.chat!.id.toString());
@@ -19,7 +19,7 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
 
   // First, let's check if the user lookup is working correctly
   const userId = String(user._id);
-  
+
   const tokens = await TokenModel.find({ user: user._id })
     .populate("launchData.devWallet")
     .populate("launchData.buyWallets")
@@ -56,7 +56,7 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     let totalTokenValue = 0;
     let profitLoss = 0;
     let profitLossPercentage = 0;
-    
+
     if (tokenInfo && tokenInfo.price && financialStats && financialStats.totalTokens !== "0") {
       const totalTokensNumber = Number(financialStats.totalTokens) / 1e6; // Convert from raw token amount to human readable
       totalTokenValue = totalTokensNumber * tokenInfo.price;
@@ -75,10 +75,10 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
       `👥 Worker wallets: \`${(buyWallets as any[])?.length || 0}\``,
       "",
       state === TokenState.LAUNCHED && tokenInfo
-        ? `📊 Market Cap: ${escape(`$${tokenInfo.marketCap.toLocaleString()}`)} \n💸 Price: ${escape(`$${tokenInfo.priceUsd}`)} \n`
+        ? `📊 Market Cap: ${`$${tokenInfo.marketCap.toLocaleString()}`} \n💸 Price: ${`$${tokenInfo.priceUsd}`} \n`
         : "",
       state === TokenState.LAUNCHED && financialStats
-        ? `💰 **Financial Summary:**\n• Total Spent: ${escape(financialStats.totalSpent.toString())} SOL\n• Successful Buys: ${financialStats.successfulBuys}\n${totalTokenValue > 0 ? `• Token Value: ${escape(`$${totalTokenValue.toFixed(2)}`)}\n` : ""}${profitLoss !== 0 ? `• P&L: ${profitLoss >= 0 ? '🟢' : '🔴'} ${escape(`$${profitLoss.toFixed(2)}`)} \\(${escape(`${profitLossPercentage >= 0 ? '+' : ''}${profitLossPercentage.toFixed(1)}%`)}\\)\n` : ""}`
+        ? `💰 **Financial Summary:**\n• Total Spent: ${financialStats.totalSpent.toString()} SOL\n• Successful Buys: ${financialStats.successfulBuys}\n${totalTokenValue > 0 ? `• Token Value: ${`$${totalTokenValue.toFixed(2)}`}\n` : ""}${profitLoss !== 0 ? `• P&L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${`$${profitLoss.toFixed(2)}`} \\(${`${profitLossPercentage >= 0 ? "+" : ""}${profitLossPercentage.toFixed(1)}%`}\\)\n` : ""}`
         : "",
       `📊 Status: ${state === TokenState.LAUNCHED ? "✅ Launched" : "⌛ Pending"}`,
       "",
@@ -86,7 +86,7 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     ].join("\n");
 
     const keyboard = new InlineKeyboard();
-    
+
     if (state === TokenState.LAUNCHED) {
       keyboard
         .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${tokenAddress}`)
