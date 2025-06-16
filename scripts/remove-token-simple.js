@@ -2,7 +2,13 @@ const { MongoClient } = require('mongodb');
 
 // You'll need to replace this with your actual MongoDB URI
 const MONGODB_URI = process.env.MONGODB_URI || 'your_mongodb_uri_here';
-const FAILED_TOKEN_ADDRESS = "4PsSzzPA4NkrbCstre2YBpHAxJBntD1eKTwi6PmXpump";
+const FAILED_TOKEN_ADDRESS = process.argv[2] || "YOUR_TOKEN_ADDRESS_HERE";
+
+if (FAILED_TOKEN_ADDRESS === "YOUR_TOKEN_ADDRESS_HERE") {
+  console.error("❌ Please provide a token address as an argument");
+  console.log("Usage: node remove-token-simple.js <token_address>");
+  process.exit(1);
+}
 
 async function removeFailedToken() {
   let client;

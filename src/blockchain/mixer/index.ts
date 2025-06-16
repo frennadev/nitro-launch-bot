@@ -12,9 +12,8 @@ dotenv.config();
 
 const MONGODB_URI = env.MONGODB_URI;
 const DATABASE_NAME = process.env.DATABASE_NAME || "test";
-const SOLANA_RPC_ENDPOINT =
-  process.env.SOLANA_RPC_ENDPOINT || "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e";
-const ENCRYPTION_KEY = "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"; // Fixed key
+const SOLANA_RPC_ENDPOINT = env.HELIUS_RPC_URL;
+const ENCRYPTION_KEY = env.ENCRYPTION_SECRET;
 
 // Constants for amount distribution
 const MIN_AMOUNT_PER_DESTINATION = 0.01; // 0.01 SOL minimum
@@ -362,7 +361,7 @@ if (require.main === module) {
     console.log("");
     console.log("Example:");
     console.log(
-      "  npm run mixer 3HRTe8nq4vbjymnW3gbtJL8adGUdY4zGBzRwU4cgMaWt4KtW5hrfxN1fBwDUmfVcVGyHmHbqHSk32eAjKspkYury 2gUjTFFBhpNrAe4dwgoHnJswY3rqFK3wdPZu6FggsR7h64Gy4BpbUhvXJaDiMX6LYnaKd7vsK9qULQJ4D2nfcdQ6 1.5 ATG7618Psn4XtJHEnuo93Q2SFmzudUdrfGxwQzKXduxP 6s2kbSCvGQmgJ8GM12YanpDv4F6oyQVe37qfqvUZhSTK"
+      "  npm run mixer <your_funding_private_key> <your_fee_funding_private_key> 1.5 <destination_wallet_1> <destination_wallet_2>"
     );
     console.log("");
     console.log("Features:");

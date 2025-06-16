@@ -212,7 +212,7 @@ bot.command("markused", async (ctx) => {
 
   const args = ctx.message?.text?.split(" ");
   if (!args || args.length < 2) {
-    await ctx.reply("❌ Usage: /markused <address>\n\nExample: /markused 4PsSzzPA4NkrbCstre2YBpHAxJBntD1eKTwi6PmXpump");
+    await ctx.reply("❌ Usage: /markused <address>\n\nExample: /markused <your_token_address>");
     return;
   }
 
@@ -237,7 +237,7 @@ bot.command("removetoken", async (ctx) => {
 
   const args = ctx.message?.text?.split(" ");
   if (!args || args.length < 2) {
-    await ctx.reply("❌ Usage: /removetoken <address>\n\nExample: /removetoken 4PsSzzPA4NkrbCstre2YBpHAxJBntD1eKTwi6PmXpump\n\n⚠️ This will permanently delete the token from the database and mark the address as used.");
+    await ctx.reply("❌ Usage: /removetoken <address>\n\nExample: /removetoken <your_token_address>\n\n⚠️ This will permanently delete the token from the database and mark the address as used.");
     return;
   }
 

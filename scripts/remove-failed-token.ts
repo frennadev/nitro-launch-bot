@@ -1,8 +1,16 @@
 import mongoose from "mongoose";
 import { TokenModel, PumpAddressModel } from "../src/backend/models";
 import { env } from "../src/config";
+import { connectDB, disconnectDB } from "../src/backend/db";
 
-const FAILED_TOKEN_ADDRESS = "4PsSzzPA4NkrbCstre2YBpHAxJBntD1eKTwi6PmXpump";
+const FAILED_TOKEN_ADDRESS = process.argv[2] || "YOUR_TOKEN_ADDRESS_HERE";
+
+if (FAILED_TOKEN_ADDRESS === "YOUR_TOKEN_ADDRESS_HERE") {
+  console.error("❌ Please provide a token address as an argument");
+  console.log("Usage: npx tsx scripts/remove-failed-token.ts <token_address>");
+  process.exit(1);
+}
+
 const TOKEN_NAME = "BULK";
 const TOKEN_SYMBOL = "$BULK";
 

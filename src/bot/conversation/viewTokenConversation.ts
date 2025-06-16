@@ -27,7 +27,7 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     .exec();
 
   // If no tokens found, provide more helpful information
-  if (!tokens.length) {
+  if (tokens.length === 0) {
     await sendMessage(
       ctx,
       `No tokens found for user ${user.userName}.\n\nUser ID: \`${userId}\`\nTelegram ID: \`${user.telegramId}\``,
@@ -36,17 +36,6 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
       }
     );
     return conversation.halt();
-  }
-
-  // If only one token and it's the problematic one, let's provide more info
-  if (tokens.length === 1 && tokens[0].tokenAddress === "4PsSzzPA4NkrbCstre2YBpHAxJBntD1eKTwi6PmXpump") {
-    await sendMessage(
-      ctx,
-      `⚠️ **Debug Information**\n\nYou have exactly 1 token in the database:\n\n**Token:** ${tokens[0].name} (${tokens[0].symbol})\n**Address:** \`${tokens[0].tokenAddress}\`\n**State:** ${tokens[0].state}\n\n**User Info:**\n- Username: ${user.userName}\n- User ID: \`${userId}\`\n- Telegram ID: \`${user.telegramId}\`\n\nThis appears to be the token that was causing issues. You can delete it using the delete button below.`,
-      {
-        parse_mode: "Markdown",
-      }
-    );
   }
 
   let currentIndex = 0;
