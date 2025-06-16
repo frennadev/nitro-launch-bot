@@ -11,7 +11,7 @@ import { env } from "../../config";
 dotenv.config();
 
 const MONGODB_URI = env.MONGODB_URI;
-const DATABASE_NAME = process.env.DATABASE_NAME || "test";
+const DATABASE_NAME = process.env.DATABASE_NAME || "nitro-launch";
 const SOLANA_RPC_ENDPOINT = env.HELIUS_RPC_URL;
 const ENCRYPTION_KEY = env.ENCRYPTION_SECRET;
 
