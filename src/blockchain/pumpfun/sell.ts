@@ -1,27 +1,19 @@
+import { Connection, PublicKey, Keypair, VersionedTransaction, TransactionMessage, ComputeBudgetProgram, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import {
-  formatMilliseconds,
-  secretKeyToKeypair,
-  sendAndConfirmTransactionWithRetry,
-} from "../common/utils";
-import {
-  ComputeBudgetProgram,
-  Keypair,
-  PublicKey,
-  TransactionMessage,
-  VersionedTransaction,
-} from "@solana/web3.js";
+import { connection } from "../common/connection";
+import { secretKeyToKeypair } from "../common/utils";
+import { decryptPrivateKey } from "../../backend/utils";
 import { logger } from "../common/logger";
 import { sellInstruction } from "./instructions";
-import { connection } from "../common/connection";
+import { formatMilliseconds, sendAndConfirmTransactionWithRetry } from "../common/utils";
 import { collectTransactionFee } from "../../backend/functions-main";
 import bs58 from "bs58";
-import { decryptPrivateKey } from "../../backend/utils";
 import { 
   createSmartPriorityFeeInstruction, 
-  getTransactionTypePriorityConfig,
+  getTransactionTypePriorityConfig, 
   logPriorityFeeInfo 
 } from "../common/priority-fees";
+import { getBondingCurve, getBondingCurveData, quoteSell, applySlippage } from "./utils";
 
 export const executeDevSell = async (
   tokenAddress: string,
@@ -48,12 +40,32 @@ export const executeDevSell = async (
     sellPercent === 100
       ? devBalance
       : (BigInt(sellPercent) * BigInt(100) * devBalance) / BigInt(10_000);
+
+  // Get bonding curve data to calculate actual SOL output
+  const { bondingCurve } = getBondingCurve(mintPublicKey);
+  const bondingCurveData = await getBondingCurveData(bondingCurve);
+  
+  if (!bondingCurveData) {
+    throw new Error("Token bonding curve not found - token may not be a PumpFun token");
+  }
+
+  // Calculate actual SOL output using quoteSell
+  const { solOut } = quoteSell(
+    tokensToSell,
+    bondingCurveData.virtualTokenReserves,
+    bondingCurveData.virtualSolReserves,
+    bondingCurveData.realTokenReserves,
+  );
+
+  const solOutWithSlippage = applySlippage(solOut, 10); // 10% slippage
+  const actualSolReceived = Number(solOut) / LAMPORTS_PER_SOL;
+
   const sellIx = sellInstruction(
     mintPublicKey,
     devKeypair.publicKey,
     devKeypair.publicKey,
     tokensToSell,
-    BigInt(0),
+    solOutWithSlippage,
   );
   const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
     units: 151595,
@@ -91,7 +103,31 @@ export const executeDevSell = async (
       transactionType: "sell",
     }
   );
+  
   logger.info(`[${logIdentifier}]: Dev Sell result`, result);
+  
+  // Record the sell transaction in database
+  try {
+    const { recordSellTransaction } = await import("../../backend/functions-main");
+    await recordSellTransaction(
+      tokenAddress,
+      devKeypair.publicKey.toBase58(),
+      "dev_sell",
+      result.signature || "",
+      result.success,
+      1, // sellAttempt
+      {
+        solReceived: result.success ? actualSolReceived : 0,
+        tokensSold: tokensToSell.toString(),
+        sellPercent: sellPercent,
+        errorMessage: result.success ? undefined : "Transaction failed",
+      }
+    );
+    logger.info(`[${logIdentifier}]: Dev sell transaction recorded in database`);
+  } catch (error: any) {
+    logger.error(`[${logIdentifier}]: Error recording dev sell transaction:`, error);
+  }
+  
   if (!result.success) {
     throw new Error("Dev sell failed");
   }
@@ -99,16 +135,8 @@ export const executeDevSell = async (
   // ------- COLLECT TRANSACTION FEE FROM DEV SELL -------
   logger.info(`[${logIdentifier}]: Collecting transaction fee from dev sell`);
   try {
-    // Calculate the SOL amount received from the sell (approximate)
-    // For now, we'll use a conservative estimate based on token balance sold
-    const devBalance = await connection.getBalance(devKeypair.publicKey);
-    const devBalanceInSol = devBalance / 1000000000; // Convert lamports to SOL
-    
-    // Estimate transaction amount (this is approximate - in a real implementation you'd track the exact SOL received)
-    const estimatedSolReceived = Math.min(devBalanceInSol * 0.1, 1.0); // Conservative estimate
-    
-    if (estimatedSolReceived > 0.001) { // Only collect if meaningful amount
-      const feeResult = await collectTransactionFee(decryptPrivateKey(devWallet), estimatedSolReceived, "sell");
+    if (actualSolReceived > 0.001) { // Only collect if meaningful amount
+      const feeResult = await collectTransactionFee(decryptPrivateKey(devWallet), actualSolReceived, "sell");
       
       if (feeResult.success) {
         logger.info(`[${logIdentifier}]: Dev sell transaction fee collected: ${feeResult.feeAmount} SOL`);
@@ -147,6 +175,15 @@ export const executeWalletSell = async (
   const buyerKeypairs = buyerWallets.map((w) =>
     secretKeyToKeypair(decryptPrivateKey(w)),
   );
+
+  // Get bonding curve data for SOL calculations
+  const { bondingCurve } = getBondingCurve(mintPublicKey);
+  const bondingCurveData = await getBondingCurveData(bondingCurve);
+  
+  if (!bondingCurveData) {
+    throw new Error("Token bonding curve not found - token may not be a PumpFun token");
+  }
+
   const walletBalances = [];
   for (const wallet of buyerKeypairs) {
     const ata = getAssociatedTokenAddressSync(mintPublicKey, wallet.publicKey);
@@ -169,34 +206,58 @@ export const executeWalletSell = async (
     wallet: Keypair;
     ata: PublicKey;
     amount: bigint;
+    expectedSolOut: number;
   }[] = [];
+
+  // Track remaining reserves for accurate calculations
+  let currentVirtualTokenReserves = bondingCurveData.virtualTokenReserves;
+  let currentVirtualSolReserves = bondingCurveData.virtualSolReserves;
+  let currentRealTokenReserves = bondingCurveData.realTokenReserves;
+
   for (const walletInfo of walletBalances) {
     if (tokensToSell <= BigInt(0)) {
       break;
     }
-    if (tokensToSell <= BigInt(walletInfo.balance)) {
-      sellSetups.push({
-        wallet: walletInfo.wallet,
-        ata: walletInfo.ata,
-        amount: tokensToSell,
-      });
-      break;
-    }
-    tokensToSell -= BigInt(walletInfo.balance);
+    const sellAmount = tokensToSell <= BigInt(walletInfo.balance) 
+      ? tokensToSell 
+      : BigInt(walletInfo.balance);
+
+    // Calculate expected SOL output for this sell
+    const { solOut, newVirtualTokenReserves, newVirtualSolReserves, newRealTokenReserves } = quoteSell(
+      sellAmount,
+      currentVirtualTokenReserves,
+      currentVirtualSolReserves,
+      currentRealTokenReserves,
+    );
+
+    // Update reserves for next calculation
+    currentVirtualTokenReserves = newVirtualTokenReserves;
+    currentVirtualSolReserves = newVirtualSolReserves;
+    currentRealTokenReserves = newRealTokenReserves;
+
     sellSetups.push({
       wallet: walletInfo.wallet,
       ata: walletInfo.ata,
-      amount: BigInt(walletInfo.balance),
+      amount: sellAmount,
+      expectedSolOut: Number(solOut) / LAMPORTS_PER_SOL,
     });
+
+    tokensToSell -= sellAmount;
+    if (tokensToSell <= BigInt(0)) {
+      break;
+    }
   }
+
   const blockHash = await connection.getLatestBlockhash("processed");
-  const tasks = sellSetups.map(async ({ wallet, amount }) => {
+  const tasks = sellSetups.map(async ({ wallet, amount, expectedSolOut }) => {
+    const solOutWithSlippage = applySlippage(BigInt(expectedSolOut * LAMPORTS_PER_SOL), 10);
+    
     const sellIx = sellInstruction(
       mintPublicKey,
       devKeypair.publicKey,
       wallet.publicKey,
       amount,
-      BigInt(0),
+      solOutWithSlippage,
     );
     const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
       units: 151595,
@@ -217,11 +278,12 @@ export const executeWalletSell = async (
       }).compileToV0Message(),
     );
     sellTx.sign([wallet]);
-    return await sendAndConfirmTransactionWithRetry(
+    
+    const result = await sendAndConfirmTransactionWithRetry(
       sellTx,
       {
-        payer: devKeypair.publicKey,
-        signers: [devKeypair],
+        payer: wallet.publicKey,
+        signers: [wallet],
         instructions: [modifyComputeUnits, smartPriorityFeeIx, sellIx],
       },
       10_000,
@@ -233,7 +295,32 @@ export const executeWalletSell = async (
         transactionType: "sell",
       }
     );
+
+    // Record the sell transaction in database
+    try {
+      const { recordSellTransaction } = await import("../../backend/functions-main");
+      await recordSellTransaction(
+        tokenAddress,
+        wallet.publicKey.toBase58(),
+        "wallet_sell",
+        result.signature || "",
+        result.success,
+        1, // sellAttempt
+        {
+          solReceived: result.success ? expectedSolOut : 0,
+          tokensSold: amount.toString(),
+          sellPercent: sellPercent,
+          errorMessage: result.success ? undefined : "Transaction failed",
+        }
+      );
+      logger.info(`[${logIdentifier}]: Wallet sell transaction recorded for ${wallet.publicKey.toBase58().slice(0, 8)}`);
+    } catch (error: any) {
+      logger.error(`[${logIdentifier}]: Error recording wallet sell transaction for ${wallet.publicKey.toBase58().slice(0, 8)}:`, error);
+    }
+
+    return { ...result, expectedSolOut, walletAddress: wallet.publicKey.toBase58() };
   });
+  
   const results = await Promise.all(tasks);
   logger.info(`[${logIdentifier}]: Wallet Sell results`, results);
   const success = results.filter((res) => res.success);
@@ -249,15 +336,11 @@ export const executeWalletSell = async (
     for (let i = 0; i < sellSetups.length; i++) {
       if (results[i] && results[i].success) {
         const walletPrivateKey = bs58.encode(sellSetups[i].wallet.secretKey);
-        const walletBalance = await connection.getBalance(sellSetups[i].wallet.publicKey);
-        const walletBalanceInSol = walletBalance / 1000000000; // Convert lamports to SOL
+        const actualSolReceived = results[i].expectedSolOut;
         
-        // Estimate transaction amount (conservative estimate based on wallet balance)
-        const estimatedSolReceived = Math.min(walletBalanceInSol * 0.1, 0.5); // Conservative estimate
-        
-        if (estimatedSolReceived > 0.001) { // Only collect if meaningful amount
+        if (actualSolReceived > 0.001) { // Only collect if meaningful amount
           feeCollectionPromises.push(
-            collectTransactionFee(walletPrivateKey, estimatedSolReceived, "sell")
+            collectTransactionFee(walletPrivateKey, actualSolReceived, "sell")
           );
         }
       }

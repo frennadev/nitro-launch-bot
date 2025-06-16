@@ -107,13 +107,15 @@ const transactionRecordSchema = new Schema(
   {
     tokenAddress: { type: String, required: true },
     walletPublicKey: { type: String, required: true },
-    transactionType: { type: String, enum: ["token_creation", "dev_buy", "snipe_buy"], required: true },
+    transactionType: { type: String, enum: ["token_creation", "dev_buy", "snipe_buy", "dev_sell", "wallet_sell", "external_sell"], required: true },
     signature: { type: String, required: true },
     success: { type: Boolean, required: true },
     launchAttempt: { type: Number, required: true },
+    sellAttempt: { type: Number }, // For sell transactions
     slippageUsed: { type: Number }, // For buy transactions
-    amountSol: { type: Number }, // SOL amount for the transaction
+    amountSol: { type: Number }, // SOL amount for the transaction (spent for buys, received for sells)
     amountTokens: { type: String }, // Token amount as string (for large numbers)
+    sellPercent: { type: Number }, // For sell transactions - percentage sold
     errorMessage: { type: String }, // If failed
     retryAttempt: { type: Number, default: 0 }, // Which retry attempt this was
   },

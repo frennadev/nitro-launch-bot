@@ -565,8 +565,8 @@ export const executeTokenLaunch = async (
         return { success: false, error: "Max retries exceeded" };
       };
       
-      // Execute all buy transactions with enhanced retry logic
-      const buyTasks = [];
+      // Execute buy transactions sequentially with 220ms delay to avoid bundler detection
+      const results = [];
       for (let i = 0; i < walletsToProcess.length; i++) {
         const keypair = walletsToProcess[i];
         const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
@@ -585,19 +585,24 @@ export const executeTokenLaunch = async (
           percentageUsed: ((Number(swapAmount) / LAMPORTS_PER_SOL) / walletSolBalance * 100).toFixed(1) + "%"
         });
         
-        buyTasks.push(
-          executeBuyWithRetry(
-            keypair,
-            swapAmount,
-            currentComputeUnitPrice,
-            blockHash,
-            3 // Max 3 retries
-          )
+        // Execute buy transaction
+        const result = await executeBuyWithRetry(
+          keypair,
+          swapAmount,
+          currentComputeUnitPrice,
+          blockHash,
+          3 // Max 3 retries
         );
+        
+        results.push(result);
         currentComputeUnitPrice -= computeUnitPriceDecrement;
+        
+        // Add 220ms delay between transactions to avoid bundler detection
+        // Skip delay for the last transaction
+        if (i < walletsToProcess.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 220));
+        }
       }
-      
-      const results = await Promise.all(buyTasks);
       const success = results.filter((res) => res.success);
       const failed = results.filter((res) => !res.success);
       
