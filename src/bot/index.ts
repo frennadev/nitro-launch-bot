@@ -25,7 +25,11 @@ import mainMenuConversation from "./conversation/mainMenu";
 import { sendMessage } from "../backend/sender";
 import manageDevWalletsConversation from "./conversation/devWallets";
 import manageBuyerWalletsConversation from "./conversation/buyerWallets";
-import { withdrawDevWalletConversation, withdrawBuyerWalletsConversation, withdrawFundingWalletConversation } from "./conversation/withdrawal";
+import {
+  withdrawDevWalletConversation,
+  withdrawBuyerWalletsConversation,
+  withdrawFundingWalletConversation,
+} from "./conversation/withdrawal";
 import viewTokensConversation from "./conversation/viewTokenConversation";
 import externalTokenSellConversation from "./conversation/externalTokenSell";
 import { logger } from "../blockchain/common/logger";
@@ -40,20 +44,22 @@ bot.catch((err: BotError<ConversationFlavor<Context>>) => {
   logger.error("Error in bot middleware:", {
     error: err.error,
     update: ctx.update,
-    stack: err.stack
+    stack: err.stack,
   });
-  
+
   // Don't crash the bot for callback query timeout errors
-  if (err.error instanceof GrammyError && 
-      (err.error.description.includes("query is too old") || 
-       err.error.description.includes("response timeout expired"))) {
+  if (
+    err.error instanceof GrammyError &&
+    (err.error.description.includes("query is too old") || err.error.description.includes("response timeout expired"))
+  ) {
     logger.info("Ignoring callback query timeout error");
     return;
   }
-  
+
   // For other errors, try to notify the user if possible
   if (ctx.chat) {
-    ctx.reply("❌ An unexpected error occurred. Please try again or contact support.")
+    ctx
+      .reply("❌ An unexpected error occurred. Please try again or contact support.")
       .catch(() => logger.error("Failed to send error message to user"));
   }
 });
@@ -64,10 +70,12 @@ async function safeAnswerCallbackQuery(ctx: Context, text?: string): Promise<voi
     await ctx.answerCallbackQuery(text);
   } catch (error: any) {
     // Ignore callback query timeout errors
-    if (error instanceof GrammyError && 
-        (error.description?.includes("query is too old") || 
-         error.description?.includes("response timeout expired") ||
-         error.description?.includes("query ID is invalid"))) {
+    if (
+      error instanceof GrammyError &&
+      (error.description?.includes("query is too old") ||
+        error.description?.includes("response timeout expired") ||
+        error.description?.includes("query ID is invalid"))
+    ) {
       logger.info("Callback query timeout ignored:", error.description);
       return;
     }
@@ -105,27 +113,32 @@ bot.command("start", async (ctx) => {
 
   const devWallet = await getDefaultDevWallet(String(user?.id));
   const welcomeMsg = `
-👋 *Welcome to Nitro Bot*
+👋 *Hello and welcome to Nitro Bot!* 🌟
 
-Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.  
-Here's what you can do right from this chat:
+🚀 Nitro Bot empowers you to deploy and manage your Solana tokens on [Pump.fun](https://pump.fun) in a flash—no coding required!  
+Here's what Nitro Bot can help you with:
 
-💳 *Your current dev wallet:*  
+🔹 Create & launch tokens on Pump.fun
+🔹 Untraceable buys & sells
+🔹 Token launches made easy!
+
+💳 *Your current dev wallet address:*  
 \`${devWallet}\`
 
-To proceed, you can choose any of the actions below ⬇️
+Choose an option below to get started ⬇️
 `;
+
   const inlineKeyboard = new InlineKeyboard()
-    .text("Create Token", CallBackQueries.CREATE_TOKEN)
-    .text("View Tokens", CallBackQueries.VIEW_TOKENS)
+    .text("➕ Create Token", CallBackQueries.CREATE_TOKEN)
+    .text("👁 View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
-    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
-    .text("Wallet Config ", CallBackQueries.WALLET_CONFIG);
+    .text("🔑 Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
+    .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG);
   // .text("Add Wallet", CallBackQueries.ADD_WALLET)
   // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
   await ctx.reply(welcomeMsg, {
-    parse_mode: "MarkdownV2",
+    parse_mode: "Markdown",
     reply_markup: inlineKeyboard,
   });
 });
@@ -142,27 +155,32 @@ bot.command("menu", async (ctx) => {
 
   const devWallet = await getDefaultDevWallet(String(user?.id));
   const welcomeMsg = `
-👋 *Welcome to Nitro Bot*
+👋 *Hello and welcome to Nitro Bot!* 🌟
 
-Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.  
-Here's what you can do right from this chat:
+🚀 Nitro Bot empowers you to deploy and manage your Solana tokens on [Pump.fun](https://pump.fun) in a flash—no coding required!  
+Here's what Nitro Bot can help you with:
 
-💳 *Your current dev wallet:*  
+🔹 Create & launch tokens on Pump.fun
+🔹 Untraceable buys & sells
+🔹 Token launches made easy!
+
+💳 *Your current dev wallet address:*  
 \`${devWallet}\`
 
-To proceed, you can choose any of the actions below ⬇️
+Choose an option below to get started ⬇️
 `;
+
   const inlineKeyboard = new InlineKeyboard()
-    .text("Create Token", CallBackQueries.CREATE_TOKEN)
-    .text("View Tokens", CallBackQueries.VIEW_TOKENS)
+    .text("➕ Create Token", CallBackQueries.CREATE_TOKEN)
+    .text("👁 View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
-    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
-    .text("Wallet Config ", CallBackQueries.WALLET_CONFIG);
+    .text("🔑 Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
+    .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG);
   // .text("Add Wallet", CallBackQueries.ADD_WALLET)
   // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
   await ctx.reply(welcomeMsg, {
-    parse_mode: "MarkdownV2",
+    parse_mode: "Markdown",
     reply_markup: inlineKeyboard,
   });
 });
@@ -217,10 +235,13 @@ bot.command("markused", async (ctx) => {
   }
 
   const address = args[1];
-  
+
   try {
     await markPumpAddressAsUsed(address);
-    await ctx.reply(`✅ Successfully marked address as used:\n\`${address}\`\n\nThis address will no longer be used for new token launches.`, { parse_mode: "MarkdownV2" });
+    await ctx.reply(
+      `✅ Successfully marked address as used:\n\`${address}\`\n\nThis address will no longer be used for new token launches.`,
+      { parse_mode: "MarkdownV2" }
+    );
   } catch (error: any) {
     await ctx.reply(`❌ Error marking address as used: ${error.message}`);
   }
@@ -237,18 +258,26 @@ bot.command("removetoken", async (ctx) => {
 
   const args = ctx.message?.text?.split(" ");
   if (!args || args.length < 2) {
-    await ctx.reply("❌ Usage: /removetoken <address>\n\nExample: /removetoken <your_token_address>\n\n⚠️ This will permanently delete the token from the database and mark the address as used.");
+    await ctx.reply(
+      "❌ Usage: /removetoken <address>\n\nExample: /removetoken <your_token_address>\n\n⚠️ This will permanently delete the token from the database and mark the address as used."
+    );
     return;
   }
 
   const tokenAddress = args[1];
-  
+
   try {
     const result = await removeFailedToken(tokenAddress);
-    await ctx.reply(`✅ Successfully removed failed token:\n\`${tokenAddress}\`\n\n• Token deleted from database\n• Address marked as used (won't be reused)\n• Operation completed safely`, { parse_mode: "MarkdownV2" });
+    await ctx.reply(
+      `✅ Successfully removed failed token:\n\`${tokenAddress}\`\n\n• Token deleted from database\n• Address marked as used (won't be reused)\n• Operation completed safely`,
+      { parse_mode: "MarkdownV2" }
+    );
   } catch (error: any) {
     if (error.message.includes("not found")) {
-      await ctx.reply(`⚠️ Token not found in database:\n\`${tokenAddress}\`\n\nThe token may have already been removed or the address is incorrect.`, { parse_mode: "MarkdownV2" });
+      await ctx.reply(
+        `⚠️ Token not found in database:\n\`${tokenAddress}\`\n\nThe token may have already been removed or the address is incorrect.`,
+        { parse_mode: "MarkdownV2" }
+      );
     } else {
       await ctx.reply(`❌ Error removing token: ${error.message}`);
     }
@@ -367,7 +396,7 @@ bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const sellPercent = parseInt(ctx.match![1]);
   const tokenAddress = ctx.match![2];
-  
+
   // Start the external token sell conversation
   await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, sellPercent);
 });
@@ -382,12 +411,12 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
 // Retry callback handlers
 bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
-  
+
   try {
     // Try to extract token address from the message text
     const messageText = ctx.callbackQuery?.message?.text || "";
     const addressMatch = messageText.match(/([A-Za-z0-9]{32,44})/); // Solana address pattern
-    
+
     if (addressMatch) {
       const tokenAddress = addressMatch[1];
       // Restart the launch conversation with the extracted token address
@@ -402,17 +431,15 @@ bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
   }
 });
 
-bot.api.setMyCommands([
-  { command: "menu", description: "Bot Menu" }
-]);
+bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
 
 // Message handler for token contract addresses
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text.trim();
-  
+
   // Check if the message is a Solana token address (32-44 characters, alphanumeric)
   const solanaAddressRegex = /^[A-Za-z0-9]{32,44}$/;
-  
+
   if (solanaAddressRegex.test(text)) {
     await handleTokenAddressMessage(ctx, text);
   }
@@ -440,22 +467,22 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
   try {
     // Get token information from DexScreener
     const tokenInfo = await getTokenInfo(tokenAddress);
-    
+
     if (!tokenInfo) {
       await ctx.reply(`❌ Token not found or not available on DexScreener\n\n🔍 Address: \`${tokenAddress}\``, {
-        parse_mode: "MarkdownV2"
+        parse_mode: "MarkdownV2",
       });
       return;
     }
 
     // Get buyer wallets for this user
     const buyerWallets = await getAllBuyerWallets(user.id);
-    
+
     // Check token balances in buyer wallets
     let totalTokenBalance = 0;
     let walletsWithBalance = 0;
-    const walletBalances: { publicKey: string, balance: number, value: number }[] = [];
-    
+    const walletBalances: { publicKey: string; balance: number; value: number }[] = [];
+
     for (const wallet of buyerWallets) {
       try {
         const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
@@ -464,7 +491,7 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
           walletBalances.push({
             publicKey: wallet.publicKey,
             balance,
-            value
+            value,
           });
           totalTokenBalance += balance;
           walletsWithBalance++;
@@ -499,19 +526,21 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
       tokenInfo.liquidity?.usd ? `• Liquidity: ${escape(`$${tokenInfo.liquidity.usd.toLocaleString()}`)}` : "",
       ``,
       `💼 **Your Holdings:**`,
-      walletsWithBalance > 0 
+      walletsWithBalance > 0
         ? [
             `• Total Tokens: ${escape(totalTokenBalance.toLocaleString())}`,
             `• Total Value: ${escape(`$${totalValue.toFixed(2)}`)}`,
             `• Wallets Holding: ${walletsWithBalance}/${buyerWallets.length}`,
           ].join("\n")
         : `• No tokens found in your ${buyerWallets.length} buyer wallets`,
-      ``
-    ].filter(Boolean).join("\n");
+      ``,
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     // Create keyboard with sell button if user has tokens
     const keyboard = new InlineKeyboard();
-    
+
     if (walletsWithBalance > 0) {
       keyboard
         .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
@@ -521,14 +550,13 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
         .text("💸 Sell All", `sell_ca_100_${tokenAddress}`)
         .row();
     }
-    
+
     keyboard.text("🔄 Refresh", `refresh_ca_${tokenAddress}`);
 
     await ctx.reply(lines, {
       parse_mode: "Markdown",
       reply_markup: keyboard,
     });
-
   } catch (error: any) {
     logger.error("Error handling token address message:", error);
     await ctx.reply(`❌ Error fetching token information: ${error.message}`);
