@@ -110,6 +110,30 @@ web_modules/
 .env.production.local
 .env.local
 
+# Additional security patterns
+.env.*
+*.env
+setup-env.sh
+config.env
+secrets.env
+credentials.env
+keys.env
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+
+# Backup files that might contain sensitive data
+*.bak
+*.backup
+*.old
+*.orig
+
 # parcel-bundler cache (https://parceljs.org/)
 
 .parcel-cache
