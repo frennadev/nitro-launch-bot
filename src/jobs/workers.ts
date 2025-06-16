@@ -8,6 +8,8 @@ import {
   updateTokenState,
   handleTokenLaunchFailure,
   enqueueExecuteTokenLaunch,
+  getTransactionFinancialStats,
+  getTransactionStats,
 } from "../backend/functions-main";
 import { TokenState } from "../backend/types";
 import {
@@ -128,16 +130,49 @@ export const sellDevWorker = new Worker<SellDevJob>(
       
       await releaseDevSellLock(data.tokenAddress);
       
-      // Complete loading state
+      // Get transaction stats and financial data for detailed reporting
+      const transactionStats = await getTransactionStats(data.tokenAddress);
+      const financialStats = await getTransactionFinancialStats(data.tokenAddress);
+      
+      // Calculate sell-specific statistics
+      const devSellTransactions = transactionStats.byType.dev_sell.filter((t: any) => t.success);
+      const latestDevSell = devSellTransactions[devSellTransactions.length - 1];
+      
+      const sellSummary = {
+        solReceived: latestDevSell?.amountSol || 0,
+        tokensSold: latestDevSell?.amountTokens || "0",
+        sellPercent: data.sellPercent,
+        signature: result.signature,
+        totalDevEarned: financialStats.totalDevEarned,
+        totalEarned: financialStats.totalEarned,
+        netProfitLoss: financialStats.netProfitLoss,
+        profitLossPercentage: financialStats.profitLossPercentage,
+        isProfit: financialStats.isProfit,
+      };
+      
+      // Format tokens sold for display (convert from raw to human readable)
+      const tokensSoldFormatted = (Number(sellSummary.tokensSold) / 1e6).toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+      });
+      
+      // Complete loading state with detailed information
       await completeLoadingState(
         loadingKey,
         undefined,
-        `**Transaction:** [View on Solscan](https://solscan.io/tx/${result.signature})`
+        `**💸 Dev Sell Complete**\n\n` +
+        `**SOL Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n` +
+        `**Tokens Sold:** ${tokensSoldFormatted} tokens (${data.sellPercent}%)\n` +
+        `**Transaction:** [View on Solscan](https://solscan.io/tx/${result.signature})\n\n` +
+        `**Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '+' : ''}${sellSummary.netProfitLoss.toFixed(6)} SOL (${sellSummary.profitLossPercentage >= 0 ? '+' : ''}${sellSummary.profitLossPercentage.toFixed(1)}%)`
       );
       
       await sendNotification(
         data.userChatId,
-        `🎉 Dev Sell completed successfully\\.\n[View on Solscan](https://solscan.io/tx/${result.signature})`,
+        `🎉 **Dev Sell completed successfully\\!**\n\n` +
+        `💰 **Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n` +
+        `🪙 **Sold:** ${tokensSoldFormatted} tokens \\(${data.sellPercent}%\\)\n` +
+        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : ''}${sellSummary.netProfitLoss.toFixed(6)} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : ''}${sellSummary.profitLossPercentage.toFixed(1)}%\\)\n\n` +
+        `[View Transaction](https://solscan.io/tx/${result.signature})`,
       );
     } catch (error: any) {
       logger.error(
@@ -182,7 +217,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       // Update loading state - Phase 2: Executing transactions
       await updateLoadingState(loadingKey, 2);
       
-      await executeWalletSell(
+      const results = await executeWalletSell(
         data.tokenAddress,
         data.devWallet,
         data.buyerWallets,
@@ -194,12 +229,61 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       
       await releaseWalletSellLock(data.tokenAddress);
       
-      // Complete loading state
-      await completeLoadingState(loadingKey);
+      // Get transaction stats and financial data for detailed reporting
+      const transactionStats = await getTransactionStats(data.tokenAddress);
+      const financialStats = await getTransactionFinancialStats(data.tokenAddress);
+      
+      // Calculate wallet sell-specific statistics
+      const walletSellTransactions = transactionStats.byType.wallet_sell.filter((t: any) => t.success);
+      const successfulSells = results.filter(r => r.success);
+      const failedSells = results.filter(r => !r.success);
+      
+      // Calculate totals from this sell batch
+      const totalSolReceived = successfulSells.reduce((sum, r) => sum + (r.expectedSolOut || 0), 0);
+      const totalTokensSold = walletSellTransactions
+        .slice(-successfulSells.length) // Get the most recent transactions
+        .reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
+      
+      const sellSummary = {
+        successfulWallets: successfulSells.length,
+        failedWallets: failedSells.length,
+        totalWallets: results.length,
+        solReceived: totalSolReceived,
+        tokensSold: totalTokensSold.toString(),
+        sellPercent: data.sellPercent,
+        totalWalletEarned: financialStats.totalWalletEarned,
+        totalEarned: financialStats.totalEarned,
+        netProfitLoss: financialStats.netProfitLoss,
+        profitLossPercentage: financialStats.profitLossPercentage,
+        isProfit: financialStats.isProfit,
+        successRate: Math.round((successfulSells.length / results.length) * 100),
+      };
+      
+      // Format tokens sold for display
+      const tokensSoldFormatted = (Number(sellSummary.tokensSold) / 1e6).toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+      });
+      
+      // Complete loading state with detailed information
+      await completeLoadingState(
+        loadingKey,
+        undefined,
+        `**💸 Wallet Sells Complete**\n\n` +
+        `**Successful:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets (${sellSummary.successRate}%)\n` +
+        `**SOL Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n` +
+        `**Tokens Sold:** ${tokensSoldFormatted} tokens (${data.sellPercent}%)\n\n` +
+        `**Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '+' : ''}${sellSummary.netProfitLoss.toFixed(6)} SOL (${sellSummary.profitLossPercentage >= 0 ? '+' : ''}${sellSummary.profitLossPercentage.toFixed(1)}%)`
+      );
       
       await sendNotification(
         data.userChatId,
-        "🎉 Wallet Sell completed successfully\\.",
+        `🎉 **Wallet Sells completed successfully\\!**\n\n` +
+        `✅ **Success Rate:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets \\(${sellSummary.successRate}%\\)\n` +
+        `💰 **Total Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n` +
+        `🪙 **Tokens Sold:** ${tokensSoldFormatted} tokens \\(${data.sellPercent}%\\)\n` +
+        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : ''}${sellSummary.netProfitLoss.toFixed(6)} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : ''}${sellSummary.profitLossPercentage.toFixed(1)}%\\)\n\n` +
+        `${sellSummary.failedWallets > 0 ? `⚠️ ${sellSummary.failedWallets} wallet\\(s\\) failed to sell\n\n` : ''}` +
+        `💡 View individual transactions in your token list for more details\\.`,
       );
     } catch (error: any) {
       logger.error(

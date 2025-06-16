@@ -1535,14 +1535,16 @@ export const removeFailedToken = async (tokenAddress: string) => {
 export const recordTransaction = async (
   tokenAddress: string,
   walletPublicKey: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy",
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell",
   signature: string,
   success: boolean,
   launchAttempt: number,
   options: {
+    sellAttempt?: number;
     slippageUsed?: number;
     amountSol?: number;
     amountTokens?: string;
+    sellPercent?: number;
     errorMessage?: string;
     retryAttempt?: number;
   } = {}
@@ -1556,9 +1558,44 @@ export const recordTransaction = async (
     signature,
     success,
     launchAttempt,
+    sellAttempt: options.sellAttempt,
     slippageUsed: options.slippageUsed,
     amountSol: options.amountSol,
     amountTokens: options.amountTokens,
+    sellPercent: options.sellPercent,
+    errorMessage: options.errorMessage,
+    retryAttempt: options.retryAttempt || 0,
+  });
+};
+
+export const recordSellTransaction = async (
+  tokenAddress: string,
+  walletPublicKey: string,
+  transactionType: "dev_sell" | "wallet_sell" | "external_sell",
+  signature: string,
+  success: boolean,
+  sellAttempt: number,
+  options: {
+    solReceived?: number;
+    tokensSold?: string;
+    sellPercent?: number;
+    errorMessage?: string;
+    retryAttempt?: number;
+  } = {}
+) => {
+  const { TransactionRecordModel } = await import("./models");
+  
+  await TransactionRecordModel.create({
+    tokenAddress,
+    walletPublicKey,
+    transactionType,
+    signature,
+    success,
+    launchAttempt: 0, // Sells don't have launch attempts, use 0 as default
+    sellAttempt,
+    amountSol: options.solReceived, // For sells, this is SOL received
+    amountTokens: options.tokensSold,
+    sellPercent: options.sellPercent,
     errorMessage: options.errorMessage,
     retryAttempt: options.retryAttempt || 0,
   });
@@ -1566,7 +1603,7 @@ export const recordTransaction = async (
 
 export const getSuccessfulTransactions = async (
   tokenAddress: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy",
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell",
   launchAttempt?: number
 ) => {
   const { TransactionRecordModel } = await import("./models");
@@ -1587,7 +1624,7 @@ export const getSuccessfulTransactions = async (
 
 export const getFailedTransactions = async (
   tokenAddress: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy",
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell",
   launchAttempt?: number
 ) => {
   const { TransactionRecordModel } = await import("./models");
@@ -1609,7 +1646,7 @@ export const getFailedTransactions = async (
 export const isTransactionAlreadySuccessful = async (
   tokenAddress: string,
   walletPublicKey: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy"
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell"
 ) => {
   const { TransactionRecordModel } = await import("./models");
   
@@ -1644,6 +1681,9 @@ export const getTransactionStats = async (
       token_creation: records.filter(r => r.transactionType === "token_creation"),
       dev_buy: records.filter(r => r.transactionType === "dev_buy"),
       snipe_buy: records.filter(r => r.transactionType === "snipe_buy"),
+      dev_sell: records.filter(r => r.transactionType === "dev_sell"),
+      wallet_sell: records.filter(r => r.transactionType === "wallet_sell"),
+      external_sell: records.filter(r => r.transactionType === "external_sell"),
     }
   };
   
@@ -1671,7 +1711,11 @@ export const getTransactionFinancialStats = async (
   // Calculate totals by transaction type
   const devBuyRecords = records.filter(r => r.transactionType === "dev_buy");
   const snipeBuyRecords = records.filter(r => r.transactionType === "snipe_buy");
+  const devSellRecords = records.filter(r => r.transactionType === "dev_sell");
+  const walletSellRecords = records.filter(r => r.transactionType === "wallet_sell");
+  const externalSellRecords = records.filter(r => r.transactionType === "external_sell");
   
+  // Calculate spending (buys)
   const totalDevSpent = devBuyRecords.reduce((sum, record) => {
     return sum + (record.amountSol || 0);
   }, 0);
@@ -1682,7 +1726,26 @@ export const getTransactionFinancialStats = async (
   
   const totalSpent = totalDevSpent + totalSnipeSpent;
   
-  // Calculate total tokens acquired
+  // Calculate earnings (sells)
+  const totalDevEarned = devSellRecords.reduce((sum, record) => {
+    return sum + (record.amountSol || 0);
+  }, 0);
+  
+  const totalWalletEarned = walletSellRecords.reduce((sum, record) => {
+    return sum + (record.amountSol || 0);
+  }, 0);
+  
+  const totalExternalEarned = externalSellRecords.reduce((sum, record) => {
+    return sum + (record.amountSol || 0);
+  }, 0);
+  
+  const totalEarned = totalDevEarned + totalWalletEarned + totalExternalEarned;
+  
+  // Calculate P&L
+  const netProfitLoss = totalEarned - totalSpent;
+  const profitLossPercentage = totalSpent > 0 ? (netProfitLoss / totalSpent) * 100 : 0;
+  
+  // Calculate total tokens acquired (buys)
   const totalDevTokens = devBuyRecords.reduce((sum, record) => {
     return sum + BigInt(record.amountTokens || "0");
   }, BigInt(0));
@@ -1693,7 +1756,24 @@ export const getTransactionFinancialStats = async (
   
   const totalTokens = totalDevTokens + totalSnipeTokens;
   
+  // Calculate total tokens sold
+  const totalDevTokensSold = devSellRecords.reduce((sum, record) => {
+    return sum + BigInt(record.amountTokens || "0");
+  }, BigInt(0));
+  
+  const totalWalletTokensSold = walletSellRecords.reduce((sum, record) => {
+    return sum + BigInt(record.amountTokens || "0");
+  }, BigInt(0));
+  
+  const totalExternalTokensSold = externalSellRecords.reduce((sum, record) => {
+    return sum + BigInt(record.amountTokens || "0");
+  }, BigInt(0));
+  
+  const totalTokensSold = totalDevTokensSold + totalWalletTokensSold + totalExternalTokensSold;
+  const remainingTokens = totalTokens - totalTokensSold;
+  
   return {
+    // Buy data
     totalSpent: Number(totalSpent.toFixed(6)),
     totalDevSpent: Number(totalDevSpent.toFixed(6)),
     totalSnipeSpent: Number(totalSnipeSpent.toFixed(6)),
@@ -1702,5 +1782,137 @@ export const getTransactionFinancialStats = async (
     totalSnipeTokens: totalSnipeTokens.toString(),
     successfulBuys: snipeBuyRecords.length,
     averageSpentPerWallet: snipeBuyRecords.length > 0 ? Number((totalSnipeSpent / snipeBuyRecords.length).toFixed(6)) : 0,
+    
+    // Sell data
+    totalEarned: Number(totalEarned.toFixed(6)),
+    totalDevEarned: Number(totalDevEarned.toFixed(6)),
+    totalWalletEarned: Number(totalWalletEarned.toFixed(6)),
+    totalExternalEarned: Number(totalExternalEarned.toFixed(6)),
+    totalTokensSold: totalTokensSold.toString(),
+    totalDevTokensSold: totalDevTokensSold.toString(),
+    totalWalletTokensSold: totalWalletTokensSold.toString(),
+    totalExternalTokensSold: totalExternalTokensSold.toString(),
+    remainingTokens: remainingTokens.toString(),
+    successfulSells: devSellRecords.length + walletSellRecords.length + externalSellRecords.length,
+    
+    // P&L data
+    netProfitLoss: Number(netProfitLoss.toFixed(6)),
+    profitLossPercentage: Number(profitLossPercentage.toFixed(2)),
+    isProfit: netProfitLoss > 0,
+  };
+};
+
+// ========== DETAILED SELL HISTORY FUNCTIONS ==========
+
+export const getSellTransactionHistory = async (
+  tokenAddress: string,
+  transactionType?: "dev_sell" | "wallet_sell" | "external_sell"
+) => {
+  const { TransactionRecordModel } = await import("./models");
+  
+  const query: any = { 
+    tokenAddress,
+    transactionType: transactionType || { $in: ["dev_sell", "wallet_sell", "external_sell"] }
+  };
+  
+  const records = await TransactionRecordModel.find(query)
+    .sort({ createdAt: -1 }) // Most recent first
+    .lean();
+  
+  return records.map(record => ({
+    walletAddress: record.walletPublicKey,
+    transactionType: record.transactionType,
+    signature: record.signature,
+    success: record.success,
+    solReceived: record.amountSol || 0,
+    tokensSold: record.amountTokens || "0",
+    sellPercent: record.sellPercent || 0,
+    sellAttempt: record.sellAttempt || 1,
+    errorMessage: record.errorMessage,
+    timestamp: record.createdAt,
+  }));
+};
+
+export const getDetailedSellSummary = async (tokenAddress: string) => {
+  const { TransactionRecordModel } = await import("./models");
+  
+  // Get all sell transactions
+  const sellRecords = await TransactionRecordModel.find({
+    tokenAddress,
+    transactionType: { $in: ["dev_sell", "wallet_sell", "external_sell"] }
+  }).sort({ createdAt: -1 }).lean();
+  
+  if (sellRecords.length === 0) {
+    return {
+      hasSells: false,
+      totalSells: 0,
+      successfulSells: 0,
+      failedSells: 0,
+      totalSolEarned: 0,
+      totalTokensSold: "0",
+      sellHistory: []
+    };
+  }
+  
+  const successful = sellRecords.filter(r => r.success);
+  const failed = sellRecords.filter(r => !r.success);
+  
+  const totalSolEarned = successful.reduce((sum, record) => {
+    return sum + (record.amountSol || 0);
+  }, 0);
+  
+  const totalTokensSold = successful.reduce((sum, record) => {
+    return sum + BigInt(record.amountTokens || "0");
+  }, BigInt(0));
+  
+  // Group sells by attempt/batch
+  const sellBatches = sellRecords.reduce((batches: any[], record) => {
+    const batchKey = `${record.transactionType}-${record.sellAttempt}-${record.createdAt?.toISOString().split('T')[0]}`;
+    const existingBatch = batches.find(b => b.batchKey === batchKey);
+    
+    if (existingBatch) {
+      existingBatch.transactions.push(record);
+      existingBatch.totalSol += record.amountSol || 0;
+      existingBatch.totalTokens = existingBatch.totalTokens + BigInt(record.amountTokens || "0");
+      if (record.success) existingBatch.successCount++;
+      else existingBatch.failCount++;
+    } else {
+      batches.push({
+        batchKey,
+        type: record.transactionType,
+        sellAttempt: record.sellAttempt,
+        timestamp: record.createdAt,
+        transactions: [record],
+        totalSol: record.amountSol || 0,
+        totalTokens: BigInt(record.amountTokens || "0"),
+        successCount: record.success ? 1 : 0,
+        failCount: record.success ? 0 : 1,
+        sellPercent: record.sellPercent || 0,
+      });
+    }
+    
+    return batches;
+  }, []);
+  
+  return {
+    hasSells: true,
+    totalSells: sellRecords.length,
+    successfulSells: successful.length,
+    failedSells: failed.length,
+    totalSolEarned: Number(totalSolEarned.toFixed(6)),
+    totalTokensSold: totalTokensSold.toString(),
+    sellHistory: sellBatches.map(batch => ({
+      type: batch.type,
+      timestamp: batch.timestamp,
+      totalWallets: batch.transactions.length,
+      successfulWallets: batch.successCount,
+      failedWallets: batch.failCount,
+      successRate: Math.round((batch.successCount / batch.transactions.length) * 100),
+      solReceived: Number(batch.totalSol.toFixed(6)),
+      tokensSold: batch.totalTokens.toString(),
+      tokensDisplayed: (Number(batch.totalTokens) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+      sellPercent: batch.sellPercent,
+      signatures: batch.transactions.filter((t: any) => t.success).map((t: any) => t.signature),
+    }))
   };
 };

@@ -114,8 +114,11 @@ export const clearAllRetryData = originalFunctions.clearAllRetryData;
 
 // ========== TRANSACTION RECORDING FUNCTIONS ==========
 export const recordTransaction = originalFunctions.recordTransaction;
+export const recordSellTransaction = originalFunctions.recordSellTransaction;
 export const getSuccessfulTransactions = originalFunctions.getSuccessfulTransactions;
 export const getFailedTransactions = originalFunctions.getFailedTransactions;
 export const isTransactionAlreadySuccessful = originalFunctions.isTransactionAlreadySuccessful;
 export const getTransactionStats = originalFunctions.getTransactionStats;
-export const getTransactionFinancialStats = originalFunctions.getTransactionFinancialStats; 
+export const getTransactionFinancialStats = originalFunctions.getTransactionFinancialStats;
+export const getSellTransactionHistory = originalFunctions.getSellTransactionHistory;
+export const getDetailedSellSummary = originalFunctions.getDetailedSellSummary; 
