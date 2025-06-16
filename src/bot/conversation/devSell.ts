@@ -1,7 +1,8 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
-import { enqueueDevSell, getUser, getUserToken } from "../../backend/functions";
+import { enqueueDevSell, getUser, getUserToken } from "../../backend/functions-main";
 import { TokenState } from "../../backend/types";
+import { startLoadingState, sendLoadingMessage } from "../loading";
 
 const devSellConversation = async (
   conversation: Conversation,
@@ -58,7 +59,9 @@ const devSellConversation = async (
     }
   }
 
-  // ------ SEND DEV SELL DATA TO QUEUE -----
+  // ------ SEND DEV SELL DATA TO QUEUE WITH LOADING STATE -----
+  const submitLoading = await sendLoadingMessage(ctx, "💰 **Submitting dev sell...**\n\n⏳ Preparing transaction...");
+  
   const result = await enqueueDevSell(
     user.id,
     updatedCtx.message!.chat.id,
@@ -67,14 +70,17 @@ const devSellConversation = async (
       .privateKey,
     sellPercent,
   );
+  
   if (!result.success) {
+    await submitLoading.update("❌ **Failed to submit dev sell**\n\nAn error occurred while submitting dev sell details for execution. Please try again.");
     await ctx.reply(
       "An error occurred while submitting dev sell details for execution ❌. Please try again..",
     );
   } else {
-    await ctx.reply(
-      "Dev sell details has been submitted for execution ✅.\nYou would get a message once your sell has been completed.",
-    );
+    await submitLoading.update("🎉 **Dev sell submitted successfully!**\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed.");
+    
+    // Start the loading state for the actual dev sell process
+    await startLoadingState(ctx, "dev_sell", tokenAddress);
   }
 };
 

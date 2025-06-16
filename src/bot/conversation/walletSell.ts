@@ -4,8 +4,9 @@ import {
   enqueueWalletSell,
   getUser,
   getUserTokenWithBuyWallets,
-} from "../../backend/functions";
+} from "../../backend/functions-main";
 import { TokenState } from "../../backend/types";
+import { startLoadingState, sendLoadingMessage } from "../loading";
 
 const walletSellConversation = async (
   conversation: Conversation,
@@ -65,7 +66,9 @@ const walletSellConversation = async (
     }
   }
 
-  // ------ SEND WALLET SELL DATA TO QUEUE -----
+  // ------ SEND WALLET SELL DATA TO QUEUE WITH LOADING STATE -----
+  const submitLoading = await sendLoadingMessage(ctx, "💸 **Submitting wallet sells...**\n\n⏳ Preparing transactions...");
+  
   const buyWallets = token.launchData!.buyWallets.map(
     (w) => (w as unknown as { privateKey: string }).privateKey,
   );
@@ -78,14 +81,17 @@ const walletSellConversation = async (
     buyWallets,
     sellPercent,
   );
+  
   if (!result.success) {
+    await submitLoading.update("❌ **Failed to submit wallet sells**\n\nAn error occurred while submitting wallet sell details for execution. Please try again.");
     await ctx.reply(
       "An error occurred while submitting wallet sell details for execution ❌. Please try again..",
     );
   } else {
-    await ctx.reply(
-      "Wallet sell details has been submitted for execution ✅.\nYou would get a message once your sell has been completed.",
-    );
+    await submitLoading.update("🎉 **Wallet sells submitted successfully!**\n\n⏳ Your wallet sells are now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sells are completed.");
+    
+    // Start the loading state for the actual wallet sell process
+    await startLoadingState(ctx, "wallet_sell", tokenAddress);
   }
 };
 

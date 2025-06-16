@@ -6,6 +6,7 @@
       "dependencies": {
         "@grammyjs/conversations": "^2.1.0",
         "@grammyjs/menu": "^1.3.0",
+        "@grammyjs/storage-free": "^2.5.1",
         "@solana/codecs": "^2.1.1",
         "@solana/spl-token": "^0.4.13",
         "@solana/web3.js": "^1.98.2",
@@ -63,6 +64,8 @@
     "@grammyjs/conversations": ["@grammyjs/conversations@2.1.0", "", { "peerDependencies": { "grammy": "^1.20.1" } }, "sha512-nYoHwFyXcQ2lkQejKReoINknkgFjeIZhyJNMBwHng5UHO/ewHKs1dV2XVaLrKkHTZ1gCZ+dKkjEp26wwHyQeGg=="],
 
     "@grammyjs/menu": ["@grammyjs/menu@1.3.0", "", { "peerDependencies": { "grammy": "^1.31.0" } }, "sha512-4T/xtNMJ25XD1BNWoQL4IProuvX5p1UGI6RS9vR7xaWn59/QxspqTGtT1orFRbCUjlOqkLJmpRSoQNxeO0Pdww=="],
+
+    "@grammyjs/storage-free": ["@grammyjs/storage-free@2.5.1", "", { "dependencies": { "node-fetch": "^2.6.6" } }, "sha512-wW9R8zxP8qHe6aZh3HqU11ZPWGko2ou32v0GMo8Ck6dLaVVvzI+oBZO6rM9Ntb54jmCdq+CxgLKPY71pyCG7eg=="],
 
     "@grammyjs/types": ["@grammyjs/types@3.20.0", "", {}, "sha512-KIoikN5VTj6dcJpzMwXtouzaN3BZJ4jihBuEeXzWr25HtEfCF25V3dN11u+uNYi/9sBDvs0KCKZhyN/xFY0MBg=="],
 

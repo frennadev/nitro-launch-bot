@@ -99,6 +99,29 @@ export const quoteBuy = (
   };
 };
 
+export const quoteSell = (
+  tokenAmountIn: bigint,
+  virtualTokenReserves: bigint,
+  virtualSolReserves: bigint,
+  realTokenReserves: bigint,
+) => {
+  if (tokenAmountIn > realTokenReserves) {
+    tokenAmountIn = realTokenReserves;
+  }
+
+  const virtualTokenAmount = virtualSolReserves * virtualTokenReserves;
+  const newVirtualTokenReserves = virtualTokenReserves + tokenAmountIn;
+  const newVirtualSolReserves = virtualTokenAmount / newVirtualTokenReserves + BigInt(1);
+  const solOut = virtualSolReserves - newVirtualSolReserves;
+
+  return {
+    solOut,
+    newVirtualTokenReserves,
+    newVirtualSolReserves,
+    newRealTokenReserves: realTokenReserves - tokenAmountIn,
+  };
+};
+
 export const applySlippage = (amount: bigint, slippage: number) => {
   const SlippageAdjustment = BigInt(1);
   const Big10000 = BigInt(10000);

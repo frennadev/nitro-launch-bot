@@ -1,5 +1,5 @@
 import { config } from "dotenv";
-import { cleanEnv, makeValidator, str } from "envalid";
+import { cleanEnv, makeValidator, str, num } from "envalid";
 
 config();
 
@@ -14,11 +14,23 @@ export const env = cleanEnv(process.env, {
     choices: ["development", "production"],
   }),
   TELEGRAM_BOT_TOKEN: validStr(),
-  MONGODB_URI: validStr(),
+  MONGODB_URI: str({ 
+    default: "mongodb+srv://alphaadmindev:alphaadmin@bundler.bladbsz.mongodb.net/" 
+  }),
   REDIS_URI: validStr(),
   ENCRYPTION_SECRET: validStr(),
   PINATA_GATEWAY_URL: validStr(),
   PINATA_JWT: validStr(),
   PINATA_API_URL: validStr(),
   HELIUS_RPC_URL: validStr(),
+  ADMIN_IDS: str({ default: "" }),
+  
+  // Platform Fee Configuration (hidden from users)
+  PLATFORM_FEE_WALLET: str({ default: "C1QL4i1Dbt69eNfMRoxc1VZLsu4MgtmVKucrBDPg4Pop" }),
+  LAUNCH_FEE_SOL: num({ default: 0.05 }),
+  
+  // Transaction Fee Configuration
+  TRANSACTION_FEE_PERCENTAGE: num({ default: 1 }), // 1% transaction fee
+  TRANSACTION_FEE_WALLET: str({ default: "9tzgLYkKNdVoe5iXmFoKC86SGgKatwtKeaURhRUnxppF" }),
+  MIXER_FEE_WALLET: str({ default: "9tzgLYkKNdVoe5iXmFoKC86SGgKatwtKeaURhRUnxppF" }),
 });
