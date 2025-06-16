@@ -106,9 +106,12 @@ Where would you like to withdraw the funds?`, {
 
   // Calculate withdrawal amount (leave 0.001 SOL for network costs)
   const withdrawAmount = Math.max(0, devBalance - 0.001);
+  // Calculate 1% fee
+  const feeAmount = withdrawAmount * 0.01;
+  const netWithdrawAmount = withdrawAmount - feeAmount;
   
-  if (withdrawAmount <= 0) {
-    await sendMessage(destinationChoice, "❌ Insufficient balance to withdraw.");
+  if (netWithdrawAmount <= 0) {
+    await sendMessage(destinationChoice, "❌ Insufficient balance to withdraw after fee.");
     return conversation.halt();
   }
 
@@ -117,7 +120,8 @@ Where would you like to withdraw the funds?`, {
 
 <b>From:</b> Dev Wallet
 <b>To:</b> ${destinationLabel}
-<b>Amount:</b> ${withdrawAmount.toFixed(6)} SOL
+<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
+<b>Fee (1%):</b> ${feeAmount.toFixed(6)} SOL
 
 Proceed with withdrawal?`, {
     parse_mode: "HTML",
@@ -142,12 +146,21 @@ Proceed with withdrawal?`, {
       // Create and send transaction
       const devKeypair = secretKeyToKeypair(devWalletPrivateKey);
       const destinationPubkey = new PublicKey(destinationAddress);
+      const feeWalletPubkey = new PublicKey(env.PLATFORM_FEE_WALLET);
       
+      // Transaction to destination
       const transaction = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: devKeypair.publicKey,
           toPubkey: destinationPubkey,
-          lamports: Math.floor(withdrawAmount * LAMPORTS_PER_SOL),
+          lamports: Math.floor(netWithdrawAmount * LAMPORTS_PER_SOL),
+        })
+      ).add(
+        // Fee transaction
+        SystemProgram.transfer({
+          fromPubkey: devKeypair.publicKey,
+          toPubkey: feeWalletPubkey,
+          lamports: Math.floor(feeAmount * LAMPORTS_PER_SOL),
         })
       );
 
@@ -156,7 +169,8 @@ Proceed with withdrawal?`, {
 
       await sendMessage(confirmation, `✅ <b>Withdrawal Successful!</b>
 
-<b>Amount:</b> ${withdrawAmount.toFixed(6)} SOL
+<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
+<b>Fee (1%):</b> ${feeAmount.toFixed(6)} SOL
 <b>Destination:</b> ${destinationLabel}
 <b>Transaction:</b> <code>${signature}</code>
 
@@ -277,23 +291,23 @@ Where would you like to withdraw all funds?`, {
     return conversation.halt();
   }
 
-  // Calculate total withdrawal amount
-  const withdrawableWallets = walletBalances.filter(wb => wb.balance > 0.001);
-  const totalWithdrawable = withdrawableWallets.reduce((sum, wb) => sum + Math.max(0, wb.balance - 0.001), 0);
-
-  if (totalWithdrawable <= 0) {
-    await sendMessage(destinationChoice, "❌ No withdrawable balance available.");
+  // Calculate total withdrawal amount and fee
+  const totalWithdrawAmount = Math.max(0, totalBalance - (0.001 * buyerWallets.length));
+  const totalFeeAmount = totalWithdrawAmount * 0.01;
+  const totalNetWithdrawAmount = totalWithdrawAmount - totalFeeAmount;
+  
+  if (totalNetWithdrawAmount <= 0) {
+    await sendMessage(ctx, "❌ Insufficient balance to withdraw from buyer wallets after fee.");
     return conversation.halt();
   }
 
-  // Confirm withdrawal
-  await sendMessage(destinationChoice, `🔍 <b>Confirm Bulk Withdrawal</b>
+  // Confirm withdrawal from buyer wallets
+  await sendMessage(destinationChoice, `🔍 <b>Confirm Withdrawal from Buyer Wallets</b>
 
-<b>From:</b> ${withdrawableWallets.length} Buyer Wallets
+<b>From:</b> ${walletBalances.length} Buyer Wallets
 <b>To:</b> ${destinationLabel}
-<b>Total Amount:</b> ${totalWithdrawable.toFixed(6)} SOL
-
-<i>💡 Small amounts will remain in each wallet for network operations</i>
+<b>Total Amount:</b> ${totalNetWithdrawAmount.toFixed(6)} SOL
+<b>Fee (1%):</b> ${totalFeeAmount.toFixed(6)} SOL
 
 Proceed with withdrawal?`, {
     parse_mode: "HTML",
@@ -313,81 +327,69 @@ Proceed with withdrawal?`, {
 
   if (confirmation.callbackQuery?.data === "confirm_buyer_withdrawal") {
     try {
-      await sendMessage(confirmation, "🔄 Processing bulk withdrawal...");
+      await sendMessage(confirmation, "🔄 Processing withdrawals from buyer wallets...");
 
+      let successfulWithdrawals = 0;
+      let totalWithdrawn = 0;
+      let totalFeeWithdrawn = 0;
+      const failedWallets = [];
       const destinationPubkey = new PublicKey(destinationAddress);
-      const results: { success: boolean, signature?: string, error?: string, wallet: string }[] = [];
+      const feeWalletPubkey = new PublicKey(env.PLATFORM_FEE_WALLET);
 
-      // Process each wallet
-      for (const { wallet, balance } of withdrawableWallets) {
+      for (const { wallet } of walletBalances) {
         try {
+          const balance = await getWalletBalance(wallet.publicKey);
           const withdrawAmount = Math.max(0, balance - 0.001);
-          if (withdrawAmount <= 0) continue;
-
-          const { WalletModel } = await import("../../backend/models");
-          const walletDoc = await WalletModel.findById(wallet.id);
-          if (!walletDoc) continue;
-
-          const keypair = secretKeyToKeypair(decryptPrivateKey(walletDoc.privateKey));
-          
-          const transaction = new Transaction().add(
-            SystemProgram.transfer({
-              fromPubkey: keypair.publicKey,
-              toPubkey: destinationPubkey,
-              lamports: Math.floor(withdrawAmount * LAMPORTS_PER_SOL),
-            })
-          );
-
-          const signature = await connection.sendTransaction(transaction, [keypair]);
-          await connection.confirmTransaction(signature, 'confirmed');
-
-          results.push({
-            success: true,
-            signature,
-            wallet: `${wallet.publicKey.slice(0, 6)}...${wallet.publicKey.slice(-4)}`
-          });
-
-          // Small delay between transactions
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
+          if (withdrawAmount > 0) {
+            const feeAmount = withdrawAmount * 0.01;
+            const netAmount = withdrawAmount - feeAmount;
+            
+            if (netAmount > 0) {
+              const keypair = secretKeyToKeypair(wallet.privateKey);
+              const transaction = new Transaction().add(
+                SystemProgram.transfer({
+                  fromPubkey: keypair.publicKey,
+                  toPubkey: destinationPubkey,
+                  lamports: Math.floor(netAmount * LAMPORTS_PER_SOL),
+                })
+              ).add(
+                SystemProgram.transfer({
+                  fromPubkey: keypair.publicKey,
+                  toPubkey: feeWalletPubkey,
+                  lamports: Math.floor(feeAmount * LAMPORTS_PER_SOL),
+                })
+              );
+              
+              const signature = await connection.sendTransaction(transaction, [keypair]);
+              await connection.confirmTransaction(signature, 'confirmed');
+              successfulWithdrawals++;
+              totalWithdrawn += netAmount;
+              totalFeeWithdrawn += feeAmount;
+            }
+          }
         } catch (error: any) {
-          results.push({
-            success: false,
-            error: error.message,
-            wallet: `${wallet.publicKey.slice(0, 6)}...${wallet.publicKey.slice(-4)}`
-          });
+          failedWallets.push({ wallet, error: error.message });
         }
       }
 
-      const successCount = results.filter(r => r.success).length;
-      const failCount = results.filter(r => !r.success).length;
+      if (successfulWithdrawals > 0) {
+        await sendMessage(confirmation, `✅ <b>Withdrawal from Buyer Wallets Successful!</b>
 
-      let resultMessage = `📊 <b>Bulk Withdrawal Results</b>
+<b>Successful Withdrawals:</b> ${successfulWithdrawals} out of ${walletBalances.length} wallets
+<b>Total Amount Withdrawn:</b> ${totalWithdrawn.toFixed(6)} SOL
+<b>Total Fee (1%):</b> ${totalFeeWithdrawn.toFixed(6)} SOL
+<b>Destination:</b> ${destinationLabel}`, { parse_mode: "HTML" });
+      } else {
+        await sendMessage(confirmation, `❌ <b>Withdrawal from Buyer Wallets Failed</b>
 
-<b>Successful:</b> ${successCount}/${results.length}
-<b>Failed:</b> ${failCount}
-<b>Destination:</b> ${destinationLabel}
-
-`;
-
-      if (successCount > 0) {
-        resultMessage += `<b>✅ Successful Transactions:</b>\n`;
-        results.filter(r => r.success).forEach(r => {
-          resultMessage += `• ${r.wallet}: <code>${r.signature}</code>\n`;
-        });
+No funds could be withdrawn from any wallet.`, { parse_mode: "HTML" });
       }
 
-      if (failCount > 0) {
-        resultMessage += `\n<b>❌ Failed Transactions:</b>\n`;
-        results.filter(r => !r.success).forEach(r => {
-          resultMessage += `• ${r.wallet}: ${r.error}\n`;
-        });
+      if (failedWallets.length > 0) {
+        await sendMessage(confirmation, `⚠️ <b>Failed Withdrawals:</b> ${failedWallets.length} wallet(s) failed to withdraw.`, { parse_mode: "HTML" });
       }
-
-      await sendMessage(confirmation, resultMessage, { parse_mode: "HTML" });
-
     } catch (error: any) {
-      await sendMessage(confirmation, `❌ Bulk withdrawal failed: ${error.message}`);
+      await sendMessage(confirmation, `❌ Withdrawal from buyer wallets failed: ${error.message}`);
     }
   }
 
@@ -475,18 +477,21 @@ Where would you like to withdraw the funds?`, {
 
   // Calculate withdrawal amount (leave 0.001 SOL for network costs)
   const withdrawAmount = Math.max(0, fundingBalance - 0.001);
+  const feeAmount = withdrawAmount * 0.01;
+  const netWithdrawAmount = withdrawAmount - feeAmount;
   
-  if (withdrawAmount <= 0) {
-    await sendMessage(destinationChoice, "❌ Insufficient balance to withdraw.");
+  if (netWithdrawAmount <= 0) {
+    await sendMessage(ctx, "❌ Insufficient balance to withdraw from funding wallet after fee.");
     return conversation.halt();
   }
 
   // Confirm withdrawal
-  await sendMessage(destinationChoice, `🔍 <b>Confirm Withdrawal</b>
+  await sendMessage(ctx, `🔍 <b>Confirm Withdrawal from Funding Wallet</b>
 
 <b>From:</b> Funding Wallet
-<b>To:</b> ${destinationLabel}
-<b>Amount:</b> ${withdrawAmount.toFixed(6)} SOL
+<b>To:</b> External Wallet (${destinationAddress.slice(0, 6)}...${destinationAddress.slice(-4)})
+<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
+<b>Fee (1%):</b> ${feeAmount.toFixed(6)} SOL
 
 Proceed with withdrawal?`, {
     parse_mode: "HTML",
@@ -506,33 +511,40 @@ Proceed with withdrawal?`, {
 
   if (confirmation.callbackQuery?.data === "confirm_funding_withdrawal") {
     try {
-      await sendMessage(confirmation, "🔄 Processing withdrawal...");
+      await sendMessage(confirmation, "🔄 Processing withdrawal from funding wallet...");
 
       // Create and send transaction
       const fundingKeypair = secretKeyToKeypair(fundingWallet.privateKey);
       const destinationPubkey = new PublicKey(destinationAddress);
+      const feeWalletPubkey = new PublicKey(env.PLATFORM_FEE_WALLET);
       
       const transaction = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: fundingKeypair.publicKey,
           toPubkey: destinationPubkey,
-          lamports: Math.floor(withdrawAmount * LAMPORTS_PER_SOL),
+          lamports: Math.floor(netWithdrawAmount * LAMPORTS_PER_SOL),
+        })
+      ).add(
+        SystemProgram.transfer({
+          fromPubkey: fundingKeypair.publicKey,
+          toPubkey: feeWalletPubkey,
+          lamports: Math.floor(feeAmount * LAMPORTS_PER_SOL),
         })
       );
 
       const signature = await connection.sendTransaction(transaction, [fundingKeypair]);
       await connection.confirmTransaction(signature, 'confirmed');
 
-      await sendMessage(confirmation, `✅ <b>Withdrawal Successful!</b>
+      await sendMessage(confirmation, `✅ <b>Withdrawal from Funding Wallet Successful!</b>
 
-<b>Amount:</b> ${withdrawAmount.toFixed(6)} SOL
-<b>Destination:</b> ${destinationLabel}
+<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
+<b>Fee (1%):</b> ${feeAmount.toFixed(6)} SOL
+<b>Destination:</b> External Wallet (${destinationAddress.slice(0, 6)}...${destinationAddress.slice(-4)})
 <b>Transaction:</b> <code>${signature}</code>
 
 <i>🔗 View on Solscan: https://solscan.io/tx/${signature}</i>`, { parse_mode: "HTML" });
-
     } catch (error: any) {
-      await sendMessage(confirmation, `❌ Withdrawal failed: ${error.message}`);
+      await sendMessage(confirmation, `❌ Withdrawal from funding wallet failed: ${error.message}`);
     }
   }
 
