@@ -64,6 +64,9 @@ export async function autoFixWalletPoolOnError() {
 
 // CLI usage
 if (require.main === module) {
+  // Load environment variables
+  require('dotenv').config();
+  
   fixWalletPool()
     .then(() => {
       console.log("✅ Wallet pool fix completed successfully");
