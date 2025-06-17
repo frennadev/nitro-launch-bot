@@ -31,6 +31,37 @@ const operationMessages = {
     success: "🎉 **Token launched successfully!**",
     error: "❌ **Token launch failed**",
   },
+  prepare_launch: {
+    initial: "🛠️ **Preparing token launch...**\n\n⏳ Initializing preparation sequence...",
+    phases: [
+      "🔍 Validating launch parameters...",
+      "💰 Collecting platform fee...",
+      "🔀 Initializing mixer system...",
+      "🏦 Reserving intermediate wallets...",
+      "💸 Distributing funds through mixer...",
+      "⚡ Funding buyer wallets...",
+      "✅ Preparation complete...",
+    ],
+    success: "🎉 **Preparation completed successfully!**",
+    error: "❌ **Preparation failed**",
+  },
+  mixer_operation: {
+    initial: "🔀 **Mixing funds for privacy...**\n\n⏳ Initializing secure mixing process...",
+    phases: [
+      "🔐 Validating wallet pool...",
+      "🏦 Reserving intermediate wallets...",
+      "💫 Creating mixing routes...",
+      "⚡ Executing hop 1/5...",
+      "⚡ Executing hop 2/5...",
+      "⚡ Executing hop 3/5...",
+      "⚡ Executing hop 4/5...",
+      "⚡ Executing hop 5/5...",
+      "💰 Finalizing distributions...",
+      "🔒 Releasing intermediate wallets...",
+    ],
+    success: "🎉 **Funds mixed successfully!**",
+    error: "❌ **Mixing operation failed**",
+  },
   dev_sell: {
     initial: "💰 **Processing dev sell...**\n\n⏳ Preparing transaction...",
     phases: [
@@ -276,4 +307,132 @@ export function cleanupStaleLoadingStates(): void {
 }
 
 // Clean up stale states every 5 minutes
-setInterval(cleanupStaleLoadingStates, 5 * 60 * 1000); 
+setInterval(cleanupStaleLoadingStates, 5 * 60 * 1000);
+
+/**
+ * Update loading state with detailed mixer progress
+ */
+export async function updateMixerProgress(
+  loadingKey: string,
+  phase: number,
+  routeIndex?: number,
+  totalRoutes?: number,
+  hopIndex?: number,
+  totalHops?: number,
+  estimatedTimeRemaining?: number
+): Promise<void> {
+  const state = activeLoadingStates.get(loadingKey);
+  if (!state) return;
+  
+  const config = operationMessages[state.operation as keyof typeof operationMessages];
+  let phaseMessage = config.phases[phase] || "Processing...";
+  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  
+  // Enhanced mixer-specific messaging
+  if (state.operation === 'mixer_operation') {
+    if (routeIndex !== undefined && totalRoutes !== undefined) {
+      if (hopIndex !== undefined && totalHops !== undefined) {
+        phaseMessage = `⚡ Route ${routeIndex + 1}/${totalRoutes} - Hop ${hopIndex + 1}/${totalHops}`;
+      } else {
+        phaseMessage = `💫 Processing route ${routeIndex + 1}/${totalRoutes}`;
+      }
+    }
+  }
+  
+  const progressBar = generateProgressBar(phase, config.phases.length);
+  const frame = processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
+  
+  let message = `🔀 **MIXER OPERATION**\n\n${frame} ${phaseMessage}\n\n${progressBar}`;
+  
+  // Add route progress for mixer operations
+  if (routeIndex !== undefined && totalRoutes !== undefined) {
+    const routeProgress = generateProgressBar(routeIndex, totalRoutes);
+    message += `\n\n📊 **Route Progress:**\n${routeProgress}`;
+  }
+  
+  message += `\n\n⏱️ Elapsed: ${elapsed}s`;
+  
+  // Add time estimate for large operations
+  if (estimatedTimeRemaining && estimatedTimeRemaining > 0) {
+    message += ` | ETA: ~${estimatedTimeRemaining}s`;
+  }
+  
+  // Add helpful context for long operations
+  if (elapsed > 30) {
+    message += `\n\n💡 Large mixing operations ensure maximum privacy through multiple intermediate wallets`;
+  }
+  
+  try {
+    await bot.api.editMessageText(state.chatId, state.messageId, message, {
+      parse_mode: "Markdown",
+    });
+  } catch (error) {
+    console.warn("Failed to update mixer progress:", error);
+  }
+}
+
+/**
+ * Update loading state with custom mixer status
+ */
+export async function updateMixerStatus(
+  loadingKey: string,
+  statusMessage: string,
+  details?: string,
+  showElapsed: boolean = true
+): Promise<void> {
+  const state = activeLoadingStates.get(loadingKey);
+  if (!state) return;
+  
+  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  const frame = processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
+  
+  let message = `🔀 **MIXER OPERATION**\n\n${frame} ${statusMessage}`;
+  
+  if (details) {
+    message += `\n\n📋 ${details}`;
+  }
+  
+  if (showElapsed) {
+    message += `\n\n⏱️ Elapsed: ${elapsed}s`;
+  }
+  
+  // Add context for operations taking longer than expected
+  if (elapsed > 60) {
+    message += `\n\n🔐 Complex mixing ensures your transactions are completely untraceable`;
+  }
+  
+  try {
+    await bot.api.editMessageText(state.chatId, state.messageId, message, {
+      parse_mode: "Markdown",
+    });
+  } catch (error) {
+    console.warn("Failed to update mixer status:", error);
+  }
+}
+
+/**
+ * Send periodic heartbeat updates for long-running operations
+ */
+export function startMixerHeartbeat(loadingKey: string, intervalSeconds: number = 15): NodeJS.Timeout {
+  return setInterval(async () => {
+    try {
+      const state = activeLoadingStates.get(loadingKey);
+      if (!state) return;
+      
+      const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+      
+      // Send heartbeat every 15 seconds for operations longer than 30 seconds
+      if (elapsed > 30) {
+        await updateMixerStatus(
+          loadingKey,
+          "Mixing in progress...",
+          `Operation running for ${elapsed}s - Privacy layers being applied`,
+          true
+        );
+      }
+    } catch (error) {
+      // Heartbeat errors should never break the system
+      console.warn("Heartbeat update failed:", error);
+    }
+  }, intervalSeconds * 1000);
+} 

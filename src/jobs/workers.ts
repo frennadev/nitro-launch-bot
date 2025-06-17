@@ -20,7 +20,7 @@ import {
 import { executeTokenLaunch, prepareTokenLaunch } from "../blockchain/pumpfun/launch";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { logger } from "./logger";
-import { updateLoadingState, completeLoadingState, failLoadingState } from "../bot/loading";
+import { updateLoadingState, completeLoadingState, failLoadingState, updateMixerProgress, updateMixerStatus, startMixerHeartbeat } from "../bot/loading";
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
@@ -328,16 +328,37 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       // Update loading state - Phase 2: Initializing mixer
       await updateLoadingState(loadingKey, 2);
       
-      await prepareTokenLaunch(
-        data.tokenPrivateKey,
-        data.funderWallet,
-        data.devWallet,
-        data.buyerWallets,
-        data.tokenName,
-        data.tokenSymbol,
-        data.buyAmount,
-        data.devBuy,
-      );
+      // Start heartbeat for long mixing operations (with safety wrapper)
+      let heartbeatInterval: NodeJS.Timeout | null = null;
+      try {
+        heartbeatInterval = startMixerHeartbeat(loadingKey, 15);
+      } catch (heartbeatError) {
+        // If heartbeat fails to start, log but continue with operation
+        logger.warn("Failed to start mixer heartbeat, continuing without it:", heartbeatError);
+      }
+      
+      try {
+        await prepareTokenLaunch(
+          data.tokenPrivateKey,
+          data.funderWallet,
+          data.devWallet,
+          data.buyerWallets,
+          data.tokenName,
+          data.tokenSymbol,
+          data.buyAmount,
+          data.devBuy,
+          loadingKey, // Pass loading key for progress tracking
+        );
+      } finally {
+        // Safely clear heartbeat interval
+        if (heartbeatInterval) {
+          try {
+            clearInterval(heartbeatInterval);
+          } catch (clearError) {
+            logger.warn("Failed to clear heartbeat interval:", clearError);
+          }
+        }
+      }
       
       // Complete preparation loading state
       await completeLoadingState(

@@ -6,6 +6,7 @@ import { MongoSolanaMixer, type MongoMixerConfig } from "../mixer/MongoSolanaMix
 import bs58 from "bs58";
 import { MongoClient } from "mongodb";
 import { env } from "../../config";
+import { updateMixerProgress, updateMixerStatus } from "../../bot/loading";
 
 // Load environment variables
 dotenv.config();

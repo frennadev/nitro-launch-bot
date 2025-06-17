@@ -40,7 +40,7 @@ import {
 } from "../../backend/functions";
 import { collectTransactionFee } from "../../backend/functions-main";
 import { logger } from "../common/logger";
-import { initializeMixer } from "../mixer/init-mixer";
+import { initializeMixer, initializeMixerWithProgress } from "../mixer/init-mixer";
 import bs58 from "bs58";
 import { getSolBalance, getTokenBalance } from "../../backend/utils";
 
@@ -53,6 +53,7 @@ export const prepareTokenLaunch = async (
   symbol: string,
   buyAmount: number,
   devBuy: number,
+  loadingKey?: string,
 ) => {
   const start = performance.now();
 
@@ -92,7 +93,20 @@ export const prepareTokenLaunch = async (
 
   const funderPrivateKey = bs58.encode(funderKeypair.secretKey);
   const destinationAddresses = buyKeypairs.map(w => w.publicKey.toString());
-  await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+  
+  // Use progress-tracked mixer if loading key is provided, otherwise use standard mixer
+  // Fallback to standard mixer if progress-tracked version fails
+  if (loadingKey) {
+    try {
+      await initializeMixerWithProgress(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses, loadingKey);
+    } catch (error: any) {
+      logger.warn(`[${logIdentifier}]: Progress-tracked mixer failed, falling back to standard mixer:`, error.message);
+      // Fallback to standard mixer to ensure system stability
+      await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+    }
+  } else {
+    await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+  }
 
   await updateLaunchStage(
     mintKeypair.publicKey.toBase58(),
