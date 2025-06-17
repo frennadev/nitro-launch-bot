@@ -34,13 +34,32 @@ enum LaunchCallBackQueries {
 }
 
 const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", LaunchCallBackQueries.CANCEL);
-const retryKeyboard = new InlineKeyboard()
-  .text("🔄 Try Again", LaunchCallBackQueries.RETRY)
+const launchKeyboard = new InlineKeyboard()
+  .text("🚀 Launch Token", LaunchCallBackQueries.CONFIRM_LAUNCH)
   .row()
   .text("❌ Cancel", LaunchCallBackQueries.CANCEL);
 
 async function sendMessage(ctx: Context, text: string, options: any = {}) {
   await ctx.reply(text, options);
+}
+
+/**
+ * Safe wrapper for conversation.waitFor that handles Grammy.js state errors
+ */
+async function safeWaitFor(conversation: Conversation, ctx: Context, filters: any) {
+  try {
+    return await conversation.waitFor(filters);
+  } catch (error: any) {
+    // Handle Grammy.js conversation state errors
+    if (error.message && error.message.includes("Bad replay, expected op")) {
+      console.warn("Conversation state error detected, halting conversation:", error.message);
+      await ctx.reply("❌ Conversation state error. Please start over by selecting the token from your tokens list.");
+      await conversation.halt();
+      throw new Error("CONVERSATION_STATE_ERROR");
+    }
+    // Re-throw other errors
+    throw error;
+  }
 }
 
 async function waitForInputOrCancel(
@@ -65,12 +84,12 @@ async function waitForInputOrCancel(
 
 const launchTokenConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
   // --------- VALIDATE USER ---------
-  const user = await getUser(ctx.chat!.id!.toString());
-  if (!user) {
-    await sendMessage(ctx, "Unrecognized user ❌");
-    await conversation.halt();
-    return;
-  }
+    const user = await getUser(ctx.chat!.id.toString());
+    if (!user) {
+      await sendMessage(ctx, "Unrecognized user ❌");
+      await conversation.halt();
+      return;
+    }
 
   // Check if this is a retry attempt
   const existingRetryData = await getRetryData(user.id, "launch_token");
@@ -413,59 +432,57 @@ Please send a valid private key:`, { reply_markup: cancelKeyboard });
   const costBreakdown = calculateTotalLaunchCost(buyAmount, devBuy, buyerWallets.length, false); // Don't show platform fee to user
   const requiredFundingAmount = costBreakdown.totalCost; // User sees total without knowing about hidden fees
 
-  // Check funding wallet balance
-  if (fundingBalance < requiredFundingAmount) {
-    await sendMessage(ctx, `❌ <b>Insufficient funding wallet balance!</b>
+  // Show token creation success message with launch option
+  await sendMessage(ctx, `🎉 <b>Token created successfully!</b>
 
-💰 <b>Required Amount:</b>
+<b>Name:</b> ${token.name}
+<b>Symbol:</b> ${token.symbol}
+<b>Description:</b> ${token.description}
+
+💰 <b>Launch Configuration:</b>
 • Buy Amount: ${costBreakdown.breakdown.buyAmount} SOL
 • Dev Buy: ${costBreakdown.breakdown.devBuy} SOL
 
 <b>Funding Wallet Required:</b> ${requiredFundingAmount.toFixed(4)} SOL
 <b>Funding Wallet Available:</b> ${fundingBalance.toFixed(4)} SOL
 
-<b>Please fund your wallet:</b>
-<code>${fundingWallet.publicKey}</code>
+${fundingBalance < requiredFundingAmount ? 
+  `⚠️ <b>Please fund your wallet:</b>\n<code>${fundingWallet.publicKey}</code>\n\n<i>💡 Tap the address above to copy it</i>` : 
+  '✅ <b>Sufficient balance available</b>'
+}`, { parse_mode: "HTML", reply_markup: launchKeyboard });
 
-<i>💡 Tap the address above to copy it, then send the required SOL and try again.</i>`, { parse_mode: "HTML", reply_markup: retryKeyboard });
-
-    // Wait for retry or cancel (allow both button press and text input)
-    const response = await conversation.waitFor(["callback_query:data", "message:text"]);
+  // Wait for launch or cancel
+  const response = await conversation.waitFor(["callback_query:data", "message:text"]);
+  
+  if (response.callbackQuery?.data) {
+    await response.answerCallbackQuery();
     
-    if (response.callbackQuery?.data) {
-      await response.answerCallbackQuery();
-      
-      if (response.callbackQuery.data === LaunchCallBackQueries.RETRY) {
-        // Exit conversation and let user manually retry from tokens list
-        await sendMessage(response, "🔄 Please check your wallet balance and try launching again from your tokens list.");
-        await conversation.halt();
-        return;
-      } else {
-        await sendMessage(response, "Process cancelled.");
-        await clearRetryData(user.id, "launch_token");
-        await conversation.halt();
-        return;
-      }
-    } else if (response.message?.text) {
-      // User sent text instead of using buttons - guide them to use buttons
-      await sendMessage(ctx, "⚠️ Please use the buttons below to retry or cancel the launch.", { 
-        reply_markup: retryKeyboard 
-      });
-      
-      // Wait again for proper button response
-      const buttonResponse = await conversation.waitFor("callback_query:data");
-      await buttonResponse.answerCallbackQuery();
-      
-      if (buttonResponse.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
-        await sendMessage(buttonResponse, "🔄 Please check your wallet balance and try launching again from your tokens list.");
-        await conversation.halt();
-        return;
-      } else {
-        await sendMessage(buttonResponse, "Process cancelled.");
-        await clearRetryData(user.id, "launch_token");
-        await conversation.halt();
-        return;
-      }
+    if (response.callbackQuery.data === LaunchCallBackQueries.CONFIRM_LAUNCH) {
+      // Proceed with launch regardless of balance - let the system handle insufficient balance
+      await sendMessage(response, "🚀 Proceeding with token launch...");
+    } else {
+      await sendMessage(response, "Launch cancelled.");
+      await clearRetryData(user.id, "launch_token");
+      await conversation.halt();
+      return;
+    }
+  } else if (response.message?.text) {
+    // User sent text instead of using buttons - guide them to use buttons
+    await sendMessage(ctx, "⚠️ Please use the buttons below to launch or cancel.", { 
+      reply_markup: launchKeyboard 
+    });
+    
+    // Wait again for proper button response
+    const buttonResponse = await conversation.waitFor("callback_query:data");
+    await buttonResponse.answerCallbackQuery();
+    
+    if (buttonResponse.callbackQuery?.data === LaunchCallBackQueries.CONFIRM_LAUNCH) {
+      await sendMessage(buttonResponse, "🚀 Proceeding with token launch...");
+    } else {
+      await sendMessage(buttonResponse, "Launch cancelled.");
+      await clearRetryData(user.id, "launch_token");
+      await conversation.halt();
+      return;
     }
   }
 
@@ -500,7 +517,7 @@ Please send a valid private key:`, { reply_markup: cancelKeyboard });
 
 Please resolve the issues below and retry:
 
-${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard }
+${checkResult.message}`, { parse_mode: "HTML", reply_markup: launchKeyboard }
     );
 
     // Wait for retry or cancel (allow both button press and text input)
@@ -509,33 +526,29 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard }
     if (response.callbackQuery?.data) {
       await response.answerCallbackQuery();
       
-      if (response.callbackQuery.data === LaunchCallBackQueries.RETRY) {
-        // Exit conversation and let user manually retry from tokens list
-        await sendMessage(response, "🔄 Please resolve the issues and try launching again from your tokens list.");
-        await conversation.halt();
-        return;
+      if (response.callbackQuery.data === LaunchCallBackQueries.CONFIRM_LAUNCH) {
+        // Proceed with launch despite pre-launch check failures
+        await sendMessage(response, "🚀 Proceeding with token launch despite warnings...");
       } else {
-        await sendMessage(response, "Process cancelled.");
+        await sendMessage(response, "Launch cancelled.");
         await clearRetryData(user.id, "launch_token");
         await conversation.halt();
         return;
       }
     } else if (response.message?.text) {
       // User sent text instead of using buttons - guide them to use buttons
-      await sendMessage(ctx, "⚠️ Please use the buttons below to retry or cancel the launch.", { 
-        reply_markup: retryKeyboard 
+      await sendMessage(ctx, "⚠️ Please use the buttons below to launch or cancel.", { 
+        reply_markup: launchKeyboard 
       });
       
       // Wait again for proper button response
       const buttonResponse = await conversation.waitFor("callback_query:data");
       await buttonResponse.answerCallbackQuery();
       
-      if (buttonResponse.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
-        await sendMessage(buttonResponse, "🔄 Please resolve the issues and try launching again from your tokens list.");
-        await conversation.halt();
-        return;
+      if (buttonResponse.callbackQuery?.data === LaunchCallBackQueries.CONFIRM_LAUNCH) {
+        await sendMessage(buttonResponse, "🚀 Proceeding with token launch despite warnings...");
       } else {
-        await sendMessage(buttonResponse, "Process cancelled.");
+        await sendMessage(buttonResponse, "Launch cancelled.");
         await clearRetryData(user.id, "launch_token");
         await conversation.halt();
         return;
