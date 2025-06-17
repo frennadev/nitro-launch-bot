@@ -689,32 +689,32 @@ export const executeTokenLaunch = async (
         
         logger.info(`[${logIdentifier}]: Round ${roundNumber} - Processing ${walletsForNextRound.length} wallets with sufficient balance`);
         
-        // Execute buy transactions for this round
-        const roundResults = [];
-        let roundComputeUnitPrice = maxComputeUnitPrice;
+        // Execute buy transactions for this round in parallel (faster for additional rounds)
+        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Executing ${walletsForNextRound.length} transactions in parallel`);
+        
         const roundComputeDecrement = Math.round(
           (maxComputeUnitPrice - baseComputeUnitPrice) / walletsForNextRound.length,
         );
         
-        for (let i = 0; i < walletsForNextRound.length; i++) {
-          const keypair = walletsForNextRound[i];
+        // Execute all wallets in parallel for speed
+        const roundPromises = walletsForNextRound.map(async (keypair, index) => {
+          const walletComputeUnitPrice = maxComputeUnitPrice - (roundComputeDecrement * index);
           
-          const result = await executeBuyWithRetry(
+          // Small staggered delay to avoid exact simultaneous submission
+          if (index > 0) {
+            await new Promise(resolve => setTimeout(resolve, index * 50)); // 50ms stagger
+          }
+          
+          return await executeBuyWithRetry(
             keypair,
             null,
-            roundComputeUnitPrice,
+            walletComputeUnitPrice,
             blockHash,
             2 // Fewer retries for additional rounds
           );
-          
-          roundResults.push(result);
-          roundComputeUnitPrice -= roundComputeDecrement;
-          
-          // Shorter delay between additional round transactions
-          if (i < walletsForNextRound.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 150));
-          }
-        }
+        });
+        
+        const roundResults = await Promise.all(roundPromises);
         
         const roundSuccess = roundResults.filter((res) => res.success);
         const roundFailed = roundResults.filter((res) => !res.success);
