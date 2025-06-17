@@ -32,7 +32,7 @@ export const sendLaunchSuccessNotification = async (
   }
 
   const msg = [
-    `🎉 *Token Launched Successfully!*`,
+    `🎉 *Token Launched Successfully\\!*`,
     `*Name:* ${escape(tokenName)}`,
     `*Symbol:* \`${escape(symbol)}\``,
     `*Address:* \`${tokenAddress}\``,
