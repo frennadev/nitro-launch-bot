@@ -7,7 +7,8 @@ import {
   getDefaultDevWallet,
   getFundingWallet,
   getWalletBalance,
-} from "../../backend/functions";
+  getBuyerWalletPrivateKey,
+} from "../../backend/functions-main";
 import { CallBackQueries } from "../types";
 import { sendMessage } from "../../backend/sender";
 import { decryptPrivateKey } from "../../backend/utils";
@@ -345,7 +346,10 @@ Proceed with withdrawal?`, {
             const netAmount = withdrawAmount - feeAmount;
             
             if (netAmount > 0) {
-              const keypair = secretKeyToKeypair(wallet.privateKey);
+              // Get the private key for this wallet
+              const privateKey = await getBuyerWalletPrivateKey(user.id, wallet.id);
+              const keypair = secretKeyToKeypair(privateKey);
+              
               const transaction = new Transaction().add(
                 SystemProgram.transfer({
                   fromPubkey: keypair.publicKey,
