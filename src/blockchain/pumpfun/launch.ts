@@ -396,43 +396,120 @@ export const executeTokenLaunch = async (
       );
       let currentComputeUnitPrice = maxComputeUnitPrice;
       
-      // Enhanced curve data fetching with better retry logic
+      // Optimized parallel curve data fetching for maximum speed
+      logger.info(`[${logIdentifier}]: Fetching bonding curve data with parallel strategy...`);
+      const curveDataStart = performance.now();
+      
       let curveData = null;
-      let retries = 0;
-      const maxRetries = 15; // Increased from 5 to 15
-      const baseDelay = 1000; // Start with 1 second
       
-      logger.info(`[${logIdentifier}]: Fetching bonding curve data...`);
-      
-      while (!curveData && retries < maxRetries) {
-        try {
-          // Try different commitment levels for better reliability
-          const commitmentLevel = retries < 5 ? "processed" : retries < 10 ? "confirmed" : "finalized";
-          
-          // Get fresh account info with specific commitment
-          const accountInfo = await connection.getAccountInfo(bondingCurve, commitmentLevel);
-          if (accountInfo && accountInfo.data) {
-            curveData = await getBondingCurveData(bondingCurve);
-            if (curveData) {
-              logger.info(`[${logIdentifier}]: Successfully fetched curve data on attempt ${retries + 1} with ${commitmentLevel} commitment`);
-              break;
+      try {
+        // Strategy 1: Parallel fetch with different commitment levels (fastest)
+        const parallelFetchPromises = [
+          // Most likely to succeed quickly
+          (async () => {
+            try {
+              const accountInfo = await connection.getAccountInfo(bondingCurve, "processed");
+              if (accountInfo?.data) {
+                const data = await getBondingCurveData(bondingCurve);
+                if (data) {
+                  logger.info(`[${logIdentifier}]: Fast curve data fetch successful with 'processed' commitment`);
+                  return { data, commitment: "processed" };
+                }
+              }
+            } catch (error) {
+              return null;
             }
-          }
-        } catch (error: any) {
-          logger.warn(`[${logIdentifier}]: Curve data fetch attempt ${retries + 1} failed: ${error.message}`);
+            return null;
+          })(),
+          
+          // Backup with confirmed
+          (async () => {
+            await new Promise(resolve => setTimeout(resolve, 500)); // Small delay to prefer processed
+            try {
+              const accountInfo = await connection.getAccountInfo(bondingCurve, "confirmed");
+              if (accountInfo?.data) {
+                const data = await getBondingCurveData(bondingCurve);
+                if (data) {
+                  logger.info(`[${logIdentifier}]: Curve data fetch successful with 'confirmed' commitment`);
+                  return { data, commitment: "confirmed" };
+                }
+              }
+            } catch (error) {
+              return null;
+            }
+            return null;
+          })(),
+          
+          // Final fallback with finalized
+          (async () => {
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Delay to prefer faster options
+            try {
+              const accountInfo = await connection.getAccountInfo(bondingCurve, "finalized");
+              if (accountInfo?.data) {
+                const data = await getBondingCurveData(bondingCurve);
+                if (data) {
+                  logger.info(`[${logIdentifier}]: Curve data fetch successful with 'finalized' commitment`);
+                  return { data, commitment: "finalized" };
+                }
+              }
+            } catch (error) {
+              return null;
+            }
+            return null;
+          })()
+        ];
+        
+        // Race to get the first successful result
+        const results = await Promise.allSettled(parallelFetchPromises);
+        const successfulResult = results.find(result => 
+          result.status === 'fulfilled' && result.value !== null
+        );
+        
+        if (successfulResult && successfulResult.status === 'fulfilled' && successfulResult.value) {
+          curveData = successfulResult.value.data;
+          const fetchTime = performance.now() - curveDataStart;
+          logger.info(`[${logIdentifier}]: Parallel curve data fetch completed in ${Math.round(fetchTime)}ms using ${successfulResult.value.commitment} commitment`);
         }
         
-        retries += 1;
-        if (!curveData && retries < maxRetries) {
-          // Exponential backoff with jitter
-          const delay = Math.min(baseDelay * Math.pow(1.5, retries), 5000) + Math.random() * 1000;
-          logger.info(`[${logIdentifier}]: Retrying curve data fetch in ${Math.round(delay)}ms (attempt ${retries}/${maxRetries})`);
-          await randomizedSleep(delay, delay + 500);
+      } catch (error: any) {
+        logger.warn(`[${logIdentifier}]: Parallel curve data fetch failed: ${error.message}`);
+      }
+      
+      // Fallback to sequential retry logic if parallel fetch failed
+      if (!curveData) {
+        logger.info(`[${logIdentifier}]: Parallel fetch failed, falling back to sequential retry logic...`);
+        
+        let retries = 0;
+        const maxRetries = 8; // Reduced from 15 since we already tried parallel
+        const baseDelay = 1000;
+        
+        while (!curveData && retries < maxRetries) {
+          try {
+            const commitmentLevel = retries < 3 ? "processed" : retries < 6 ? "confirmed" : "finalized";
+            
+            const accountInfo = await connection.getAccountInfo(bondingCurve, commitmentLevel);
+            if (accountInfo && accountInfo.data) {
+              curveData = await getBondingCurveData(bondingCurve);
+              if (curveData) {
+                logger.info(`[${logIdentifier}]: Sequential fallback successful on attempt ${retries + 1} with ${commitmentLevel} commitment`);
+                break;
+              }
+            }
+          } catch (error: any) {
+            logger.warn(`[${logIdentifier}]: Sequential fallback attempt ${retries + 1} failed: ${error.message}`);
+          }
+          
+          retries += 1;
+          if (!curveData && retries < maxRetries) {
+            const delay = Math.min(baseDelay * Math.pow(1.5, retries), 3000) + Math.random() * 500;
+            logger.info(`[${logIdentifier}]: Retrying in ${Math.round(delay)}ms (attempt ${retries}/${maxRetries})`);
+            await randomizedSleep(delay, delay + 200);
+          }
         }
       }
       
       if (!curveData) {
-        logger.error(`[${logIdentifier}]: Failed to fetch curve data after ${maxRetries} attempts`);
+        logger.error(`[${logIdentifier}]: Failed to fetch curve data after all attempts`);
         
         // Additional debugging - check if bonding curve account exists
         try {
