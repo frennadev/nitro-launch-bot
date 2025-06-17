@@ -26,6 +26,29 @@ export class SolanaConnectionManager {
   }
 
   /**
+   * Batch balance checking for multiple wallets (optimized for mixer operations)
+   */
+  async getBatchBalances(publicKeys: PublicKey[]): Promise<number[]> {
+    // Process in chunks to respect rate limits
+    const chunkSize = 10;
+    const results: number[] = [];
+    
+    for (let i = 0; i < publicKeys.length; i += chunkSize) {
+      const chunk = publicKeys.slice(i, i + chunkSize);
+      const chunkPromises = chunk.map(pk => this.connection.getBalance(pk));
+      const chunkResults = await Promise.all(chunkPromises);
+      results.push(...chunkResults);
+      
+      // Small delay between chunks to avoid rate limiting
+      if (i + chunkSize < publicKeys.length) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+    
+    return results;
+  }
+
+  /**
    * Get the minimum rent-exempt balance for an account
    */
   async getMinimumBalanceForRentExemption(): Promise<number> {

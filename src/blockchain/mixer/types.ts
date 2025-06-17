@@ -15,6 +15,10 @@ export interface MixerConfig {
   priorityFee?: number;
   /** Separate wallet to fund intermediate wallet transaction fees */
   feeFundingWallet?: Keypair;
+  /** Fast mode - reduces delays and uses aggressive optimizations */
+  fastMode?: boolean;
+  /** Use batch operations where possible */
+  useBatchOperations?: boolean;
 }
 
 export interface WalletInfo {

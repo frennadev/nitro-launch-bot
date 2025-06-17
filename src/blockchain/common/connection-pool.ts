@@ -49,24 +49,31 @@ export class SolanaConnectionPool {
 
   constructor(config?: Partial<ConnectionPoolConfig>) {
     this.config = {
-      endpoints: [env.HELIUS_RPC_URL],
-      maxRequestsPerSecond: 180, // Leave some buffer from 200 limit
-      maxTransactionsPerSecond: 45, // Leave some buffer from 50 limit
+      endpoints: [env.HELIUS_RPC_URL], // Can be extended with multiple endpoints later
+      maxRequestsPerSecond: 195, // Increase from 180 (more aggressive)
+      maxTransactionsPerSecond: 48, // Increase from 45 (more aggressive)
       cacheConfig: {
-        balanceTTL: 5000, // 5 seconds
-        blockhashTTL: 10000, // 10 seconds
-        accountInfoTTL: 8000, // 8 seconds
-        signatureStatusTTL: 2000, // 2 seconds
+        balanceTTL: 3000, // Reduce from 5000ms for faster updates
+        blockhashTTL: 8000, // Reduce from 10000ms for fresher blockhashes
+        accountInfoTTL: 5000, // Reduce from 8000ms
+        signatureStatusTTL: 1000, // Reduce from 2000ms for faster confirmation
       },
       ...config,
     };
 
-    // Initialize connections
+    // Initialize connections with optimized settings
     this.connections = this.config.endpoints.map(endpoint => 
-      new Connection(endpoint, { commitment: "confirmed" })
+      new Connection(endpoint, { 
+        commitment: "processed", // Use "processed" instead of "confirmed" for speed
+        confirmTransactionInitialTimeout: 30000, // 30s timeout
+        disableRetryOnRateLimit: false,
+        httpHeaders: {
+          'Content-Type': 'application/json',
+        }
+      })
     );
 
-    logger.info(`Initialized connection pool with ${this.connections.length} endpoints`);
+    logger.info(`Initialized optimized connection pool with ${this.connections.length} endpoints for mixer operations`);
     
     // Start rate limit reset timers
     this.startRateLimitResetTimers();

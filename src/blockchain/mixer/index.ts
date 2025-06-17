@@ -143,15 +143,15 @@ async function runMixer(
     const totalCheck = amounts.reduce((sum, amount) => sum + amount, 0);
     console.log(`   Total: ${(totalCheck / 1e9).toFixed(6)} SOL`);
 
-    // Configure the mixer with simple settings
+    // Configure the mixer with optimized settings for speed
     const config: MongoMixerConfig = {
-      // Basic mixer settings (3-7 seconds total operation time)
-      intermediateWalletCount: 5, // 5 intermediate wallets per route for enhanced privacy
-      minDelay: 3000, // 3 seconds minimum
-      maxDelay: 7000, // 7 seconds maximum
+      // Optimized mixer settings (500ms-2s total operation time)
+      intermediateWalletCount: 3, // Reduce from 5 to 3 for speed (still provides good privacy)
+      minDelay: 500, // Reduce from 3000ms to 500ms
+      maxDelay: 2000, // Reduce from 7000ms to 2000ms
       useFreshWallets: false, // Use MongoDB wallet pool
       rpcEndpoint: SOLANA_RPC_ENDPOINT,
-      priorityFee: 1000,
+      priorityFee: 2000, // Increase from 1000 for faster processing
 
       // Fee funding wallet for enhanced privacy
       feeFundingWallet: feeFundingWallet,
@@ -161,9 +161,9 @@ async function runMixer(
       databaseName: DATABASE_NAME,
       encryptionKey: ENCRYPTION_KEY,
 
-      // Recovery settings
-      maxRetries: 3,
-      retryDelay: 5000,
+      // Optimized recovery settings
+      maxRetries: 2, // Reduce from 3 for speed
+      retryDelay: 2000, // Reduce from 5000ms
     };
 
     const mixer = new MongoSolanaMixer(config);

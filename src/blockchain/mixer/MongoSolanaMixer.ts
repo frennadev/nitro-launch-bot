@@ -103,13 +103,14 @@ export class MongoSolanaMixer {
       let transactionCount = 0;
       const startTime = Date.now();
 
-      // Execute mixing for each route with calculated delays
+      // Execute mixing for each route with optimized parallel processing where possible
       for (let i = 0; i < routes.length; i++) {
         const route = routes[i];
         console.log(`\n🛤️ Processing route ${i + 1}/${routes.length}`);
 
         try {
-          const result = await this.executeSingleRouteWithTiming(
+          // Use optimized execution with reduced delays
+          const result = await this.executeSingleRouteOptimized(
             route,
             delayPerTransaction,
             transactionCount,
@@ -206,9 +207,9 @@ export class MongoSolanaMixer {
   }
 
   /**
-   * Execute a single route with timing-aware delays
+   * Execute a single route with optimized execution
    */
-  private async executeSingleRouteWithTiming(
+  private async executeSingleRouteOptimized(
     route: MixingRoute,
     delayPerTransaction: number,
     currentTransactionIndex: number,
@@ -217,25 +218,28 @@ export class MongoSolanaMixer {
   ): Promise<MongoMixingResult> {
     const signatures: string[] = [];
     const feeFundingSignatures: string[] = [];
-    const usedWalletIds: string[] = [];
-    let currentWallet = route.source;
-    let remainingAmount = route.amount;
-    let localTransactionIndex = currentTransactionIndex;
+    const usedWalletIds: string[] = route.intermediates.map((w) => w.publicKey.toString());
 
     try {
-      // Track intermediate wallets used
-      route.intermediates.forEach((wallet) => {
-        usedWalletIds.push(wallet.publicKey.toString());
-      });
+      console.log(`🎯 Route: ${route.source.publicKey.toString().slice(0, 8)}... → ${route.destination.toString().slice(0, 8)}...`);
+      console.log(`💰 Amount: ${(route.amount / 1e9).toFixed(6)} SOL`);
 
-      // Transfer through each intermediate wallet
+      let currentWallet = route.source;
+      let remainingAmount = route.amount;
+      let localTransactionIndex = currentTransactionIndex;
+
+      // Optimized delays - much shorter for speed
+      const optimizedDelayPerTx = Math.min(delayPerTransaction, 200); // Cap at 200ms max
+
+      // Process intermediate transfers with minimal delays
       for (let i = 0; i < route.intermediates.length; i++) {
         const nextWallet = route.intermediates[i];
-        const transferAmount = remainingAmount;
-
         console.log(
-          `🔄 Hop ${i + 1}/${route.intermediates.length}: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${nextWallet.publicKey.toString().slice(0, 8)}...`
+          `🔄 Transfer ${i + 1}/${route.intermediates.length}: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${nextWallet.publicKey.toString().slice(0, 8)}...`
         );
+
+        // Calculate transfer amount with minimal fee deduction
+        const transferAmount = Math.floor(remainingAmount * 0.998); // 0.2% buffer for fees
 
         let signature: string;
 
@@ -265,16 +269,16 @@ export class MongoSolanaMixer {
 
         signatures.push(signature);
 
-        // Record transaction in MongoDB
-        await this.walletManager.recordTransaction(nextWallet.publicKey.toString(), {
-          signature,
-          type: "receive",
-          amount: transferAmount,
-          fromAddress: currentWallet.publicKey.toString(),
-        });
-
-        // Update wallet balance in MongoDB
-        await this.walletManager.updateWalletBalance(nextWallet.publicKey.toString(), transferAmount);
+        // Optimized MongoDB operations - batch where possible
+        await Promise.all([
+          this.walletManager.recordTransaction(nextWallet.publicKey.toString(), {
+            signature,
+            type: "receive",
+            amount: transferAmount,
+            fromAddress: currentWallet.publicKey.toString(),
+          }),
+          this.walletManager.updateWalletBalance(nextWallet.publicKey.toString(), transferAmount)
+        ]);
 
         // Record in local state
         this.recordTransaction(
@@ -290,23 +294,13 @@ export class MongoSolanaMixer {
         remainingAmount = transferAmount;
         localTransactionIndex++;
 
-        // Calculate delay for this transaction (not the last transaction in the entire operation)
-        if (localTransactionIndex < totalDelays) {
-          let delay = delayPerTransaction;
-
-          // Add remaining time to the last few transactions to ensure we hit the target time
-          if (localTransactionIndex >= totalDelays - remainingTime) {
-            delay += 1;
-          }
-
-          if (delay > 0) {
-            console.log(`⏱️ Waiting ${delay}ms...`);
-            await sleep(delay);
-          }
+        // Minimal delay only between transactions (not after last)
+        if (i < route.intermediates.length - 1 && optimizedDelayPerTx > 0) {
+          await sleep(optimizedDelayPerTx);
         }
       }
 
-      // Final transfer to destination
+      // Final transfer to destination with minimal delay
       console.log(
         `🎯 Final transfer: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${route.destination.toString().slice(0, 8)}...`
       );
@@ -341,38 +335,20 @@ export class MongoSolanaMixer {
       }
 
       signatures.push(finalSignature);
-      localTransactionIndex++;
 
-      // Record final transaction in MongoDB
-      await this.walletManager.recordTransaction(currentWallet.publicKey.toString(), {
-        signature: finalSignature,
-        type: "send",
-        amount: remainingAmount,
-        toAddress: route.destination.toString(),
-      });
+      // Batch final MongoDB operations
+      await Promise.all([
+        this.walletManager.recordTransaction(currentWallet.publicKey.toString(), {
+          signature: finalSignature,
+          type: "send",
+          amount: remainingAmount,
+          toAddress: route.destination.toString(),
+        }),
+        this.walletManager.updateWalletBalance(currentWallet.publicKey.toString(), 0),
+        this.walletManager.releaseWallets(usedWalletIds)
+      ]);
 
-      // Update wallet balance to 0 (depleted)
-      await this.walletManager.updateWalletBalance(currentWallet.publicKey.toString(), 0);
-
-      // Release wallets back to available pool
-      await this.walletManager.releaseWallets(usedWalletIds);
-
-      // Final delay if not the last transaction in the entire operation
-      if (localTransactionIndex < totalDelays) {
-        let delay = delayPerTransaction;
-
-        // Add remaining time to the last few transactions
-        if (localTransactionIndex >= totalDelays - remainingTime) {
-          delay += 1;
-        }
-
-        if (delay > 0) {
-          console.log(`⏱️ Final route delay: ${delay}ms...`);
-          await sleep(delay);
-        }
-      }
-
-      console.log(`✅ Route completed successfully`);
+      console.log(`✅ Route completed successfully with ${signatures.length} transactions`);
 
       return {
         success: true,
