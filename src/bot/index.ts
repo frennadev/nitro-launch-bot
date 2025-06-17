@@ -480,6 +480,43 @@ bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
   await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, sellPercent);
 });
 
+// Handle external token sell button clicks (from token address messages)
+bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  const tokenAddress = ctx.match![1];
+  
+  logger.info(`[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`);
+  
+  // Show sell percentage options
+  const keyboard = new InlineKeyboard()
+    .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
+    .text("💸 Sell 50%", `sell_ca_50_${tokenAddress}`)
+    .row()
+    .text("💸 Sell 75%", `sell_ca_75_${tokenAddress}`)
+    .text("💸 Sell 100%", `sell_ca_100_${tokenAddress}`)
+    .row()
+    .text("❌ Cancel", CallBackQueries.CANCEL);
+  
+  await ctx.editMessageText(
+    `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
+    { 
+      parse_mode: "Markdown",
+      reply_markup: keyboard 
+    }
+  );
+});
+
+// Handle external token buy button clicks (from token address messages)
+bot.callbackQuery(/^buy_external_token_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  const tokenAddress = ctx.match![1];
+  
+  logger.info(`[ExternalTokenBuy] Buy button clicked for token: ${tokenAddress}`);
+  
+  // Start the external token buy conversation
+  await ctx.conversation.enter("buyExternalTokenConversation");
+});
+
 // Callback handler for refresh button
 bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
@@ -607,14 +644,7 @@ ${holdingsText}`, {
   }
 });
 
-bot.on("callback_query:data", async (ctx) => {
-  const data = ctx.callbackQuery.data;
-  const [action, token, address] = data.split("_");
-  if (action && token && address) {
-    logger.info(`${action} called`);
-    // You can add further handling logic here if needed
-  }
-});
+// Remove the generic callback handler that was interfering with specific handlers
 
 bot.command("reset", async (ctx) => {
   try {
