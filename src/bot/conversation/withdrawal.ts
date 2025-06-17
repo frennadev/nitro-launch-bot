@@ -107,12 +107,12 @@ Where would you like to withdraw the funds?`, {
 
   // Calculate withdrawal amount (leave 0.001 SOL for network costs)
   const withdrawAmount = Math.max(0, devBalance - 0.001);
-  // Calculate 1% fee
+  // Calculate 1% fee (but don't show to user)
   const feeAmount = withdrawAmount * 0.01;
   const netWithdrawAmount = withdrawAmount - feeAmount;
   
   if (netWithdrawAmount <= 0) {
-    await sendMessage(destinationChoice, "❌ Insufficient balance to withdraw after fee.");
+    await sendMessage(destinationChoice, "❌ Insufficient balance to withdraw.");
     return conversation.halt();
   }
 
@@ -122,7 +122,6 @@ Where would you like to withdraw the funds?`, {
 <b>From:</b> Dev Wallet
 <b>To:</b> ${destinationLabel}
 <b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
-<b>Fee (1%):</b> ${feeAmount.toFixed(6)} SOL
 
 Proceed with withdrawal?`, {
     parse_mode: "HTML",
@@ -171,7 +170,6 @@ Proceed with withdrawal?`, {
       await sendMessage(confirmation, `✅ <b>Withdrawal Successful!</b>
 
 <b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
-<b>Fee (1%):</b> ${feeAmount.toFixed(6)} SOL
 <b>Destination:</b> ${destinationLabel}
 <b>Transaction:</b> <code>${signature}</code>
 
@@ -298,7 +296,7 @@ Where would you like to withdraw all funds?`, {
   const totalNetWithdrawAmount = totalWithdrawAmount - totalFeeAmount;
   
   if (totalNetWithdrawAmount <= 0) {
-    await sendMessage(ctx, "❌ Insufficient balance to withdraw from buyer wallets after fee.");
+    await sendMessage(ctx, "❌ Insufficient balance to withdraw from buyer wallets.");
     return conversation.halt();
   }
 
@@ -308,7 +306,6 @@ Where would you like to withdraw all funds?`, {
 <b>From:</b> ${walletBalances.length} Buyer Wallets
 <b>To:</b> ${destinationLabel}
 <b>Total Amount:</b> ${totalNetWithdrawAmount.toFixed(6)} SOL
-<b>Fee (1%):</b> ${totalFeeAmount.toFixed(6)} SOL
 
 Proceed with withdrawal?`, {
     parse_mode: "HTML",
@@ -381,7 +378,6 @@ Proceed with withdrawal?`, {
 
 <b>Successful Withdrawals:</b> ${successfulWithdrawals} out of ${walletBalances.length} wallets
 <b>Total Amount Withdrawn:</b> ${totalWithdrawn.toFixed(6)} SOL
-<b>Total Fee (1%):</b> ${totalFeeWithdrawn.toFixed(6)} SOL
 <b>Destination:</b> ${destinationLabel}`, { parse_mode: "HTML" });
       } else {
         await sendMessage(confirmation, `❌ <b>Withdrawal from Buyer Wallets Failed</b>
@@ -485,7 +481,7 @@ Where would you like to withdraw the funds?`, {
   const netWithdrawAmount = withdrawAmount - feeAmount;
   
   if (netWithdrawAmount <= 0) {
-    await sendMessage(ctx, "❌ Insufficient balance to withdraw from funding wallet after fee.");
+    await sendMessage(ctx, "❌ Insufficient balance to withdraw from funding wallet.");
     return conversation.halt();
   }
 
@@ -495,7 +491,6 @@ Where would you like to withdraw the funds?`, {
 <b>From:</b> Funding Wallet
 <b>To:</b> External Wallet (${destinationAddress.slice(0, 6)}...${destinationAddress.slice(-4)})
 <b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
-<b>Fee (1%):</b> ${feeAmount.toFixed(6)} SOL
 
 Proceed with withdrawal?`, {
     parse_mode: "HTML",
@@ -542,7 +537,6 @@ Proceed with withdrawal?`, {
       await sendMessage(confirmation, `✅ <b>Withdrawal from Funding Wallet Successful!</b>
 
 <b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
-<b>Fee (1%):</b> ${feeAmount.toFixed(6)} SOL
 <b>Destination:</b> External Wallet (${destinationAddress.slice(0, 6)}...${destinationAddress.slice(-4)})
 <b>Transaction:</b> <code>${signature}</code>
 

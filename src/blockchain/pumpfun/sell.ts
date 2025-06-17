@@ -186,18 +186,40 @@ export const executeWalletSell = async (
 
   const walletBalances = [];
   for (const wallet of buyerKeypairs) {
-    const ata = getAssociatedTokenAddressSync(mintPublicKey, wallet.publicKey);
-    const balance = (await connection.getTokenAccountBalance(ata)).value.amount;
-    walletBalances.push({
-      wallet,
-      ata,
-      balance,
-    });
+    try {
+      const ata = getAssociatedTokenAddressSync(mintPublicKey, wallet.publicKey);
+      
+      // Check if the token account exists first
+      const accountInfo = await connection.getAccountInfo(ata);
+      if (!accountInfo) {
+        logger.info(`[${logIdentifier}]: Wallet ${wallet.publicKey.toBase58().slice(0, 8)} has no token account for this token, skipping`);
+        continue;
+      }
+      
+      const balance = (await connection.getTokenAccountBalance(ata)).value.amount;
+      if (BigInt(balance) > 0) {
+        walletBalances.push({
+          wallet,
+          ata,
+          balance,
+        });
+      } else {
+        logger.info(`[${logIdentifier}]: Wallet ${wallet.publicKey.toBase58().slice(0, 8)} has zero token balance, skipping`);
+      }
+    } catch (error: any) {
+      logger.warn(`[${logIdentifier}]: Error checking balance for wallet ${wallet.publicKey.toBase58().slice(0, 8)}:`, error);
+      continue;
+    }
   }
   const totalBalance = walletBalances.reduce(
     (sum, { balance }) => sum + BigInt(balance),
     BigInt(0),
   );
+  
+  if (walletBalances.length === 0 || totalBalance === BigInt(0)) {
+    throw new Error("No tokens found in any buyer wallets for this token");
+  }
+  
   let tokensToSell =
     sellPercent === 100
       ? totalBalance
