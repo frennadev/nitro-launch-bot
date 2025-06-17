@@ -16,6 +16,9 @@ import {
   calculateTotalLaunchCost,
   getDefaultDevWallet,
   getDevWallet,
+  calculateRequiredWallets,
+  generateNewBuyerWallet,
+  addBuyerWallet,
 } from "../../backend/functions";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
@@ -227,6 +230,105 @@ Would you like to enter new values or use previous ones?`, {
           break;
         }
       }
+    }
+
+    // -------- VALIDATE WALLET COUNT --------
+    const requiredWallets = calculateRequiredWallets(buyAmount);
+    const currentWallets = buyerWallets.length;
+    
+    if (currentWallets < requiredWallets) {
+      const walletsNeeded = requiredWallets - currentWallets;
+      
+      await sendMessage(ctx, `⚠️ <b>Insufficient Buyer Wallets</b>
+
+You need <b>${walletsNeeded} more wallets</b> to ensure one wallet doesn't hold too much supply.
+
+<b>Current wallets:</b> ${currentWallets}
+<b>Required wallets:</b> ${requiredWallets}
+
+Please generate or import ${walletsNeeded} wallets:`, {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard()
+          .text(`🤖 Auto-generate ${walletsNeeded} wallets`, "AUTO_GENERATE")
+          .row()
+          .text(`📥 Import ${walletsNeeded} wallets manually`, "MANUAL_IMPORT")
+          .row()
+          .text("❌ Cancel", LaunchCallBackQueries.CANCEL)
+      });
+
+      const walletChoice = await conversation.waitFor("callback_query:data");
+      await walletChoice.answerCallbackQuery();
+      
+      if (walletChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+        await sendMessage(ctx, "Launch cancelled.");
+        return conversation.halt();
+      }
+      
+      if (walletChoice.callbackQuery?.data === "AUTO_GENERATE") {
+        // Auto-generate the required wallets
+        await sendMessage(ctx, `🤖 Generating ${walletsNeeded} new buyer wallets...`);
+        
+        try {
+          for (let i = 0; i < walletsNeeded; i++) {
+            await generateNewBuyerWallet(user.id);
+          }
+          
+          await sendMessage(ctx, `✅ Successfully generated ${walletsNeeded} new buyer wallets!`);
+        } catch (error: any) {
+          await sendMessage(ctx, `❌ Error generating wallets: ${error.message}. Please try again.`);
+          return conversation.halt();
+        }
+      } else if (walletChoice.callbackQuery?.data === "MANUAL_IMPORT") {
+        // Manual import process
+        await sendMessage(ctx, `📥 <b>Import ${walletsNeeded} Buyer Wallets</b>
+
+Please send your private keys one by one (${walletsNeeded} wallets needed).
+
+<b>Wallet 1 of ${walletsNeeded}:</b>
+Send the private key for the first wallet:`, { 
+          parse_mode: "HTML", 
+          reply_markup: cancelKeyboard 
+        });
+        
+        for (let i = 0; i < walletsNeeded; i++) {
+          const walletInput = await conversation.waitFor(["message:text", "callback_query:data"]);
+          
+          if (walletInput.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+            await walletInput.answerCallbackQuery();
+            await sendMessage(ctx, "Launch cancelled.");
+            return conversation.halt();
+          }
+          
+          if (walletInput.message?.text) {
+            const privateKey = walletInput.message.text.trim();
+            
+            try {
+              await addBuyerWallet(user.id, privateKey);
+              
+              if (i < walletsNeeded - 1) {
+                await sendMessage(ctx, `✅ Wallet ${i + 1} imported successfully!
+
+<b>Wallet ${i + 2} of ${walletsNeeded}:</b>
+Send the private key for the next wallet:`, { 
+                  parse_mode: "HTML", 
+                  reply_markup: cancelKeyboard 
+                });
+              } else {
+                await sendMessage(ctx, `✅ All ${walletsNeeded} wallets imported successfully!`);
+              }
+            } catch (error: any) {
+              await sendMessage(ctx, `❌ Error importing wallet ${i + 1}: ${error.message}
+
+Please send a valid private key:`, { reply_markup: cancelKeyboard });
+              i--; // Retry the same wallet
+            }
+          }
+        }
+      }
+      
+      // Refresh buyer wallets list after adding new ones
+      const updatedBuyerWallets = await getAllBuyerWallets(user.id);
+      await sendMessage(ctx, `✅ Wallet validation complete! Now using ${updatedBuyerWallets.length} buyer wallets.`);
     }
 
     // -------- GET DEV BUY AMOUNT --------

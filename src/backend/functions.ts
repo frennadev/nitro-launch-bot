@@ -1819,3 +1819,39 @@ export const getDetailedSellSummary = async (tokenAddress: string) => {
     })),
   };
 };
+
+/**
+ * Calculate the required number of wallets for incremental distribution system
+ * Fixed sequence: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2 SOL for first 6 wallets (total 5.4 SOL)
+ * Additional wallets: 1.5-2.1 SOL each
+ */
+export const calculateRequiredWallets = (buyAmount: number): number => {
+  const fixedSequenceTotal = 5.4; // 0.5 + 0.7 + 0.9 + 1.0 + 1.1 + 1.2
+  
+  if (buyAmount <= fixedSequenceTotal) {
+    // Count how many sequence wallets are needed
+    const sequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2];
+    let total = 0;
+    let walletsNeeded = 0;
+    
+    for (const amount of sequence) {
+      if (total + amount <= buyAmount) {
+        total += amount;
+        walletsNeeded++;
+      } else {
+        // Need one more wallet for remaining amount
+        if (total < buyAmount) {
+          walletsNeeded++;
+        }
+        break;
+      }
+    }
+    
+    return Math.max(1, walletsNeeded); // At least 1 wallet
+  } else {
+    // Need all 6 sequence wallets + additional wallets
+    const remainingAmount = buyAmount - fixedSequenceTotal;
+    const additionalWallets = Math.ceil(remainingAmount / 2.1); // Max 2.1 SOL per additional wallet
+    return 6 + additionalWallets;
+  }
+};
