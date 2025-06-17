@@ -2,7 +2,7 @@ import bot from ".";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import { getTokenInfo } from "../backend/utils";
-import { getTransactionStats, getTransactionFinancialStats } from "../backend/functions-main";
+import { getTransactionFinancialStats } from "../backend/functions-main";
 
 export const sendLaunchSuccessNotification = async (
   chatId: number,
@@ -12,9 +12,6 @@ export const sendLaunchSuccessNotification = async (
 ) => {
   // Get token info for market cap and price
   const tokenInfo = await getTokenInfo(tokenAddress);
-
-  // Get transaction statistics
-  const transactionStats = await getTransactionStats(tokenAddress);
 
   // Get financial statistics
   const financialStats = await getTransactionFinancialStats(tokenAddress);
@@ -46,23 +43,6 @@ export const sendLaunchSuccessNotification = async (
     totalTokenValue > 0 ? `➡️ Current Value: ${escape(`$${totalTokenValue.toFixed(2)}`)}` : "",
     profitLoss !== 0
       ? `➡️ P/L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${escape(`$${profitLoss.toFixed(2)}`)} (${profitLossPercentage >= 0 ? "+" : ""}${profitLossPercentage.toFixed(1)}%)`
-      : "",
-    ``,
-    `📊 *Launch Statistics:*`,
-    `➡️ Wallets Used: ${transactionStats.byType.snipe_buy.length}`,
-    `➡️ Successful Buys: ${transactionStats.byType.snipe_buy.filter((t) => t.success).length}`,
-    `➡️ Failed Buys: ${transactionStats.byType.snipe_buy.filter((t) => !t.success).length}`,
-    `➡️ Success Rate: ${
-      transactionStats.byType.snipe_buy.length > 0
-        ? Math.round(
-            (transactionStats.byType.snipe_buy.filter((t) => t.success).length /
-              transactionStats.byType.snipe_buy.length) *
-              100
-          )
-        : 0
-    }%`,
-    financialStats.averageSpentPerWallet > 0
-      ? `➡️ Avg Spent/Wallet: ${escape(financialStats.averageSpentPerWallet.toString())} SOL`
       : "",
     ``,
     `Use the buttons below for next steps ⬇️`,
