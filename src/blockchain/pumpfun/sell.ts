@@ -106,24 +106,26 @@ export const executeDevSell = async (
   
   logger.info(`[${logIdentifier}]: Dev Sell result`, result);
   
-  // Record the sell transaction in database
+  // Record the sell transaction in database with actual amounts
   try {
-    const { recordSellTransaction } = await import("../../backend/functions-main");
-    await recordSellTransaction(
+    const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+    await recordTransactionWithActualAmounts(
       tokenAddress,
       devKeypair.publicKey.toBase58(),
       "dev_sell",
       result.signature || "",
       result.success,
-      1, // sellAttempt
+      0, // launchAttempt (sells don't have launch attempts)
       {
-        solReceived: result.success ? actualSolReceived : 0,
-        tokensSold: tokensToSell.toString(),
+        sellAttempt: 1,
+        amountSol: result.success ? actualSolReceived : 0, // Fallback estimated amount (SOL received for sells)
+        amountTokens: tokensToSell.toString(), // Fallback estimated amount (tokens sold)
         sellPercent: sellPercent,
         errorMessage: result.success ? undefined : "Transaction failed",
-      }
+      },
+      true // Enable actual amount parsing
     );
-    logger.info(`[${logIdentifier}]: Dev sell transaction recorded in database`);
+    logger.info(`[${logIdentifier}]: Dev sell transaction recorded in database with actual amounts`);
   } catch (error: any) {
     logger.error(`[${logIdentifier}]: Error recording dev sell transaction:`, error);
   }
@@ -318,24 +320,26 @@ export const executeWalletSell = async (
       }
     );
 
-    // Record the sell transaction in database
+    // Record the sell transaction in database with actual amounts
     try {
-      const { recordSellTransaction } = await import("../../backend/functions-main");
-      await recordSellTransaction(
+      const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+      await recordTransactionWithActualAmounts(
         tokenAddress,
         wallet.publicKey.toBase58(),
         "wallet_sell",
         result.signature || "",
         result.success,
-        1, // sellAttempt
+        0, // launchAttempt (sells don't have launch attempts)
         {
-          solReceived: result.success ? expectedSolOut : 0,
-          tokensSold: amount.toString(),
+          sellAttempt: 1,
+          amountSol: result.success ? expectedSolOut : 0, // Fallback estimated amount (SOL received for sells)
+          amountTokens: amount.toString(), // Fallback estimated amount (tokens sold)
           sellPercent: sellPercent,
           errorMessage: result.success ? undefined : "Transaction failed",
-        }
+        },
+        true // Enable actual amount parsing
       );
-      logger.info(`[${logIdentifier}]: Wallet sell transaction recorded for ${wallet.publicKey.toBase58().slice(0, 8)}`);
+      logger.info(`[${logIdentifier}]: Wallet sell transaction recorded for ${wallet.publicKey.toBase58().slice(0, 8)} with actual amounts`);
     } catch (error: any) {
       logger.error(`[${logIdentifier}]: Error recording wallet sell transaction for ${wallet.publicKey.toBase58().slice(0, 8)}:`, error);
     }

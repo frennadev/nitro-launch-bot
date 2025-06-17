@@ -1,5 +1,6 @@
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { connection } from "../blockchain/common/connection";
+import { logger } from "../blockchain/common/logger";
 import type { Bot, Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import * as crypto from "crypto";
@@ -182,5 +183,213 @@ export const getTokenInfo = async (tokenAddress: string) => {
     return data[0];
   } catch (error) {
     console.error("Error fetching token market cap:", error);
+  }
+};
+
+/**
+ * Parse actual transaction amounts from blockchain transaction
+ * Gets real SOL spent/received and tokens bought/sold instead of estimates
+ */
+export const parseTransactionAmounts = async (
+  signature: string,
+  walletAddress: string,
+  tokenMint: string,
+  transactionType: "buy" | "sell" = "buy"
+): Promise<{
+  actualSolSpent?: number;
+  actualTokensReceived?: string;
+  actualSolReceived?: number;
+  actualTokensSold?: string;
+  success: boolean;
+  error?: string;
+}> => {
+  try {
+    logger.info(`[parse-tx]: Parsing transaction ${signature} for wallet ${walletAddress.slice(0, 8)}`);
+    
+    // Get the parsed transaction from the blockchain
+    const parsedTx = await connection.getParsedTransaction(signature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0
+    });
+
+    if (!parsedTx) {
+      throw new Error("Transaction not found");
+    }
+
+    if (!parsedTx.meta) {
+      throw new Error("Transaction metadata not available");
+    }
+
+    if (parsedTx.meta.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(parsedTx.meta.err)}`);
+    }
+
+    // Find the wallet's account index in the transaction
+    const walletPubkey = new PublicKey(walletAddress);
+    const accountKeys = parsedTx.transaction.message.accountKeys;
+    const walletIndex = accountKeys.findIndex(key => 
+      key.pubkey.equals(walletPubkey)
+    );
+
+    if (walletIndex === -1) {
+      throw new Error("Wallet not found in transaction");
+    }
+
+    // Parse SOL balance changes
+    const preBalance = parsedTx.meta.preBalances[walletIndex];
+    const postBalance = parsedTx.meta.postBalances[walletIndex];
+    const solChange = (preBalance - postBalance) / LAMPORTS_PER_SOL;
+
+    // Parse token balance changes
+    const preTokenBalances = parsedTx.meta.preTokenBalances || [];
+    const postTokenBalances = parsedTx.meta.postTokenBalances || [];
+    
+    // Find token balance changes for our specific token and wallet
+    const preTokenBalance = preTokenBalances.find(
+      balance => balance.mint === tokenMint && 
+                balance.owner === walletAddress
+    );
+    
+    const postTokenBalance = postTokenBalances.find(
+      balance => balance.mint === tokenMint && 
+                balance.owner === walletAddress
+    );
+
+    let tokenChange = "0";
+    if (postTokenBalance && preTokenBalance) {
+      tokenChange = (
+        BigInt(postTokenBalance.uiTokenAmount.amount) - 
+        BigInt(preTokenBalance.uiTokenAmount.amount)
+      ).toString();
+    } else if (postTokenBalance && !preTokenBalance) {
+      // New token account created
+      tokenChange = postTokenBalance.uiTokenAmount.amount;
+    } else if (!postTokenBalance && preTokenBalance) {
+      // Token account emptied
+      tokenChange = (-BigInt(preTokenBalance.uiTokenAmount.amount)).toString();
+    }
+
+    const result = {
+      success: true,
+    } as any;
+
+    if (transactionType === "buy") {
+      result.actualSolSpent = Math.abs(solChange); // Positive value for amount spent
+      result.actualTokensReceived = tokenChange; // Should be positive for buys
+      
+      logger.info(`[parse-tx]: Buy transaction parsed - SOL spent: ${result.actualSolSpent}, Tokens received: ${result.actualTokensReceived}`);
+    } else {
+      result.actualSolReceived = Math.abs(solChange); // Positive value for amount received
+      result.actualTokensSold = Math.abs(Number(tokenChange)).toString(); // Positive value for tokens sold
+      
+      logger.info(`[parse-tx]: Sell transaction parsed - SOL received: ${result.actualSolReceived}, Tokens sold: ${result.actualTokensSold}`);
+    }
+
+    return result;
+
+  } catch (error: any) {
+    logger.error(`[parse-tx]: Failed to parse transaction ${signature}:`, error);
+    return {
+      success: false,
+      error: error.message || "Unknown parsing error",
+    };
+  }
+};
+
+/**
+ * Enhanced transaction recording that uses actual amounts from blockchain
+ */
+export const recordTransactionWithActualAmounts = async (
+  tokenAddress: string,
+  walletPublicKey: string,
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell",
+  signature: string,
+  success: boolean,
+  launchAttempt: number,
+  estimatedAmounts: {
+    sellAttempt?: number;
+    slippageUsed?: number;
+    amountSol?: number;
+    amountTokens?: string;
+    sellPercent?: number;
+    errorMessage?: string;
+    retryAttempt?: number;
+  } = {},
+  parseActualAmounts: boolean = true
+) => {
+  const { recordTransaction } = await import("./functions");
+  
+  if (!success || !signature || !parseActualAmounts) {
+    // Use estimated amounts for failed transactions or when parsing is disabled
+    return await recordTransaction(
+      tokenAddress,
+      walletPublicKey,
+      transactionType,
+      signature,
+      success,
+      launchAttempt,
+      estimatedAmounts
+    );
+  }
+
+  try {
+    // Parse actual amounts from blockchain
+    const transactionTypeForParsing = transactionType.includes("sell") ? "sell" : "buy";
+    const actualAmounts = await parseTransactionAmounts(
+      signature,
+      walletPublicKey,
+      tokenAddress,
+      transactionTypeForParsing
+    );
+
+    if (actualAmounts.success) {
+      // Use actual amounts from blockchain
+      const recordingData = {
+        ...estimatedAmounts,
+        // Override with actual amounts
+        amountSol: transactionTypeForParsing === "buy" 
+          ? actualAmounts.actualSolSpent 
+          : actualAmounts.actualSolReceived,
+        amountTokens: transactionTypeForParsing === "buy"
+          ? actualAmounts.actualTokensReceived
+          : actualAmounts.actualTokensSold,
+      };
+
+      logger.info(`[record-tx]: Using actual amounts from blockchain for ${transactionType} - SOL: ${recordingData.amountSol}, Tokens: ${recordingData.amountTokens}`);
+
+      return await recordTransaction(
+        tokenAddress,
+        walletPublicKey,
+        transactionType,
+        signature,
+        success,
+        launchAttempt,
+        recordingData
+      );
+    } else {
+      // Fallback to estimated amounts if parsing failed
+      logger.warn(`[record-tx]: Failed to parse actual amounts, using estimates: ${actualAmounts.error}`);
+      return await recordTransaction(
+        tokenAddress,
+        walletPublicKey,
+        transactionType,
+        signature,
+        success,
+        launchAttempt,
+        estimatedAmounts
+      );
+    }
+  } catch (error: any) {
+    // Fallback to estimated amounts on any error
+    logger.error(`[record-tx]: Error parsing transaction amounts, using estimates:`, error);
+    return await recordTransaction(
+      tokenAddress,
+      walletPublicKey,
+      transactionType,
+      signature,
+      success,
+      launchAttempt,
+      estimatedAmounts
+    );
   }
 };

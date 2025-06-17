@@ -282,7 +282,8 @@ export const executeTokenLaunch = async (
     
     // Record dev buy separately if it was included and successful
     if (result.success && devBuy > 0 && devBuyTokenAmount) {
-      await recordTransaction(
+      const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+      await recordTransactionWithActualAmounts(
         tokenAddress,
         devKeypair.publicKey.toBase58(),
         "dev_buy",
@@ -290,9 +291,10 @@ export const executeTokenLaunch = async (
         true,
         currentLaunchAttempt,
         {
-          amountSol: devBuy,
-          amountTokens: devBuyTokenAmount,
-        }
+          amountSol: devBuy, // Fallback estimated amount
+          amountTokens: devBuyTokenAmount, // Fallback estimated amount
+        },
+        true // Enable actual amount parsing
       );
     }
     
@@ -521,8 +523,9 @@ export const executeTokenLaunch = async (
               logIdentifier,
             );
             
-            // Record the transaction result
-            await recordTransaction(
+            // Record the transaction result with actual amounts from blockchain
+            const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+            await recordTransactionWithActualAmounts(
               tokenAddress,
               keypair.publicKey.toBase58(),
               "snipe_buy",
@@ -531,11 +534,12 @@ export const executeTokenLaunch = async (
               currentLaunchAttempt,
               {
                 slippageUsed: currentSlippage,
-                amountSol: Number(swapAmount) / LAMPORTS_PER_SOL,
-                amountTokens: tokenOut.toString(),
+                amountSol: Number(swapAmount) / LAMPORTS_PER_SOL, // Fallback estimated amount
+                amountTokens: tokenOut.toString(), // Fallback estimated amount
                 errorMessage: result.success ? undefined : `Buy failed on attempt ${attempt + 1}`,
                 retryAttempt: attempt,
-              }
+              },
+              true // Enable actual amount parsing
             );
             
             if (result.success) {
