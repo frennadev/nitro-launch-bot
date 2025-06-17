@@ -602,6 +602,40 @@ bot.command("forcefix", async (ctx) => {
   }
 });
 
+bot.command("fixlaunch", async (ctx) => {
+  try {
+    logger.info("Fix launch command used by user:", ctx.chat?.id);
+    
+    // Clear conversation state completely
+    await clearConversationState(ctx);
+    
+    // Force clear entire session
+    const sessionCtx = ctx as any;
+    if (sessionCtx.session) {
+      Object.keys(sessionCtx.session).forEach(key => {
+        delete sessionCtx.session[key];
+      });
+    }
+    
+    await ctx.reply(
+      "🔧 **Launch Fix Applied**\n\n" +
+      "✅ Conversation state cleared\n" +
+      "✅ Session completely reset\n\n" +
+      "**Next steps:**\n" +
+      "1. Use /menu or /start to refresh\n" +
+      "2. Go to \"View Tokens\"\n" +
+      "3. Try launching your token again\n\n" +
+      "If you still have issues, use /forcefix for a complete reset.",
+      { parse_mode: "Markdown" }
+    );
+    
+    logger.info("Fix launch completed for user:", ctx.chat?.id);
+  } catch (error: any) {
+    logger.error("Error in fix launch command:", error);
+    await ctx.reply("❌ Fix launch failed. Please try /forcefix or contact support.");
+  }
+});
+
 export default bot;
 
 // Function to handle token contract address messages
@@ -685,36 +719,124 @@ bot.callbackQuery(new RegExp(`^${CallBackQueries.BUY_EXTERNAL_TOKEN}_`), async (
   }
 });
 
+// Emergency bypass for token launch when conversation state is corrupted
+bot.callbackQuery(/^emergency_launch_(.+)$/, async (ctx) => {
+  try {
+    await safeAnswerCallbackQuery(ctx, "🚨 Emergency launch mode activated");
+    const tokenAddress = ctx.match![1];
+    
+    logger.info("Emergency launch bypass activated for token:", tokenAddress);
+    
+    // Clear conversation state first
+    await clearConversationState(ctx);
+    
+    // Wait a moment for state to clear
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Try to enter the conversation with overwrite flag
+    await ctx.conversation.enter("launchTokenConversation", tokenAddress, { overwrite: true });
+    
+  } catch (error: any) {
+    logger.error("Emergency launch bypass failed:", error);
+    await ctx.reply("❌ Emergency launch failed. Please try using /forcefix and then launch normally.");
+  }
+});
+
 // Helper function to completely clear conversation state
 async function clearConversationState(ctx: Context): Promise<boolean> {
   try {
     const sessionCtx = ctx as any;
+    let cleared = false;
     
     // Clear conversation session data
     if (sessionCtx.session) {
+      // Clear the main conversation state
       if (sessionCtx.session.__conversation) {
         delete sessionCtx.session.__conversation;
+        cleared = true;
+        logger.info("Cleared __conversation session data");
       }
       
       // Clear any other conversation-related session data
-      Object.keys(sessionCtx.session).forEach(key => {
+      const sessionKeys = Object.keys(sessionCtx.session);
+      sessionKeys.forEach(key => {
         if (key.startsWith('__conversation') || key.includes('conversation')) {
           delete sessionCtx.session[key];
+          cleared = true;
+          logger.info(`Cleared session key: ${key}`);
         }
+      });
+      
+      // Clear Grammy.js internal conversation state keys
+      const grammyConversationKeys = sessionKeys.filter(key => 
+        key.startsWith('__grammyjs_conversations') || 
+        key.startsWith('__conversations') ||
+        key.includes('__conv_')
+      );
+      
+      grammyConversationKeys.forEach(key => {
+        delete sessionCtx.session[key];
+        cleared = true;
+        logger.info(`Cleared Grammy conversation key: ${key}`);
       });
     }
     
-    // If there's a conversation object, try to halt it
+    // Try to access and clear conversation context if available
     if (sessionCtx.conversation) {
       try {
-        await sessionCtx.conversation.halt();
+        // Check if halt method exists and is a function
+        if (typeof sessionCtx.conversation.halt === 'function') {
+          await sessionCtx.conversation.halt();
+          cleared = true;
+          logger.info("Successfully halted conversation");
+        } else if (typeof sessionCtx.conversation.exit === 'function') {
+          // Try alternative exit method
+          await sessionCtx.conversation.exit();
+          cleared = true;
+          logger.info("Successfully exited conversation");
+        } else {
+          logger.warn("Conversation object exists but no halt/exit methods available");
+          // Force clear the conversation object
+          delete sessionCtx.conversation;
+          cleared = true;
+        }
       } catch (haltError) {
-        logger.warn("Failed to halt conversation:", haltError);
+        logger.warn("Failed to halt conversation, forcing clear:", haltError);
+        // Force delete the conversation object
+        try {
+          delete sessionCtx.conversation;
+          cleared = true;
+        } catch (deleteError) {
+          logger.warn("Failed to delete conversation object:", deleteError);
+        }
       }
     }
     
-    logger.info("Successfully cleared conversation state for user:", ctx.chat?.id);
-    return true;
+    // Additional cleanup - try to clear any conversation-related properties on the context
+    try {
+      const contextKeys = Object.keys(sessionCtx);
+      contextKeys.forEach(key => {
+        if (key.includes('conversation') || key.includes('__conv')) {
+          try {
+            delete sessionCtx[key];
+            cleared = true;
+            logger.info(`Cleared context key: ${key}`);
+          } catch (keyError) {
+            logger.warn(`Failed to clear context key ${key}:`, keyError);
+          }
+        }
+      });
+    } catch (contextError) {
+      logger.warn("Failed to clear context properties:", contextError);
+    }
+    
+    if (cleared) {
+      logger.info("Successfully cleared conversation state for user:", ctx.chat?.id);
+    } else {
+      logger.warn("No conversation state found to clear for user:", ctx.chat?.id);
+    }
+    
+    return true; // Return true even if nothing was cleared, as the goal is achieved
   } catch (error) {
     logger.error("Failed to clear conversation state:", error);
     return false;
