@@ -639,7 +639,7 @@ export const executeTokenLaunch = async (
       // Get updated transaction stats
       const transactionStats = await getTransactionStats(tokenAddress, currentLaunchAttempt);
       
-      logger.info(`[${logIdentifier}]: Enhanced Snipe Results`, {
+      logger.info(`[${logIdentifier}]: Round 1 Snipe Results`, {
         currentAttempt: {
           success: success.length,
           failed: failed.length,
@@ -650,6 +650,109 @@ export const executeTokenLaunch = async (
       if (success.length == 0 && successfulSnipeWallets.length == 0) {
         throw new Error("Snipe Failed - No successful transactions");
       }
+
+      // ------- MULTI-ROUND BUYING LOGIC -------
+      // Check if we need additional rounds to reach the target buy amount
+      const { getTransactionFinancialStats } = await import("../../backend/functions");
+      const financialStats = await getTransactionFinancialStats(tokenAddress, currentLaunchAttempt);
+      let totalSpentSoFar = financialStats.totalSnipeSpent;
+      const targetBuyAmount = buyAmount;
+      const spendingProgress = (totalSpentSoFar / targetBuyAmount) * 100;
+      
+      logger.info(`[${logIdentifier}]: Multi-round buying analysis`, {
+        targetAmount: targetBuyAmount,
+        spentSoFar: totalSpentSoFar,
+        remaining: targetBuyAmount - totalSpentSoFar,
+        progress: `${spendingProgress.toFixed(1)}%`
+      });
+
+      // Execute additional rounds if we haven't reached 80% of target and have wallets with sufficient balance
+      let roundNumber = 2;
+      const maxRounds = 4; // Limit to prevent infinite loops
+      
+      while (totalSpentSoFar < targetBuyAmount * 0.8 && roundNumber <= maxRounds) {
+        logger.info(`[${logIdentifier}]: Starting round ${roundNumber} - Need ${(targetBuyAmount - totalSpentSoFar).toFixed(3)} more SOL`);
+        
+        // Find wallets with sufficient balance for another round (at least 0.01 SOL)
+        const walletsForNextRound = [];
+        for (const keypair of buyKeypairs) {
+          const balance = await getSolBalance(keypair.publicKey.toBase58());
+          if (balance >= 0.01) { // Minimum 0.01 SOL to attempt another buy
+            walletsForNextRound.push(keypair);
+          }
+        }
+        
+        if (walletsForNextRound.length === 0) {
+          logger.info(`[${logIdentifier}]: No wallets with sufficient balance for round ${roundNumber}, stopping multi-round buying`);
+          break;
+        }
+        
+        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Processing ${walletsForNextRound.length} wallets with sufficient balance`);
+        
+        // Execute buy transactions for this round
+        const roundResults = [];
+        let roundComputeUnitPrice = maxComputeUnitPrice;
+        const roundComputeDecrement = Math.round(
+          (maxComputeUnitPrice - baseComputeUnitPrice) / walletsForNextRound.length,
+        );
+        
+        for (let i = 0; i < walletsForNextRound.length; i++) {
+          const keypair = walletsForNextRound[i];
+          
+          const result = await executeBuyWithRetry(
+            keypair,
+            null,
+            roundComputeUnitPrice,
+            blockHash,
+            2 // Fewer retries for additional rounds
+          );
+          
+          roundResults.push(result);
+          roundComputeUnitPrice -= roundComputeDecrement;
+          
+          // Shorter delay between additional round transactions
+          if (i < walletsForNextRound.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 150));
+          }
+        }
+        
+        const roundSuccess = roundResults.filter((res) => res.success);
+        const roundFailed = roundResults.filter((res) => !res.success);
+        
+        // Update financial stats
+        const updatedStats = await getTransactionFinancialStats(tokenAddress, currentLaunchAttempt);
+        const newTotalSpent = updatedStats.totalSnipeSpent;
+        const roundSpent = newTotalSpent - totalSpentSoFar;
+        
+        logger.info(`[${logIdentifier}]: Round ${roundNumber} Results`, {
+          success: roundSuccess.length,
+          failed: roundFailed.length,
+          roundSpent: roundSpent.toFixed(6),
+          totalSpent: newTotalSpent.toFixed(6),
+          progress: `${((newTotalSpent / targetBuyAmount) * 100).toFixed(1)}%`
+        });
+        
+        // Update totals for next iteration
+        totalSpentSoFar = newTotalSpent;
+        
+        // Stop if we made no progress this round
+        if (roundSpent < 0.001) {
+          logger.info(`[${logIdentifier}]: Round ${roundNumber} made minimal progress (${roundSpent.toFixed(6)} SOL), stopping multi-round buying`);
+          break;
+        }
+        
+        roundNumber++;
+      }
+      
+      // Final summary
+      const finalStats = await getTransactionFinancialStats(tokenAddress, currentLaunchAttempt);
+      logger.info(`[${logIdentifier}]: Multi-round buying completed`, {
+        totalRounds: roundNumber - 1,
+        finalSpent: finalStats.totalSnipeSpent.toFixed(6),
+        targetAmount: targetBuyAmount,
+        finalProgress: `${((finalStats.totalSnipeSpent / targetBuyAmount) * 100).toFixed(1)}%`,
+        efficiency: `${((finalStats.totalSnipeSpent / targetBuyAmount) * 100).toFixed(1)}%`
+      });
     }
 
     // ------- COLLECT TRANSACTION FEES FROM SUCCESSFUL BUYS -------
