@@ -149,10 +149,11 @@ export const executeExternalTokenSell = async (
     const sellPromises = sellSetups.map(async (setup, index) => {
       const maxRetries = 3;
       let baseSlippage = 50; // Start with 50% slippage
+      const maxSlippage = 90; // Maximum slippage cap
       
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const slippage = baseSlippage + (attempt - 1) * 50; // Increase slippage by 50% each retry
+          const slippage = Math.min(baseSlippage + (attempt - 1) * 20, maxSlippage); // Increase slippage by 20% each retry, capped at 90%
           
           logger.info(`[${logIdentifier}]: Wallet ${index + 1} - Attempt ${attempt} with ${slippage}% slippage`);
 

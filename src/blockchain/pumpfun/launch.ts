@@ -461,10 +461,11 @@ export const executeTokenLaunch = async (
         maxRetries: number = 3
       ) => {
         let baseSlippage = 50; // Start with 50% slippage
+        const maxSlippage = 90; // Maximum slippage cap
         
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           try {
-            const currentSlippage = baseSlippage + (attempt * 50); // Increase by 50% each retry
+            const currentSlippage = Math.min(baseSlippage + (attempt * 20), maxSlippage); // Increase by 20% each retry, capped at 90%
             logger.info(`[${logIdentifier}]: Attempting buy for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
             
             // Calculate swap amount dynamically based on current wallet balance
