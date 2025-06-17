@@ -704,10 +704,10 @@ export const executeTokenLaunch = async (
         results.push(result);
         currentComputeUnitPrice -= computeUnitPriceDecrement;
         
-        // Add 220ms delay between transactions to avoid bundler detection
+        // Add 100ms delay between transactions to avoid bundler detection
         // Skip delay for the last transaction
         if (i < walletsToProcess.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 220));
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
       const success = results.filter((res) => res.success);
@@ -766,32 +766,34 @@ export const executeTokenLaunch = async (
         
         logger.info(`[${logIdentifier}]: Round ${roundNumber} - Processing ${walletsForNextRound.length} wallets with sufficient balance`);
         
-        // Execute buy transactions for this round in parallel (faster for additional rounds)
-        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Executing ${walletsForNextRound.length} transactions in parallel`);
+        // Execute buy transactions for this round sequentially with 100ms delay
+        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Executing ${walletsForNextRound.length} transactions sequentially with 100ms delay`);
         
         const roundComputeDecrement = Math.round(
           (maxComputeUnitPrice - baseComputeUnitPrice) / walletsForNextRound.length,
         );
         
-        // Execute all wallets in parallel for speed
-        const roundPromises = walletsForNextRound.map(async (keypair, index) => {
-          const walletComputeUnitPrice = maxComputeUnitPrice - (roundComputeDecrement * index);
+        // Execute all wallets sequentially with 100ms delay
+        const roundResults = [];
+        for (let i = 0; i < walletsForNextRound.length; i++) {
+          const keypair = walletsForNextRound[i];
+          const walletComputeUnitPrice = maxComputeUnitPrice - (roundComputeDecrement * i);
           
-          // Small staggered delay to avoid exact simultaneous submission
-          if (index > 0) {
-            await new Promise(resolve => setTimeout(resolve, index * 50)); // 50ms stagger
-          }
-          
-          return await executeBuyWithRetry(
+          const result = await executeBuyWithRetry(
             keypair,
             null,
             walletComputeUnitPrice,
             blockHash,
             2 // Fewer retries for additional rounds
           );
-        });
-        
-        const roundResults = await Promise.all(roundPromises);
+          
+          roundResults.push(result);
+          
+          // Add 100ms delay between transactions (skip delay for the last transaction)
+          if (i < walletsForNextRound.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
         
         const roundSuccess = roundResults.filter((res) => res.success);
         const roundFailed = roundResults.filter((res) => !res.success);
@@ -835,45 +837,41 @@ export const executeTokenLaunch = async (
     // ------- COLLECT TRANSACTION FEES FROM SUCCESSFUL BUYS -------
     logger.info(`[${logIdentifier}]: Collecting transaction fees from successful buys`);
     try {
-      // Get all successful snipe wallets (including previous attempts)
-      const allSuccessfulSnipeWallets = await getSuccessfulTransactions(
+      // Get all successful snipe transactions (not just wallets) for this launch attempt
+      const { TransactionRecordModel } = await import("../../backend/models");
+      const allSuccessfulTransactions = await TransactionRecordModel.find({
         tokenAddress,
-        "snipe_buy"
-      );
+        transactionType: "snipe_buy",
+        success: true,
+        launchAttempt: currentLaunchAttempt
+      }).sort({ createdAt: 1 }); // Sort by creation time to process in order
       
-      // Collect transaction fees from successful buy wallets
+      // Collect transaction fees from each successful transaction
       const feeCollectionPromises = [];
+      const processedWallets = new Set(); // Track wallets we've already processed fees for
       
-      for (const walletPublicKey of allSuccessfulSnipeWallets) {
+      for (const record of allSuccessfulTransactions) {
+        const walletPublicKey = record.walletPublicKey;
+        
         // Find the corresponding private key
         const walletIndex = buyKeypairs.findIndex(kp => kp.publicKey.toBase58() === walletPublicKey);
         if (walletIndex !== -1) {
           const walletPrivateKey = buyWallets[walletIndex];
-          const keypair = buyKeypairs[walletIndex];
+          const transactionAmount = record.amountSol || 0;
           
-          // Get the actual transaction amount from the database record instead of recalculating
-          try {
-            const { TransactionRecordModel } = await import("../../backend/models");
-            const record = await TransactionRecordModel.findOne({
-              tokenAddress,
-              walletPublicKey,
-              transactionType: "snipe_buy",
-              success: true,
-              launchAttempt: currentLaunchAttempt
-            }).sort({ createdAt: -1 });
-            
-            const transactionAmount = record?.amountSol || 0;
-            
-            if (transactionAmount > 0) {
-              feeCollectionPromises.push(
-                collectTransactionFee(walletPrivateKey, transactionAmount, "buy")
-              );
-            }
-          } catch (error: any) {
-            logger.warn(`[${logIdentifier}]: Could not get transaction amount for fee collection from ${walletPublicKey.slice(0, 8)}: ${error.message}`);
+          // Create a unique key for this specific transaction
+          const transactionKey = `${walletPublicKey}-${record.signature}`;
+          
+          if (transactionAmount > 0 && !processedWallets.has(transactionKey)) {
+            processedWallets.add(transactionKey);
+            feeCollectionPromises.push(
+              collectTransactionFee(walletPrivateKey, transactionAmount, "buy")
+            );
           }
         }
       }
+
+      logger.info(`[${logIdentifier}]: Prepared ${feeCollectionPromises.length} fee collection transactions from ${allSuccessfulTransactions.length} successful buy transactions`);
 
       if (feeCollectionPromises.length > 0) {
         const feeResults = await Promise.all(feeCollectionPromises);
@@ -891,10 +889,15 @@ export const executeTokenLaunch = async (
         });
 
         if (failedFees.length > 0) {
-          logger.warn(`[${logIdentifier}]: Some transaction fees failed to collect`, failedFees);
+          logger.warn(`[${logIdentifier}]: Some transaction fees failed to collect`, failedFees.map((result: any, index: number) => ({
+            index,
+            success: result.success,
+            error: result.error,
+            feeAmount: result.feeAmount
+          })));
         }
       } else {
-        logger.info(`[${logIdentifier}]: No transaction fees to collect (no successful buys with sufficient balance)`);
+        logger.info(`[${logIdentifier}]: No transaction fees to collect`);
       }
     } catch (error: any) {
       logger.error(`[${logIdentifier}]: Error collecting transaction fees:`, error);
