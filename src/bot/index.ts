@@ -42,7 +42,7 @@ import { PublicKey } from "@solana/web3.js";
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
 // Global error handler
-bot.catch((err: BotError<ConversationFlavor<Context>>) => {
+bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   const ctx = err.ctx;
   logger.error("Error in bot middleware:", {
     error: err.error,
@@ -52,18 +52,10 @@ bot.catch((err: BotError<ConversationFlavor<Context>>) => {
 
   // Handle Grammy.js conversation state errors
   if (err.stack && err.stack.includes("Bad replay, expected op")) {
-    logger.warn("Grammy.js conversation state error detected, clearing session:", err.stack);
+    logger.warn("Grammy.js conversation state error detected in global handler:", err.stack);
     
-    // Clear the conversation session to reset state
-    try {
-      const sessionCtx = ctx as any;
-      if (sessionCtx.session && sessionCtx.session.__conversation) {
-        delete sessionCtx.session.__conversation;
-        logger.info("Cleared conversation session for user:", ctx.chat?.id);
-      }
-    } catch (clearError) {
-      logger.warn("Failed to clear conversation session:", clearError);
-    }
+    // Clear the conversation state completely
+    const cleared = await clearConversationState(ctx);
     
     // Send user-friendly message
     if (ctx.chat) {
@@ -112,7 +104,33 @@ async function safeAnswerCallbackQuery(ctx: Context, text?: string): Promise<voi
 }
 
 // ----- Conversations -----
-bot.use(conversations());
+// Configure conversations with proper error handling
+bot.use(conversations({
+  // Use storage-free adapter for better error recovery
+  storage: undefined, // This will use the default in-memory storage
+}));
+
+// Middleware to handle conversation errors at the conversation level
+bot.use(async (ctx, next) => {
+  try {
+    await next();
+  } catch (error: any) {
+    // Handle conversation-specific errors
+    if (error.message && error.message.includes("Bad replay, expected op")) {
+      logger.warn("Conversation replay error caught in middleware:", error.message);
+      
+      // Clear conversation state completely
+      const cleared = await clearConversationState(ctx);
+      
+      await ctx.reply("❌ Conversation state error. Please restart your action from the main menu or tokens list.");
+      return;
+    }
+    
+    // Re-throw other errors to be handled by global error handler
+    throw error;
+  }
+});
+
 bot.use(createConversation(createTokenConversation));
 bot.use(createConversation(launchTokenConversation));
 bot.use(createConversation(devSellConversation));
@@ -540,18 +558,47 @@ bot.on("callback_query:data", async (ctx) => {
 
 bot.command("reset", async (ctx) => {
   try {
-    // Clear conversation session
-    const sessionCtx = ctx as any;
-    if (sessionCtx.session && sessionCtx.session.__conversation) {
-      delete sessionCtx.session.__conversation;
+    const cleared = await clearConversationState(ctx);
+    if (cleared) {
       await ctx.reply("✅ Conversation state cleared successfully. You can now start fresh conversations.");
-      logger.info("Manual conversation reset for user:", ctx.chat?.id);
     } else {
-      await ctx.reply("ℹ️ No active conversation state found to clear.");
+      await ctx.reply("⚠️ Failed to clear conversation state completely. Please try again or contact support.");
     }
   } catch (error: any) {
-    logger.error("Error clearing conversation state:", error);
+    logger.error("Error in reset command:", error);
     await ctx.reply("❌ Error clearing conversation state. Please try again.");
+  }
+});
+
+bot.command("forcefix", async (ctx) => {
+  try {
+    logger.info("Force fix requested by user:", ctx.chat?.id);
+    
+    // Clear conversation state
+    await clearConversationState(ctx);
+    
+    // Force a complete session reset by deleting the entire session
+    const sessionCtx = ctx as any;
+    if (sessionCtx.session) {
+      // Clear the entire session object
+      Object.keys(sessionCtx.session).forEach(key => {
+        delete sessionCtx.session[key];
+      });
+    }
+    
+    // Send a fresh start message
+    await ctx.reply(
+      "🔧 **Force Fix Applied**\n\n" +
+      "✅ All conversation state cleared\n" +
+      "✅ Session completely reset\n\n" +
+      "You can now use the bot normally. Try /start or /menu to begin.",
+      { parse_mode: "Markdown" }
+    );
+    
+    logger.info("Force fix completed for user:", ctx.chat?.id);
+  } catch (error: any) {
+    logger.error("Error in force fix command:", error);
+    await ctx.reply("❌ Force fix failed. Please contact support.");
   }
 });
 
@@ -637,3 +684,39 @@ bot.callbackQuery(new RegExp(`^${CallBackQueries.BUY_EXTERNAL_TOKEN}_`), async (
     await ctx.answerCallbackQuery({ text: "❌ Error occurred. Please try again." });
   }
 });
+
+// Helper function to completely clear conversation state
+async function clearConversationState(ctx: Context): Promise<boolean> {
+  try {
+    const sessionCtx = ctx as any;
+    
+    // Clear conversation session data
+    if (sessionCtx.session) {
+      if (sessionCtx.session.__conversation) {
+        delete sessionCtx.session.__conversation;
+      }
+      
+      // Clear any other conversation-related session data
+      Object.keys(sessionCtx.session).forEach(key => {
+        if (key.startsWith('__conversation') || key.includes('conversation')) {
+          delete sessionCtx.session[key];
+        }
+      });
+    }
+    
+    // If there's a conversation object, try to halt it
+    if (sessionCtx.conversation) {
+      try {
+        await sessionCtx.conversation.halt();
+      } catch (haltError) {
+        logger.warn("Failed to halt conversation:", haltError);
+      }
+    }
+    
+    logger.info("Successfully cleared conversation state for user:", ctx.chat?.id);
+    return true;
+  } catch (error) {
+    logger.error("Failed to clear conversation state:", error);
+    return false;
+  }
+}
