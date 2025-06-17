@@ -42,11 +42,17 @@ const externalTokenSellConversation = async (
     // Check token balances in buyer wallets
     let totalTokenBalance = 0;
     let walletsWithBalance = 0;
+    let errorCount = 0;
     const walletBalances: { publicKey: string, balance: number, value: number }[] = [];
+    
+    logger.info(`[ExternalTokenSell] Checking balances for token ${tokenAddress} across ${buyerWallets.length} wallets`);
     
     for (const wallet of buyerWallets) {
       try {
+        logger.info(`[ExternalTokenSell] Checking balance for wallet ${wallet.publicKey}`);
         const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        logger.info(`[ExternalTokenSell] Balance for wallet ${wallet.publicKey}: ${balance}`);
+        
         if (balance > 0) {
           const value = balance * (tokenInfo.priceUsd || 0);
           walletBalances.push({
@@ -56,10 +62,20 @@ const externalTokenSellConversation = async (
           });
           totalTokenBalance += balance;
           walletsWithBalance++;
+          logger.info(`[ExternalTokenSell] Wallet ${wallet.publicKey} has ${balance} tokens (value: $${value.toFixed(2)})`);
+        } else {
+          logger.info(`[ExternalTokenSell] Wallet ${wallet.publicKey} has 0 tokens`);
         }
       } catch (error) {
-        logger.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
+        errorCount++;
+        logger.error(`[ExternalTokenSell] Error checking balance for wallet ${wallet.publicKey}:`, error);
       }
+    }
+    
+    logger.info(`[ExternalTokenSell] Balance check complete: ${walletsWithBalance} wallets with tokens, ${errorCount} errors`);
+    
+    if (errorCount > 0) {
+      await ctx.reply(`⚠️ Warning: ${errorCount} wallet(s) could not be checked due to connection issues. Proceeding with available data...`);
     }
 
     if (walletsWithBalance === 0) {

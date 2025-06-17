@@ -531,7 +531,8 @@ bot.on("message:text", async (ctx) => {
         let tokenName = "Unknown Token";
         let tokenSymbol = "UNK";
         let isUserToken = false;
-        let holdingsText = "📌 No tokens found in your buyer wallets";
+        let holdingsText = "📌 Checking token holdings...";
+        
         if (user) {
           const userToken = await getUserTokenWithBuyWallets(user.id, text);
           if (userToken) {
@@ -539,12 +540,38 @@ bot.on("message:text", async (ctx) => {
             tokenName = userToken.name;
             tokenSymbol = userToken.symbol;
             isUserToken = true;
-            // TODO: Fetch actual holdings data if available
-            holdingsText = "📌 No tokens found in your 5 buyer wallets"; // Placeholder until holdings check is implemented
-          } else {
-            // External token, could still check holdings
-            // TODO: Fetch holdings for external tokens if possible
-            holdingsText = "📌 No tokens found in your 5 buyer wallets"; // Placeholder
+          }
+          
+          // Check actual holdings in buyer wallets
+          try {
+            const buyerWallets = await getAllBuyerWallets(user.id);
+            if (buyerWallets.length > 0) {
+              let totalTokenBalance = 0;
+              let walletsWithBalance = 0;
+              
+              for (const wallet of buyerWallets) {
+                try {
+                  const balance = await getTokenBalance(text, wallet.publicKey);
+                  if (balance > 0) {
+                    totalTokenBalance += balance;
+                    walletsWithBalance++;
+                  }
+                } catch (error) {
+                  logger.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
+                }
+              }
+              
+              if (walletsWithBalance > 0) {
+                holdingsText = `📌 ${totalTokenBalance.toLocaleString()} tokens found in ${walletsWithBalance}/${buyerWallets.length} buyer wallets`;
+              } else {
+                holdingsText = `📌 No tokens found in your ${buyerWallets.length} buyer wallets`;
+              }
+            } else {
+              holdingsText = "📌 No buyer wallets configured";
+            }
+          } catch (error) {
+            logger.error("Error checking token holdings:", error);
+            holdingsText = "📌 Error checking token holdings";
           }
         }
         // TODO: Fetch actual market data; this is placeholder data

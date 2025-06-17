@@ -132,13 +132,34 @@ export async function editMessage(
 }
 
 export async function getTokenBalance(tokenAddress: string, walletAddress: string): Promise<number> {
-  const mint = new PublicKey(tokenAddress);
-  const owner = new PublicKey(walletAddress);
-  const resp = await connection.getParsedTokenAccountsByOwner(owner, { mint });
-  return resp.value.reduce((sum, { account }) => {
-    const amt = account.data.parsed.info.tokenAmount.uiAmount || 0;
-    return sum + amt;
-  }, 0);
+  try {
+    const mint = new PublicKey(tokenAddress);
+    const owner = new PublicKey(walletAddress);
+    
+    console.log(`[getTokenBalance] Checking balance for token ${tokenAddress} in wallet ${walletAddress}`);
+    
+    const resp = await connection.getParsedTokenAccountsByOwner(owner, { mint });
+    
+    console.log(`[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress}`);
+    
+    if (resp.value.length === 0) {
+      console.log(`[getTokenBalance] No token accounts found for token ${tokenAddress} in wallet ${walletAddress}`);
+      return 0;
+    }
+    
+    const totalBalance = resp.value.reduce((sum, { account }) => {
+      const amt = account.data.parsed.info.tokenAmount.uiAmount || 0;
+      console.log(`[getTokenBalance] Account balance: ${amt} tokens`);
+      return sum + amt;
+    }, 0);
+    
+    console.log(`[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens`);
+    return totalBalance;
+    
+  } catch (error) {
+    console.error(`[getTokenBalance] Error checking balance for token ${tokenAddress} in wallet ${walletAddress}:`, error);
+    throw error; // Re-throw the error instead of silently returning 0
+  }
 }
 
 export async function getSolBalance(walletAddress: string): Promise<number> {
