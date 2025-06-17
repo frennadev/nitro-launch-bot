@@ -43,24 +43,7 @@ async function sendMessage(ctx: Context, text: string, options: any = {}) {
   await ctx.reply(text, options);
 }
 
-/**
- * Safe wrapper for conversation.waitFor that handles Grammy.js state errors
- */
-async function safeWaitFor(conversation: Conversation, ctx: Context, filters: any) {
-  try {
-    return await conversation.waitFor(filters);
-  } catch (error: any) {
-    // Handle Grammy.js conversation state errors
-    if (error.message && error.message.includes("Bad replay, expected op")) {
-      console.warn("Conversation state error detected, halting conversation:", error.message);
-      await ctx.reply("❌ Conversation state error. Please start over by selecting the token from your tokens list.");
-      await conversation.halt();
-      throw new Error("CONVERSATION_STATE_ERROR");
-    }
-    // Re-throw other errors
-    throw error;
-  }
-}
+
 
 async function waitForInputOrCancel(
   conversation: Conversation,
@@ -83,7 +66,8 @@ async function waitForInputOrCancel(
 }
 
 const launchTokenConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
-  // --------- VALIDATE USER ---------
+  try {
+    // --------- VALIDATE USER ---------
     const user = await getUser(ctx.chat!.id.toString());
     if (!user) {
       await sendMessage(ctx, "Unrecognized user ❌");
@@ -578,6 +562,21 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: launchKeyboard }
     
     // Start the loading state for the actual launch process
     await startLoadingState(ctx, "token_launch", tokenAddress);
+  }
+  } catch (error: any) {
+    // Handle Grammy.js conversation state errors
+    if (error.message && error.message.includes("Bad replay, expected op")) {
+      console.warn("Grammy.js conversation state error:", error.message);
+      await ctx.reply("❌ Conversation state error detected. Please start over by selecting the token from your tokens list.");
+      await conversation.halt();
+      return;
+    }
+    
+    // Handle other conversation errors
+    console.error("Conversation error:", error);
+    await ctx.reply("❌ An error occurred during the conversation. Please try again.");
+    await conversation.halt();
+    throw error;
   }
 };
 
