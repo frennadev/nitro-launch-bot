@@ -455,7 +455,7 @@ export const executeTokenLaunch = async (
       // Enhanced buy transaction with retry logic and higher slippage
       const executeBuyWithRetry = async (
         keypair: any,
-        swapAmount: bigint,
+        swapAmount: bigint | null,
         currentComputeUnitPrice: number,
         blockHash: any,
         maxRetries: number = 3
@@ -466,6 +466,32 @@ export const executeTokenLaunch = async (
           try {
             const currentSlippage = baseSlippage + (attempt * 50); // Increase by 50% each retry
             logger.info(`[${logIdentifier}]: Attempting buy for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
+            
+            // Calculate swap amount dynamically based on current wallet balance
+            const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
+            
+            // Account for ALL fees: Maestro fee (0.001) + Transaction fee (1% of spend) + Buffer (0.002)
+            const maestroFee = 0.001;
+            const buffer = 0.002; // Increased buffer to account for network fees from failed attempts
+            const transactionFeePercentage = 0.01; // 1% transaction fee
+            
+            // Calculate usable amount accounting for transaction fee
+            const availableForSpend = walletSolBalance - maestroFee - buffer;
+            
+            // Check if wallet has enough balance
+            if (availableForSpend <= 0) {
+              throw new Error(`Insufficient balance: ${walletSolBalance} SOL, need at least ${maestroFee + buffer} SOL for fees`);
+            }
+            
+            const swapAmountSOL = availableForSpend / (1 + transactionFeePercentage);
+            const dynamicSwapAmount = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
+            
+            // Ensure swap amount is positive
+            if (dynamicSwapAmount <= 0) {
+              throw new Error(`Calculated swap amount is non-positive: ${swapAmountSOL} SOL`);
+            }
+            
+            logger.info(`[${logIdentifier}]: Dynamic buy calculation for ${keypair.publicKey.toBase58().slice(0, 8)} - Balance: ${walletSolBalance} SOL, Swap: ${swapAmountSOL.toFixed(6)} SOL (${(swapAmountSOL / walletSolBalance * 100).toFixed(1)}%)`);
             
             const ata = getAssociatedTokenAddressSync(
               mintKeypair.publicKey,
@@ -479,7 +505,7 @@ export const executeTokenLaunch = async (
             );
             
             const { tokenOut } = quoteBuy(
-              swapAmount,
+              dynamicSwapAmount,
               virtualTokenReserve,
               virtualSolReserve,
               realTokenReserve,
@@ -493,7 +519,7 @@ export const executeTokenLaunch = async (
               devKeypair.publicKey,
               keypair.publicKey,
               tokenOutWithSlippage,
-              swapAmount,
+              dynamicSwapAmount,
               BigInt(1000000), // 0.001 SOL Maestro fee
             );
             
@@ -534,7 +560,7 @@ export const executeTokenLaunch = async (
               currentLaunchAttempt,
               {
                 slippageUsed: currentSlippage,
-                amountSol: Number(swapAmount) / LAMPORTS_PER_SOL, // Fallback estimated amount
+                amountSol: Number(dynamicSwapAmount) / LAMPORTS_PER_SOL, // Fallback estimated amount
                 amountTokens: tokenOut.toString(), // Fallback estimated amount
                 errorMessage: result.success ? undefined : `Buy failed on attempt ${attempt + 1}`,
                 retryAttempt: attempt,
@@ -567,7 +593,7 @@ export const executeTokenLaunch = async (
               currentLaunchAttempt,
               {
                 slippageUsed: baseSlippage + (attempt * 50),
-                amountSol: Number(swapAmount) / LAMPORTS_PER_SOL,
+                amountSol: swapAmount ? Number(swapAmount) / LAMPORTS_PER_SOL : 0, // Handle case where swapAmount might not be calculated yet
                 errorMessage: error.message,
                 retryAttempt: attempt,
               }
@@ -587,38 +613,11 @@ export const executeTokenLaunch = async (
       const results = [];
       for (let i = 0; i < walletsToProcess.length; i++) {
         const keypair = walletsToProcess[i];
-        const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
-
-        console.log("SOL balance", {walletSolBalance, keypair: keypair.publicKey.toBase58()});
-        // Account for ALL fees: Maestro fee (0.001) + Transaction fee (1% of spend) + Buffer (0.001)
-        const maestroFee = 0.001;
-        const buffer = 0.001;
-        const transactionFeePercentage = 0.01; // 1% transaction fee
         
-        // Calculate usable amount accounting for transaction fee
-        // If X is the amount we spend on tokens, then total deducted = X + maestroFee + (X * 0.01) + buffer
-        // So: walletBalance = X + maestroFee + (X * 0.01) + buffer
-        // Solving for X: X = (walletBalance - maestroFee - buffer) / (1 + 0.01)
-        const availableForSpend = walletSolBalance - maestroFee - buffer;
-        const swapAmountSOL = availableForSpend / (1 + transactionFeePercentage);
-        const swapAmount = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
-        
-        console.log("Buy calculation", {
-          wallet: keypair.publicKey.toBase58(),
-          totalBalance: walletSolBalance,
-          maestroFee: maestroFee,
-          buffer: buffer,
-          transactionFeePercentage: transactionFeePercentage,
-          availableForSpend: availableForSpend,
-          swapAmountSOL: swapAmountSOL,
-          swapAmountLamports: Number(swapAmount),
-          percentageUsed: (swapAmountSOL / walletSolBalance * 100).toFixed(1) + "%"
-        });
-        
-        // Execute buy transaction
+        // Execute buy transaction with dynamic balance calculation inside retry logic
         const result = await executeBuyWithRetry(
           keypair,
-          swapAmount,
+          null, // Pass null to calculate inside retry function
           currentComputeUnitPrice,
           blockHash,
           3 // Max 3 retries
@@ -670,18 +669,27 @@ export const executeTokenLaunch = async (
         if (walletIndex !== -1) {
           const walletPrivateKey = buyWallets[walletIndex];
           const keypair = buyKeypairs[walletIndex];
-          const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
-          // Recalculate the actual swap amount used for this wallet
-          const maestroFee = 0.001;
-          const buffer = 0.001;
-          const transactionFeePercentage = 0.01;
-          const availableForSpend = walletSolBalance - maestroFee - buffer;
-          const transactionAmount = Math.max(0, availableForSpend / (1 + transactionFeePercentage));
           
-          if (transactionAmount > 0) {
-            feeCollectionPromises.push(
-              collectTransactionFee(walletPrivateKey, transactionAmount, "buy")
-            );
+          // Get the actual transaction amount from the database record instead of recalculating
+          try {
+            const { TransactionRecordModel } = await import("../../backend/models");
+            const record = await TransactionRecordModel.findOne({
+              tokenAddress,
+              walletPublicKey,
+              transactionType: "snipe_buy",
+              success: true,
+              launchAttempt: currentLaunchAttempt
+            }).sort({ createdAt: -1 });
+            
+            const transactionAmount = record?.amountSol || 0;
+            
+            if (transactionAmount > 0) {
+              feeCollectionPromises.push(
+                collectTransactionFee(walletPrivateKey, transactionAmount, "buy")
+              );
+            }
+          } catch (error: any) {
+            logger.warn(`[${logIdentifier}]: Could not get transaction amount for fee collection from ${walletPublicKey.slice(0, 8)}: ${error.message}`);
           }
         }
       }
