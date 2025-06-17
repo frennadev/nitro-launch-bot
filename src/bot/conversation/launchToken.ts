@@ -268,6 +268,11 @@ Would you like to enter new values or use previous ones?`, {
 
   // Check funding wallet balance
   if (fundingBalance < requiredFundingAmount) {
+    const launchKb = new InlineKeyboard().text(
+      "🚀 Launch Token",
+      `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`
+    );
+
     await sendMessage(ctx, `❌ <b>Insufficient funding wallet balance!</b>
 
 💰 <b>Required Amount:</b>
@@ -280,23 +285,10 @@ Would you like to enter new values or use previous ones?`, {
 <b>Please fund your wallet:</b>
 <code>${fundingWallet.publicKey}</code>
 
-<i>💡 Tap the address above to copy it, then send the required SOL and try again.</i>`, { parse_mode: "HTML", reply_markup: retryKeyboard });
+<i>💡 Tap the address above to copy it, then send the required SOL.</i>`, { parse_mode: "HTML", reply_markup: launchKb });
 
-    // Wait for retry or cancel
-    const response = await conversation.waitFor("callback_query:data");
-    await response.answerCallbackQuery();
-    
-    if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
-      // Exit conversation and let user manually retry from tokens list
-      await sendMessage(response, "🔄 Please check your wallet balance and try launching again from your tokens list.");
-      await conversation.halt();
-      return;
-    } else {
-      await sendMessage(response, "Process cancelled.");
-      await clearRetryData(user.id, "launch_token");
-      await conversation.halt();
-      return;
-    }
+    await conversation.halt();
+    return;
   }
 
   // ------- CHECKS BEFORE LAUNCH ------
