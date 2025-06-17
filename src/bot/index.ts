@@ -636,6 +636,57 @@ bot.command("fixlaunch", async (ctx) => {
   }
 });
 
+bot.command("directlaunch", async (ctx) => {
+  try {
+    const args = ctx.message?.text?.split(' ');
+    if (args && args.length > 1) {
+      // Direct launch with token address
+      const tokenAddress = args[1];
+      logger.info("Direct launch command used for token:", tokenAddress);
+      
+      // Clear any existing conversation state
+      await clearConversationState(ctx);
+      
+      // Wait a moment
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Try to launch directly
+      await ctx.conversation.enter("launchTokenConversation", tokenAddress, { overwrite: true });
+      
+    } else {
+      await ctx.reply(
+        "🚀 **Direct Launch**\n\n" +
+        "Usage: `/directlaunch <token_address>`\n\n" +
+        "Example: `/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
+        "This bypasses conversation state issues and launches directly.",
+        { parse_mode: "Markdown" }
+      );
+    }
+  } catch (error: any) {
+    logger.error("Direct launch failed:", error);
+    await ctx.reply("❌ Direct launch failed. Please try /fixlaunch first, then use /menu to access your tokens normally.");
+  }
+});
+
+bot.command("help", async (ctx) => {
+  await ctx.reply(
+    "🆘 **Help - Can't Launch Token?**\n\n" +
+    "**If you're having trouble launching tokens, try these in order:**\n\n" +
+    "1️⃣ `/fixlaunch` - Fix launch-specific issues\n" +
+    "2️⃣ `/reset` - Clear conversation state\n" +
+    "3️⃣ `/forcefix` - Complete session reset\n" +
+    "4️⃣ `/directlaunch <token_address>` - Bypass state issues\n\n" +
+    "**For your specific token:**\n" +
+    "`/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
+    "**Then try normal flow:**\n" +
+    "• `/menu` - Access main menu\n" +
+    "• \"View Tokens\" - See your tokens\n" +
+    "• Tap launch button for your token\n\n" +
+    "💡 **Tip:** Always use `/fixlaunch` first if you're having issues!",
+    { parse_mode: "Markdown" }
+  );
+});
+
 export default bot;
 
 // Function to handle token contract address messages
