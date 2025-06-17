@@ -16,9 +16,6 @@ import {
   calculateTotalLaunchCost,
   getDefaultDevWallet,
   getDevWallet,
-  calculateRequiredWallets,
-  generateNewBuyerWallet,
-  addBuyerWallet,
 } from "../../backend/functions";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
@@ -34,16 +31,14 @@ enum LaunchCallBackQueries {
 }
 
 const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", LaunchCallBackQueries.CANCEL);
-const launchKeyboard = new InlineKeyboard()
-  .text("🚀 Launch Token", LaunchCallBackQueries.CONFIRM_LAUNCH)
+const retryKeyboard = new InlineKeyboard()
+  .text("🔄 Try Again", LaunchCallBackQueries.RETRY)
   .row()
   .text("❌ Cancel", LaunchCallBackQueries.CANCEL);
 
 async function sendMessage(ctx: Context, text: string, options: any = {}) {
   await ctx.reply(text, options);
 }
-
-
 
 async function waitForInputOrCancel(
   conversation: Conversation,
@@ -66,14 +61,13 @@ async function waitForInputOrCancel(
 }
 
 const launchTokenConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
-  try {
-    // --------- VALIDATE USER ---------
-    const user = await getUser(ctx.chat!.id.toString());
-    if (!user) {
-      await sendMessage(ctx, "Unrecognized user ❌");
-      await conversation.halt();
-      return;
-    }
+  // --------- VALIDATE USER ---------
+  const user = await getUser(ctx.chat!.id!.toString());
+  if (!user) {
+    await sendMessage(ctx, "Unrecognized user ❌");
+    await conversation.halt();
+    return;
+  }
 
   // Check if this is a retry attempt
   const existingRetryData = await getRetryData(user.id, "launch_token");
@@ -121,35 +115,16 @@ Would you like to enter new values or use previous ones?`, {
         .text("❌ Cancel", LaunchCallBackQueries.CANCEL)
     });
 
-    const retryChoice = await conversation.waitFor(["callback_query:data", "message:text"]);
+    const retryChoice = await conversation.waitFor("callback_query:data");
+    await retryChoice.answerCallbackQuery();
     
-    let retryChoiceData: string | undefined;
-    
-    if (retryChoice.callbackQuery?.data) {
-      await retryChoice.answerCallbackQuery();
-      retryChoiceData = retryChoice.callbackQuery.data;
-    } else if (retryChoice.message?.text) {
-      // User sent text instead of using buttons - guide them to use buttons
-      await sendMessage(ctx, "⚠️ Please use the buttons above to choose your retry option.", {
-        reply_markup: new InlineKeyboard()
-          .text("🆕 Enter New Values", "NEW_VALUES")
-          .text("🔄 Use Previous Values", "USE_PREVIOUS")
-          .row()
-          .text("❌ Cancel", LaunchCallBackQueries.CANCEL)
-      });
-      
-      const buttonResponse = await conversation.waitFor("callback_query:data");
-      await buttonResponse.answerCallbackQuery();
-      retryChoiceData = buttonResponse.callbackQuery?.data;
-    }
-    
-    if (retryChoiceData === LaunchCallBackQueries.CANCEL) {
+    if (retryChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
       await sendMessage(ctx, "Launch cancelled.");
       await conversation.halt();
       return;
     }
     
-    if (retryChoiceData === "USE_PREVIOUS") {
+    if (retryChoice.callbackQuery?.data === "USE_PREVIOUS") {
       // Use the automatic retry with stored values
       const result = await enqueueTokenLaunchRetry(user.id, Number(user.telegramId), token.tokenAddress);
       if (!result.success) {
@@ -254,131 +229,6 @@ Would you like to enter new values or use previous ones?`, {
       }
     }
 
-    // -------- VALIDATE WALLET COUNT --------
-    const requiredWallets = calculateRequiredWallets(buyAmount);
-    const currentWallets = buyerWallets.length;
-    
-    if (currentWallets < requiredWallets) {
-      const walletsNeeded = requiredWallets - currentWallets;
-      
-      await sendMessage(ctx, `⚠️ <b>Insufficient Buyer Wallets</b>
-
-You need <b>${walletsNeeded} more wallets</b> to ensure one wallet doesn't hold too much supply.
-
-<b>Current wallets:</b> ${currentWallets}
-<b>Required wallets:</b> ${requiredWallets}
-
-Please generate or import ${walletsNeeded} wallets:`, {
-        parse_mode: "HTML",
-        reply_markup: new InlineKeyboard()
-          .text(`🤖 Auto-generate ${walletsNeeded} wallets`, "AUTO_GENERATE")
-          .row()
-          .text(`📥 Import ${walletsNeeded} wallets manually`, "MANUAL_IMPORT")
-          .row()
-          .text("❌ Cancel", LaunchCallBackQueries.CANCEL)
-      });
-
-      let walletChoiceData: string | undefined;
-      
-      const walletChoice = await conversation.waitFor(["callback_query:data", "message:text"]);
-      
-      if (walletChoice.callbackQuery?.data) {
-        await walletChoice.answerCallbackQuery();
-        walletChoiceData = walletChoice.callbackQuery.data;
-        
-        if (walletChoiceData === LaunchCallBackQueries.CANCEL) {
-          await sendMessage(ctx, "Launch cancelled.");
-          return conversation.halt();
-        }
-      } else if (walletChoice.message?.text) {
-        // User sent text instead of using buttons - guide them to use buttons
-        await sendMessage(ctx, "⚠️ Please use the buttons above to choose how to add wallets.", {
-          reply_markup: new InlineKeyboard()
-            .text(`🤖 Auto-generate ${walletsNeeded} wallets`, "AUTO_GENERATE")
-            .row()
-            .text(`📥 Import ${walletsNeeded} wallets manually`, "MANUAL_IMPORT")
-            .row()
-            .text("❌ Cancel", LaunchCallBackQueries.CANCEL)
-        });
-        
-        // Wait again for proper button response
-        const buttonResponse = await conversation.waitFor("callback_query:data");
-        await buttonResponse.answerCallbackQuery();
-        walletChoiceData = buttonResponse.callbackQuery?.data;
-        
-        if (walletChoiceData === LaunchCallBackQueries.CANCEL) {
-          await sendMessage(ctx, "Launch cancelled.");
-          return conversation.halt();
-        }
-      }
-      
-      if (walletChoiceData === "AUTO_GENERATE") {
-        // Auto-generate the required wallets
-        await sendMessage(ctx, `🤖 Generating ${walletsNeeded} new buyer wallets...`);
-        
-        try {
-          for (let i = 0; i < walletsNeeded; i++) {
-            await generateNewBuyerWallet(user.id);
-          }
-          
-          await sendMessage(ctx, `✅ Successfully generated ${walletsNeeded} new buyer wallets!`);
-        } catch (error: any) {
-          await sendMessage(ctx, `❌ Error generating wallets: ${error.message}. Please try again.`);
-          return conversation.halt();
-        }
-      } else if (walletChoiceData === "MANUAL_IMPORT") {
-        // Manual import process
-        await sendMessage(ctx, `📥 <b>Import ${walletsNeeded} Buyer Wallets</b>
-
-Please send your private keys one by one (${walletsNeeded} wallets needed).
-
-<b>Wallet 1 of ${walletsNeeded}:</b>
-Send the private key for the first wallet:`, { 
-          parse_mode: "HTML", 
-          reply_markup: cancelKeyboard 
-        });
-        
-        for (let i = 0; i < walletsNeeded; i++) {
-          const walletInput = await conversation.waitFor(["message:text", "callback_query:data"]);
-          
-          if (walletInput.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
-            await walletInput.answerCallbackQuery();
-            await sendMessage(ctx, "Launch cancelled.");
-            return conversation.halt();
-          }
-          
-          if (walletInput.message?.text) {
-            const privateKey = walletInput.message.text.trim();
-            
-            try {
-              await addBuyerWallet(user.id, privateKey);
-              
-              if (i < walletsNeeded - 1) {
-                await sendMessage(ctx, `✅ Wallet ${i + 1} imported successfully!
-
-<b>Wallet ${i + 2} of ${walletsNeeded}:</b>
-Send the private key for the next wallet:`, { 
-                  parse_mode: "HTML", 
-                  reply_markup: cancelKeyboard 
-                });
-              } else {
-                await sendMessage(ctx, `✅ All ${walletsNeeded} wallets imported successfully!`);
-              }
-            } catch (error: any) {
-              await sendMessage(ctx, `❌ Error importing wallet ${i + 1}: ${error.message}
-
-Please send a valid private key:`, { reply_markup: cancelKeyboard });
-              i--; // Retry the same wallet
-            }
-          }
-        }
-      }
-      
-      // Refresh buyer wallets list after adding new ones
-      const updatedBuyerWallets = await getAllBuyerWallets(user.id);
-      await sendMessage(ctx, `✅ Wallet validation complete! Now using ${updatedBuyerWallets.length} buyer wallets.`);
-    }
-
     // -------- GET DEV BUY AMOUNT --------
     await sendMessage(ctx, `💎 Enter SOL amount for dev to buy (0 to skip, recommended: 10-20% of buy amount = ${(buyAmount * 0.15).toFixed(3)} SOL):`, { reply_markup: cancelKeyboard });
 
@@ -416,54 +266,33 @@ Please send a valid private key:`, { reply_markup: cancelKeyboard });
   const costBreakdown = calculateTotalLaunchCost(buyAmount, devBuy, buyerWallets.length, false); // Don't show platform fee to user
   const requiredFundingAmount = costBreakdown.totalCost; // User sees total without knowing about hidden fees
 
-  // Show token creation success message with launch option
-  await sendMessage(ctx, `🎉 <b>Token created successfully!</b>
+  // Check funding wallet balance
+  if (fundingBalance < requiredFundingAmount) {
+    await sendMessage(ctx, `❌ <b>Insufficient funding wallet balance!</b>
 
-<b>Name:</b> ${token.name}
-<b>Symbol:</b> ${token.symbol}
-<b>Description:</b> ${token.description}
-
-💰 <b>Launch Configuration:</b>
+💰 <b>Required Amount:</b>
 • Buy Amount: ${costBreakdown.breakdown.buyAmount} SOL
 • Dev Buy: ${costBreakdown.breakdown.devBuy} SOL
 
 <b>Funding Wallet Required:</b> ${requiredFundingAmount.toFixed(4)} SOL
 <b>Funding Wallet Available:</b> ${fundingBalance.toFixed(4)} SOL
 
-${fundingBalance < requiredFundingAmount ? 
-  `⚠️ <b>Please fund your wallet:</b>\n<code>${fundingWallet.publicKey}</code>\n\n<i>💡 Tap the address above to copy it</i>` : 
-  '✅ <b>Sufficient balance available</b>'
-}`, { parse_mode: "HTML", reply_markup: launchKeyboard });
+<b>Please fund your wallet:</b>
+<code>${fundingWallet.publicKey}</code>
 
-  // Wait for launch or cancel
-  const response = await conversation.waitFor(["callback_query:data", "message:text"]);
-  
-  if (response.callbackQuery?.data) {
+<i>💡 Tap the address above to copy it, then send the required SOL and try again.</i>`, { parse_mode: "HTML", reply_markup: retryKeyboard });
+
+    // Wait for retry or cancel
+    const response = await conversation.waitFor("callback_query:data");
     await response.answerCallbackQuery();
     
-    if (response.callbackQuery.data === LaunchCallBackQueries.CONFIRM_LAUNCH) {
-      // Proceed with launch regardless of balance - let the system handle insufficient balance
-      await sendMessage(response, "🚀 Proceeding with token launch...");
-    } else {
-      await sendMessage(response, "Launch cancelled.");
-      await clearRetryData(user.id, "launch_token");
+    if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
+      // Exit conversation and let user manually retry from tokens list
+      await sendMessage(response, "🔄 Please check your wallet balance and try launching again from your tokens list.");
       await conversation.halt();
       return;
-    }
-  } else if (response.message?.text) {
-    // User sent text instead of using buttons - guide them to use buttons
-    await sendMessage(ctx, "⚠️ Please use the buttons below to launch or cancel.", { 
-      reply_markup: launchKeyboard 
-    });
-    
-    // Wait again for proper button response
-    const buttonResponse = await conversation.waitFor("callback_query:data");
-    await buttonResponse.answerCallbackQuery();
-    
-    if (buttonResponse.callbackQuery?.data === LaunchCallBackQueries.CONFIRM_LAUNCH) {
-      await sendMessage(buttonResponse, "🚀 Proceeding with token launch...");
     } else {
-      await sendMessage(buttonResponse, "Launch cancelled.");
+      await sendMessage(response, "Process cancelled.");
       await clearRetryData(user.id, "launch_token");
       await conversation.halt();
       return;
@@ -501,42 +330,23 @@ ${fundingBalance < requiredFundingAmount ?
 
 Please resolve the issues below and retry:
 
-${checkResult.message}`, { parse_mode: "HTML", reply_markup: launchKeyboard }
+${checkResult.message}`, { parse_mode: "HTML", reply_markup: retryKeyboard }
     );
 
-    // Wait for retry or cancel (allow both button press and text input)
-    const response = await conversation.waitFor(["callback_query:data", "message:text"]);
+    // Wait for retry or cancel
+    const response = await conversation.waitFor("callback_query:data");
+    await response.answerCallbackQuery();
     
-    if (response.callbackQuery?.data) {
-      await response.answerCallbackQuery();
-      
-      if (response.callbackQuery.data === LaunchCallBackQueries.CONFIRM_LAUNCH) {
-        // Proceed with launch despite pre-launch check failures
-        await sendMessage(response, "🚀 Proceeding with token launch despite warnings...");
-      } else {
-        await sendMessage(response, "Launch cancelled.");
-        await clearRetryData(user.id, "launch_token");
-        await conversation.halt();
-        return;
-      }
-    } else if (response.message?.text) {
-      // User sent text instead of using buttons - guide them to use buttons
-      await sendMessage(ctx, "⚠️ Please use the buttons below to launch or cancel.", { 
-        reply_markup: launchKeyboard 
-      });
-      
-      // Wait again for proper button response
-      const buttonResponse = await conversation.waitFor("callback_query:data");
-      await buttonResponse.answerCallbackQuery();
-      
-      if (buttonResponse.callbackQuery?.data === LaunchCallBackQueries.CONFIRM_LAUNCH) {
-        await sendMessage(buttonResponse, "🚀 Proceeding with token launch despite warnings...");
-      } else {
-        await sendMessage(buttonResponse, "Launch cancelled.");
-        await clearRetryData(user.id, "launch_token");
-        await conversation.halt();
-        return;
-      }
+    if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
+      // Exit conversation and let user manually retry from tokens list
+      await sendMessage(response, "🔄 Please resolve the issues and try launching again from your tokens list.");
+      await conversation.halt();
+      return;
+    } else {
+      await sendMessage(response, "Process cancelled.");
+      await clearRetryData(user.id, "launch_token");
+      await conversation.halt();
+      return;
     }
   }
 
@@ -562,21 +372,6 @@ ${checkResult.message}`, { parse_mode: "HTML", reply_markup: launchKeyboard }
     
     // Start the loading state for the actual launch process
     await startLoadingState(ctx, "token_launch", tokenAddress);
-  }
-  } catch (error: any) {
-    // Handle Grammy.js conversation state errors
-    if (error.message && error.message.includes("Bad replay, expected op")) {
-      console.warn("Grammy.js conversation state error:", error.message);
-      await ctx.reply("❌ Conversation state error detected. Please start over by selecting the token from your tokens list.");
-      await conversation.halt();
-      return;
-    }
-    
-    // Handle other conversation errors
-    console.error("Conversation error:", error);
-    await ctx.reply("❌ An error occurred during the conversation. Please try again.");
-    await conversation.halt();
-    throw error;
   }
 };
 
