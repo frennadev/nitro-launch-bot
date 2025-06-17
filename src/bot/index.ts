@@ -50,6 +50,30 @@ bot.catch((err: BotError<ConversationFlavor<Context>>) => {
     stack: err.stack,
   });
 
+  // Handle Grammy.js conversation state errors
+  if (err.stack && err.stack.includes("Bad replay, expected op")) {
+    logger.warn("Grammy.js conversation state error detected, clearing session:", err.stack);
+    
+    // Clear the conversation session to reset state
+    try {
+      const sessionCtx = ctx as any;
+      if (sessionCtx.session && sessionCtx.session.__conversation) {
+        delete sessionCtx.session.__conversation;
+        logger.info("Cleared conversation session for user:", ctx.chat?.id);
+      }
+    } catch (clearError) {
+      logger.warn("Failed to clear conversation session:", clearError);
+    }
+    
+    // Send user-friendly message
+    if (ctx.chat) {
+      ctx
+        .reply("❌ Conversation state error detected. Your session has been reset. Please start over by selecting the token from your tokens list.")
+        .catch(() => logger.error("Failed to send conversation reset message"));
+    }
+    return;
+  }
+
   // Don't crash the bot for callback query timeout errors
   if (
     err.error instanceof GrammyError &&
@@ -511,6 +535,23 @@ bot.on("callback_query:data", async (ctx) => {
   if (action && token && address) {
     logger.info(`${action} called`);
     // You can add further handling logic here if needed
+  }
+});
+
+bot.command("reset", async (ctx) => {
+  try {
+    // Clear conversation session
+    const sessionCtx = ctx as any;
+    if (sessionCtx.session && sessionCtx.session.__conversation) {
+      delete sessionCtx.session.__conversation;
+      await ctx.reply("✅ Conversation state cleared successfully. You can now start fresh conversations.");
+      logger.info("Manual conversation reset for user:", ctx.chat?.id);
+    } else {
+      await ctx.reply("ℹ️ No active conversation state found to clear.");
+    }
+  } catch (error: any) {
+    logger.error("Error clearing conversation state:", error);
+    await ctx.reply("❌ Error clearing conversation state. Please try again.");
   }
 });
 
