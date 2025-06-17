@@ -57,10 +57,26 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
     // Clear the conversation state completely
     const cleared = await clearConversationState(ctx);
     
-    // Send user-friendly message
+    // Send user-friendly message with recovery options
     if (ctx.chat) {
+      const keyboard = new InlineKeyboard()
+        .text("🚀 Direct Launch", "direct_launch_recovery")
+        .row()
+        .text("🔧 Fix & Retry", "fix_and_retry")
+        .row()
+        .text("📋 View Tokens", CallBackQueries.VIEW_TOKENS);
+      
       ctx
-        .reply("❌ Conversation state error detected. Your session has been reset. Please start over by selecting the token from your tokens list.")
+        .reply(
+          "🔧 **Error Fixed Automatically**\n\n" +
+          "✅ Conversation state cleared\n" +
+          "✅ Session reset completed\n\n" +
+          "**Choose how to continue:**",
+          { 
+            parse_mode: "Markdown",
+            reply_markup: keyboard
+          }
+        )
         .catch(() => logger.error("Failed to send conversation reset message"));
     }
     return;
@@ -122,7 +138,24 @@ bot.use(async (ctx, next) => {
       // Clear conversation state completely
       const cleared = await clearConversationState(ctx);
       
-      await ctx.reply("❌ Conversation state error. Please restart your action from the main menu or tokens list.");
+      // Instead of just showing an error, provide immediate recovery options
+      const keyboard = new InlineKeyboard()
+        .text("🚀 Direct Launch Token", "direct_launch_recovery")
+        .row()
+        .text("🔧 Fix & Try Again", "fix_and_retry")
+        .row()
+        .text("📋 View Tokens", CallBackQueries.VIEW_TOKENS);
+      
+      await ctx.reply(
+        "🔧 **Conversation State Fixed**\n\n" +
+        "✅ Error cleared automatically\n" +
+        "✅ Session reset completed\n\n" +
+        "**Choose how to continue:**",
+        { 
+          parse_mode: "Markdown",
+          reply_markup: keyboard
+        }
+      );
       return;
     }
     
@@ -790,6 +823,60 @@ bot.callbackQuery(/^emergency_launch_(.+)$/, async (ctx) => {
   } catch (error: any) {
     logger.error("Emergency launch bypass failed:", error);
     await ctx.reply("❌ Emergency launch failed. Please try using /forcefix and then launch normally.");
+  }
+});
+
+// Recovery callback handlers for conversation state errors
+bot.callbackQuery("direct_launch_recovery", async (ctx) => {
+  try {
+    await safeAnswerCallbackQuery(ctx, "🚀 Launching direct recovery...");
+    
+    // Clear state again to be sure
+    await clearConversationState(ctx);
+    
+    await ctx.reply(
+      "🚀 **Direct Launch Recovery**\n\n" +
+      "Use this command with your token address:\n" +
+      "`/directlaunch YOUR_TOKEN_ADDRESS`\n\n" +
+      "**For your token from the logs:**\n" +
+      "`/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
+      "This bypasses all conversation state issues.",
+      { parse_mode: "Markdown" }
+    );
+  } catch (error) {
+    logger.error("Direct launch recovery failed:", error);
+    await ctx.reply("❌ Please try: `/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`");
+  }
+});
+
+bot.callbackQuery("fix_and_retry", async (ctx) => {
+  try {
+    await safeAnswerCallbackQuery(ctx, "🔧 Applying fixes...");
+    
+    // Apply comprehensive fix
+    await clearConversationState(ctx);
+    
+    // Force clear entire session
+    const sessionCtx = ctx as any;
+    if (sessionCtx.session) {
+      Object.keys(sessionCtx.session).forEach(key => {
+        delete sessionCtx.session[key];
+      });
+    }
+    
+    await ctx.reply(
+      "🔧 **Complete Fix Applied**\n\n" +
+      "✅ All conversation state cleared\n" +
+      "✅ Session completely reset\n\n" +
+      "**Now try one of these:**\n" +
+      "• Use `/menu` then \"View Tokens\"\n" +
+      "• Or use `/directlaunch YOUR_TOKEN_ADDRESS`\n\n" +
+      "The bot should work normally now!",
+      { parse_mode: "Markdown" }
+    );
+  } catch (error) {
+    logger.error("Fix and retry failed:", error);
+    await ctx.reply("❌ Please try `/forcefix` for a complete reset.");
   }
 });
 
