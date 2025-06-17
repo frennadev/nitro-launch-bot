@@ -586,17 +586,29 @@ export const executeTokenLaunch = async (
         const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
 
         console.log("SOL balance", {walletSolBalance, keypair: keypair.publicKey.toBase58()});
-        const swapAmount = BigInt(
-          Math.floor((walletSolBalance - 0.005) * LAMPORTS_PER_SOL),
-        );
+        // Account for ALL fees: Maestro fee (0.001) + Transaction fee (1% of spend) + Buffer (0.001)
+        const maestroFee = 0.001;
+        const buffer = 0.001;
+        const transactionFeePercentage = 0.01; // 1% transaction fee
+        
+        // Calculate usable amount accounting for transaction fee
+        // If X is the amount we spend on tokens, then total deducted = X + maestroFee + (X * 0.01) + buffer
+        // So: walletBalance = X + maestroFee + (X * 0.01) + buffer
+        // Solving for X: X = (walletBalance - maestroFee - buffer) / (1 + 0.01)
+        const availableForSpend = walletSolBalance - maestroFee - buffer;
+        const swapAmountSOL = availableForSpend / (1 + transactionFeePercentage);
+        const swapAmount = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
         
         console.log("Buy calculation", {
           wallet: keypair.publicKey.toBase58(),
           totalBalance: walletSolBalance,
-          buffer: 0.005,
-          usableBalance: walletSolBalance - 0.005,
-          swapAmountSOL: Number(swapAmount) / LAMPORTS_PER_SOL,
-          percentageUsed: ((Number(swapAmount) / LAMPORTS_PER_SOL) / walletSolBalance * 100).toFixed(1) + "%"
+          maestroFee: maestroFee,
+          buffer: buffer,
+          transactionFeePercentage: transactionFeePercentage,
+          availableForSpend: availableForSpend,
+          swapAmountSOL: swapAmountSOL,
+          swapAmountLamports: Number(swapAmount),
+          percentageUsed: (swapAmountSOL / walletSolBalance * 100).toFixed(1) + "%"
         });
         
         // Execute buy transaction
@@ -655,7 +667,12 @@ export const executeTokenLaunch = async (
           const walletPrivateKey = buyWallets[walletIndex];
           const keypair = buyKeypairs[walletIndex];
           const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
-          const transactionAmount = Math.max(0, walletSolBalance - 0.005); // Amount used for buying (minus buffer)
+          // Recalculate the actual swap amount used for this wallet
+          const maestroFee = 0.001;
+          const buffer = 0.001;
+          const transactionFeePercentage = 0.01;
+          const availableForSpend = walletSolBalance - maestroFee - buffer;
+          const transactionAmount = Math.max(0, availableForSpend / (1 + transactionFeePercentage));
           
           if (transactionAmount > 0) {
             feeCollectionPromises.push(

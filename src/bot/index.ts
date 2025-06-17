@@ -521,7 +521,7 @@ bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
 bot.on("message:text", async (ctx) => {
   try {
     // Check if the message is a Solana token address (32-44 characters, alphanumeric)
-    const text = ctx.message.text.trim();
+  const text = ctx.message.text.trim();
     if (/^[A-Za-z0-9]{32,44}$/.test(text)) {
       try {
         new PublicKey(text); // Validate if it's a valid Solana address
