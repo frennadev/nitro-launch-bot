@@ -25,7 +25,7 @@ const manageBuyerWalletsConversation = async (conversation: Conversation<Context
   const wallets = await getAllBuyerWallets(user.id);
 
   const header = `<b>👥 Buyer Wallet Management</b>
-You have <b>${wallets.length}/10</b> buyer wallets.
+You have <b>${wallets.length}/15</b> buyer wallets.
 
 `;
   
@@ -47,7 +47,7 @@ You have <b>${wallets.length}/10</b> buyer wallets.
   });
   
   // Add new wallet options if under limit
-  if (wallets.length < 10) {
+  if (wallets.length < 15) {
     kb.text("➕ Generate New Wallet", CallBackQueries.GENERATE_BUYER_WALLET)
       .text("📥 Import Wallet", CallBackQueries.IMPORT_BUYER_WALLET)
       .row();

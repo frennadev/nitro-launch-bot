@@ -28,20 +28,20 @@ const MAX_AMOUNT_PER_DESTINATION = 2.0; // 2 SOL maximum
 function generateRandomAmounts(totalSol: number, destinationCount: number): number[] {
   const totalLamports = Math.floor(totalSol * 1e9);
   
-  // Fixed sequence for first 6 wallets (in SOL)
-  const fixedSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2];
-  const fixedSequenceLamports = fixedSequence.map(sol => Math.floor(sol * 1e9));
-  const fixedSequenceTotal = fixedSequenceLamports.reduce((sum, amount) => sum + amount, 0);
+  // First 10 wallets sequence (in SOL): 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6
+  const firstTenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6];
+  const firstTenSequenceLamports = firstTenSequence.map(sol => Math.floor(sol * 1e9));
+  const firstTenTotal = firstTenSequenceLamports.reduce((sum, amount) => sum + amount, 0);
   
   const amounts: number[] = [];
   
-  if (totalLamports <= fixedSequenceTotal) {
-    // Use only the sequence wallets needed for amounts ≤ 5.4 SOL
+  if (totalLamports <= firstTenTotal) {
+    // Use only the sequence wallets needed for amounts ≤ 11.2 SOL
     let remainingLamports = totalLamports;
     let walletIndex = 0;
     
-    while (remainingLamports > 0 && walletIndex < fixedSequence.length && walletIndex < destinationCount) {
-      const sequenceAmount = fixedSequenceLamports[walletIndex];
+    while (remainingLamports > 0 && walletIndex < firstTenSequence.length && walletIndex < destinationCount) {
+      const sequenceAmount = firstTenSequenceLamports[walletIndex];
       if (remainingLamports >= sequenceAmount) {
         amounts.push(sequenceAmount);
         remainingLamports -= sequenceAmount;
@@ -53,24 +53,26 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
       walletIndex++;
     }
   } else {
-    // Use all 6 sequence wallets + additional wallets with random amounts
+    // Use all 10 sequence wallets + additional wallets (last 5 with 2-4 SOL each)
     // Add all fixed sequence amounts
-    amounts.push(...fixedSequenceLamports);
+    amounts.push(...firstTenSequenceLamports);
     
-    let remainingLamports = totalLamports - fixedSequenceTotal;
-    const additionalWallets = destinationCount - 6;
+    let remainingLamports = totalLamports - firstTenTotal;
+    const additionalWallets = Math.min(5, destinationCount - 10); // Max 5 additional wallets
     
     if (additionalWallets > 0) {
-      const minAdditionalLamports = Math.floor(1.5 * 1e9); // 1.5 SOL
-      const maxAdditionalLamports = Math.floor(2.1 * 1e9); // 2.1 SOL
+      const minAdditionalLamports = Math.floor(2.0 * 1e9); // 2.0 SOL
+      const maxAdditionalLamports = Math.floor(4.0 * 1e9); // 4.0 SOL
       
-      // Generate random amounts for additional wallets (except the last one)
+      // Generate amounts for additional wallets (2-4 SOL each)
       for (let i = 0; i < additionalWallets - 1; i++) {
         const maxForThis = Math.min(maxAdditionalLamports, remainingLamports - minAdditionalLamports);
         const minForThis = Math.min(minAdditionalLamports, maxForThis);
         
         if (minForThis <= maxForThis) {
-          const amount = Math.floor(Math.random() * (maxForThis - minForThis + 1)) + minForThis;
+          // Prefer amounts closer to 3 SOL for better distribution
+          const preferredAmount = Math.floor(3.0 * 1e9);
+          const amount = Math.min(maxForThis, Math.max(minForThis, preferredAmount));
           amounts.push(amount);
           remainingLamports -= amount;
         } else {
@@ -81,9 +83,9 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
         }
       }
       
-      // Last additional wallet gets remaining amount
+      // Last additional wallet gets remaining amount (capped at 4 SOL)
       if (remainingLamports > 0) {
-        amounts.push(remainingLamports);
+        amounts.push(Math.min(maxAdditionalLamports, remainingLamports));
       }
     }
   }

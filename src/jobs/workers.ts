@@ -428,12 +428,16 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
       // Update loading state - Phase 2: Executing buys
       await updateLoadingState(loadingKey, 2);
       
+      // Generate buy distribution for sequential buying
+      const { generateBuyDistribution } = await import("../backend/functions");
+      const buyDistribution = generateBuyDistribution(data.buyAmount, data.buyerWallets.length);
+      
       await executeTokenLaunch(
         data.tokenPrivateKey,
         "", // funderWallet not needed for execution phase
         data.devWallet,
         data.buyerWallets,
-        [], // buyDistribution
+        buyDistribution,
         data.tokenName,
         data.tokenSymbol,
         data.tokenMetadataUri,
