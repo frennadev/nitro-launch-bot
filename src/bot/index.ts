@@ -1,5 +1,5 @@
 import { Bot, InlineKeyboard, type Context, type BotError, GrammyError, HttpError } from "grammy";
-import { conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
+import { Conversation, conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
 import { env } from "../config";
 import {
   createUser,
@@ -14,6 +14,7 @@ import {
   getAllBuyerWallets,
   getUserTokenWithBuyWallets,
   createUserWithReferral,
+  getFundingWallet,
 } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
@@ -35,11 +36,14 @@ import {
 import viewTokensConversation from "./conversation/viewTokenConversation";
 import externalTokenSellConversation from "./conversation/externalTokenSell";
 import { logger } from "../blockchain/common/logger";
-import { getTokenInfo, getTokenBalance } from "../backend/utils";
+import { getTokenInfo, getTokenBalance, decryptPrivateKey } from "../backend/utils";
 import { getTransactionFinancialStats } from "../backend/functions-main";
 import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
 import { referralsConversation } from "./conversation/referrals";
 import { PublicKey } from "@solana/web3.js";
+import { executeFundingBuy } from "../blockchain/pumpfun/buy";
+import { buyCustonConversation } from "./conversation/buyCustom";
+import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
@@ -55,10 +59,10 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   // Handle Grammy.js conversation state errors
   if (err.stack && err.stack.includes("Bad replay, expected op")) {
     logger.warn("Grammy.js conversation state error detected in global handler:", err.stack);
-    
+
     // Clear the conversation state completely
     const cleared = await clearConversationState(ctx);
-    
+
     // Send user-friendly message with recovery options
     if (ctx.chat) {
       const keyboard = new InlineKeyboard()
@@ -67,16 +71,16 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
         .text("🔧 Fix & Retry", "fix_and_retry")
         .row()
         .text("📋 View Tokens", CallBackQueries.VIEW_TOKENS);
-      
+
       ctx
         .reply(
           "🔧 **Error Fixed Automatically**\n\n" +
-          "✅ Conversation state cleared\n" +
-          "✅ Session reset completed\n\n" +
-          "**Choose how to continue:**",
-          { 
+            "✅ Conversation state cleared\n" +
+            "✅ Session reset completed\n\n" +
+            "**Choose how to continue:**",
+          {
             parse_mode: "Markdown",
-            reply_markup: keyboard
+            reply_markup: keyboard,
           }
         )
         .catch(() => logger.error("Failed to send conversation reset message"));
@@ -123,10 +127,12 @@ async function safeAnswerCallbackQuery(ctx: Context, text?: string): Promise<voi
 
 // ----- Conversations -----
 // Configure conversations with proper error handling
-bot.use(conversations({
-  // Use storage-free adapter for better error recovery
-  storage: undefined, // This will use the default in-memory storage
-}));
+bot.use(
+  conversations({
+    // Use storage-free adapter for better error recovery
+    storage: undefined, // This will use the default in-memory storage
+  })
+);
 
 // Middleware to handle conversation errors at the conversation level
 bot.use(async (ctx, next) => {
@@ -136,10 +142,10 @@ bot.use(async (ctx, next) => {
     // Handle conversation-specific errors
     if (error.message && error.message.includes("Bad replay, expected op")) {
       logger.warn("Conversation replay error caught in middleware:", error.message);
-      
+
       // Clear conversation state completely
       const cleared = await clearConversationState(ctx);
-      
+
       // Instead of just showing an error, provide immediate recovery options
       const keyboard = new InlineKeyboard()
         .text("🚀 Direct Launch Token", "direct_launch_recovery")
@@ -147,20 +153,20 @@ bot.use(async (ctx, next) => {
         .text("🔧 Fix & Try Again", "fix_and_retry")
         .row()
         .text("📋 View Tokens", CallBackQueries.VIEW_TOKENS);
-      
+
       await ctx.reply(
         "🔧 **Conversation State Fixed**\n\n" +
-        "✅ Error cleared automatically\n" +
-        "✅ Session reset completed\n\n" +
-        "**Choose how to continue:**",
-        { 
+          "✅ Error cleared automatically\n" +
+          "✅ Session reset completed\n\n" +
+          "**Choose how to continue:**",
+        {
           parse_mode: "Markdown",
-          reply_markup: keyboard
+          reply_markup: keyboard,
         }
       );
       return;
     }
-    
+
     // Re-throw other errors to be handled by global error handler
     throw error;
   }
@@ -181,28 +187,29 @@ bot.use(createConversation(viewTokensConversation));
 bot.use(createConversation(externalTokenSellConversation));
 bot.use(createConversation(buyExternalTokenConversation));
 bot.use(createConversation(referralsConversation));
+bot.use(createConversation(buyCustonConversation));
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
   let user = await getUser(ctx.chat.id.toString());
   let isFirstTime = user === null;
-  
+
   if (isFirstTime) {
     // Check if there's a referral code in the start command
     const startPayload = ctx.match; // This gets the text after /start
     let referralCode: string | undefined;
-    
-    if (startPayload && typeof startPayload === 'string' && startPayload.startsWith('REF_')) {
-      referralCode = startPayload.replace('REF_', '');
+
+    if (startPayload && typeof startPayload === "string" && startPayload.startsWith("REF_")) {
+      referralCode = startPayload.replace("REF_", "");
       console.log(`New user with referral code: ${referralCode}`);
     }
-    
+
     // Create user with or without referral
     if (referralCode) {
       user = await createUserWithReferral(
-        ctx.chat.first_name, 
-        ctx.chat.last_name, 
-        ctx.chat.username!, 
+        ctx.chat.first_name,
+        ctx.chat.last_name,
+        ctx.chat.username!,
         ctx.chat.id.toString(),
         referralCode
       );
@@ -215,11 +222,11 @@ bot.command("start", async (ctx) => {
   await getOrCreateFundingWallet(String(user?.id));
 
   const devWallet = await getDefaultDevWallet(String(user?.id));
-  
+
   // Get user's referral stats
   const { getUserReferralStats } = await import("../backend/functions-main");
   const referralStats = await getUserReferralStats(String(user?.id));
-  
+
   const welcomeMsg = `
 👋 *Hello and welcome to Nitro Bot!* 🌟
 
@@ -266,11 +273,11 @@ bot.command("menu", async (ctx) => {
   await getOrCreateFundingWallet(String(user?.id));
 
   const devWallet = await getDefaultDevWallet(String(user?.id));
-  
+
   // Get user's referral stats
   const { getUserReferralStats } = await import("../backend/functions-main");
   const referralStats = await getUserReferralStats(String(user?.id));
-  
+
   const welcomeMsg = `
 👋 *Hello and welcome to Nitro Bot!* 🌟
 
@@ -531,9 +538,9 @@ bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
 bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
-  
+
   logger.info(`[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`);
-  
+
   // Show sell percentage options
   const keyboard = new InlineKeyboard()
     .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
@@ -543,23 +550,20 @@ bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
     .text("💸 Sell 100%", `sell_ca_100_${tokenAddress}`)
     .row()
     .text("❌ Cancel", CallBackQueries.CANCEL);
-  
-  await ctx.editMessageText(
-    `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
-    { 
-      parse_mode: "Markdown",
-      reply_markup: keyboard 
-    }
-  );
+
+  await ctx.editMessageText(`💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`, {
+    parse_mode: "Markdown",
+    reply_markup: keyboard,
+  });
 });
 
 // Handle external token buy button clicks (from token address messages)
 bot.callbackQuery(/^buy_external_token_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
-  
+
   logger.info(`[ExternalTokenBuy] Buy button clicked for token: ${tokenAddress}`);
-  
+
   // Start the external token buy conversation
   await ctx.conversation.enter("buyExternalTokenConversation");
 });
@@ -605,7 +609,7 @@ bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
 bot.on("message:text", async (ctx) => {
   try {
     // Check if the message is a Solana token address (32-44 characters, alphanumeric)
-  const text = ctx.message.text.trim();
+    const text = ctx.message.text.trim();
     if (/^[A-Za-z0-9]{32,44}$/.test(text)) {
       try {
         new PublicKey(text); // Validate if it's a valid Solana address
@@ -616,7 +620,7 @@ bot.on("message:text", async (ctx) => {
         let tokenSymbol = "UNK";
         let isUserToken = false;
         let holdingsText = "📌 Checking token holdings...";
-        
+
         if (user) {
           const userToken = await getUserTokenWithBuyWallets(user.id, text);
           if (userToken) {
@@ -625,14 +629,14 @@ bot.on("message:text", async (ctx) => {
             tokenSymbol = userToken.symbol;
             isUserToken = true;
           }
-          
+
           // Check actual holdings in buyer wallets
           try {
             const buyerWallets = await getAllBuyerWallets(user.id);
             if (buyerWallets.length > 0) {
               let totalTokenBalance = 0;
               let walletsWithBalance = 0;
-              
+
               for (const wallet of buyerWallets) {
                 try {
                   const balance = await getTokenBalance(text, wallet.publicKey);
@@ -644,7 +648,7 @@ bot.on("message:text", async (ctx) => {
                   logger.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
                 }
               }
-              
+
               if (walletsWithBalance > 0) {
                 holdingsText = `📌 ${totalTokenBalance.toLocaleString()} tokens found in ${walletsWithBalance}/${buyerWallets.length} buyer wallets`;
               } else {
@@ -695,7 +699,6 @@ ${holdingsText}`,
 });
 
 // Remove the generic callback handler that was interfering with specific handlers
-
 bot.command("reset", async (ctx) => {
   try {
     const cleared = await clearConversationState(ctx);
@@ -713,28 +716,28 @@ bot.command("reset", async (ctx) => {
 bot.command("forcefix", async (ctx) => {
   try {
     logger.info("Force fix requested by user:", ctx.chat?.id);
-    
+
     // Clear conversation state
     await clearConversationState(ctx);
-    
+
     // Force a complete session reset by deleting the entire session
     const sessionCtx = ctx as any;
     if (sessionCtx.session) {
       // Clear the entire session object
-      Object.keys(sessionCtx.session).forEach(key => {
+      Object.keys(sessionCtx.session).forEach((key) => {
         delete sessionCtx.session[key];
       });
     }
-    
+
     // Send a fresh start message
     await ctx.reply(
       "🔧 **Force Fix Applied**\n\n" +
-      "✅ All conversation state cleared\n" +
-      "✅ Session completely reset\n\n" +
-      "You can now use the bot normally. Try /start or /menu to begin.",
+        "✅ All conversation state cleared\n" +
+        "✅ Session completely reset\n\n" +
+        "You can now use the bot normally. Try /start or /menu to begin.",
       { parse_mode: "Markdown" }
     );
-    
+
     logger.info("Force fix completed for user:", ctx.chat?.id);
   } catch (error: any) {
     logger.error("Error in force fix command:", error);
@@ -745,30 +748,30 @@ bot.command("forcefix", async (ctx) => {
 bot.command("fixlaunch", async (ctx) => {
   try {
     logger.info("Fix launch command used by user:", ctx.chat?.id);
-    
+
     // Clear conversation state completely
     await clearConversationState(ctx);
-    
+
     // Force clear entire session
     const sessionCtx = ctx as any;
     if (sessionCtx.session) {
-      Object.keys(sessionCtx.session).forEach(key => {
+      Object.keys(sessionCtx.session).forEach((key) => {
         delete sessionCtx.session[key];
       });
     }
-    
+
     await ctx.reply(
       "🔧 **Launch Fix Applied**\n\n" +
-      "✅ Conversation state cleared\n" +
-      "✅ Session completely reset\n\n" +
-      "**Next steps:**\n" +
-      "1. Use /menu or /start to refresh\n" +
-      "2. Go to \"View Tokens\"\n" +
-      "3. Try launching your token again\n\n" +
-      "If you still have issues, use /forcefix for a complete reset.",
+        "✅ Conversation state cleared\n" +
+        "✅ Session completely reset\n\n" +
+        "**Next steps:**\n" +
+        "1. Use /menu or /start to refresh\n" +
+        '2. Go to "View Tokens"\n' +
+        "3. Try launching your token again\n\n" +
+        "If you still have issues, use /forcefix for a complete reset.",
       { parse_mode: "Markdown" }
     );
-    
+
     logger.info("Fix launch completed for user:", ctx.chat?.id);
   } catch (error: any) {
     logger.error("Error in fix launch command:", error);
@@ -778,55 +781,59 @@ bot.command("fixlaunch", async (ctx) => {
 
 bot.command("directlaunch", async (ctx) => {
   try {
-    const args = ctx.message?.text?.split(' ');
+    const args = ctx.message?.text?.split(" ");
     if (args && args.length > 1) {
       // Direct launch with token address
       const tokenAddress = args[1];
       logger.info("Direct launch command used for token:", tokenAddress);
-      
+
       // Clear any existing conversation state
       await clearConversationState(ctx);
-      
+
       // Wait a moment
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
       // Try to launch directly
       await ctx.conversation.enter("launchTokenConversation", tokenAddress, { overwrite: true });
-      
     } else {
       await ctx.reply(
         "🚀 **Direct Launch**\n\n" +
-        "Usage: `/directlaunch <token_address>`\n\n" +
-        "Example: `/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
-        "This bypasses conversation state issues and launches directly.",
+          "Usage: `/directlaunch <token_address>`\n\n" +
+          "Example: `/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
+          "This bypasses conversation state issues and launches directly.",
         { parse_mode: "Markdown" }
       );
     }
   } catch (error: any) {
     logger.error("Direct launch failed:", error);
-    await ctx.reply("❌ Direct launch failed. Please try /fixlaunch first, then use /menu to access your tokens normally.");
+    await ctx.reply(
+      "❌ Direct launch failed. Please try /fixlaunch first, then use /menu to access your tokens normally."
+    );
   }
 });
 
 bot.command("help", async (ctx) => {
   await ctx.reply(
     "🆘 **Help - Can't Launch Token?**\n\n" +
-    "**If you're having trouble launching tokens, try these in order:**\n\n" +
-    "1️⃣ `/fixlaunch` - Fix launch-specific issues\n" +
-    "2️⃣ `/reset` - Clear conversation state\n" +
-    "3️⃣ `/forcefix` - Complete session reset\n" +
-    "4️⃣ `/directlaunch <token_address>` - Bypass state issues\n\n" +
-    "**For your specific token:**\n" +
-    "`/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
-    "**Then try normal flow:**\n" +
-    "• `/menu` - Access main menu\n" +
-    "• \"View Tokens\" - See your tokens\n" +
-    "• Tap launch button for your token\n\n" +
-    "💡 **Tip:** Always use `/fixlaunch` first if you're having issues!",
+      "**If you're having trouble launching tokens, try these in order:**\n\n" +
+      "1️⃣ `/fixlaunch` - Fix launch-specific issues\n" +
+      "2️⃣ `/reset` - Clear conversation state\n" +
+      "3️⃣ `/forcefix` - Complete session reset\n" +
+      "4️⃣ `/directlaunch <token_address>` - Bypass state issues\n\n" +
+      "**For your specific token:**\n" +
+      "`/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
+      "**Then try normal flow:**\n" +
+      "• `/menu` - Access main menu\n" +
+      '• "View Tokens" - See your tokens\n' +
+      "• Tap launch button for your token\n\n" +
+      "💡 **Tip:** Always use `/fixlaunch` first if you're having issues!",
     { parse_mode: "Markdown" }
   );
+});
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
+
+  console.log(data, "From firsttt");
 
   // Handle "back-buy" and similar cases first
   if (data.startsWith("back-_")) {
@@ -845,7 +852,7 @@ bot.on("callback_query:data", async (ctx) => {
 
   // Handle other actions
   const [action, token, address] = data.split("_");
-  if (action && token && address) {
+  if (action && token === "token" && address) {
     logger.info(`${action} called`);
     switch (action) {
       case "buy":
@@ -891,13 +898,55 @@ bot.on("callback_query:data", async (ctx) => {
         break;
     }
   }
-});
 
-bot.on("callback_query:data", async (ctx) => {
-  try {
-    const data = ctx.callbackQuery.data;
-  } catch (error) {
-    console.log(error);
+  const [tradeAction, buyAmount, mint] = data.split("_");
+  const telegramId = String(ctx.from?.id);
+
+  if (tradeAction && Number(buyAmount)) {
+    const user = await getUser(telegramId);
+
+    if (!user || !user.id) {
+      await ctx.reply("❌ User not found. Please start the bot with /start.");
+      return;
+    }
+    const fundingWallet = await getFundingWallet(String(user.id));
+
+    switch (tradeAction) {
+      case "buy":
+        await ctx.reply(`💰 Buying ${buyAmount} SOL of token`);
+        const buyResult = await executeFundingBuy(mint, fundingWallet!.privateKey, Number(buyAmount));
+        if (buyResult.success) {
+          await ctx.reply(
+            `✅ Successfully bought ${buyAmount} SOL of token!\n\nTransaction Signature:\n<code>${buyResult.signature}</code>`,
+            { parse_mode: "HTML" }
+          );
+        } else {
+          await ctx.reply("❌ Failed to buy token. Please try again or contact support.");
+        }
+        break;
+
+      case "sell":
+        await ctx.reply(`💰 Selling ${buyAmount}% of token`);
+        const sellResult = await executeDevSell(mint, fundingWallet!.privateKey, Number(buyAmount));
+        if (!sellResult) return ctx.reply("Sell Failed");
+        if (sellResult.success) {
+          await ctx.reply(
+            `✅ Successfully bought ${buyAmount} SOL of token!\n\nTransaction Signature:\n<code>${sellResult.signature}</code>`,
+            { parse_mode: "HTML" }
+          );
+        } else {
+          await ctx.reply("❌ Failed to buy token. Please try again or contact support.");
+        }
+        break;
+
+      default:
+        break;
+    }
+  }
+  if (tradeAction === "buy" && buyAmount === "custom") {
+    try {
+      await ctx.conversation.enter("buyCustonConversation", address);
+    } catch (error) {}
   }
 });
 
@@ -992,18 +1041,17 @@ bot.callbackQuery(/^emergency_launch_(.+)$/, async (ctx) => {
   try {
     await safeAnswerCallbackQuery(ctx, "🚨 Emergency launch mode activated");
     const tokenAddress = ctx.match![1];
-    
+
     logger.info("Emergency launch bypass activated for token:", tokenAddress);
-    
+
     // Clear conversation state first
     await clearConversationState(ctx);
-    
+
     // Wait a moment for state to clear
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     // Try to enter the conversation with overwrite flag
     await ctx.conversation.enter("launchTokenConversation", tokenAddress, { overwrite: true });
-    
   } catch (error: any) {
     logger.error("Emergency launch bypass failed:", error);
     await ctx.reply("❌ Emergency launch failed. Please try using /forcefix and then launch normally.");
@@ -1014,17 +1062,17 @@ bot.callbackQuery(/^emergency_launch_(.+)$/, async (ctx) => {
 bot.callbackQuery("direct_launch_recovery", async (ctx) => {
   try {
     await safeAnswerCallbackQuery(ctx, "🚀 Launching direct recovery...");
-    
+
     // Clear state again to be sure
     await clearConversationState(ctx);
-    
+
     await ctx.reply(
       "🚀 **Direct Launch Recovery**\n\n" +
-      "Use this command with your token address:\n" +
-      "`/directlaunch YOUR_TOKEN_ADDRESS`\n\n" +
-      "**For your token from the logs:**\n" +
-      "`/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
-      "This bypasses all conversation state issues.",
+        "Use this command with your token address:\n" +
+        "`/directlaunch YOUR_TOKEN_ADDRESS`\n\n" +
+        "**For your token from the logs:**\n" +
+        "`/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
+        "This bypasses all conversation state issues.",
       { parse_mode: "Markdown" }
     );
   } catch (error) {
@@ -1036,26 +1084,26 @@ bot.callbackQuery("direct_launch_recovery", async (ctx) => {
 bot.callbackQuery("fix_and_retry", async (ctx) => {
   try {
     await safeAnswerCallbackQuery(ctx, "🔧 Applying fixes...");
-    
+
     // Apply comprehensive fix
     await clearConversationState(ctx);
-    
+
     // Force clear entire session
     const sessionCtx = ctx as any;
     if (sessionCtx.session) {
-      Object.keys(sessionCtx.session).forEach(key => {
+      Object.keys(sessionCtx.session).forEach((key) => {
         delete sessionCtx.session[key];
       });
     }
-    
+
     await ctx.reply(
       "🔧 **Complete Fix Applied**\n\n" +
-      "✅ All conversation state cleared\n" +
-      "✅ Session completely reset\n\n" +
-      "**Now try one of these:**\n" +
-      "• Use `/menu` then \"View Tokens\"\n" +
-      "• Or use `/directlaunch YOUR_TOKEN_ADDRESS`\n\n" +
-      "The bot should work normally now!",
+        "✅ All conversation state cleared\n" +
+        "✅ Session completely reset\n\n" +
+        "**Now try one of these:**\n" +
+        '• Use `/menu` then "View Tokens"\n' +
+        "• Or use `/directlaunch YOUR_TOKEN_ADDRESS`\n\n" +
+        "The bot should work normally now!",
       { parse_mode: "Markdown" }
     );
   } catch (error) {
@@ -1069,7 +1117,7 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
   try {
     const sessionCtx = ctx as any;
     let cleared = false;
-    
+
     // Clear conversation session data
     if (sessionCtx.session) {
       // Clear the main conversation state
@@ -1078,40 +1126,39 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
         cleared = true;
         logger.info("Cleared __conversation session data");
       }
-      
+
       // Clear any other conversation-related session data
       const sessionKeys = Object.keys(sessionCtx.session);
-      sessionKeys.forEach(key => {
-        if (key.startsWith('__conversation') || key.includes('conversation')) {
+      sessionKeys.forEach((key) => {
+        if (key.startsWith("__conversation") || key.includes("conversation")) {
           delete sessionCtx.session[key];
           cleared = true;
           logger.info(`Cleared session key: ${key}`);
         }
       });
-      
+
       // Clear Grammy.js internal conversation state keys
-      const grammyConversationKeys = sessionKeys.filter(key => 
-        key.startsWith('__grammyjs_conversations') || 
-        key.startsWith('__conversations') ||
-        key.includes('__conv_')
+      const grammyConversationKeys = sessionKeys.filter(
+        (key) =>
+          key.startsWith("__grammyjs_conversations") || key.startsWith("__conversations") || key.includes("__conv_")
       );
-      
-      grammyConversationKeys.forEach(key => {
+
+      grammyConversationKeys.forEach((key) => {
         delete sessionCtx.session[key];
         cleared = true;
         logger.info(`Cleared Grammy conversation key: ${key}`);
       });
     }
-    
+
     // Try to access and clear conversation context if available
     if (sessionCtx.conversation) {
       try {
         // Check if halt method exists and is a function
-        if (typeof sessionCtx.conversation.halt === 'function') {
+        if (typeof sessionCtx.conversation.halt === "function") {
           await sessionCtx.conversation.halt();
           cleared = true;
           logger.info("Successfully halted conversation");
-        } else if (typeof sessionCtx.conversation.exit === 'function') {
+        } else if (typeof sessionCtx.conversation.exit === "function") {
           // Try alternative exit method
           await sessionCtx.conversation.exit();
           cleared = true;
@@ -1133,12 +1180,12 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
         }
       }
     }
-    
+
     // Additional cleanup - try to clear any conversation-related properties on the context
     try {
       const contextKeys = Object.keys(sessionCtx);
-      contextKeys.forEach(key => {
-        if (key.includes('conversation') || key.includes('__conv')) {
+      contextKeys.forEach((key) => {
+        if (key.includes("conversation") || key.includes("__conv")) {
           try {
             delete sessionCtx[key];
             cleared = true;
@@ -1151,13 +1198,13 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
     } catch (contextError) {
       logger.warn("Failed to clear context properties:", contextError);
     }
-    
+
     if (cleared) {
       logger.info("Successfully cleared conversation state for user:", ctx.chat?.id);
     } else {
       logger.warn("No conversation state found to clear for user:", ctx.chat?.id);
     }
-    
+
     return true; // Return true even if nothing was cleared, as the goal is achieved
   } catch (error) {
     logger.error("Failed to clear conversation state:", error);
