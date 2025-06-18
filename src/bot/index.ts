@@ -215,6 +215,11 @@ bot.command("start", async (ctx) => {
   await getOrCreateFundingWallet(String(user?.id));
 
   const devWallet = await getDefaultDevWallet(String(user?.id));
+  
+  // Get user's referral stats
+  const { getUserReferralStats } = await import("../backend/functions-main");
+  const referralStats = await getUserReferralStats(String(user?.id));
+  
   const welcomeMsg = `
 👋 *Hello and welcome to Nitro Bot!* 🌟
 
@@ -228,6 +233,8 @@ Here's what Nitro Bot can help you with:
 💳 *Your current dev wallet address:*  
 \`${devWallet}\`
 
+🔗 *Referrals:* ${referralStats.referralCount} friends joined through your link
+
 Choose an option below to get started ⬇️
 `;
 
@@ -236,7 +243,9 @@ Choose an option below to get started ⬇️
     .text("👁 View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
     .text("🔑 Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
-    .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG);
+    .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
+    .row()
+    .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS);
   // .text("Add Wallet", CallBackQueries.ADD_WALLET)
   // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
@@ -257,6 +266,11 @@ bot.command("menu", async (ctx) => {
   await getOrCreateFundingWallet(String(user?.id));
 
   const devWallet = await getDefaultDevWallet(String(user?.id));
+  
+  // Get user's referral stats
+  const { getUserReferralStats } = await import("../backend/functions-main");
+  const referralStats = await getUserReferralStats(String(user?.id));
+  
   const welcomeMsg = `
 👋 *Hello and welcome to Nitro Bot!* 🌟
 
@@ -270,6 +284,8 @@ Here's what Nitro Bot can help you with:
 💳 *Your current dev wallet address:*  
 \`${devWallet}\`
 
+🔗 *Referrals:* ${referralStats.referralCount} friends joined through your link
+
 Choose an option below to get started ⬇️
 `;
 
@@ -278,7 +294,9 @@ Choose an option below to get started ⬇️
     .text("👁 View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
     .text("🔑 Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
-    .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG);
+    .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
+    .row()
+    .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS);
   // .text("Add Wallet", CallBackQueries.ADD_WALLET)
   // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
