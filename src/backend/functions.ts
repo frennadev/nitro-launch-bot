@@ -929,8 +929,8 @@ export const addBuyerWallet = async (userId: string, privateKey: string) => {
     isBuyer: true,
   });
 
-  if (existingWallets >= 15) {
-    throw new Error("Maximum of 15 buyer wallets allowed");
+  if (existingWallets >= 20) {
+    throw new Error("Maximum of 20 buyer wallets allowed");
   }
 
   const keypair = secretKeyToKeypair(privateKey);
@@ -967,8 +967,8 @@ export const generateNewBuyerWallet = async (userId: string) => {
     isBuyer: true,
   });
 
-  if (existingWallets >= 15) {
-    throw new Error("Maximum of 15 buyer wallets allowed");
+  if (existingWallets >= 20) {
+    throw new Error("Maximum of 20 buyer wallets allowed");
   }
 
   const [buyerWallet] = generateKeypairs(1);
@@ -1821,21 +1821,21 @@ export const getDetailedSellSummary = async (tokenAddress: string) => {
 };
 
 /**
- * Calculate the required number of wallets for incremental distribution system with 15 wallet maximum
- * First 10 wallets: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6 SOL (total 11.2 SOL)
- * Last 5 wallets (11-15): 2.0+ SOL each (unlimited for large amounts)
+ * Calculate the required number of wallets for incremental distribution system with 20 wallet maximum
+ * First 15 wallets: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1 SOL (total 21.5 SOL)
+ * Last 5 wallets (16-20): 4.0-5.0 SOL each (for larger amounts)
  */
 export const calculateRequiredWallets = (buyAmount: number): number => {
-  // First 10 wallets sequence
-  const firstTenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6];
-  const firstTenTotal = 11.2; // Sum of first 10 wallet amounts
+  // First 15 wallets sequence
+  const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
+  const firstFifteenTotal = firstFifteenSequence.reduce((sum, amount) => sum + amount, 0); // Calculate exact total
   
-  if (buyAmount <= firstTenTotal) {
-    // Count how many sequence wallets are needed from first 10
+  if (buyAmount <= firstFifteenTotal) {
+    // Count how many sequence wallets are needed from first 15
     let total = 0;
     let walletsNeeded = 0;
     
-    for (const amount of firstTenSequence) {
+    for (const amount of firstFifteenSequence) {
       if (total + amount <= buyAmount) {
         total += amount;
         walletsNeeded++;
@@ -1850,32 +1850,34 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
     
     return Math.max(1, walletsNeeded); // At least 1 wallet
   } else {
-    // For amounts > 11.2 SOL, always use all 15 wallets for optimal distribution
-    return 15;
+    // Need all 15 sequence wallets + additional wallets from last 5 (4-5 SOL each)
+    const remainingAmount = buyAmount - firstFifteenTotal;
+    const additionalWallets = Math.min(5, Math.ceil(remainingAmount / 4.0)); // Max 5 additional wallets, min 4 SOL each
+    return Math.min(20, 15 + additionalWallets); // Cap at 20 wallets total
   }
 };
 
 /**
- * Generate buy distribution for sequential wallet buying with new 15 wallet system
- * First 10 wallets: incremental amounts 0.5-1.6 SOL
- * Last 5 wallets: 2.0+ SOL each for larger purchases (no cap for large amounts)
+ * Generate buy distribution for sequential wallet buying with new 20 wallet system
+ * First 15 wallets: incremental amounts 0.5-2.1 SOL
+ * Last 5 wallets: 4.0-5.0 SOL each for larger purchases
  */
 export const generateBuyDistribution = (buyAmount: number, availableWallets: number): number[] => {
-  const maxWallets = Math.min(availableWallets, 15);
-  const firstTenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6];
-  const firstTenTotal = 11.2;
+  const maxWallets = Math.min(availableWallets, 20);
+  const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
+  const firstFifteenTotal = firstFifteenSequence.reduce((sum, amount) => sum + amount, 0); // Calculate exact total
   
-  if (buyAmount <= firstTenTotal) {
+  if (buyAmount <= firstFifteenTotal) {
     // Use only the first sequence wallets needed
     const distribution: number[] = [];
     let remaining = buyAmount;
     
-    for (let i = 0; i < Math.min(maxWallets, firstTenSequence.length); i++) {
+    for (let i = 0; i < Math.min(maxWallets, firstFifteenSequence.length); i++) {
       if (remaining <= 0) break;
       
-      if (remaining >= firstTenSequence[i]) {
-        distribution.push(firstTenSequence[i]);
-        remaining -= firstTenSequence[i];
+      if (remaining >= firstFifteenSequence[i]) {
+        distribution.push(firstFifteenSequence[i]);
+        remaining -= firstFifteenSequence[i];
       } else {
         // Last wallet gets remaining amount
         distribution.push(remaining);
@@ -1885,27 +1887,24 @@ export const generateBuyDistribution = (buyAmount: number, availableWallets: num
     
     return distribution;
   } else {
-    // Use all 10 sequence wallets + distribute remaining across last 5 wallets
-    const distribution = [...firstTenSequence];
-    let remaining = buyAmount - firstTenTotal;
+    // Use all 15 sequence wallets + distribute remaining across last 5 wallets (4-5 SOL each)
+    const distribution = [...firstFifteenSequence];
+    let remaining = buyAmount - firstFifteenTotal;
     
-    // Calculate how many additional wallets we can use (max 5)
-    const additionalWalletsAvailable = Math.min(5, maxWallets - 10);
+    // Calculate how many additional wallets we need (max 5)
+    const additionalWalletsNeeded = Math.min(5, Math.min(maxWallets - 15, Math.ceil(remaining / 4.0)));
     
-    if (additionalWalletsAvailable > 0) {
-      // For large amounts, distribute evenly across additional wallets with minimum 2.0 SOL
-      const baseAmountPerWallet = Math.max(2.0, remaining / additionalWalletsAvailable);
-      
-      // Distribute remaining amount across additional wallets
-      for (let i = 0; i < additionalWalletsAvailable; i++) {
+    if (additionalWalletsNeeded > 0) {
+      // Distribute remaining amount across additional wallets (4-5 SOL each)
+      for (let i = 0; i < additionalWalletsNeeded; i++) {
         if (remaining <= 0) break;
         
-        if (i === additionalWalletsAvailable - 1) {
-          // Last additional wallet gets all remaining (no cap for large purchases)
+        if (i === additionalWalletsNeeded - 1) {
+          // Last additional wallet gets all remaining
           distribution.push(remaining);
         } else {
-          // Other additional wallets get proportional amount, minimum 2.0 SOL
-          const walletAmount = Math.max(2.0, Math.round((remaining / (additionalWalletsAvailable - i)) * 100) / 100);
+          // Other additional wallets get 4-5 SOL, prefer closer to 4.5 SOL
+          const walletAmount = Math.min(5.0, Math.max(4.0, remaining / (additionalWalletsNeeded - i)));
           distribution.push(walletAmount);
           remaining -= walletAmount;
         }

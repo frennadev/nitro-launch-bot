@@ -26,21 +26,22 @@ const MAX_AMOUNT_PER_DESTINATION = 2.0; // 2 SOL maximum
  * Then random amounts between 1.5-2.1 SOL for additional wallets
  */
 function generateRandomAmounts(totalSol: number, destinationCount: number): number[] {
-  const amounts: number[] = [];
   const totalLamports = Math.floor(totalSol * 1e9);
   
-  // First 10 wallets sequence (in SOL): 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6
-  const firstTenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6];
-  const firstTenSequenceLamports = firstTenSequence.map(sol => Math.floor(sol * 1e9));
-  const firstTenTotal = firstTenSequenceLamports.reduce((sum, amount) => sum + amount, 0);
+  // First 15 wallets sequence (in SOL): 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1
+  const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
+  const firstFifteenSequenceLamports = firstFifteenSequence.map(sol => Math.floor(sol * 1e9));
+  const firstFifteenTotal = firstFifteenSequenceLamports.reduce((sum, amount) => sum + amount, 0); // Calculate exact total
   
-  if (totalLamports <= firstTenTotal) {
-    // Use only the sequence wallets needed for amounts ≤ 11.2 SOL
+  const amounts: number[] = [];
+  
+  if (totalLamports <= firstFifteenTotal) {
+    // Use only the sequence wallets needed for amounts ≤ 21.5 SOL
     let remainingLamports = totalLamports;
     let walletIndex = 0;
     
-    while (remainingLamports > 0 && walletIndex < firstTenSequence.length && walletIndex < destinationCount) {
-      const sequenceAmount = firstTenSequenceLamports[walletIndex];
+    while (remainingLamports > 0 && walletIndex < firstFifteenSequence.length && walletIndex < destinationCount) {
+      const sequenceAmount = firstFifteenSequenceLamports[walletIndex];
       if (remainingLamports >= sequenceAmount) {
         amounts.push(sequenceAmount);
         remainingLamports -= sequenceAmount;
@@ -52,26 +53,37 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
       walletIndex++;
     }
   } else {
-    // Use all 10 sequence wallets + additional wallets for large amounts
+    // Use all 15 sequence wallets + additional wallets (last 5 with 4-5 SOL each)
     // Add all fixed sequence amounts
-    amounts.push(...firstTenSequenceLamports);
+    amounts.push(...firstFifteenSequenceLamports);
     
-    let remainingLamports = totalLamports - firstTenTotal;
-    const additionalWallets = Math.min(5, destinationCount - 10); // Max 5 additional wallets
+    let remainingLamports = totalLamports - firstFifteenTotal;
+    const additionalWallets = Math.min(5, destinationCount - 15); // Max 5 additional wallets
     
     if (additionalWallets > 0) {
-      const minAdditionalLamports = Math.floor(2.0 * 1e9); // 2.0 SOL minimum
+      const minAdditionalLamports = Math.floor(4.0 * 1e9); // 4.0 SOL
+      const maxAdditionalLamports = Math.floor(5.0 * 1e9); // 5.0 SOL
       
-      // For large amounts, distribute proportionally across additional wallets
+      // Generate amounts for additional wallets (4-5 SOL each)
       for (let i = 0; i < additionalWallets - 1; i++) {
-        // Calculate proportional amount with minimum 2.0 SOL
-        const proportionalAmount = Math.floor(remainingLamports / (additionalWallets - i));
-        const amount = Math.max(minAdditionalLamports, proportionalAmount);
-        amounts.push(amount);
-        remainingLamports -= amount;
+        const maxForThis = Math.min(maxAdditionalLamports, remainingLamports - minAdditionalLamports);
+        const minForThis = Math.min(minAdditionalLamports, maxForThis);
+        
+        if (minForThis <= maxForThis) {
+          // Prefer amounts closer to 4.5 SOL for better distribution
+          const preferredAmount = Math.floor(4.5 * 1e9);
+          const amount = Math.min(maxForThis, Math.max(minForThis, preferredAmount));
+          amounts.push(amount);
+          remainingLamports -= amount;
+        } else {
+          // If we can't fit minimum, give remaining to this wallet
+          amounts.push(remainingLamports);
+          remainingLamports = 0;
+          break;
+        }
       }
       
-      // Last additional wallet gets all remaining amount (no cap for large purchases)
+      // Last additional wallet gets remaining amount
       if (remainingLamports > 0) {
         amounts.push(remainingLamports);
       }
