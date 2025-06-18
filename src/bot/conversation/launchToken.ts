@@ -204,10 +204,10 @@ Would you like to enter new values or use previous ones?`, {
     // Clear retry data after use
     await clearRetryData(user.id, "launch_token");
   } else {
-    // -------- GET BUY AMOUNT --------
+        // -------- GET BUY AMOUNT --------
     await sendMessage(ctx, "💰 Enter the total SOL amount to buy tokens with (e.g., 1.5):", { reply_markup: cancelKeyboard });
 
-    while (true) {
+    buyAmountLoop: while (true) {
       const buyAmountCtx = await conversation.waitFor(["message:text", "callback_query:data"]);
       
       if (buyAmountCtx.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
@@ -220,11 +220,155 @@ Would you like to enter new values or use previous ones?`, {
         const parsed = parseFloat(buyAmountCtx.message.text);
         if (isNaN(parsed) || parsed <= 0) {
           await sendMessage(ctx, "❌ Invalid amount. Please enter a positive number:");
-        } else if (parsed > 50) {
-          await sendMessage(ctx, "⚠️ Amount seems very high. Please enter a reasonable amount (0.1-50 SOL):");
+          continue;
+        } else if (parsed > 46.5) {
+          await sendMessage(ctx, "⚠️ Maximum buy amount is 46.5 SOL due to our 20-wallet system limit. Please enter a smaller amount (0.1-46.5 SOL):");
+          continue;
         } else {
           buyAmount = parsed;
-          break;
+
+          // -------- CHECK WALLET REQUIREMENTS --------
+          const { calculateRequiredWallets, allocateWalletsFromPool } = await import("../../backend/functions-main");
+          
+          try {
+            const requiredWallets = calculateRequiredWallets(buyAmount);
+            const currentWalletCount = buyerWallets.length;
+            
+            if (currentWalletCount < requiredWallets) {
+              const walletsNeeded = requiredWallets - currentWalletCount;
+              
+              await sendMessage(ctx, `🔍 <b>Wallet Check</b>
+
+💰 <b>Buy Amount:</b> ${buyAmount} SOL
+👥 <b>Required Wallets:</b> ${requiredWallets}
+📊 <b>Current Wallets:</b> ${currentWalletCount}
+⚠️ <b>Missing Wallets:</b> ${walletsNeeded}
+
+You need ${walletsNeeded} more wallet${walletsNeeded > 1 ? 's' : ''} for this buy amount. Choose an option:`, {
+                parse_mode: "HTML",
+                reply_markup: new InlineKeyboard()
+                  .text(`📥 Import ${walletsNeeded} Wallet${walletsNeeded > 1 ? 's' : ''}`, "import_missing_wallets")
+                  .row()
+                  .text(`🔧 Generate ${walletsNeeded} Wallet${walletsNeeded > 1 ? 's' : ''}`, "generate_missing_wallets")
+                  .row()
+                  .text("❌ Cancel", LaunchCallBackQueries.CANCEL)
+              });
+
+              const walletChoice = await conversation.waitFor("callback_query:data");
+              await walletChoice.answerCallbackQuery();
+
+              if (walletChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+                await sendMessage(walletChoice, "Launch cancelled.");
+                return conversation.halt();
+              }
+
+              if (walletChoice.callbackQuery?.data === "import_missing_wallets") {
+                // Import wallets flow
+                await sendMessage(walletChoice, `📥 <b>Import ${walletsNeeded} Wallet${walletsNeeded > 1 ? 's' : ''}</b>
+
+Please send the private key of wallet 1/${walletsNeeded}:
+
+<i>💡 Send one private key per message. You'll be prompted for each wallet.</i>`, { 
+                  parse_mode: "HTML",
+                  reply_markup: new InlineKeyboard().text("❌ Cancel", LaunchCallBackQueries.CANCEL)
+                });
+
+                for (let i = 0; i < walletsNeeded; i++) {
+                  if (i > 0) {
+                    await sendMessage(walletChoice, `📥 Please send the private key of wallet ${i + 1}/${walletsNeeded}:`, {
+                      reply_markup: new InlineKeyboard().text("❌ Cancel", LaunchCallBackQueries.CANCEL)
+                    });
+                  }
+
+                  const privateKeyInput = await conversation.wait();
+                  
+                  if (privateKeyInput.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+                    await privateKeyInput.answerCallbackQuery();
+                    await sendMessage(privateKeyInput, "Import cancelled.");
+                    return conversation.halt();
+                  }
+
+                  const privateKey = privateKeyInput.message?.text?.trim();
+                  if (!privateKey) {
+                    await sendMessage(privateKeyInput, "❌ No private key provided. Import cancelled.");
+                    return conversation.halt();
+                  }
+
+                  try {
+                    const { addBuyerWallet } = await import("../../backend/functions-main");
+                    await addBuyerWallet(user.id, privateKey);
+                    await sendMessage(privateKeyInput, `✅ Wallet ${i + 1}/${walletsNeeded} imported successfully!`, { parse_mode: "HTML" });
+                  } catch (error: any) {
+                    await sendMessage(privateKeyInput, `❌ Failed to import wallet ${i + 1}: ${error.message}\n\nPlease try again with a valid private key:`, { parse_mode: "HTML" });
+                    i--; // Retry this wallet
+                  }
+                }
+
+                await sendMessage(walletChoice, `🎉 <b>All ${walletsNeeded} wallets imported successfully!</b>\n\nProceeding with token launch...`, { parse_mode: "HTML" });
+
+              } else if (walletChoice.callbackQuery?.data === "generate_missing_wallets") {
+                // Generate wallets flow
+                await sendMessage(walletChoice, `🔧 <b>Generating ${walletsNeeded} Wallet${walletsNeeded > 1 ? 's' : ''}...</b>
+
+⏳ Allocating wallets from pool...`, { parse_mode: "HTML" });
+
+                try {
+                  let retryCount = 0;
+                  const maxRetries = 3;
+                  
+                  while (retryCount < maxRetries) {
+                    try {
+                      await allocateWalletsFromPool(user.id, walletsNeeded);
+                      await sendMessage(walletChoice, `🎉 <b>Successfully generated ${walletsNeeded} wallet${walletsNeeded > 1 ? 's' : ''}!</b>
+
+✅ All wallets have been permanently added to your account and can be reused for future launches.
+
+Proceeding with token launch...`, { parse_mode: "HTML" });
+                      break;
+                    } catch (error: any) {
+                      retryCount++;
+                      if (retryCount < maxRetries) {
+                        await sendMessage(walletChoice, `⚠️ Generation attempt ${retryCount} failed: ${error.message}\n\n🔄 Retrying... (${retryCount}/${maxRetries})`, { parse_mode: "HTML" });
+                        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+                      } else {
+                        throw error;
+                      }
+                    }
+                  }
+                } catch (error: any) {
+                  await sendMessage(walletChoice, `❌ <b>Failed to generate wallets after 3 attempts</b>
+
+Error: ${error.message}
+
+Please try importing wallets manually or try again later.`, { parse_mode: "HTML" });
+                  return conversation.halt();
+                }
+              }
+
+              // Refresh buyer wallets list after import/generation
+              const updatedBuyerWallets = await getAllBuyerWallets(user.id);
+              // Update the buyerWallets variable for the rest of the flow
+              Object.assign(buyerWallets, updatedBuyerWallets);
+              buyerWallets.length = updatedBuyerWallets.length;
+              updatedBuyerWallets.forEach((wallet, index) => {
+                buyerWallets[index] = wallet;
+              });
+            }
+
+            break buyAmountLoop; // Exit the buy amount input loop
+
+          } catch (error: any) {
+            if (error.message.includes("exceeds maximum")) {
+              await sendMessage(ctx, `❌ <b>Buy Amount Too Large</b>
+
+${error.message}
+
+Please enter a smaller buy amount:`, { parse_mode: "HTML" });
+              // Continue the loop to ask for buy amount again
+              continue buyAmountLoop;
+            }
+            throw error;
+          }
         }
       }
     }

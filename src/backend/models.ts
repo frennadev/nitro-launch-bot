@@ -24,6 +24,25 @@ const walletSchema = new Schema(
   },
   { timestamps: true },
 );
+
+// New Wallet Pool Schema for pre-generated wallets
+const walletPoolSchema = new Schema(
+  {
+    publicKey: { type: String, required: true, unique: true },
+    privateKey: { type: String, required: true }, // Encrypted
+    isAllocated: { type: Boolean, default: false },
+    allocatedTo: { type: Schema.ObjectId, ref: "User", default: null },
+    allocatedAt: { type: Date, default: null },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true },
+);
+
+// Add indexes for efficient querying
+walletPoolSchema.index({ isAllocated: 1 });
+walletPoolSchema.index({ allocatedTo: 1 });
+walletPoolSchema.index({ createdAt: 1 });
+
 const pumpAddressSchema = new Schema(
   {
     publicKey: { type: String, required: true, unique: true },
@@ -131,6 +150,8 @@ export type User = InferSchemaType<typeof userSchema>;
 export const UserModel = model<User>("User", userSchema);
 export type Wallet = InferSchemaType<typeof walletSchema>;
 export const WalletModel = model<Wallet>("Wallet", walletSchema);
+export type WalletPool = InferSchemaType<typeof walletPoolSchema>;
+export const WalletPoolModel = model<WalletPool>("WalletPool", walletPoolSchema);
 export type PumpAddress = InferSchemaType<typeof pumpAddressSchema>;
 export const PumpAddressModel = model<PumpAddress>("PumpAddress", pumpAddressSchema, "pump_addresses");
 export type Token = InferSchemaType<typeof tokenSchema>;

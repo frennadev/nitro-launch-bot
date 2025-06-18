@@ -1824,8 +1824,15 @@ export const getDetailedSellSummary = async (tokenAddress: string) => {
  * Calculate the required number of wallets for incremental distribution system with 20 wallet maximum
  * First 15 wallets: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1 SOL (total 21.5 SOL)
  * Last 5 wallets (16-20): 4.0-5.0 SOL each (for larger amounts)
+ * Maximum buy amount supported: 46.5 SOL with 20 wallets
  */
 export const calculateRequiredWallets = (buyAmount: number): number => {
+  // Enforce maximum buy amount
+  const MAX_BUY_AMOUNT = calculateMaxBuyAmount();
+  if (buyAmount > MAX_BUY_AMOUNT) {
+    throw new Error(`Buy amount exceeds maximum of ${MAX_BUY_AMOUNT} SOL`);
+  }
+
   // First 15 wallets sequence
   const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
   const firstFifteenTotal = firstFifteenSequence.reduce((sum, amount) => sum + amount, 0); // Calculate exact total
@@ -1855,6 +1862,19 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
     const additionalWallets = Math.min(5, Math.ceil(remainingAmount / 4.0)); // Max 5 additional wallets, min 4 SOL each
     return Math.min(20, 15 + additionalWallets); // Cap at 20 wallets total
   }
+};
+
+/**
+ * Calculate the maximum buy amount supported by the 20 wallet system
+ * First 15 wallets total: 21.5 SOL
+ * Last 5 wallets at 5.0 SOL each: 25.0 SOL
+ * Maximum total: 46.5 SOL
+ */
+export const calculateMaxBuyAmount = (): number => {
+  const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
+  const firstFifteenTotal = firstFifteenSequence.reduce((sum, amount) => sum + amount, 0);
+  const lastFiveTotal = 5 * 5.0; // 5 wallets × 5.0 SOL each
+  return firstFifteenTotal + lastFiveTotal; // 21.5 + 25.0 = 46.5 SOL
 };
 
 /**
@@ -1913,4 +1933,144 @@ export const generateBuyDistribution = (buyAmount: number, availableWallets: num
     
     return distribution;
   }
+};
+
+// ========== WALLET POOL FUNCTIONS ==========
+
+export const initializeWalletPool = async (count: number = 2000) => {
+  const { WalletPoolModel } = await import("./models");
+  const { encryptPrivateKey } = await import("./utils");
+  const { Keypair } = await import("@solana/web3.js");
+  const bs58 = await import("bs58");
+
+  console.log(`🔄 Initializing wallet pool with ${count} wallets...`);
+
+  // Check if pool already exists
+  const existingCount = await WalletPoolModel.countDocuments();
+  if (existingCount >= count) {
+    console.log(`✅ Wallet pool already initialized with ${existingCount} wallets`);
+    return;
+  }
+
+  const walletsToGenerate = count - existingCount;
+  console.log(`📝 Generating ${walletsToGenerate} new wallets...`);
+
+  const batchSize = 100;
+  const batches = Math.ceil(walletsToGenerate / batchSize);
+
+  for (let i = 0; i < batches; i++) {
+    const currentBatchSize = Math.min(batchSize, walletsToGenerate - (i * batchSize));
+    
+    const walletDocs = [];
+    for (let j = 0; j < currentBatchSize; j++) {
+      const keypair = Keypair.generate();
+      walletDocs.push({
+        publicKey: keypair.publicKey.toBase58(),
+        privateKey: encryptPrivateKey(bs58.default.encode(keypair.secretKey)),
+        isAllocated: false,
+        allocatedTo: null,
+        allocatedAt: null
+      });
+    }
+
+    await WalletPoolModel.insertMany(walletDocs);
+    console.log(`📝 Generated batch ${i + 1}/${batches} (${currentBatchSize} wallets)`);
+  }
+
+  console.log(`✅ Wallet pool initialized with ${count} wallets`);
+};
+
+export const allocateWalletsFromPool = async (userId: string, count: number) => {
+  const { WalletPoolModel, WalletModel } = await import("./models");
+  const { decryptPrivateKey } = await import("./utils");
+
+  console.log(`🔄 Allocating ${count} wallets from pool to user ${userId}...`);
+
+  // Find available wallets in pool
+  const availableWallets = await WalletPoolModel.find({
+    isAllocated: false
+  }).limit(count);
+
+  if (availableWallets.length < count) {
+    throw new Error(`Insufficient wallets in pool. Need ${count}, available ${availableWallets.length}`);
+  }
+
+  const session = await mongoose.startSession();
+  
+  try {
+    await session.withTransaction(async () => {
+      // Mark wallets as allocated in pool
+      const walletIds = availableWallets.map(w => w._id);
+      await WalletPoolModel.updateMany(
+        { _id: { $in: walletIds } },
+        { 
+          $set: { 
+            isAllocated: true, 
+            allocatedTo: userId, 
+            allocatedAt: new Date() 
+          } 
+        },
+        { session }
+      );
+
+      // Create buyer wallet records for user
+      const buyerWalletDocs = availableWallets.map(poolWallet => ({
+        user: userId,
+        publicKey: poolWallet.publicKey,
+        privateKey: poolWallet.privateKey, // Already encrypted
+        isDev: false,
+        isBuyer: true,
+        isFunding: false
+      }));
+
+      await WalletModel.insertMany(buyerWalletDocs, { session });
+    });
+
+    console.log(`✅ Successfully allocated ${count} wallets to user ${userId}`);
+    
+    // Return the allocated wallets
+    return availableWallets.map(w => ({
+      id: w._id.toString(),
+      publicKey: w.publicKey,
+      privateKey: decryptPrivateKey(w.privateKey)
+    }));
+
+  } catch (error: any) {
+    console.error(`❌ Failed to allocate wallets: ${error.message}`);
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
+
+export const getWalletPoolStats = async () => {
+  const { WalletPoolModel } = await import("./models");
+
+  const stats = await WalletPoolModel.aggregate([
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        allocated: { $sum: { $cond: ["$isAllocated", 1, 0] } },
+        available: { $sum: { $cond: ["$isAllocated", 0, 1] } }
+      }
+    }
+  ]);
+
+  return stats.length > 0 ? stats[0] : { total: 0, allocated: 0, available: 0 };
+};
+
+export const ensureWalletPoolHealth = async () => {
+  const stats = await getWalletPoolStats();
+  const minThreshold = 500; // Minimum available wallets
+  
+  if (stats.available < minThreshold) {
+    console.log(`⚠️ Wallet pool low: ${stats.available} available, ${minThreshold} minimum required`);
+    const walletsToAdd = 2000 - stats.total;
+    if (walletsToAdd > 0) {
+      await initializeWalletPool(stats.total + walletsToAdd);
+    }
+  }
+  
+  return stats;
 };

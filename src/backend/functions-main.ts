@@ -104,6 +104,14 @@ export const getAllBuyerWallets = originalFunctions.getAllBuyerWallets;
 export const addBuyerWallet = originalFunctions.addBuyerWallet;
 export const generateNewBuyerWallet = originalFunctions.generateNewBuyerWallet;
 export const deleteBuyerWallet = originalFunctions.deleteBuyerWallet;
+
+// Wallet Pool Functions
+export const initializeWalletPool = originalFunctions.initializeWalletPool;
+export const allocateWalletsFromPool = originalFunctions.allocateWalletsFromPool;
+export const getWalletPoolStats = originalFunctions.getWalletPoolStats;
+export const ensureWalletPoolHealth = originalFunctions.ensureWalletPoolHealth;
+export const calculateMaxBuyAmount = originalFunctions.calculateMaxBuyAmount;
+export const calculateRequiredWallets = originalFunctions.calculateRequiredWallets;
 export const getBuyerWalletPrivateKey = originalFunctions.getBuyerWalletPrivateKey;
 export const deleteToken = originalFunctions.deleteToken;
 export const handleTokenLaunchFailure = originalFunctions.handleTokenLaunchFailure;

@@ -5,6 +5,17 @@ import bot from "./bot";
 const nitroLaunchRunner = async () => {
   logger.info("Establishing db connection...");
   await connectDB();
+  
+  // Ensure wallet pool health
+  logger.info("Checking wallet pool health...");
+  try {
+    const { ensureWalletPoolHealth } = await import("./backend/functions-main");
+    const stats = await ensureWalletPoolHealth();
+    logger.info(`Wallet pool status: ${stats.available} available, ${stats.allocated} allocated, ${stats.total} total`);
+  } catch (error) {
+    logger.error("Wallet pool health check failed:", error);
+  }
+  
   logger.info("Starting Telegram bot...");
   bot
     .start()
