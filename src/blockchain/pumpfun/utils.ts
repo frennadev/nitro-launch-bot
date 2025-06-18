@@ -65,7 +65,7 @@ export const getGlobalSetting = async () => {
 };
 
 export const getBondingCurveData = async (curve: PublicKey) => {
-  const info = await connection.getAccountInfo(curve);
+  const info = await connection.getAccountInfo(curve, "processed");
   if (!info) return null;
   return BondingCurveCodec.decode(info.data);
 };
