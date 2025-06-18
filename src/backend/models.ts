@@ -9,6 +9,10 @@ const userSchema = new Schema(
     firstName: { type: String },
     lastName: { type: String },
     fundingWallet: { type: Schema.ObjectId, ref: "Wallet" },
+    // Affiliate tracking fields
+    affiliateCode: { type: String, unique: true, sparse: true },
+    referredBy: { type: Schema.ObjectId, ref: "User", default: null },
+    referralCount: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

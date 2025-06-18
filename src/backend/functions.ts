@@ -2074,3 +2074,163 @@ export const ensureWalletPoolHealth = async () => {
   
   return stats;
 };
+
+// ====== AFFILIATE SYSTEM FUNCTIONS ======
+
+/**
+ * Generate a unique random affiliate code
+ */
+const generateAffiliateCode = (length: number = 8): string => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+};
+
+/**
+ * Get or create affiliate code for a user
+ */
+export const getOrCreateAffiliateCode = async (userId: string): Promise<string> => {
+  try {
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Return existing code if available
+    if (user.affiliateCode) {
+      return user.affiliateCode;
+    }
+
+    // Generate new unique code
+    let affiliateCode: string;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    do {
+      affiliateCode = generateAffiliateCode();
+      attempts++;
+      
+      if (attempts >= maxAttempts) {
+        throw new Error("Failed to generate unique affiliate code");
+      }
+      
+      // Check if code already exists
+      const existingUser = await UserModel.findOne({ affiliateCode });
+      if (!existingUser) {
+        break;
+      }
+    } while (true);
+
+    // Save the new code
+    await UserModel.findByIdAndUpdate(userId, { affiliateCode });
+    
+    return affiliateCode;
+  } catch (error) {
+    logger.error("Error generating affiliate code:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get user's referral statistics
+ */
+export const getUserReferralStats = async (userId: string) => {
+  try {
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    return {
+      affiliateCode: user.affiliateCode,
+      referralCount: user.referralCount || 0,
+      referredBy: user.referredBy,
+    };
+  } catch (error) {
+    logger.error("Error getting referral stats:", error);
+    throw error;
+  }
+};
+
+/**
+ * Process referral when a new user signs up
+ */
+export const processReferral = async (newUserId: string, referralCode: string): Promise<boolean> => {
+  try {
+    // Find the referring user by affiliate code
+    const referringUser = await UserModel.findOne({ affiliateCode: referralCode });
+    if (!referringUser) {
+      logger.warn(`Invalid referral code used: ${referralCode}`);
+      return false;
+    }
+
+    // Prevent self-referral
+    if (referringUser._id.toString() === newUserId) {
+      logger.warn(`Self-referral attempt detected for user: ${newUserId}`);
+      return false;
+    }
+
+    // Update the new user with referral info
+    await UserModel.findByIdAndUpdate(newUserId, {
+      referredBy: referringUser._id,
+    });
+
+    // Increment the referring user's referral count
+    await UserModel.findByIdAndUpdate(referringUser._id, {
+      $inc: { referralCount: 1 }
+    });
+
+    logger.info(`Referral processed: User ${newUserId} referred by ${referringUser._id} (code: ${referralCode})`);
+    return true;
+  } catch (error) {
+    logger.error("Error processing referral:", error);
+    return false;
+  }
+};
+
+/**
+ * Generate referral link for a user
+ */
+export const generateReferralLink = async (userId: string, botUsername: string): Promise<string> => {
+  try {
+    const affiliateCode = await getOrCreateAffiliateCode(userId);
+    return `https://t.me/${botUsername}?start=REF_${affiliateCode}`;
+  } catch (error) {
+    logger.error("Error generating referral link:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update createUser function to handle referral codes
+ */
+export const createUserWithReferral = async (
+  firstName: string | undefined,
+  lastName: string | undefined,
+  userName: string,
+  telegramId: string,
+  referralCode?: string
+): Promise<any> => {
+  try {
+    // Create the user first
+    const newUser = await UserModel.create({
+      firstName,
+      lastName,
+      userName,
+      telegramId,
+    });
+
+    // Process referral if code provided
+    if (referralCode) {
+      await processReferral(newUser._id.toString(), referralCode);
+    }
+
+    return newUser;
+  } catch (error) {
+    logger.error("Error creating user with referral:", error);
+    throw error;
+  }
+};

@@ -32,7 +32,9 @@ To proceed, you can choose any of the actions below ⬇️
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
     .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
-    .text("Wallet Config", CallBackQueries.WALLET_CONFIG);
+    .text("Wallet Config", CallBackQueries.WALLET_CONFIG)
+    .row()
+    .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS);
 
   await ctx.reply(welcomeMsg, {
     parse_mode: "MarkdownV2",

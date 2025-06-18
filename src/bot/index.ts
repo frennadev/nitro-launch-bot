@@ -13,6 +13,7 @@ import {
   removeFailedToken,
   getAllBuyerWallets,
   getUserTokenWithBuyWallets,
+  createUserWithReferral,
 } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
@@ -37,6 +38,7 @@ import { logger } from "../blockchain/common/logger";
 import { getTokenInfo, getTokenBalance } from "../backend/utils";
 import { getTransactionFinancialStats } from "../backend/functions-main";
 import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
+import { referralsConversation } from "./conversation/referrals";
 import { PublicKey } from "@solana/web3.js";
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
@@ -178,13 +180,35 @@ bot.use(createConversation(withdrawFundingWalletConversation));
 bot.use(createConversation(viewTokensConversation));
 bot.use(createConversation(externalTokenSellConversation));
 bot.use(createConversation(buyExternalTokenConversation));
+bot.use(createConversation(referralsConversation));
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
   let user = await getUser(ctx.chat.id.toString());
   let isFirstTime = user === null;
+  
   if (isFirstTime) {
-    user = await createUser(ctx.chat.first_name, ctx.chat.last_name, ctx.chat.username!, ctx.chat.id.toString());
+    // Check if there's a referral code in the start command
+    const startPayload = ctx.match; // This gets the text after /start
+    let referralCode: string | undefined;
+    
+    if (startPayload && typeof startPayload === 'string' && startPayload.startsWith('REF_')) {
+      referralCode = startPayload.replace('REF_', '');
+      console.log(`New user with referral code: ${referralCode}`);
+    }
+    
+    // Create user with or without referral
+    if (referralCode) {
+      user = await createUserWithReferral(
+        ctx.chat.first_name, 
+        ctx.chat.last_name, 
+        ctx.chat.username!, 
+        ctx.chat.id.toString(),
+        referralCode
+      );
+    } else {
+      user = await createUser(ctx.chat.first_name, ctx.chat.last_name, ctx.chat.username!, ctx.chat.id.toString());
+    }
   }
 
   // Auto-create funding wallet for all users
@@ -467,6 +491,11 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_FUNDING_WALLET, async (ctx) => {
 
 bot.callbackQuery(CallBackQueries.WITHDRAW_BUYER_WALLETS, async (ctx) => {
   await ctx.conversation.enter("withdrawBuyerWalletsConversation");
+  await safeAnswerCallbackQuery(ctx);
+});
+
+bot.callbackQuery(CallBackQueries.VIEW_REFERRALS, async (ctx) => {
+  await ctx.conversation.enter("referralsConversation");
   await safeAnswerCallbackQuery(ctx);
 });
 
