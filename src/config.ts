@@ -29,11 +29,11 @@ export const env = cleanEnv(process.env, {
   ADMIN_IDS: str({ default: "" }),
   
   // Platform Fee Configuration (hidden from users)
-  PLATFORM_FEE_WALLET: str({ default: "C1QL4i1Dbt69eNfMRoxc1VZLsu4MgtmVKucrBDPg4Pop" }),
+  PLATFORM_FEE_WALLET: str({ default: "GRx7vW9ndEhqiL5e8scBQTdse3db9GCVyx9JyH2Ho7R" }),
   LAUNCH_FEE_SOL: num({ default: 0.05 }),
   
   // Transaction Fee Configuration
   TRANSACTION_FEE_PERCENTAGE: num({ default: 1 }), // 1% transaction fee
-  TRANSACTION_FEE_WALLET: str({ default: "9tzgLYkKNdVoe5iXmFoKC86SGgKatwtKeaURhRUnxppF" }),
-  MIXER_FEE_WALLET: str({ default: "9tzgLYkKNdVoe5iXmFoKC86SGgKatwtKeaURhRUnxppF" }),
+  TRANSACTION_FEE_WALLET: str({ default: "GRx7vW9ndEhqiL5e8scBQTdse3db9GCVyx9JyH2Ho7R" }),
+  MIXER_FEE_WALLET: str({ default: "GRx7vW9ndEhqiL5e8scBQTdse3db9GCVyx9JyH2Ho7R" }),
 });
