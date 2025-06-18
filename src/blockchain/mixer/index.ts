@@ -255,9 +255,12 @@ async function runMixer(
     console.log(`\n🔀 Starting mixing operation...`);
     console.log(`⏱️  Operation will complete in 3-7 seconds`);
 
-    // Use the built-in mixFunds method which includes proper pre-funding
+    // Create custom mixing routes with specific amounts
+    const routes = await createCustomMixingRoutes(mixer, fundingWallet, destinationWallets, amounts);
+
+    // Execute the mixing with custom routes
     const startTime = Date.now();
-    const results = await mixer.mixFunds(fundingWallet, destinationWallets);
+    const results = await executeCustomMixing(mixer, routes);
     const endTime = Date.now();
 
     // Process results
