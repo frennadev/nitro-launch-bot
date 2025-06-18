@@ -342,7 +342,7 @@ async function executeCustomMixing(mixer: any, routes: any[]) {
 
   for (const route of routes) {
     try {
-      const result = await mixer.executeSingleRouteWithTiming(route, 1000, 0, routes.length - 1, 0);
+      const result = await mixer.executeSingleRouteOptimized(route, 1000, 0, routes.length - 1, 0);
       results.push(result);
     } catch (error) {
       results.push({
