@@ -58,13 +58,12 @@ export enum CallBackQueries {
   NOOP = "noop",
   CANCEL = "cancel",
 
-  CANCEL_EXTERNAL_BUY = 'cancel_external_buy',
-  BUY_EXTERNAL_TOKEN = 'buy_external_token',
-  SELL_EXTERNAL_TOKEN = 'sell_external_token',
-  VIEW_TOKEN_DETAILS = 'view_token_details',
-  SELL_DEV_SUPPLY = 'sell_dev_supply',
-  SELL_WALLET_SUPPLY = 'sell_wallet_supply',
-
   // Affiliate system
-  VIEW_REFERRALS = 'view_referrals',
+  VIEW_REFERRALS = "view_referrals",
+  CANCEL_EXTERNAL_BUY = "cancel_external_buy",
+  BUY_EXTERNAL_TOKEN = "buy_token",
+  SELL_EXTERNAL_TOKEN = "sell_token",
+  VIEW_TOKEN_DETAILS = "view_token_details",
+  SELL_DEV_SUPPLY = "sell_dev_supply",
+  SELL_WALLET_SUPPLY = "sell_wallet_supply",
 }

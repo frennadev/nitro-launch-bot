@@ -662,7 +662,8 @@ bot.on("message:text", async (ctx) => {
         const marketCap = "$4,404.38"; // Placeholder
         const price = "$0.000004404"; // Placeholder
         // Display token detail page with buy and sell options
-        await ctx.reply(`🪙 ${tokenName} (${tokenSymbol})
+        await ctx.reply(
+          `🪙 ${tokenName} (${tokenSymbol})
 ${text}
 Pump.fun 🔗 SO
 
@@ -671,15 +672,17 @@ Market Data
 💵 Price: ${price}
 
 Your Holdings
-${holdingsText}`, {
-          parse_mode: "HTML",
-          reply_markup: new InlineKeyboard()
-            .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-            .row()
-            .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
-            .row()
-            .text("❌ Cancel", CallBackQueries.CANCEL)
-        });
+${holdingsText}`,
+          {
+            parse_mode: "HTML",
+            reply_markup: new InlineKeyboard()
+              .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .row()
+              .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
+              .row()
+              .text("❌ Cancel", CallBackQueries.CANCEL),
+          }
+        );
         return;
       } catch (e) {
         // Not a valid Solana address, ignore or handle as regular text
@@ -822,6 +825,80 @@ bot.command("help", async (ctx) => {
     "💡 **Tip:** Always use `/fixlaunch` first if you're having issues!",
     { parse_mode: "Markdown" }
   );
+bot.on("callback_query:data", async (ctx) => {
+  const data = ctx.callbackQuery.data;
+
+  // Handle "back-buy" and similar cases first
+  if (data.startsWith("back-_")) {
+    const [action, address] = data.split("_");
+    console.log("reached bbbbb");
+    const backKb = new InlineKeyboard()
+      .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${address}`)
+      .row()
+      .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${address}`)
+      .row()
+      .text("❌ Cancel", CallBackQueries.CANCEL);
+    await ctx.editMessageReplyMarkup({ reply_markup: backKb });
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  // Handle other actions
+  const [action, token, address] = data.split("_");
+  if (action && token && address) {
+    logger.info(`${action} called`);
+    switch (action) {
+      case "buy":
+        const kb = new InlineKeyboard()
+          .text("← Back", `back-_${address}`)
+          .text("↻ Refresh", `refresh_buy_${address}`)
+          .row()
+          .text("0.5 SOL", `buy_0.5_${address}`)
+          .text("1 SOL", `buy_1_${address}`)
+          .text("3 SOL", `buy_3_${address}`)
+          .row()
+          .text("5 SOL", `buy_5_${address}`)
+          .text("10 SOL", `buy_10_${address}`)
+          .text("X SOL ✏️", `buy_custom_${address}`)
+          .row()
+          .text("Menu", CallBackQueries.BACK);
+
+        await ctx.editMessageReplyMarkup({ reply_markup: kb });
+        await ctx.answerCallbackQuery();
+        break;
+
+      case "sell":
+        const sellKb = new InlineKeyboard()
+          .text("← Back", `back-_${address}`)
+          .text("↻ Refresh", `refresh_sell_${address}`)
+          .row()
+          .text("10%", `sell_ca_10_${address}`)
+          .text("25%", `sell_ca_25_${address}`)
+          .text("50%", `sell_ca_50_${address}`)
+          .row()
+          .text("75%", `sell_ca_75_${address}`)
+          .text("100%", `sell_ca_100_${address}`)
+          .row()
+          .text("Custom % ✏️", `sell_ca_custom_${address}`)
+          .row()
+          .text("Menu", CallBackQueries.BACK);
+
+        await ctx.editMessageReplyMarkup({ reply_markup: sellKb });
+        await ctx.answerCallbackQuery();
+        break;
+
+      default:
+        break;
+    }
+  }
+});
+
+bot.on("callback_query:data", async (ctx) => {
+  try {
+    const data = ctx.callbackQuery.data;
+  } catch (error) {
+    console.log(error);
+  }
 });
 
 export default bot;
@@ -869,7 +946,8 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
   const price = "$0.000004404"; // Placeholder
 
   // Display token detail page with buy and sell options
-  await ctx.reply(`🪙 ${tokenName} (${tokenSymbol})
+  await ctx.reply(
+    `🪙 ${tokenName} (${tokenSymbol})
 ${tokenAddress}
 Pump.fun 🔗 SO
 
@@ -878,15 +956,17 @@ Market Data
 💵 Price: ${price}
 
 Your Holdings
-${holdingsText}`, {
-    parse_mode: "HTML",
-    reply_markup: new InlineKeyboard()
-      .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
-      .row()
-      .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${tokenAddress}`)
-      .row()
-      .text("❌ Cancel", CallBackQueries.CANCEL)
-  });
+${holdingsText}`,
+    {
+      parse_mode: "HTML",
+      reply_markup: new InlineKeyboard()
+        .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .row()
+        .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .row()
+        .text("❌ Cancel", CallBackQueries.CANCEL),
+    }
+  );
 }
 
 // Callback query handlers for external token actions
