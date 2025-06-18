@@ -471,5 +471,28 @@ export class SolanaConnectionPool {
   }
 }
 
-// Create singleton instance
-export const connectionPool = new SolanaConnectionPool(); 
+// Create a singleton instance for general operations
+export const connectionPool = new SolanaConnectionPool();
+
+/**
+ * Create a dedicated connection pool optimized for mixer operations
+ * Uses the dedicated mixer RPC endpoint with aggressive optimization
+ */
+export function createMixerConnectionPool(): SolanaConnectionPool {
+  return new SolanaConnectionPool({
+    endpoints: [env.HELIUS_MIXER_RPC_URL],
+    maxRequestsPerSecond: 195, // Aggressive rate limiting for mixer
+    maxTransactionsPerSecond: 48, // Aggressive transaction rate
+    cacheConfig: {
+      balanceTTL: 2000, // Very fast updates for mixer operations
+      blockhashTTL: 6000, // Fresh blockhashes for mixer
+      accountInfoTTL: 3000, // Fast account info updates
+      signatureStatusTTL: 500, // Very fast confirmation checks
+    },
+  });
+}
+
+/**
+ * Singleton mixer connection pool instance
+ */
+export const mixerConnectionPool = createMixerConnectionPool(); 

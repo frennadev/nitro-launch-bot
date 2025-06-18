@@ -40,7 +40,7 @@ import {
 } from "../../backend/functions";
 import { collectTransactionFee } from "../../backend/functions-main";
 import { logger } from "../common/logger";
-import { initializeMixer, initializeMixerWithProgress } from "../mixer/init-mixer";
+import { initializeMixer, initializeMixerWithProgress, initializeFastMixer } from "../mixer/init-mixer";
 import bs58 from "bs58";
 import { getSolBalance, getTokenBalance } from "../../backend/utils";
 
@@ -94,18 +94,29 @@ export const prepareTokenLaunch = async (
   const funderPrivateKey = bs58.encode(funderKeypair.secretKey);
   const destinationAddresses = buyKeypairs.map(w => w.publicKey.toString());
   
-  // Use progress-tracked mixer if loading key is provided, otherwise use standard mixer
-  // Fallback to standard mixer if progress-tracked version fails
+  // Use fast mixer for optimal speed with dedicated endpoint
+  // Fallback chain: Fast Mixer → Progress Mixer → Standard Mixer
   if (loadingKey) {
     try {
-      await initializeMixerWithProgress(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses, loadingKey);
+      await initializeFastMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses, loadingKey);
     } catch (error: any) {
-      logger.warn(`[${logIdentifier}]: Progress-tracked mixer failed, falling back to standard mixer:`, error.message);
-      // Fallback to standard mixer to ensure system stability
-      await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+      logger.warn(`[${logIdentifier}]: Fast mixer failed, falling back to progress mixer:`, error.message);
+      try {
+        await initializeMixerWithProgress(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses, loadingKey);
+      } catch (error2: any) {
+        logger.warn(`[${logIdentifier}]: Progress mixer failed, falling back to standard mixer:`, error2.message);
+        // Final fallback to standard mixer to ensure system stability
+        await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+      }
     }
   } else {
-    await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+    // For non-tracked operations, use fast mixer directly
+    try {
+      await initializeFastMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+    } catch (error: any) {
+      logger.warn(`[${logIdentifier}]: Fast mixer failed, falling back to standard mixer:`, error.message);
+      await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+    }
   }
 
   await updateLaunchStage(

@@ -23,6 +23,9 @@ export const env = cleanEnv(process.env, {
   PINATA_JWT: validStr(),
   PINATA_API_URL: validStr(),
   HELIUS_RPC_URL: validStr(),
+  HELIUS_MIXER_RPC_URL: str({ 
+    default: "https://mainnet.helius-rpc.com/?api-key=74feaea1-f5ce-4ef6-a124-49dd51e76f67" 
+  }),
   ADMIN_IDS: str({ default: "" }),
   
   // Platform Fee Configuration (hidden from users)

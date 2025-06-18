@@ -8,20 +8,32 @@ import {
   LAMPORTS_PER_SOL,
   ComputeBudgetProgram,
 } from "@solana/web3.js";
+import { mixerConnectionPool } from "../common/connection-pool";
 
 export class SolanaConnectionManager {
   private connection: Connection;
   private priorityFee: number;
+  private useConnectionPool: boolean;
 
-  constructor(rpcEndpoint: string, priorityFee: number = 1000) {
-    this.connection = new Connection(rpcEndpoint, "confirmed");
+  constructor(rpcEndpoint: string, priorityFee: number = 1000, useConnectionPool: boolean = true) {
+    // Use dedicated mixer connection pool if available, otherwise fallback to direct connection
+    if (useConnectionPool && mixerConnectionPool) {
+      this.useConnectionPool = true;
+      this.connection = new Connection(rpcEndpoint, "processed"); // Fallback connection
+    } else {
+      this.useConnectionPool = false;
+      this.connection = new Connection(rpcEndpoint, "confirmed");
+    }
     this.priorityFee = priorityFee;
   }
 
   /**
-   * Get the current balance of a wallet in lamports
+   * Get balance for a single wallet (uses connection pool if available)
    */
   async getBalance(publicKey: PublicKey): Promise<number> {
+    if (this.useConnectionPool && mixerConnectionPool) {
+      return await mixerConnectionPool.getBalance(publicKey);
+    }
     return await this.connection.getBalance(publicKey);
   }
 
@@ -29,7 +41,11 @@ export class SolanaConnectionManager {
    * Batch balance checking for multiple wallets (optimized for mixer operations)
    */
   async getBatchBalances(publicKeys: PublicKey[]): Promise<number[]> {
-    // Process in chunks to respect rate limits
+    if (this.useConnectionPool && mixerConnectionPool) {
+      return await mixerConnectionPool.getBatchBalances(publicKeys);
+    }
+    
+    // Fallback to individual calls if no connection pool
     const chunkSize = 10;
     const results: number[] = [];
     
@@ -89,7 +105,7 @@ export class SolanaConnectionManager {
     );
 
     // Get recent blockhash
-    const { blockhash } = await this.connection.getLatestBlockhash();
+    const { blockhash } = await this.getRecentBlockhash();
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = from;
 
@@ -126,7 +142,7 @@ export class SolanaConnectionManager {
     );
 
     // Get recent blockhash
-    const { blockhash } = await this.connection.getLatestBlockhash();
+    const { blockhash } = await this.getRecentBlockhash();
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = feePayer; // Custom fee payer
 
@@ -134,13 +150,23 @@ export class SolanaConnectionManager {
   }
 
   /**
-   * Send and confirm a transaction
+   * Get recent blockhash (uses connection pool if available)
+   */
+  async getRecentBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+    if (this.useConnectionPool && mixerConnectionPool) {
+      return await mixerConnectionPool.getLatestBlockhash("processed");
+    }
+    return await this.connection.getLatestBlockhash("confirmed");
+  }
+
+  /**
+   * Send transaction (uses connection pool if available)
    */
   async sendTransaction(transaction: Transaction, signers: Keypair[]): Promise<string> {
-    return await sendAndConfirmTransaction(this.connection, transaction, signers, {
-      commitment: "confirmed",
-      maxRetries: 3,
-    });
+    if (this.useConnectionPool && mixerConnectionPool) {
+      return await mixerConnectionPool.sendTransaction(transaction, { signers });
+    }
+    return await sendAndConfirmTransaction(this.connection, transaction, signers);
   }
 
   /**
