@@ -362,7 +362,18 @@ export class SolanaConnectionPool {
   async sendTransaction(transaction: any, options?: any): Promise<TransactionSignature> {
     return await this.queueRequest(async () => {
       const connection = this.getNextConnection();
-      return await connection.sendTransaction(transaction, options);
+      
+      // Handle different parameter formats
+      if (options && options.signers && Array.isArray(options.signers)) {
+        // Called with { signers: Keypair[] } format from mixer
+        return await connection.sendTransaction(transaction, options.signers);
+      } else if (Array.isArray(options)) {
+        // Called with signers array directly
+        return await connection.sendTransaction(transaction, options);
+      } else {
+        // Called with options object or no options
+        return await connection.sendTransaction(transaction, options);
+      }
     }, 'transaction');
   }
 
