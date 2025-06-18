@@ -209,7 +209,7 @@ export class MongoSolanaMixer {
   /**
    * Execute a single route with optimized execution
    */
-  private async executeSingleRouteOptimized(
+  public async executeSingleRouteOptimized(
     route: MixingRoute,
     delayPerTransaction: number,
     currentTransactionIndex: number,

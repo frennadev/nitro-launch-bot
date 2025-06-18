@@ -52,6 +52,29 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
       }
       walletIndex++;
     }
+    
+    // Handle case where we have more destinations than amounts generated
+    // This happens when the total amount is small and we have many destinations
+    if (amounts.length < destinationCount) {
+      // If we have remaining destinations but no remaining amount, 
+      // we need to redistribute the total amount across all destinations
+      console.warn(`Total amount ${totalSol} SOL is too small for ${destinationCount} destinations. Redistributing...`);
+      
+      // Clear existing amounts and redistribute evenly
+      amounts.length = 0;
+      const amountPerDestination = Math.floor(totalLamports / destinationCount);
+      let remainingForDistribution = totalLamports;
+      
+      for (let i = 0; i < destinationCount; i++) {
+        if (i === destinationCount - 1) {
+          // Last destination gets remaining amount
+          amounts.push(remainingForDistribution);
+        } else {
+          amounts.push(amountPerDestination);
+          remainingForDistribution -= amountPerDestination;
+        }
+      }
+    }
   } else {
     // Use all 15 sequence wallets + additional wallets (last 5 with 4-5 SOL each)
     // Add all fixed sequence amounts
@@ -88,6 +111,20 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
         amounts.push(remainingLamports);
       }
     }
+    
+    // Handle case where we have more destinations than amounts generated
+    if (amounts.length < destinationCount) {
+      console.warn(`Not enough amounts generated for ${destinationCount} destinations. Padding with minimum amounts...`);
+      const minAmount = Math.floor(0.001 * 1e9); // 0.001 SOL minimum
+      while (amounts.length < destinationCount) {
+        amounts.push(minAmount);
+      }
+    }
+  }
+  
+  // Ensure we have exactly the right number of amounts
+  if (amounts.length !== destinationCount) {
+    throw new Error(`Amount generation failed: expected ${destinationCount} amounts, got ${amounts.length}`);
   }
   
   // Validate total matches (within rounding tolerance)
@@ -342,7 +379,7 @@ async function executeCustomMixing(mixer: any, routes: any[]) {
 
   for (const route of routes) {
     try {
-      const result = await mixer.executeSingleRouteWithTiming(route, 1000, 0, routes.length - 1, 0);
+      const result = await mixer.executeSingleRouteOptimized(route, 1000, 0, routes.length - 1, 0);
       results.push(result);
     } catch (error) {
       results.push({
