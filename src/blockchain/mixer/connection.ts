@@ -15,15 +15,10 @@ export class SolanaConnectionManager {
   private priorityFee: number;
   private useConnectionPool: boolean;
 
-  constructor(rpcEndpoint: string, priorityFee: number = 1000, useConnectionPool: boolean = true) {
-    // Use dedicated mixer connection pool if available, otherwise fallback to direct connection
-    if (useConnectionPool && mixerConnectionPool) {
-      this.useConnectionPool = true;
-      this.connection = new Connection(rpcEndpoint, "processed"); // Fallback connection
-    } else {
-      this.useConnectionPool = false;
-      this.connection = new Connection(rpcEndpoint, "confirmed");
-    }
+  constructor(rpcEndpoint: string, priorityFee: number = 1000, useConnectionPool: boolean = false) {
+    // Disable connection pool for mixer operations to avoid parameter conflicts
+    this.useConnectionPool = false;
+    this.connection = new Connection(rpcEndpoint, "confirmed");
     this.priorityFee = priorityFee;
   }
 
