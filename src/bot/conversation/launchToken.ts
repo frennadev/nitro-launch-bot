@@ -407,11 +407,11 @@ Please enter a smaller buy amount:`, { parse_mode: "HTML" });
   }
 
   // -------- CALCULATE TOTAL COSTS --------
-  const costBreakdown = calculateTotalLaunchCost(buyAmount, devBuy, buyerWallets.length, false); // Don't show platform fee to user
-  const requiredFundingAmount = costBreakdown.totalCost; // User sees total without knowing about hidden fees
+  // Simplified funding requirement: buy amount + dev buy + 0.2 SOL buffer
+  const requiredFundingAmount = buyAmount + devBuy + 0.2;
 
-  // Check funding wallet balance
-  if (fundingBalance < requiredFundingAmount) {
+  // Check funding wallet balance - only check if balance is less than buy amounts
+  if (fundingBalance < buyAmount + devBuy) {
     const launchKb = new InlineKeyboard().text(
       "🚀 Launch Token",
       `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`
@@ -420,8 +420,8 @@ Please enter a smaller buy amount:`, { parse_mode: "HTML" });
     await sendMessage(ctx, `❌ <b>Insufficient funding wallet balance!</b>
 
 💰 <b>Required Amount:</b>
-• Buy Amount: ${costBreakdown.breakdown.buyAmount} SOL
-• Dev Buy: ${costBreakdown.breakdown.devBuy} SOL
+• Buy Amount: ${buyAmount} SOL
+• Dev Buy: ${devBuy} SOL
 
 <b>Funding Wallet Required:</b> ${requiredFundingAmount.toFixed(4)} SOL
 <b>Funding Wallet Available:</b> ${fundingBalance.toFixed(4)} SOL
