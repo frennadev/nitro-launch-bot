@@ -65,6 +65,7 @@ export class MongoSolanaMixer {
    */
   async mixFunds(fundingWallet: Keypair, destinationWallets: PublicKey[]): Promise<MongoMixingResult[]> {
     const results: MongoMixingResult[] = [];
+    const allUsedWalletIds: string[] = []; // Track all wallets used in this operation
 
     try {
       // Validate inputs
@@ -119,10 +120,17 @@ export class MongoSolanaMixer {
           );
           results.push(result);
 
+          // Track wallets used in this operation
+          allUsedWalletIds.push(...result.usedWalletIds);
+
           // Update transaction count for next route
           transactionCount += route.intermediates.length + 1;
         } catch (error) {
           console.error(`❌ Route ${i + 1} failed:`, error);
+
+          // Track wallets used even on failure  
+          const usedWalletIds = route.intermediates.map((w) => w.publicKey.toString());
+          allUsedWalletIds.push(...usedWalletIds);
 
           // Create failed result with recovery info
           const failedResult: MongoMixingResult = {
@@ -130,7 +138,7 @@ export class MongoSolanaMixer {
             transactionSignatures: [],
             error: error instanceof Error ? error.message : "Unknown error",
             route,
-            usedWalletIds: route.intermediates.map((w) => w.publicKey.toString()),
+            usedWalletIds,
           };
 
           results.push(failedResult);
@@ -141,9 +149,22 @@ export class MongoSolanaMixer {
       const actualTime = Date.now() - startTime;
       console.log(`⏱️ Actual operation time: ${actualTime}ms (target: ${totalOperationTime}ms)`);
 
+      // Release all used wallets back to available pool after operation completes
+      if (allUsedWalletIds.length > 0) {
+        await this.walletManager.releaseWallets(allUsedWalletIds);
+        console.log(`🔄 Released ${allUsedWalletIds.length} wallets back to pool`);
+      }
+
       return results;
     } catch (error) {
       console.error("❌ Mixing operation failed:", error);
+      
+      // Still release wallets even on complete operation failure
+      if (allUsedWalletIds.length > 0) {
+        await this.walletManager.releaseWallets(allUsedWalletIds);
+        console.log(`🔄 Released ${allUsedWalletIds.length} wallets back to pool after failure`);
+      }
+      
       throw error;
     }
   }
@@ -154,15 +175,16 @@ export class MongoSolanaMixer {
   private async createMixingRoutesWithMongo(
     fundingWallet: Keypair,
     destinationWallets: PublicKey[],
-    baseAmount: number
+    baseAmount: number,
+    excludeWalletIds: string[] = []
   ): Promise<MixingRoute[]> {
     const routes: MixingRoute[] = [];
     const totalWalletsNeeded = destinationWallets.length * this.config.intermediateWalletCount;
 
     console.log(`🔍 Reserving ${totalWalletsNeeded} intermediate wallets from MongoDB...`);
 
-    // Reserve wallets from MongoDB
-    const reservedWallets = await this.walletManager.reserveWalletsForMixing(totalWalletsNeeded);
+    // Reserve wallets from MongoDB, excluding already used ones
+    const reservedWallets = await this.walletManager.reserveWalletsForMixing(totalWalletsNeeded, excludeWalletIds);
 
     if (reservedWallets.length < totalWalletsNeeded) {
       throw new Error(
@@ -344,8 +366,7 @@ export class MongoSolanaMixer {
           amount: remainingAmount,
           toAddress: route.destination.toString(),
         }),
-        this.walletManager.updateWalletBalance(currentWallet.publicKey.toString(), 0),
-        this.walletManager.releaseWallets(usedWalletIds)
+        this.walletManager.updateWalletBalance(currentWallet.publicKey.toString(), 0)
       ]);
 
       console.log(`✅ Route completed successfully with ${signatures.length} transactions`);
@@ -446,8 +467,7 @@ export class MongoSolanaMixer {
       }
     }
 
-    // Release all wallets back to available pool
-    await this.walletManager.releaseWallets(usedWalletIds);
+    // Note: Wallets will be released at operation level, not here
 
     console.log(`🔧 Recovery complete: ${recoveredWallets.length} wallets recovered, ${lostFunds} lamports lost`);
 

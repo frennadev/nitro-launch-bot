@@ -414,7 +414,7 @@ export class MongoWalletManager {
   /**
    * Reserve wallets for a mixing operation with validation (atomic operation)
    */
-  async reserveWalletsForMixing(count: number): Promise<StoredWallet[]> {
+  async reserveWalletsForMixing(count: number, excludeWalletIds: string[] = []): Promise<StoredWallet[]> {
     const session = this.client.startSession();
 
     try {
@@ -425,15 +425,19 @@ export class MongoWalletManager {
         const bufferMultiplier = 2.0;
         const requestCount = Math.ceil(count * bufferMultiplier);
 
-        // Find available wallets
+        // Find available wallets - exclude already used in this operation
+        const query: any = {
+          isActive: true,
+          status: "available",
+        };
+        
+        // Exclude wallets already used in this mixing operation
+        if (excludeWalletIds.length > 0) {
+          query.publicKey = { $nin: excludeWalletIds };
+        }
+        
         const candidates = await this.walletsCollection
-          .find(
-            {
-              isActive: true,
-              status: "available",
-            },
-            { session }
-          )
+          .find(query, { session })
           .sort({ usageCount: 1, lastUsed: 1 })
           .limit(requestCount)
           .toArray();
@@ -504,10 +508,14 @@ export class MongoWalletManager {
   }
 
   /**
-   * Release reserved wallets back to available pool
+   * Release reserved wallets back to available pool after mixing operation completes
    */
   async releaseWallets(publicKeys: string[]): Promise<void> {
-    await this.walletsCollection.updateMany({ publicKey: { $in: publicKeys } }, { $set: { status: "available" } });
+    await this.walletsCollection.updateMany(
+      { publicKey: { $in: publicKeys } }, 
+      { $set: { status: "available" } }
+    );
+    console.log(`🔄 Released ${publicKeys.length} wallets back to available pool`);
   }
 
   /**
