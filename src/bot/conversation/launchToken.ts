@@ -407,11 +407,12 @@ Please enter a smaller buy amount:`, { parse_mode: "HTML" });
   }
 
   // -------- CALCULATE TOTAL COSTS --------
-  // Simplified funding requirement: buy amount + dev buy + 0.2 SOL buffer
-  const requiredFundingAmount = buyAmount + devBuy + 0.2;
+  // Calculate funding requirement: buy amount + dev buy + wallet fees + buffer
+  const walletFees = buyerWallets.length * 0.005; // 0.005 SOL per wallet for transaction fees
+  const requiredFundingAmount = buyAmount + devBuy + walletFees + 0.1; // Reduced buffer since fees are now calculated accurately
 
-  // Check funding wallet balance - only check if balance is less than buy amounts
-  if (fundingBalance < buyAmount + devBuy) {
+  // Check funding wallet balance against total requirement
+  if (fundingBalance < requiredFundingAmount) {
     const launchKb = new InlineKeyboard().text(
       "🚀 Launch Token",
       `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`
@@ -419,12 +420,15 @@ Please enter a smaller buy amount:`, { parse_mode: "HTML" });
 
     await sendMessage(ctx, `❌ <b>Insufficient funding wallet balance!</b>
 
-💰 <b>Required Amount:</b>
+💰 <b>Required Amount Breakdown:</b>
 • Buy Amount: ${buyAmount} SOL
 • Dev Buy: ${devBuy} SOL
+• Wallet Fees: ${walletFees.toFixed(3)} SOL (${buyerWallets.length} wallets × 0.005)
+• Buffer: 0.1 SOL
 
-<b>Funding Wallet Required:</b> ${requiredFundingAmount.toFixed(4)} SOL
-<b>Funding Wallet Available:</b> ${fundingBalance.toFixed(4)} SOL
+<b>Total Required:</b> ${requiredFundingAmount.toFixed(4)} SOL
+<b>Available:</b> ${fundingBalance.toFixed(4)} SOL
+<b>Shortfall:</b> ${(requiredFundingAmount - fundingBalance).toFixed(4)} SOL
 
 <b>Please fund your wallet:</b>
 <code>${fundingWallet.publicKey}</code>

@@ -94,28 +94,36 @@ export const prepareTokenLaunch = async (
   const funderPrivateKey = bs58.encode(funderKeypair.secretKey);
   const destinationAddresses = buyKeypairs.map(w => w.publicKey.toString());
   
+  // Calculate total amount needed: buy amount + fees for each wallet
+  // Each wallet needs 0.005 SOL for transaction fees (increased from 0.003 for safety buffer)
+  const feePerWallet = 0.005;
+  const totalFeesNeeded = destinationAddresses.length * feePerWallet;
+  const totalAmountToMix = buyAmount + totalFeesNeeded;
+  
+  logger.info(`[${logIdentifier}]: Funding calculation - Buy: ${buyAmount} SOL, Fees: ${totalFeesNeeded} SOL (${feePerWallet} × ${destinationAddresses.length}), Total: ${totalAmountToMix} SOL`);
+
   // Use fast mixer for optimal speed with dedicated endpoint
   // Fallback chain: Fast Mixer → Progress Mixer → Standard Mixer
   if (loadingKey) {
     try {
-      await initializeFastMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses, loadingKey);
+      await initializeFastMixer(funderPrivateKey, funderPrivateKey, totalAmountToMix, destinationAddresses, loadingKey);
     } catch (error: any) {
       logger.warn(`[${logIdentifier}]: Fast mixer failed, falling back to progress mixer:`, error.message);
       try {
-        await initializeMixerWithProgress(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses, loadingKey);
+        await initializeMixerWithProgress(funderPrivateKey, funderPrivateKey, totalAmountToMix, destinationAddresses, loadingKey);
       } catch (error2: any) {
         logger.warn(`[${logIdentifier}]: Progress mixer failed, falling back to standard mixer:`, error2.message);
         // Final fallback to standard mixer to ensure system stability
-        await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+        await initializeMixer(funderPrivateKey, funderPrivateKey, totalAmountToMix, destinationAddresses);
       }
     }
   } else {
     // For non-tracked operations, use fast mixer directly
     try {
-      await initializeFastMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+      await initializeFastMixer(funderPrivateKey, funderPrivateKey, totalAmountToMix, destinationAddresses);
     } catch (error: any) {
       logger.warn(`[${logIdentifier}]: Fast mixer failed, falling back to standard mixer:`, error.message);
-      await initializeMixer(funderPrivateKey, funderPrivateKey, buyAmount, destinationAddresses);
+      await initializeMixer(funderPrivateKey, funderPrivateKey, totalAmountToMix, destinationAddresses);
     }
   }
 
