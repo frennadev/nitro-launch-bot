@@ -5,7 +5,6 @@ import {
   SystemProgram,
   sendAndConfirmTransaction,
   Keypair,
-  LAMPORTS_PER_SOL,
   ComputeBudgetProgram,
 } from "@solana/web3.js";
 import { mixerConnectionPool } from "../common/connection-pool";
@@ -15,7 +14,11 @@ export class SolanaConnectionManager {
   private priorityFee: number;
   private useConnectionPool: boolean;
 
-  constructor(rpcEndpoint: string, priorityFee: number = 1000, useConnectionPool: boolean = false) {
+  constructor(
+    rpcEndpoint: string,
+    priorityFee: number = 1000,
+    useConnectionPool: boolean = false
+  ) {
     // Disable connection pool for mixer operations to avoid parameter conflicts
     this.useConnectionPool = false;
     this.connection = new Connection(rpcEndpoint, "confirmed");
@@ -39,23 +42,23 @@ export class SolanaConnectionManager {
     if (this.useConnectionPool && mixerConnectionPool) {
       return await mixerConnectionPool.getBatchBalances(publicKeys);
     }
-    
+
     // Fallback to individual calls if no connection pool
     const chunkSize = 10;
     const results: number[] = [];
-    
+
     for (let i = 0; i < publicKeys.length; i += chunkSize) {
       const chunk = publicKeys.slice(i, i + chunkSize);
-      const chunkPromises = chunk.map(pk => this.connection.getBalance(pk));
+      const chunkPromises = chunk.map((pk) => this.connection.getBalance(pk));
       const chunkResults = await Promise.all(chunkPromises);
       results.push(...chunkResults);
-      
+
       // Small delay between chunks to avoid rate limiting
       if (i + chunkSize < publicKeys.length) {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
     }
-    
+
     return results;
   }
 
@@ -78,7 +81,11 @@ export class SolanaConnectionManager {
   /**
    * Create a SOL transfer transaction with priority fee
    */
-  async createTransferTransaction(from: PublicKey, to: PublicKey, amount: number): Promise<Transaction> {
+  async createTransferTransaction(
+    from: PublicKey,
+    to: PublicKey,
+    amount: number
+  ): Promise<Transaction> {
     const transaction = new Transaction();
 
     // Add priority fee instruction
@@ -147,7 +154,10 @@ export class SolanaConnectionManager {
   /**
    * Get recent blockhash (uses connection pool if available)
    */
-  async getRecentBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+  async getRecentBlockhash(): Promise<{
+    blockhash: string;
+    lastValidBlockHeight: number;
+  }> {
     if (this.useConnectionPool && mixerConnectionPool) {
       return await mixerConnectionPool.getLatestBlockhash("processed");
     }
@@ -157,11 +167,20 @@ export class SolanaConnectionManager {
   /**
    * Send transaction (uses connection pool if available)
    */
-  async sendTransaction(transaction: Transaction, signers: Keypair[]): Promise<string> {
+  async sendTransaction(
+    transaction: Transaction,
+    signers: Keypair[]
+  ): Promise<string> {
     if (this.useConnectionPool && mixerConnectionPool) {
-      return await mixerConnectionPool.sendTransaction(transaction, { signers });
+      return await mixerConnectionPool.sendTransaction(transaction, {
+        signers,
+      });
     }
-    return await sendAndConfirmTransaction(this.connection, transaction, signers);
+    return await sendAndConfirmTransaction(
+      this.connection,
+      transaction,
+      signers
+    );
   }
 
   /**
@@ -187,7 +206,10 @@ export class SolanaConnectionManager {
   /**
    * Check if a wallet has sufficient balance for a transfer including fees
    */
-  async hasSufficientBalance(publicKey: PublicKey, transferAmount: number): Promise<boolean> {
+  async hasSufficientBalance(
+    publicKey: PublicKey,
+    transferAmount: number
+  ): Promise<boolean> {
     const balance = await this.getBalance(publicKey);
     const estimatedFee = await this.estimateTransactionFee();
     const rentExemption = await this.getMinimumBalanceForRentExemption();
@@ -200,7 +222,10 @@ export class SolanaConnectionManager {
   /**
    * Check if a wallet has sufficient balance for fees only (for intermediate wallets)
    */
-  async hasSufficientBalanceForFees(publicKey: PublicKey, numberOfTransactions: number = 1): Promise<boolean> {
+  async hasSufficientBalanceForFees(
+    publicKey: PublicKey,
+    numberOfTransactions: number = 1
+  ): Promise<boolean> {
     const balance = await this.getBalance(publicKey);
     const estimatedFee = await this.estimateTransactionFee();
     const totalFeeAmount = estimatedFee * numberOfTransactions;
@@ -225,7 +250,10 @@ export class SolanaConnectionManager {
    */
   async waitForConfirmation(signature: string): Promise<boolean> {
     try {
-      const confirmation = await this.connection.confirmTransaction(signature, "confirmed");
+      const confirmation = await this.connection.confirmTransaction(
+        signature,
+        "confirmed"
+      );
       return !confirmation.value.err;
     } catch (error) {
       console.error("Transaction confirmation error:", error);
