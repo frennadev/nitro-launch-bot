@@ -5,7 +5,7 @@ import base58 from "bs58";
 import { struct, u16, u8 } from "@solana/buffer-layout";
 import { publicKey, u64 } from "@solana/buffer-layout-utils";
 import { connection } from "../blockchain/common/connection";
-import { pumpfun_amm_program_id } from "../service/pumpswap-service";
+import { pumpswap_amm_program_id } from "../service/pumpswap-service";
 
 export type PumpSwapPool = {
   discriminator: bigint;
@@ -18,6 +18,7 @@ export type PumpSwapPool = {
   poolBaseTokenAccount: PublicKey;
   poolQuoteTokenAccount: PublicKey;
   lpSupply: bigint;
+  coinCreator: PublicKey;
 };
 
 export interface PoolInfo extends PumpSwapPool {
@@ -36,13 +37,14 @@ export const POOL_LAYOUT = struct<PumpSwapPool>([
   publicKey("poolBaseTokenAccount"),
   publicKey("poolQuoteTokenAccount"),
   u64("lpSupply"),
+  u64("coinCreator"),
 ]);
 
 export const getTokenPoolInfo = async (tokenMint: string): Promise<PoolInfo | null> => {
   let decoded: any = null;
   let poolPubkey: PublicKey | null = null;
 
-  const accounts = await connection.getProgramAccounts(pumpfun_amm_program_id);
+  const accounts = await connection.getProgramAccounts(pumpswap_amm_program_id);
 
   for (const { pubkey, account } of accounts) {
     const poolInfo = POOL_LAYOUT.decode(account.data as Buffer);

@@ -1,8 +1,9 @@
-import { getPdaPoolId, SYSTEM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
+import { getPdaPoolId, publicKey, SYSTEM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountInstruction,
   getAssociatedTokenAddress,
+  getAssociatedTokenAddressSync,
   getOrCreateAssociatedTokenAccount,
   NATIVE_MINT,
   TOKEN_PROGRAM_ID,
@@ -20,9 +21,10 @@ import { ComputeBudgetProgram } from "@solana/web3.js";
 import { SystemProgram } from "@solana/web3.js";
 import { struct, u8 } from "@solana/buffer-layout";
 import { Signer } from "@solana/web3.js";
-import { redisClient } from "../jobs/db";
 import { getBuyAmountOut, getSellAmountOut, getTokenPoolInfo } from "../backend/get-poolInfo";
-import { connection } from "../blockchain/common/connection";
+import { connection } from "./config";
+import { getCreatorVaultAuthority } from "../backend/creator-authority";
+// import { connection } from "../blockchain/common/connection";
 
 interface CreateBuyIXParams {
   pool: PublicKey;
@@ -36,6 +38,8 @@ interface CreateBuyIXParams {
   protocol_fee_ata: PublicKey;
   base_amount_out: bigint;
   max_quote_amount_in: bigint;
+  coin_creator_vault_ata: PublicKey;
+  coin_creator_vault_authority: PublicKey;
 }
 
 interface CreateSellIXParams {
@@ -50,6 +54,8 @@ interface CreateSellIXParams {
   protocol_fee_ata: PublicKey;
   base_amount_in: bigint;
   min_quote_amount_out: bigint;
+  coin_creator_vault_ata: PublicKey;
+  coin_creator_vault_authority: PublicKey;
 }
 
 interface BuyData {
@@ -73,8 +79,9 @@ const pumpfun_amm_protocol_fee = new PublicKey("FWsW1xNtWscwNmKv6wVsU1iTzRN6wmmk
 const token_program_id = TOKEN_PROGRAM_ID;
 const system_program_id = SYSTEM_PROGRAM_ID;
 const associated_token_program_id = ASSOCIATED_TOKEN_PROGRAM_ID;
+const coin_creator_vault_authority = new PublicKey("Ciid5pckEwdLw5juAtNiQSpmhHzsdcfCQs7h989SPR4T");
 const event_authority = new PublicKey("GS4CU59F31iL7aR2Q8zVS8DRrcRnXX1yjQ66TqNVQnaR");
-export const pumpfun_amm_program_id = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+export const pumpswap_amm_program_id = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
 export const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 const BUY_DISCRIMINATOR = [102, 6, 61, 18, 1, 218, 235, 234];
@@ -93,6 +100,8 @@ export default class PumpswapService {
     protocol_fee_ata,
     base_amount_out,
     max_quote_amount_in,
+    coin_creator_vault_ata,
+    coin_creator_vault_authority,
   }: CreateBuyIXParams) => {
     const keys: AccountMeta[] = [
       { pubkey: pool, isSigner: false, isWritable: false },
@@ -115,9 +124,14 @@ export default class PumpswapService {
         isWritable: false,
       },
       { pubkey: event_authority, isSigner: false, isWritable: false },
-      { pubkey: pumpfun_amm_program_id, isSigner: false, isWritable: false },
+      { pubkey: pumpswap_amm_program_id, isSigner: false, isWritable: false },
+      { pubkey: coin_creator_vault_ata, isSigner: false, isWritable: true },
+      { pubkey: coin_creator_vault_authority, isSigner: false, isWritable: false },
     ];
+
+    console.log(JSON.stringify(keys, null, 2));
     const data = Buffer.alloc(24);
+    console.log({ base_amount_out, max_quote_amount_in });
 
     const discriminator = Buffer.from(BUY_DISCRIMINATOR);
     discriminator.copy(data, 0);
@@ -126,7 +140,7 @@ export default class PumpswapService {
 
     const buyIx = new TransactionInstruction({
       keys,
-      programId: pumpfun_amm_program_id,
+      programId: pumpswap_amm_program_id,
       data,
     });
     return buyIx;
@@ -145,6 +159,7 @@ export default class PumpswapService {
     if (!poolInfo) {
       throw new Error("Pool not found");
     }
+
     const { poolId, baseMint, quoteMint, poolBaseTokenAccount, poolQuoteTokenAccount } = poolInfo;
     console.log("CHecking 2 ...");
 
@@ -153,12 +168,17 @@ export default class PumpswapService {
 
     const quoteTokenAta = wsolAta;
     const baseTokenAta = tokenAta;
-    // console.log("quoteTokenAta", quoteTokenAta)
-    // console.log("baseTokenAta", baseTokenAta)
     console.log("CHecking 3 ...");
-    // const protocolFeeAta = await getOrCreateAssociatedTokenAccount(connection, payer, poolInfo.lpMint, payer.publicKey);
     const protocol_fee_ata = new PublicKey("7xQYoUjUJF1Kg6WVczoTAkaNhn5syQYcbvjmFrhjWpx");
     const amountOut = await getBuyAmountOut(poolInfo, amount, slippage);
+
+    const creatorVaultAuthority = getCreatorVaultAuthority(new PublicKey(poolInfo.coinCreator));
+    const creatorVaultAta = getAssociatedTokenAddressSync(poolInfo.quoteMint, creatorVaultAuthority, true);
+
+    console.log({
+      creatorVaultAuthority: creatorVaultAuthority.toBase58(),
+      creatorVaultAta: creatorVaultAta.toBase58(),
+    });
 
     const ixData: CreateBuyIXParams = {
       pool: poolId,
@@ -172,10 +192,11 @@ export default class PumpswapService {
       protocol_fee_ata,
       max_quote_amount_in: amount,
       base_amount_out: amountOut,
+      coin_creator_vault_ata: creatorVaultAta,
+      coin_creator_vault_authority: creatorVaultAuthority,
     };
 
     const buyInstruction = await this.createBuyIX(ixData);
-    // console.log({ instruction: instruction.keys });
     const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
       microLamports: 1_100_100,
     });
@@ -231,6 +252,8 @@ export default class PumpswapService {
     protocol_fee_ata,
     base_amount_in,
     min_quote_amount_out,
+    coin_creator_vault_ata,
+    coin_creator_vault_authority,
   }: CreateSellIXParams) => {
     const keys: AccountMeta[] = [
       { pubkey: pool, isSigner: false, isWritable: false },
@@ -253,7 +276,9 @@ export default class PumpswapService {
         isWritable: false,
       },
       { pubkey: event_authority, isSigner: false, isWritable: false },
-      { pubkey: pumpfun_amm_program_id, isSigner: false, isWritable: false },
+      { pubkey: pumpswap_amm_program_id, isSigner: false, isWritable: false },
+      { pubkey: coin_creator_vault_ata, isSigner: false, isWritable: true },
+      { pubkey: coin_creator_vault_authority, isSigner: false, isWritable: false },
     ];
 
     const data = Buffer.alloc(24);
@@ -265,7 +290,7 @@ export default class PumpswapService {
 
     const sellIx = new TransactionInstruction({
       keys,
-      programId: pumpfun_amm_program_id,
+      programId: pumpswap_amm_program_id,
       data,
     });
     return sellIx;
@@ -297,6 +322,8 @@ export default class PumpswapService {
     }
 
     const minQuoteOut = await getSellAmountOut(poolInfo, amount, slippage);
+    const creatorVaultAuthority = getCreatorVaultAuthority(new PublicKey(poolInfo.coinCreator));
+    const creatorVaultAta = getAssociatedTokenAddressSync(poolInfo.quoteMint, creatorVaultAuthority, true);
 
     const ixData: CreateSellIXParams = {
       pool: poolId,
@@ -310,6 +337,8 @@ export default class PumpswapService {
       protocol_fee_ata,
       base_amount_in: amount,
       min_quote_amount_out: minQuoteOut,
+      coin_creator_vault_ata: creatorVaultAta,
+      coin_creator_vault_authority: creatorVaultAuthority,
     };
 
     console.log("LLLLLLLL");
