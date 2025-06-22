@@ -459,8 +459,10 @@ export const preLaunchChecks = async (
   const funderKeypair = secretKeyToKeypair(funderWallet);
   const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet));
 
-  // expectations
-  const expectedFunderBalance = (buyAmount + walletCount * 0.05) * LAMPORTS_PER_SOL;
+  // expectations - Updated to match actual fee requirements
+  // Each wallet needs: buy amount portion + 0.005 SOL for fees (increased from 0.003 to 0.005 for safety buffer)
+  // Total needed: buy amount + (wallet count × fee per wallet)
+  const expectedFunderBalance = (buyAmount + walletCount * 0.005) * LAMPORTS_PER_SOL;
   const expectedDevBalance = (0.01 + devBuy + 0.05) * LAMPORTS_PER_SOL;
 
   // balances
@@ -1225,7 +1227,7 @@ export const calculateTotalLaunchCost = (
     platformFee?: number;
   };
 } => {
-  const walletFees = walletCount * 0.05; // ~0.05 SOL per wallet for transaction fees
+  const walletFees = walletCount * 0.005; // ~0.005 SOL per wallet for transaction fees (updated to match actual requirements)
   const buffer = 0.2; // Safety buffer
   const platformFee = env.LAUNCH_FEE_SOL;
 
