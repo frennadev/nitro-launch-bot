@@ -480,7 +480,7 @@ export const connectionPool = new SolanaConnectionPool();
  */
 export function createMixerConnectionPool(): SolanaConnectionPool {
   return new SolanaConnectionPool({
-    endpoints: [env.HELIUS_MIXER_RPC_URL],
+    endpoints: [env.MIXER_HELIUS_RPC],
     maxRequestsPerSecond: 195, // Aggressive rate limiting for mixer
     maxTransactionsPerSecond: 48, // Aggressive transaction rate
     cacheConfig: {

@@ -22,7 +22,7 @@ import {
 } from "@solana/web3.js";
 import { env } from "../../config";
 
-const connection = new Connection(env.HELIUS_RPC_URL);
+const connection = new Connection(env.UTILS_HELIUS_RPC);
 
 // Withdraw from Dev Wallet Conversation
 export const withdrawDevWalletConversation = async (
