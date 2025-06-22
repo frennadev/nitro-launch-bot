@@ -29,7 +29,7 @@ import {
   getFundingWallet,
 } from "../backend/functions";
 import { CallBackQueries } from "./types";
-import { escape } from "./utils";
+import { escape, formatUSD } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
 import devSellConversation from "./conversation/devSell";
@@ -52,6 +52,7 @@ import {
   getTokenInfo,
   getTokenBalance,
   decryptPrivateKey,
+  checkTokenRenouncedAndFrozen,
 } from "../backend/utils";
 import { getTransactionFinancialStats } from "../backend/functions-main";
 import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
@@ -713,10 +714,12 @@ bot.on("message:text", async (ctx) => {
         logger.info(`User sent token address: ${text}`);
         // Check if this token belongs to user's created tokens
         const user = await getUser(ctx.chat.id.toString());
-        let tokenName = "Unknown Token";
-        let tokenSymbol = "UNK";
+        const tokenInfo = await getTokenInfo(text);
+        let tokenName = tokenInfo.baseToken.name || "Unknown Token";
+        let tokenSymbol = tokenInfo.baseToken.symbol || "Unknown Symbol";
         let isUserToken = false;
         let holdingsText = "📌 Checking token holdings...";
+        let walletsWithBalance = 0;
 
         if (user) {
           const userToken = await getUserTokenWithBuyWallets(user.id, text);
@@ -732,7 +735,6 @@ bot.on("message:text", async (ctx) => {
             const buyerWallets = await getAllBuyerWallets(user.id);
             if (buyerWallets.length > 0) {
               let totalTokenBalance = 0;
-              let walletsWithBalance = 0;
 
               for (const wallet of buyerWallets) {
                 try {
@@ -763,27 +765,153 @@ bot.on("message:text", async (ctx) => {
           }
         }
         // TODO: Fetch actual market data; this is placeholder data
-        const marketCap = "$4,404.38"; // Placeholder
-        const price = "$0.000004404"; // Placeholder
+        const marketCap = formatUSD(tokenInfo.marketCap); // Placeholder
+        const price = tokenInfo.priceUsd; // Placeholder
+        const liquidity = formatUSD(tokenInfo.liquidity.usd); // Placeholder
         // Display token detail page with buy and sell options
+        const dex = tokenInfo.dexId;
+        const renouncedAndFrozen = await checkTokenRenouncedAndFrozen(text);
+        const links = [
+          {
+            abbr: "CA",
+            text: "Solscan",
+            url: `https://solscan.io/token/${text}`,
+          },
+          {
+            abbr: "DEX",
+            text: "Dexscreener",
+            url: `https://dexscreener.com/solana/${text}`,
+          },
+          {
+            abbr: "BRD",
+            text: "Birdeye",
+            url: `https://birdeye.so/token/${text}?chain=solana`,
+          },
+          {
+            abbr: "PHO",
+            text: "Photon",
+            url: `https://photon-sol.tinyastro.io/en/lp/${tokenInfo.pairAddress}`,
+          },
+          {
+            abbr: "NEO",
+            text: "Neo",
+            url: `https://neo.bullx.io/terminal?chainId=1399811149&address=${text}`,
+          },
+          {
+            abbr: "AXIOM",
+            text: "Axiom",
+            url: `https://axiom.trade/meme/${text}`,
+          },
+          {
+            abbr: "PF",
+            text: "Pump.fun",
+            url: `https://pump.fun/coin/${text}`,
+          },
+          // RICK link not provided, add if available
+          {
+            abbr: "GMGN",
+            text: "GMGN",
+            url: `https://gmgn.ai/sol/token/${text}`,
+          },
+          {
+            abbr: "BBL",
+            text: "Bubblemaps",
+            url: `https://v2.bubblemaps.io/map?address=${text}&chain=solana`,
+          },
+        ];
+        // Map links to HTML <a> tags, separated by spaces
+        const linksHtml = links
+          .map(
+            (link) => `<a href="${link.url}" target="_blank">${link.abbr}</a>`
+          )
+          .join(" • ");
+
         await ctx.reply(
-          `🪙 ${tokenName} (${tokenSymbol})
-${text}
-Pump.fun 🔗 SO
+          `
+🪙 ${tokenName} (${tokenSymbol})
+<code>${text}</code>
+🔗Dex: ${dex.toLocaleUpperCase()}
+🤑 <a href="${"https://t.me/@NITROLAUNCHBOT"}">Share Token & Earn</a>
 
 Market Data
-💠 Market Cap: ${marketCap}
-💵 Price: ${price}
+📊 Market Cap: ${marketCap}
+💸 Price: $${price}
+🏦 Liquidity: ${liquidity}
+
+${renouncedAndFrozen.isRenounced ? "🟢 Renounced" : "🔴 Not Renounced"}
+${renouncedAndFrozen.isFrozen ? "🟢 Freeze" : "🔴 Not Freezed"}
+
+🧐 No active limit orders
+
+⭐️ W1: 0 SOLs
+
+${linksHtml}
 
 Your Holdings
 ${holdingsText}`,
           {
             parse_mode: "HTML",
             reply_markup: new InlineKeyboard()
+              .text("🔀 Switch to Sell", `sell_external_token_${text}`)
+              .text("🔃 Refresh", `launch_token_${text}`)
+              .row()
               .text(
-                "💰 Buy Token",
+                `💰 Active wallets: ${walletsWithBalance}`,
+                `launch_token_${text}`
+              )
+              .row()
+              .text(
+                "💰 0.5 SOL",
                 `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
               )
+              .text("💰 1 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .text("💰 2 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .row()
+              .text("💰 5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .text(
+                "💰 10 SOL",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
+              .text("💰 X SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .row()
+              .text(
+                "💰 Buy Tip: 0 SOL",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
+              .text(
+                "🛍️ Slippage: 0%",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
+              .row()
+              .text(
+                "📈 Limit Orders",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
+              .text(
+                "💸 Generate PNL",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
+              .row()
+              .text(
+                "🔴 Auto Tip (0.0001 SOL)",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
+              .text(
+                "🔴 Buy Protection",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
+              .row()
+              .text(
+                "🔀 Split Tokens",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
+              .text(
+                "👀 Hide Position",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
+              .row()
+              .text("🔙 Back", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .text("📊 Chart", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .row()
               .text(
                 "💸 Sell Token",
