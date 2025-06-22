@@ -91,7 +91,7 @@ const externalTokenSellConversation = async (
       `• Sell Percentage: ${sellPercent}%`,
       `• Tokens to Sell: ${escape(tokensToSell.toLocaleString())}`,
       `• Estimated Value: ${escape(`$${valueToSell.toFixed(2)}`)}`,
-      `• Wallets with Tokens: ${walletsWithBalance}`,
+      `• Using: Funding Wallet`,
       ``,
       `⚠️ **Important Notes:**`,
       `• This is an external token sell (not launched via our bot)`,
@@ -127,31 +127,22 @@ const externalTokenSellConversation = async (
       );
 
       try {
-        // Get buyer wallet private keys
-        const { WalletModel } = await import("../../backend/models");
-        const buyerWalletDocs = await WalletModel.find({
-          user: user.id,
-          isBuyer: true,
-        }).lean();
-
-        const buyerWalletKeys = buyerWalletDocs.map((w) => w.privateKey);
-
-        // Execute the external token sell
-        const result = await executeExternalTokenSell(
-          tokenAddress,
-          buyerWalletKeys,
-          sellPercent
-        );
+        // Execute the external token sell using funding wallet
+        const keypair = secretKeyToKeypair(fundingWallet.privateKey);
+        const result = await executeExternalSell(tokenAddress, keypair, sellPercent);
 
         if (result.success) {
+          const platformText = result.platform === 'pumpswap' ? '⚡ Pumpswap' : '🚀 PumpFun';
           await sendMessage(
             response,
-            `🎉 **External token sell completed successfully!**\n\n📊 **Results:**\n• Successful Sells: ${result.successfulSells}\n• Failed Sells: ${result.failedSells}\n• Total SOL Received: ${result.totalSolReceived?.toFixed(6) || "0"} SOL`
+                         `✅ **External token sell completed successfully!**\n\n📊 **Results:**\n• Platform: ${platformText}\n• SOL Received: ${typeof result.solReceived === 'number' ? result.solReceived.toFixed(6) : result.solReceived || "0"} SOL\n• Transaction: \`${result.signature}\``,
+            { parse_mode: "Markdown" }
           );
         } else {
           await sendMessage(
             response,
-            `❌ **External token sell failed**\n\n${result.error || "Unknown error occurred"}`
+            `❌ **External token sell failed**\n\n${result.error || "Unknown error occurred"}`,
+            { parse_mode: "Markdown" }
           );
         }
       } catch (error: any) {
