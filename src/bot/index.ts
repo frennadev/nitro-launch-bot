@@ -1031,39 +1031,73 @@ bot.on("callback_query:data", async (ctx) => {
     switch (tradeAction) {
       case "buy":
         await ctx.reply(`💰 Buying ${buyAmount} SOL of token`);
-        const buyResult = await executeFundingBuy(
-          mint,
-          fundingWallet!.privateKey,
-          Number(buyAmount)
-        );
-        if (buyResult.success) {
+        
+        // Use new external buy system with automatic platform detection
+        const { executeExternalBuy } = await import("../blockchain/pumpfun/externalBuy");
+        const { secretKeyToKeypair } = await import("../blockchain/common/utils");
+        
+        try {
+          const buyerKeypair = secretKeyToKeypair(fundingWallet!.privateKey);
+          const buyResult = await executeExternalBuy(mint, buyerKeypair, Number(buyAmount));
+          
+          if (buyResult.success) {
+            const platformText = buyResult.platform === 'pumpswap' ? '⚡ Pumpswap' : '🚀 PumpFun';
+            await ctx.reply(
+              `✅ Successfully bought ${buyAmount} SOL of token via ${platformText}!\n\nTransaction Signature:\n<code>${buyResult.signature}</code>`,
+              { parse_mode: "HTML" }
+            );
+          } else {
+            await ctx.reply(
+              `❌ Failed to buy token: ${buyResult.error || 'Unknown error'}\n\nPlease try again or contact support.`
+            );
+          }
+        } catch (error: any) {
+          logger.error(`Quick buy error for ${mint}:`, error);
           await ctx.reply(
-            `✅ Successfully bought ${buyAmount} SOL of token!\n\nTransaction Signature:\n<code>${buyResult.signature}</code>`,
-            { parse_mode: "HTML" }
-          );
-        } else {
-          await ctx.reply(
-            "❌ Failed to buy token. Please try again or contact support."
+            `❌ Failed to buy token: ${error.message}\n\nPlease try again or contact support.`
           );
         }
         break;
 
       case "sell":
         await ctx.reply(`💰 Selling ${buyAmount}% of token`);
-        const sellResult = await executeDevSell(
-          mint,
-          fundingWallet!.privateKey,
-          Number(buyAmount)
-        );
-        if (!sellResult) return ctx.reply("Sell Failed");
-        if (sellResult.success) {
+        
+        // Use new external sell system with automatic platform detection
+        const { executeExternalSell } = await import("../blockchain/pumpfun/externalSell");
+        const { secretKeyToKeypair: sellSecretKeyToKeypair } = await import("../blockchain/common/utils");
+        const { getTokenBalance } = await import("../backend/utils");
+        
+        try {
+          const sellerKeypair = sellSecretKeyToKeypair(fundingWallet!.privateKey);
+          
+          // Get current token balance
+          const currentBalance = await getTokenBalance(mint, sellerKeypair.publicKey.toBase58());
+          if (currentBalance <= 0) {
+            await ctx.reply("❌ No tokens found to sell.");
+            break;
+          }
+          
+          // Calculate tokens to sell based on percentage
+          const tokensToSell = Math.floor((currentBalance * Number(buyAmount)) / 100);
+          
+          const sellResult = await executeExternalSell(mint, sellerKeypair, tokensToSell);
+          
+          if (sellResult.success) {
+            const platformText = sellResult.platform === 'pumpswap' ? '⚡ Pumpswap' : '🚀 PumpFun';
+            const solReceived = sellResult.solReceived ? ` (${parseFloat(sellResult.solReceived).toFixed(6)} SOL received)` : '';
+            await ctx.reply(
+              `✅ Successfully sold ${buyAmount}% of token via ${platformText}!${solReceived}\n\nTransaction Signature:\n<code>${sellResult.signature}</code>`,
+              { parse_mode: "HTML" }
+            );
+          } else {
+            await ctx.reply(
+              `❌ Failed to sell token: ${sellResult.error || 'Unknown error'}\n\nPlease try again or contact support.`
+            );
+          }
+        } catch (error: any) {
+          logger.error(`Quick sell error for ${mint}:`, error);
           await ctx.reply(
-            `✅ Successfully bought ${buyAmount} SOL of token!\n\nTransaction Signature:\n<code>${sellResult.signature}</code>`,
-            { parse_mode: "HTML" }
-          );
-        } else {
-          await ctx.reply(
-            "❌ Failed to buy token. Please try again or contact support."
+            `❌ Failed to sell token: ${error.message}\n\nPlease try again or contact support.`
           );
         }
         break;
