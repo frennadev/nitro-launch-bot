@@ -12,8 +12,9 @@ const walletSellConversation = async (
   conversation: Conversation,
   ctx: Context,
   tokenAddress: string,
-  sellPercent?: number,
+  sellPercent?: number
 ) => {
+  await ctx.answerCallbackQuery();
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
@@ -46,7 +47,7 @@ const walletSellConversation = async (
       "Enter the % of wallet holdings to sell \\(must not be less than 1 or greater than 100\\): ",
       {
         parse_mode: "MarkdownV2",
-      },
+      }
     );
     let updatedCtx = await conversation.waitFor("message:text");
     sellPercent = 0;
@@ -59,7 +60,7 @@ const walletSellConversation = async (
         isValid = true;
       } catch (error) {
         await ctx.reply(
-          "Invalid % entered ❌. Please re-enter a correct percentage: ",
+          "Invalid % entered ❌. Please re-enter a correct percentage: "
         );
         updatedCtx = await conversation.waitFor("message:text");
       }
@@ -67,10 +68,13 @@ const walletSellConversation = async (
   }
 
   // ------ SEND WALLET SELL DATA TO QUEUE WITH LOADING STATE -----
-  const submitLoading = await sendLoadingMessage(ctx, "💸 **Submitting wallet sells...**\n\n⏳ Preparing transactions...");
-  
+  const submitLoading = await sendLoadingMessage(
+    ctx,
+    "💸 **Submitting wallet sells...**\n\n⏳ Preparing transactions..."
+  );
+
   const buyWallets = token.launchData!.buyWallets.map(
-    (w) => (w as unknown as { privateKey: string }).privateKey,
+    (w) => (w as unknown as { privateKey: string }).privateKey
   );
   const result = await enqueueWalletSell(
     user.id,
@@ -79,17 +83,21 @@ const walletSellConversation = async (
     (token.launchData!.devWallet! as unknown as { privateKey: string })
       .privateKey,
     buyWallets,
-    sellPercent,
+    sellPercent
   );
-  
+
   if (!result.success) {
-    await submitLoading.update("❌ **Failed to submit wallet sells**\n\nAn error occurred while submitting wallet sell details for execution. Please try again.");
+    await submitLoading.update(
+      "❌ **Failed to submit wallet sells**\n\nAn error occurred while submitting wallet sell details for execution. Please try again."
+    );
     await ctx.reply(
-      "An error occurred while submitting wallet sell details for execution ❌. Please try again..",
+      "An error occurred while submitting wallet sell details for execution ❌. Please try again.."
     );
   } else {
-    await submitLoading.update("🎉 **Wallet sells submitted successfully!**\n\n⏳ Your wallet sells are now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sells are completed.");
-    
+    await submitLoading.update(
+      "🎉 **Wallet sells submitted successfully!**\n\n⏳ Your wallet sells are now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sells are completed."
+    );
+
     // Start the loading state for the actual wallet sell process
     await startLoadingState(ctx, "wallet_sell", tokenAddress);
   }

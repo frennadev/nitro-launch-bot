@@ -4,8 +4,13 @@ import { sendMessage } from "../../backend/sender";
 import { getFundingWallet, getUser } from "../../backend/functions";
 import { executeFundingBuy } from "../../blockchain/pumpfun/buy";
 
-export const buyCustonConversation = async (conversation: Conversation<Context>, ctx: Context, mint: string) => {
+export const buyCustonConversation = async (
+  conversation: Conversation<Context>,
+  ctx: Context,
+  mint: string
+) => {
   try {
+    await ctx.answerCallbackQuery();
     await ctx.reply("How much SOL would you like to spend on this token?");
     const telegramId = String(ctx.from?.id);
     const res = await conversation.wait();
@@ -31,14 +36,20 @@ export const buyCustonConversation = async (conversation: Conversation<Context>,
       return conversation.halt();
     }
     await ctx.reply(`💰 Buying ${buyAmount} SOL of token: ${mint}...`);
-    const result = await executeFundingBuy(mint, fundingWallet.privateKey, buyAmount);
+    const result = await executeFundingBuy(
+      mint,
+      fundingWallet.privateKey,
+      buyAmount
+    );
     if (result.success) {
       await ctx.reply(
         `✅ Successfully bought ${buyAmount} SOL of token!\n\nTransaction Signature:\n<code>${result.signature}</code>`,
         { parse_mode: "HTML" }
       );
     } else {
-      await ctx.reply("❌ Failed to buy token. Please try again or contact support.");
+      await ctx.reply(
+        "❌ Failed to buy token. Please try again or contact support."
+      );
     }
     return conversation.halt();
   } catch (error) {

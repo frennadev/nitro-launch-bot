@@ -10,7 +10,11 @@ import { getTokenInfo } from "../../backend/utils";
 import { getTransactionFinancialStats } from "../../backend/functions-main";
 // import {  } from "../utils";
 
-const viewTokensConversation = async (conversation: Conversation<Context>, ctx: Context) => {
+const viewTokensConversation = async (
+  conversation: Conversation<Context>,
+  ctx: Context
+) => {
+  await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
     await sendMessage(ctx, "Unrecognized user ❌");
@@ -42,7 +46,8 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
 
   const showToken = async (index: number) => {
     const token = tokens[index];
-    const { name, symbol, description, tokenAddress, state, launchData } = token;
+    const { name, symbol, description, tokenAddress, state, launchData } =
+      token;
     const { buyWallets, buyAmount, devBuy } = launchData!;
 
     let tokenInfo;
@@ -57,11 +62,19 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     let profitLoss = 0;
     let profitLossPercentage = 0;
 
-    if (tokenInfo && tokenInfo.price && financialStats && financialStats.totalTokens !== "0") {
+    if (
+      tokenInfo &&
+      tokenInfo.price &&
+      financialStats &&
+      financialStats.totalTokens !== "0"
+    ) {
       const totalTokensNumber = Number(financialStats.totalTokens) / 1e6; // Convert from raw token amount to human readable
       totalTokenValue = totalTokensNumber * tokenInfo.price;
       profitLoss = totalTokenValue - financialStats.totalSpent;
-      profitLossPercentage = financialStats.totalSpent > 0 ? (profitLoss / financialStats.totalSpent) * 100 : 0;
+      profitLossPercentage =
+        financialStats.totalSpent > 0
+          ? (profitLoss / financialStats.totalSpent) * 100
+          : 0;
     }
 
     const lines = [
@@ -89,17 +102,33 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
 
     if (state === TokenState.LAUNCHED) {
       keyboard
-        .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${tokenAddress}`)
-        .text("📈 Sell % Supply", `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`)
+        .text(
+          "👨‍💻 Sell Dev Supply",
+          `${CallBackQueries.SELL_DEV}_${tokenAddress}`
+        )
+        .text(
+          "📈 Sell % Supply",
+          `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`
+        )
         .row()
         .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
         .row();
     } else {
-      keyboard.text("🚀 Launch Token", `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`).row();
+      keyboard
+        .text(
+          "🚀 Launch Token",
+          `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`
+        )
+        .row();
     }
 
     // Add delete button for all tokens
-    keyboard.text("🗑️ Delete Token", `${CallBackQueries.DELETE_TOKEN}_${tokenAddress}`).row();
+    keyboard
+      .text(
+        "🗑️ Delete Token",
+        `${CallBackQueries.DELETE_TOKEN}_${tokenAddress}`
+      )
+      .row();
 
     // Navigation buttons
     if (tokens.length > 1) {
@@ -120,7 +149,10 @@ const viewTokensConversation = async (conversation: Conversation<Context>, ctx: 
     });
   };
 
-  const showDeleteConfirmation = async (tokenAddress: string, tokenName: string) => {
+  const showDeleteConfirmation = async (
+    tokenAddress: string,
+    tokenName: string
+  ) => {
     const message = `⚠️ **Delete Token Confirmation**
 
 Are you sure you want to delete this token?
@@ -133,7 +165,10 @@ Are you sure you want to delete this token?
 Note: If this token was launched, it will continue to exist on the blockchain, but you will lose access to manage it through this bot.`;
 
     const keyboard = new InlineKeyboard()
-      .text("✅ Yes, Delete", `${CallBackQueries.CONFIRM_DELETE_TOKEN}_${tokenAddress}`)
+      .text(
+        "✅ Yes, Delete",
+        `${CallBackQueries.CONFIRM_DELETE_TOKEN}_${tokenAddress}`
+      )
       .text("❌ Cancel", "cancel_delete")
       .row();
 
@@ -160,28 +195,38 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
     } else if (data === CallBackQueries.BACK) {
       return conversation.halt();
     } else if (data?.startsWith(`${CallBackQueries.DELETE_TOKEN}_`)) {
-      const tokenAddress = data.substring(`${CallBackQueries.DELETE_TOKEN}_`.length);
+      const tokenAddress = data.substring(
+        `${CallBackQueries.DELETE_TOKEN}_`.length
+      );
       const token = tokens.find((t) => t.tokenAddress === tokenAddress);
       if (token) {
         await showDeleteConfirmation(tokenAddress, token.name);
       }
     } else if (data?.startsWith(`${CallBackQueries.CONFIRM_DELETE_TOKEN}_`)) {
-      const tokenAddress = data.substring(`${CallBackQueries.CONFIRM_DELETE_TOKEN}_`.length);
+      const tokenAddress = data.substring(
+        `${CallBackQueries.CONFIRM_DELETE_TOKEN}_`.length
+      );
 
       try {
         const result = await deleteToken(String(user._id), tokenAddress);
 
         if (result.success) {
-          await ctx.reply("✅ **Token deleted successfully!**\n\nThe token has been removed from your account.", {
-            parse_mode: "Markdown",
-          });
+          await ctx.reply(
+            "✅ **Token deleted successfully!**\n\nThe token has been removed from your account.",
+            {
+              parse_mode: "Markdown",
+            }
+          );
 
           // Refresh the tokens list and return to main menu
           return conversation.halt();
         } else {
-          await ctx.reply(`❌ **Failed to delete token**\n\n${result.message}`, {
-            parse_mode: "Markdown",
-          });
+          await ctx.reply(
+            `❌ **Failed to delete token**\n\n${result.message}`,
+            {
+              parse_mode: "Markdown",
+            }
+          );
         }
       } catch (error: any) {
         await ctx.reply(`❌ **Error deleting token**\n\n${error.message}`, {

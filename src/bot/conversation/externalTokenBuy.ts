@@ -12,6 +12,7 @@ const connection = new Connection(env.HELIUS_RPC_URL);
 
 // Buy External Token Conversation
 export const buyExternalTokenConversation = async (conversation: Conversation<Context>, ctx: Context) => {
+  await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
     await sendMessage(ctx, "Unrecognized user ❌");

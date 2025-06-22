@@ -1,10 +1,19 @@
 import type { Conversation } from "@grammyjs/conversations";
 import type { Context } from "grammy";
-import { createUser, getUser, getDefaultDevWallet, getOrCreateFundingWallet } from "../../backend/functions-main";
+import {
+  createUser,
+  getUser,
+  getDefaultDevWallet,
+  getOrCreateFundingWallet,
+} from "../../backend/functions-main";
 import { CallBackQueries } from "../types";
 import { InlineKeyboard } from "grammy";
 
-export default async function mainMenuConversation(conversation: Conversation<Context>, ctx: Context) {
+export default async function mainMenuConversation(
+  conversation: Conversation<Context>,
+  ctx: Context
+) {
+  await ctx.answerCallbackQuery();
   let user = await getUser(ctx.chat!.id.toString());
   if (!user) {
     await ctx.reply("Unrecognized user ❌");

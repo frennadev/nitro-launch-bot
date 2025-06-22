@@ -21,6 +21,7 @@ const createTokenConversation = async (
   conversation: Conversation,
   ctx: Context
 ) => {
+  await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
     await ctx.reply("Unrecognized user ❌");

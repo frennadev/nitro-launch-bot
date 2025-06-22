@@ -492,8 +492,8 @@ bot.command("removetoken", async (ctx) => {
 
 // ----- Callback Queries -----
 bot.callbackQuery(CallBackQueries.CREATE_TOKEN, async (ctx) => {
-  await ctx.conversation.enter("createTokenConversation");
   await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("createTokenConversation");
 });
 bot.callbackQuery(CallBackQueries.VIEW_TOKENS, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
@@ -501,12 +501,13 @@ bot.callbackQuery(CallBackQueries.VIEW_TOKENS, async (ctx) => {
 });
 
 bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
   let user = await getUser(ctx.chat!.id.toString());
   if (!user) {
     await ctx.reply("Unrecognized user ❌");
     return;
   }
-  await safeAnswerCallbackQuery(ctx);
+
   const { wallet } = await getDevWallet(user.id);
   const msg = [
     "*Your dev wallet private key*",
@@ -571,8 +572,8 @@ bot.callbackQuery(CallBackQueries.WALLET_CONFIG, async (ctx) => {
 });
 
 bot.callbackQuery(CallBackQueries.BACK, async (ctx) => {
-  await ctx.conversation.enter("mainMenuConversation");
   await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("mainMenuConversation");
 });
 
 bot.callbackQuery(CallBackQueries.CHANGE_DEV_WALLET, async (ctx) => {
@@ -586,23 +587,23 @@ bot.callbackQuery(CallBackQueries.MANAGE_BUYER_WALLETS, async (ctx) => {
 });
 
 bot.callbackQuery(CallBackQueries.WITHDRAW_DEV_WALLET, async (ctx) => {
-  await ctx.conversation.enter("withdrawDevWalletConversation");
   await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("withdrawDevWalletConversation");
 });
 
 bot.callbackQuery(CallBackQueries.WITHDRAW_FUNDING_WALLET, async (ctx) => {
-  await ctx.conversation.enter("withdrawFundingWalletConversation");
   await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("withdrawFundingWalletConversation");
 });
 
 bot.callbackQuery(CallBackQueries.WITHDRAW_BUYER_WALLETS, async (ctx) => {
-  await ctx.conversation.enter("withdrawBuyerWalletsConversation");
   await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("withdrawBuyerWalletsConversation");
 });
 
 bot.callbackQuery(CallBackQueries.VIEW_REFERRALS, async (ctx) => {
-  await ctx.conversation.enter("referralsConversation");
   await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("referralsConversation");
 });
 
 // Callback handlers for token CA sell buttons
