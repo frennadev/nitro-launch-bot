@@ -1,11 +1,12 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { getUser, getAllBuyerWallets } from "../../backend/functions";
+import { getUser, getFundingWallet } from "../../backend/functions";
 import { getTokenBalance, getTokenInfo } from "../../backend/utils";
 import { sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
-import { executeExternalTokenSell } from "../../blockchain/pumpfun/externalSell";
+import { executeExternalSell } from "../../blockchain/pumpfun/externalSell";
+import { secretKeyToKeypair } from "../../blockchain/common/utils";
 import { escape } from "../utils";
 
 const externalTokenSellConversation = async (
@@ -23,11 +24,11 @@ const externalTokenSellConversation = async (
     return;
   }
 
-  // -------- GET BUYER WALLETS ----------
-  const buyerWallets = await getAllBuyerWallets(user.id);
-  if (buyerWallets.length === 0) {
+  // -------- GET FUNDING WALLET ----------
+  const fundingWallet = await getFundingWallet(user.id);
+  if (!fundingWallet) {
     await ctx.reply(
-      "❌ No buyer wallets found. Please add buyer wallets in Wallet Config first."
+      "❌ No funding wallet found. Please configure a funding wallet first."
     );
     await conversation.halt();
     return;
@@ -44,69 +45,32 @@ const externalTokenSellConversation = async (
       return;
     }
 
-    // Check token balances in buyer wallets
+    // Check token balance in funding wallet
+    logger.info(
+      `[ExternalTokenSell] Checking balance for token ${tokenAddress} in funding wallet ${fundingWallet.publicKey}`
+    );
+
     let totalTokenBalance = 0;
-    let walletsWithBalance = 0;
-    let errorCount = 0;
-    const walletBalances: {
-      publicKey: string;
-      balance: number;
-      value: number;
-    }[] = [];
-
-    logger.info(
-      `[ExternalTokenSell] Checking balances for token ${tokenAddress} across ${buyerWallets.length} wallets`
-    );
-
-    for (const wallet of buyerWallets) {
-      try {
-        logger.info(
-          `[ExternalTokenSell] Checking balance for wallet ${wallet.publicKey}`
-        );
-        const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
-        logger.info(
-          `[ExternalTokenSell] Balance for wallet ${wallet.publicKey}: ${balance}`
-        );
-
-        if (balance > 0) {
-          const value = balance * (tokenInfo.priceUsd || 0);
-          walletBalances.push({
-            publicKey: wallet.publicKey,
-            balance,
-            value,
-          });
-          totalTokenBalance += balance;
-          walletsWithBalance++;
-          logger.info(
-            `[ExternalTokenSell] Wallet ${wallet.publicKey} has ${balance} tokens (value: $${value.toFixed(2)})`
-          );
-        } else {
-          logger.info(
-            `[ExternalTokenSell] Wallet ${wallet.publicKey} has 0 tokens`
-          );
-        }
-      } catch (error) {
-        errorCount++;
-        logger.error(
-          `[ExternalTokenSell] Error checking balance for wallet ${wallet.publicKey}:`,
-          error
-        );
-      }
-    }
-
-    logger.info(
-      `[ExternalTokenSell] Balance check complete: ${walletsWithBalance} wallets with tokens, ${errorCount} errors`
-    );
-
-    if (errorCount > 0) {
-      await ctx.reply(
-        `⚠️ Warning: ${errorCount} wallet(s) could not be checked due to connection issues. Proceeding with available data...`
+    try {
+      totalTokenBalance = await getTokenBalance(tokenAddress, fundingWallet.publicKey);
+      logger.info(
+        `[ExternalTokenSell] Funding wallet balance: ${totalTokenBalance} tokens`
       );
+    } catch (error) {
+      logger.error(
+        `[ExternalTokenSell] Error checking balance for funding wallet:`,
+        error
+      );
+      await ctx.reply(
+        "❌ Error checking token balance in funding wallet. Please try again."
+      );
+      await conversation.halt();
+      return;
     }
 
-    if (walletsWithBalance === 0) {
+    if (totalTokenBalance === 0) {
       await ctx.reply(
-        "❌ No tokens found in your buyer wallets for this token address."
+        "❌ No tokens found in your funding wallet for this token address."
       );
       await conversation.halt();
       return;
