@@ -1,5 +1,17 @@
-import { Bot, InlineKeyboard, type Context, type BotError, GrammyError, HttpError } from "grammy";
-import { Conversation, conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
+import {
+  Bot,
+  InlineKeyboard,
+  type Context,
+  type BotError,
+  GrammyError,
+  HttpError,
+} from "grammy";
+import {
+  Conversation,
+  conversations,
+  createConversation,
+  type ConversationFlavor,
+} from "@grammyjs/conversations";
 import { env } from "../config";
 import {
   createUser,
@@ -36,7 +48,11 @@ import {
 import viewTokensConversation from "./conversation/viewTokenConversation";
 import externalTokenSellConversation from "./conversation/externalTokenSell";
 import { logger } from "../blockchain/common/logger";
-import { getTokenInfo, getTokenBalance, decryptPrivateKey } from "../backend/utils";
+import {
+  getTokenInfo,
+  getTokenBalance,
+  decryptPrivateKey,
+} from "../backend/utils";
 import { getTransactionFinancialStats } from "../backend/functions-main";
 import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
 import { referralsConversation } from "./conversation/referrals";
@@ -58,7 +74,10 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
 
   // Handle Grammy.js conversation state errors
   if (err.stack && err.stack.includes("Bad replay, expected op")) {
-    logger.warn("Grammy.js conversation state error detected in global handler:", err.stack);
+    logger.warn(
+      "Grammy.js conversation state error detected in global handler:",
+      err.stack
+    );
 
     // Clear the conversation state completely
     const cleared = await clearConversationState(ctx);
@@ -91,7 +110,8 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   // Don't crash the bot for callback query timeout errors
   if (
     err.error instanceof GrammyError &&
-    (err.error.description.includes("query is too old") || err.error.description.includes("response timeout expired"))
+    (err.error.description.includes("query is too old") ||
+      err.error.description.includes("response timeout expired"))
   ) {
     logger.info("Ignoring callback query timeout error");
     return;
@@ -100,13 +120,18 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   // For other errors, try to notify the user if possible
   if (ctx.chat) {
     ctx
-      .reply("❌ An unexpected error occurred. Please try again or contact support.")
+      .reply(
+        "❌ An unexpected error occurred. Please try again or contact support."
+      )
       .catch(() => logger.error("Failed to send error message to user"));
   }
 });
 
 // Safe wrapper for answerCallbackQuery to handle timeout errors
-async function safeAnswerCallbackQuery(ctx: Context, text?: string): Promise<void> {
+async function safeAnswerCallbackQuery(
+  ctx: Context,
+  text?: string
+): Promise<void> {
   try {
     await ctx.answerCallbackQuery(text);
   } catch (error: any) {
@@ -141,7 +166,10 @@ bot.use(async (ctx, next) => {
   } catch (error: any) {
     // Handle conversation-specific errors
     if (error.message && error.message.includes("Bad replay, expected op")) {
-      logger.warn("Conversation replay error caught in middleware:", error.message);
+      logger.warn(
+        "Conversation replay error caught in middleware:",
+        error.message
+      );
 
       // Clear conversation state completely
       const cleared = await clearConversationState(ctx);
@@ -188,6 +216,39 @@ bot.use(createConversation(externalTokenSellConversation));
 bot.use(createConversation(buyExternalTokenConversation));
 bot.use(createConversation(referralsConversation));
 bot.use(createConversation(buyCustonConversation));
+// Middleware to patch reply/sendMessage and hook deletion
+bot.use(async (ctx, next) => {
+  const chatId = ctx.chat?.id;
+  const userMessageId = ctx.message?.message_id;
+
+  if (!chatId || !userMessageId) return next();
+
+  // Store original functions
+  const originalReply = ctx.reply.bind(ctx);
+  const originalSendMessage = ctx.api.sendMessage.bind(ctx.api);
+
+  let botResponded = false;
+
+  // Wrap ctx.reply
+  ctx.reply = async (...args) => {
+    botResponded = true;
+    return originalReply(...args);
+  };
+
+  // Wrap ctx.api.sendMessage
+  ctx.api.sendMessage = async (...args) => {
+    botResponded = true;
+    return originalSendMessage(...args);
+  };
+
+  await next();
+
+  if (botResponded) {
+    setTimeout(() => {
+      ctx.api.deleteMessage(chatId, userMessageId).catch(() => {});
+    }, 2500);
+  }
+});
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
@@ -199,7 +260,11 @@ bot.command("start", async (ctx) => {
     const startPayload = ctx.match; // This gets the text after /start
     let referralCode: string | undefined;
 
-    if (startPayload && typeof startPayload === "string" && startPayload.startsWith("REF_")) {
+    if (
+      startPayload &&
+      typeof startPayload === "string" &&
+      startPayload.startsWith("REF_")
+    ) {
       referralCode = startPayload.replace("REF_", "");
       console.log(`New user with referral code: ${referralCode}`);
     }
@@ -214,7 +279,12 @@ bot.command("start", async (ctx) => {
         referralCode
       );
     } else {
-      user = await createUser(ctx.chat.first_name, ctx.chat.last_name, ctx.chat.username!, ctx.chat.id.toString());
+      user = await createUser(
+        ctx.chat.first_name,
+        ctx.chat.last_name,
+        ctx.chat.username!,
+        ctx.chat.id.toString()
+      );
     }
   }
 
@@ -315,7 +385,9 @@ Choose an option below to get started ⬇️
 
 bot.command("admin", async (ctx) => {
   // Simple admin check - you can enhance this with proper admin user IDs
-  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
+  const adminIds = env.ADMIN_IDS
+    ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id))
+    : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
     await ctx.reply("❌ Access denied. Admin only command.");
@@ -349,7 +421,9 @@ ${stats.available < 100 ? "⚠️ *Warning: Low address pool\\!*" : "✅ *Addres
 
 bot.command("markused", async (ctx) => {
   // Simple admin check
-  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
+  const adminIds = env.ADMIN_IDS
+    ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id))
+    : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
     await ctx.reply("❌ Access denied. Admin only command.");
@@ -358,7 +432,9 @@ bot.command("markused", async (ctx) => {
 
   const args = ctx.message?.text?.split(" ");
   if (!args || args.length < 2) {
-    await ctx.reply("❌ Usage: /markused <address>\n\nExample: /markused <your_token_address>");
+    await ctx.reply(
+      "❌ Usage: /markused <address>\n\nExample: /markused <your_token_address>"
+    );
     return;
   }
 
@@ -377,7 +453,9 @@ bot.command("markused", async (ctx) => {
 
 bot.command("removetoken", async (ctx) => {
   // Simple admin check
-  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
+  const adminIds = env.ADMIN_IDS
+    ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id))
+    : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
     await ctx.reply("❌ Access denied. Admin only command.");
@@ -446,7 +524,10 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
 bot.callbackQuery("del_message", async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "Message deleted");
   if (ctx.callbackQuery.message) {
-    await ctx.api.deleteMessage(ctx.chat!.id, ctx.callbackQuery.message.message_id);
+    await ctx.api.deleteMessage(
+      ctx.chat!.id,
+      ctx.callbackQuery.message.message_id
+    );
   }
 });
 bot.callbackQuery(/^launch_token_(.+)$/, async (ctx) => {
@@ -531,7 +612,11 @@ bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
   const tokenAddress = ctx.match![2];
 
   // Start the external token sell conversation
-  await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, sellPercent);
+  await ctx.conversation.enter(
+    "externalTokenSellConversation",
+    tokenAddress,
+    sellPercent
+  );
 });
 
 // Handle external token sell button clicks (from token address messages)
@@ -539,7 +624,9 @@ bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
 
-  logger.info(`[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`);
+  logger.info(
+    `[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`
+  );
 
   // Show sell percentage options
   const keyboard = new InlineKeyboard()
@@ -551,10 +638,13 @@ bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
     .row()
     .text("❌ Cancel", CallBackQueries.CANCEL);
 
-  await ctx.editMessageText(`💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`, {
-    parse_mode: "Markdown",
-    reply_markup: keyboard,
-  });
+  await ctx.editMessageText(
+    `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    }
+  );
 });
 
 // Handle external token buy button clicks (from token address messages)
@@ -562,7 +652,9 @@ bot.callbackQuery(/^buy_external_token_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
 
-  logger.info(`[ExternalTokenBuy] Buy button clicked for token: ${tokenAddress}`);
+  logger.info(
+    `[ExternalTokenBuy] Buy button clicked for token: ${tokenAddress}`
+  );
 
   // Start the external token buy conversation
   await ctx.conversation.enter("buyExternalTokenConversation");
@@ -590,11 +682,15 @@ bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
       await ctx.conversation.enter("launchTokenConversation", tokenAddress);
     } else {
       // If we can't extract the token address, guide user to tokens list
-      await ctx.reply("🔄 Please go to 'View Tokens' and select the token you want to launch.");
+      await ctx.reply(
+        "🔄 Please go to 'View Tokens' and select the token you want to launch."
+      );
     }
   } catch (error) {
     logger.error("Error handling RETRY_LAUNCH:", error);
-    await ctx.reply("❌ Unable to retry launch. Please go to 'View Tokens' and try launching again.");
+    await ctx.reply(
+      "❌ Unable to retry launch. Please go to 'View Tokens' and try launching again."
+    );
   }
 });
 
@@ -645,7 +741,10 @@ bot.on("message:text", async (ctx) => {
                     walletsWithBalance++;
                   }
                 } catch (error) {
-                  logger.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
+                  logger.warn(
+                    `Error checking balance for wallet ${wallet.publicKey}:`,
+                    error
+                  );
                 }
               }
 
@@ -680,9 +779,15 @@ ${holdingsText}`,
           {
             parse_mode: "HTML",
             reply_markup: new InlineKeyboard()
-              .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .text(
+                "💰 Buy Token",
+                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
+              )
               .row()
-              .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
+              .text(
+                "💸 Sell Token",
+                `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`
+              )
               .row()
               .text("❌ Cancel", CallBackQueries.CANCEL),
           }
@@ -703,9 +808,13 @@ bot.command("reset", async (ctx) => {
   try {
     const cleared = await clearConversationState(ctx);
     if (cleared) {
-      await ctx.reply("✅ Conversation state cleared successfully. You can now start fresh conversations.");
+      await ctx.reply(
+        "✅ Conversation state cleared successfully. You can now start fresh conversations."
+      );
     } else {
-      await ctx.reply("⚠️ Failed to clear conversation state completely. Please try again or contact support.");
+      await ctx.reply(
+        "⚠️ Failed to clear conversation state completely. Please try again or contact support."
+      );
     }
   } catch (error: any) {
     logger.error("Error in reset command:", error);
@@ -775,7 +884,9 @@ bot.command("fixlaunch", async (ctx) => {
     logger.info("Fix launch completed for user:", ctx.chat?.id);
   } catch (error: any) {
     logger.error("Error in fix launch command:", error);
-    await ctx.reply("❌ Fix launch failed. Please try /forcefix or contact support.");
+    await ctx.reply(
+      "❌ Fix launch failed. Please try /forcefix or contact support."
+    );
   }
 });
 
@@ -794,7 +905,9 @@ bot.command("directlaunch", async (ctx) => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Try to launch directly
-      await ctx.conversation.enter("launchTokenConversation", tokenAddress, { overwrite: true });
+      await ctx.conversation.enter("launchTokenConversation", tokenAddress, {
+        overwrite: true,
+      });
     } else {
       await ctx.reply(
         "🚀 **Direct Launch**\n\n" +
@@ -842,7 +955,10 @@ bot.on("callback_query:data", async (ctx) => {
     const backKb = new InlineKeyboard()
       .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${address}`)
       .row()
-      .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${address}`)
+      .text(
+        "💸 Sell Token",
+        `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${address}`
+      )
       .row()
       .text("❌ Cancel", CallBackQueries.CANCEL);
     await ctx.editMessageReplyMarkup({ reply_markup: backKb });
@@ -914,20 +1030,30 @@ bot.on("callback_query:data", async (ctx) => {
     switch (tradeAction) {
       case "buy":
         await ctx.reply(`💰 Buying ${buyAmount} SOL of token`);
-        const buyResult = await executeFundingBuy(mint, fundingWallet!.privateKey, Number(buyAmount));
+        const buyResult = await executeFundingBuy(
+          mint,
+          fundingWallet!.privateKey,
+          Number(buyAmount)
+        );
         if (buyResult.success) {
           await ctx.reply(
             `✅ Successfully bought ${buyAmount} SOL of token!\n\nTransaction Signature:\n<code>${buyResult.signature}</code>`,
             { parse_mode: "HTML" }
           );
         } else {
-          await ctx.reply("❌ Failed to buy token. Please try again or contact support.");
+          await ctx.reply(
+            "❌ Failed to buy token. Please try again or contact support."
+          );
         }
         break;
 
       case "sell":
         await ctx.reply(`💰 Selling ${buyAmount}% of token`);
-        const sellResult = await executeDevSell(mint, fundingWallet!.privateKey, Number(buyAmount));
+        const sellResult = await executeDevSell(
+          mint,
+          fundingWallet!.privateKey,
+          Number(buyAmount)
+        );
         if (!sellResult) return ctx.reply("Sell Failed");
         if (sellResult.success) {
           await ctx.reply(
@@ -935,7 +1061,9 @@ bot.on("callback_query:data", async (ctx) => {
             { parse_mode: "HTML" }
           );
         } else {
-          await ctx.reply("❌ Failed to buy token. Please try again or contact support.");
+          await ctx.reply(
+            "❌ Failed to buy token. Please try again or contact support."
+          );
         }
         break;
 
@@ -1009,9 +1137,15 @@ ${holdingsText}`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
-        .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text(
+          "💰 Buy Token",
+          `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
+        )
         .row()
-        .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text(
+          "💸 Sell Token",
+          `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${tokenAddress}`
+        )
         .row()
         .text("❌ Cancel", CallBackQueries.CANCEL),
     }
@@ -1019,22 +1153,31 @@ ${holdingsText}`,
 }
 
 // Callback query handlers for external token actions
-bot.callbackQuery(new RegExp(`^${CallBackQueries.BUY_EXTERNAL_TOKEN}_`), async (ctx) => {
-  try {
-    await ctx.answerCallbackQuery();
-    const tokenAddress = ctx.callbackQuery.data.split("_").pop();
-    if (tokenAddress) {
-      // Store token address in session or context if needed
-      await ctx.conversation.enter("buy-external-token", { overwrite: true });
-      // You might need to pass the token address to the conversation
-      // This is a simple way; adjust based on your conversation setup
-      await sendMessage(ctx, `💰 Buying external token: <code>${tokenAddress}</code>`, { parse_mode: "HTML" });
+bot.callbackQuery(
+  new RegExp(`^${CallBackQueries.BUY_EXTERNAL_TOKEN}_`),
+  async (ctx) => {
+    try {
+      await ctx.answerCallbackQuery();
+      const tokenAddress = ctx.callbackQuery.data.split("_").pop();
+      if (tokenAddress) {
+        // Store token address in session or context if needed
+        await ctx.conversation.enter("buy-external-token", { overwrite: true });
+        // You might need to pass the token address to the conversation
+        // This is a simple way; adjust based on your conversation setup
+        await sendMessage(
+          ctx,
+          `💰 Buying external token: <code>${tokenAddress}</code>`,
+          { parse_mode: "HTML" }
+        );
+      }
+    } catch (error) {
+      logger.error("Error handling buy external token callback:", error);
+      await ctx.answerCallbackQuery({
+        text: "❌ Error occurred. Please try again.",
+      });
     }
-  } catch (error) {
-    logger.error("Error handling buy external token callback:", error);
-    await ctx.answerCallbackQuery({ text: "❌ Error occurred. Please try again." });
   }
-});
+);
 
 // Emergency bypass for token launch when conversation state is corrupted
 bot.callbackQuery(/^emergency_launch_(.+)$/, async (ctx) => {
@@ -1051,10 +1194,14 @@ bot.callbackQuery(/^emergency_launch_(.+)$/, async (ctx) => {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Try to enter the conversation with overwrite flag
-    await ctx.conversation.enter("launchTokenConversation", tokenAddress, { overwrite: true });
+    await ctx.conversation.enter("launchTokenConversation", tokenAddress, {
+      overwrite: true,
+    });
   } catch (error: any) {
     logger.error("Emergency launch bypass failed:", error);
-    await ctx.reply("❌ Emergency launch failed. Please try using /forcefix and then launch normally.");
+    await ctx.reply(
+      "❌ Emergency launch failed. Please try using /forcefix and then launch normally."
+    );
   }
 });
 
@@ -1077,7 +1224,9 @@ bot.callbackQuery("direct_launch_recovery", async (ctx) => {
     );
   } catch (error) {
     logger.error("Direct launch recovery failed:", error);
-    await ctx.reply("❌ Please try: `/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`");
+    await ctx.reply(
+      "❌ Please try: `/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`"
+    );
   }
 });
 
@@ -1140,7 +1289,9 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
       // Clear Grammy.js internal conversation state keys
       const grammyConversationKeys = sessionKeys.filter(
         (key) =>
-          key.startsWith("__grammyjs_conversations") || key.startsWith("__conversations") || key.includes("__conv_")
+          key.startsWith("__grammyjs_conversations") ||
+          key.startsWith("__conversations") ||
+          key.includes("__conv_")
       );
 
       grammyConversationKeys.forEach((key) => {
@@ -1164,7 +1315,9 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
           cleared = true;
           logger.info("Successfully exited conversation");
         } else {
-          logger.warn("Conversation object exists but no halt/exit methods available");
+          logger.warn(
+            "Conversation object exists but no halt/exit methods available"
+          );
           // Force clear the conversation object
           delete sessionCtx.conversation;
           cleared = true;
@@ -1200,9 +1353,15 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
     }
 
     if (cleared) {
-      logger.info("Successfully cleared conversation state for user:", ctx.chat?.id);
+      logger.info(
+        "Successfully cleared conversation state for user:",
+        ctx.chat?.id
+      );
     } else {
-      logger.warn("No conversation state found to clear for user:", ctx.chat?.id);
+      logger.warn(
+        "No conversation state found to clear for user:",
+        ctx.chat?.id
+      );
     }
 
     return true; // Return true even if nothing was cleared, as the goal is achieved
