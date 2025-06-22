@@ -730,34 +730,32 @@ bot.on("message:text", async (ctx) => {
             isUserToken = true;
           }
 
-          // Check actual holdings in buyer wallets
+          // Check actual holdings in funding wallet (external tokens use funding wallet only)
           try {
-            const buyerWallets = await getAllBuyerWallets(user.id);
-            if (buyerWallets.length > 0) {
+            const fundingWallet = await getFundingWallet(user.id);
+            if (fundingWallet) {
               let totalTokenBalance = 0;
 
-              for (const wallet of buyerWallets) {
-                try {
-                  const balance = await getTokenBalance(text, wallet.publicKey);
-                  if (balance > 0) {
-                    totalTokenBalance += balance;
-                    walletsWithBalance++;
-                  }
-                } catch (error) {
-                  logger.warn(
-                    `Error checking balance for wallet ${wallet.publicKey}:`,
-                    error
-                  );
+              try {
+                const balance = await getTokenBalance(text, fundingWallet.publicKey);
+                if (balance > 0) {
+                  totalTokenBalance = balance;
+                  walletsWithBalance = 1;
                 }
+              } catch (error) {
+                logger.warn(
+                  `Error checking balance for funding wallet ${fundingWallet.publicKey}:`,
+                  error
+                );
               }
 
               if (walletsWithBalance > 0) {
-                holdingsText = `📌 ${totalTokenBalance.toLocaleString()} tokens found in ${walletsWithBalance}/${buyerWallets.length} buyer wallets`;
+                holdingsText = `📌 ${totalTokenBalance.toLocaleString()} tokens found in funding wallet`;
               } else {
-                holdingsText = `📌 No tokens found in your ${buyerWallets.length} buyer wallets`;
+                holdingsText = `📌 No tokens found in your funding wallet`;
               }
             } else {
-              holdingsText = "📌 No buyer wallets configured";
+              holdingsText = "📌 No funding wallet configured";
             }
           } catch (error) {
             logger.error("Error checking token holdings:", error);
