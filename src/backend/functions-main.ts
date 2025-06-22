@@ -129,7 +129,7 @@ export const isTransactionAlreadySuccessful = originalFunctions.isTransactionAlr
 export const getTransactionStats = originalFunctions.getTransactionStats;
 export const getTransactionFinancialStats = originalFunctions.getTransactionFinancialStats;
 export const getSellTransactionHistory = originalFunctions.getSellTransactionHistory;
-export const getDetailedSellSummary = originalFunctions.getDetailedSellSummary;
+export const getDetailedSellSummary = originalFunctions.getDetailedSellSummary; 
 
 // ========== AFFILIATE SYSTEM FUNCTIONS ==========
 export const getOrCreateAffiliateCode = originalFunctions.getOrCreateAffiliateCode;

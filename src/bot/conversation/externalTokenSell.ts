@@ -51,16 +51,16 @@ const externalTokenSellConversation = async (
     );
 
     let totalTokenBalance = 0;
-    try {
+      try {
       totalTokenBalance = await getTokenBalance(tokenAddress, fundingWallet.publicKey);
-      logger.info(
+        logger.info(
         `[ExternalTokenSell] Funding wallet balance: ${totalTokenBalance} tokens`
-      );
-    } catch (error) {
-      logger.error(
+          );
+      } catch (error) {
+        logger.error(
         `[ExternalTokenSell] Error checking balance for funding wallet:`,
-        error
-      );
+          error
+        );
       await ctx.reply(
         "❌ Error checking token balance in funding wallet. Please try again."
       );
