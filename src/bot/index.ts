@@ -765,12 +765,20 @@ bot.on("message:text", async (ctx) => {
           }
         }
         // TODO: Fetch actual market data; this is placeholder data
+
         const marketCap = formatUSD(tokenInfo.marketCap); // Placeholder
         const price = tokenInfo.priceUsd; // Placeholder
-        const liquidity = formatUSD(tokenInfo.liquidity.usd); // Placeholder
+        let liquidity = null;
+        if (tokenInfo.liquidity) {
+          liquidity = formatUSD(tokenInfo.liquidity.usd);
+        } else {
+          liquidity = "N/A"; // Handle case where liquidity is not available
+        }
         // Display token detail page with buy and sell options
         const dex = tokenInfo.dexId;
+        logger.info(".... Token details fetched successfully");
         const renouncedAndFrozen = await checkTokenRenouncedAndFrozen(text);
+        logger.info(renouncedAndFrozen);
         const links = [
           {
             abbr: "CA",
@@ -1159,24 +1167,33 @@ bot.on("callback_query:data", async (ctx) => {
     switch (tradeAction) {
       case "buy":
         await ctx.reply(`💰 Buying ${buyAmount} SOL of token`);
-        
+
         // Use new external buy system with automatic platform detection
-        const { executeExternalBuy } = await import("../blockchain/pumpfun/externalBuy");
-        const { secretKeyToKeypair } = await import("../blockchain/common/utils");
-        
+        const { executeExternalBuy } = await import(
+          "../blockchain/pumpfun/externalBuy"
+        );
+        const { secretKeyToKeypair } = await import(
+          "../blockchain/common/utils"
+        );
+
         try {
           const buyerKeypair = secretKeyToKeypair(fundingWallet!.privateKey);
-          const buyResult = await executeExternalBuy(mint, buyerKeypair, Number(buyAmount));
-          
+          const buyResult = await executeExternalBuy(
+            mint,
+            buyerKeypair,
+            Number(buyAmount)
+          );
+
           if (buyResult.success) {
-            const platformText = buyResult.platform === 'pumpswap' ? '⚡ Pumpswap' : '🚀 PumpFun';
+            const platformText =
+              buyResult.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
             await ctx.reply(
               `✅ Successfully bought ${buyAmount} SOL of token via ${platformText}!\n\nTransaction Signature:\n<code>${buyResult.signature}</code>`,
               { parse_mode: "HTML" }
             );
           } else {
             await ctx.reply(
-              `❌ Failed to buy token: ${buyResult.error || 'Unknown error'}\n\nPlease try again or contact support.`
+              `❌ Failed to buy token: ${buyResult.error || "Unknown error"}\n\nPlease try again or contact support.`
             );
           }
         } catch (error: any) {
@@ -1189,37 +1206,55 @@ bot.on("callback_query:data", async (ctx) => {
 
       case "sell":
         await ctx.reply(`💰 Selling ${buyAmount}% of token`);
-        
+
         // Use new external sell system with automatic platform detection
-        const { executeExternalSell } = await import("../blockchain/pumpfun/externalSell");
-        const { secretKeyToKeypair: sellSecretKeyToKeypair } = await import("../blockchain/common/utils");
+        const { executeExternalSell } = await import(
+          "../blockchain/pumpfun/externalSell"
+        );
+        const { secretKeyToKeypair: sellSecretKeyToKeypair } = await import(
+          "../blockchain/common/utils"
+        );
         const { getTokenBalance } = await import("../backend/utils");
-        
+
         try {
-          const sellerKeypair = sellSecretKeyToKeypair(fundingWallet!.privateKey);
-          
+          const sellerKeypair = sellSecretKeyToKeypair(
+            fundingWallet!.privateKey
+          );
+
           // Get current token balance
-          const currentBalance = await getTokenBalance(mint, sellerKeypair.publicKey.toBase58());
+          const currentBalance = await getTokenBalance(
+            mint,
+            sellerKeypair.publicKey.toBase58()
+          );
           if (currentBalance <= 0) {
             await ctx.reply("❌ No tokens found to sell.");
             break;
           }
-          
+
           // Calculate tokens to sell based on percentage
-          const tokensToSell = Math.floor((currentBalance * Number(buyAmount)) / 100);
-          
-          const sellResult = await executeExternalSell(mint, sellerKeypair, tokensToSell);
-          
+          const tokensToSell = Math.floor(
+            (currentBalance * Number(buyAmount)) / 100
+          );
+
+          const sellResult = await executeExternalSell(
+            mint,
+            sellerKeypair,
+            tokensToSell
+          );
+
           if (sellResult.success) {
-            const platformText = sellResult.platform === 'pumpswap' ? '⚡ Pumpswap' : '🚀 PumpFun';
-            const solReceived = sellResult.solReceived ? ` (${parseFloat(sellResult.solReceived).toFixed(6)} SOL received)` : '';
+            const platformText =
+              sellResult.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
+            const solReceived = sellResult.solReceived
+              ? ` (${parseFloat(sellResult.solReceived).toFixed(6)} SOL received)`
+              : "";
             await ctx.reply(
               `✅ Successfully sold ${buyAmount}% of token via ${platformText}!${solReceived}\n\nTransaction Signature:\n<code>${sellResult.signature}</code>`,
               { parse_mode: "HTML" }
             );
           } else {
             await ctx.reply(
-              `❌ Failed to sell token: ${sellResult.error || 'Unknown error'}\n\nPlease try again or contact support.`
+              `❌ Failed to sell token: ${sellResult.error || "Unknown error"}\n\nPlease try again or contact support.`
             );
           }
         } catch (error: any) {

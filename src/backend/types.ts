@@ -20,7 +20,7 @@ export interface DexscreenerTokenResponse {
   txns: Txns;
   volume: PriceChange;
   priceChange: PriceChange;
-  liquidity: Liquidity;
+  liquidity?: Liquidity;
   fdv: number;
   marketCap: number;
   pairCreatedAt: number;
