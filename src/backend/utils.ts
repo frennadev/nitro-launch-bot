@@ -9,9 +9,14 @@ import { ENCRYPTION_ALGORITHM, ENCRYPTION_IV_LENGTH } from "./constants";
 import axios from "axios";
 import { TokenModel, UserModel } from "./models";
 import { redisClient } from "../jobs/db";
+import { DexscreenerTokenResponse } from "./types";
 
 export function encryptPrivateKey(privateKey: string): string {
-  const SECRET_KEY = crypto.scryptSync(env.ENCRYPTION_SECRET, "salt", ENCRYPTION_IV_LENGTH * 2);
+  const SECRET_KEY = crypto.scryptSync(
+    env.ENCRYPTION_SECRET,
+    "salt",
+    ENCRYPTION_IV_LENGTH * 2
+  );
   try {
     const iv = crypto.randomBytes(ENCRYPTION_IV_LENGTH);
 
@@ -27,7 +32,11 @@ export function encryptPrivateKey(privateKey: string): string {
 }
 
 export function decryptPrivateKey(encryptedPrivateKey: string): string {
-  const SECRET_KEY = crypto.scryptSync(env.ENCRYPTION_SECRET, "salt", ENCRYPTION_IV_LENGTH * 2);
+  const SECRET_KEY = crypto.scryptSync(
+    env.ENCRYPTION_SECRET,
+    "salt",
+    ENCRYPTION_IV_LENGTH * 2
+  );
 
   try {
     const [ivHex, encryptedData] = encryptedPrivateKey.split(":");
@@ -36,7 +45,11 @@ export function decryptPrivateKey(encryptedPrivateKey: string): string {
       throw new Error("Invalid encrypted data format");
     }
     const iv = Buffer.from(ivHex, "hex");
-    const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, SECRET_KEY, iv);
+    const decipher = crypto.createDecipheriv(
+      ENCRYPTION_ALGORITHM,
+      SECRET_KEY,
+      iv
+    );
     let decrypted = decipher.update(encryptedData, "hex", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
@@ -123,7 +136,9 @@ export async function editMessage(
       await ctxOrBot.editMessageText(text, opts);
     } else {
       if (chatId == null || messageId == null) {
-        throw new Error("chatId and messageId required when calling from bot instance");
+        throw new Error(
+          "chatId and messageId required when calling from bot instance"
+        );
       }
       await ctxOrBot.api.editMessageText(chatId, messageId, text, opts);
     }
@@ -132,33 +147,48 @@ export async function editMessage(
   }
 }
 
-export async function getTokenBalance(tokenAddress: string, walletAddress: string): Promise<number> {
+export async function getTokenBalance(
+  tokenAddress: string,
+  walletAddress: string
+): Promise<number> {
   try {
     const mint = new PublicKey(tokenAddress);
     const owner = new PublicKey(walletAddress);
-    
-    console.log(`[getTokenBalance] Checking balance for token ${tokenAddress} in wallet ${walletAddress}`);
-    
-    const resp = await connection.getParsedTokenAccountsByOwner(owner, { mint });
-    
-    console.log(`[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress}`);
-    
+
+    console.log(
+      `[getTokenBalance] Checking balance for token ${tokenAddress} in wallet ${walletAddress}`
+    );
+
+    const resp = await connection.getParsedTokenAccountsByOwner(owner, {
+      mint,
+    });
+
+    console.log(
+      `[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress}`
+    );
+
     if (resp.value.length === 0) {
-      console.log(`[getTokenBalance] No token accounts found for token ${tokenAddress} in wallet ${walletAddress}`);
+      console.log(
+        `[getTokenBalance] No token accounts found for token ${tokenAddress} in wallet ${walletAddress}`
+      );
       return 0;
     }
-    
+
     const totalBalance = resp.value.reduce((sum, { account }) => {
       const amt = account.data.parsed.info.tokenAmount.uiAmount || 0;
       console.log(`[getTokenBalance] Account balance: ${amt} tokens`);
       return sum + amt;
     }, 0);
-    
-    console.log(`[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens`);
+
+    console.log(
+      `[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens`
+    );
     return totalBalance;
-    
   } catch (error) {
-    console.error(`[getTokenBalance] Error checking balance for token ${tokenAddress} in wallet ${walletAddress}:`, error);
+    console.error(
+      `[getTokenBalance] Error checking balance for token ${tokenAddress} in wallet ${walletAddress}:`,
+      error
+    );
     throw error; // Re-throw the error instead of silently returning 0
   }
 }
@@ -169,15 +199,19 @@ export async function getSolBalance(walletAddress: string): Promise<number> {
   return lamports / LAMPORTS_PER_SOL;
 }
 
-export const getTokenInfo = async (tokenAddress: string) => {
+export const getTokenInfo = async (
+  tokenAddress: string
+): DexscreenerTokenResponse => {
   const cacheKey = `${tokenAddress}::data`;
   try {
     const cached = await redisClient.get(cacheKey);
     if (cached) {
       return JSON.parse(cached)[0];
     }
-    const response = await axios.get(`https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`);
-    const data = response.data || [];
+    const response = await axios.get(
+      `https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`
+    );
+    const data: DexscreenerTokenResponse[] | [] = response.data || [];
     await redisClient.set(cacheKey, JSON.stringify(data), "EX", 180);
 
     return data[0];
@@ -204,12 +238,14 @@ export const parseTransactionAmounts = async (
   error?: string;
 }> => {
   try {
-    logger.info(`[parse-tx]: Parsing transaction ${signature} for wallet ${walletAddress.slice(0, 8)}`);
-    
+    logger.info(
+      `[parse-tx]: Parsing transaction ${signature} for wallet ${walletAddress.slice(0, 8)}`
+    );
+
     // Get the parsed transaction from the blockchain
     const parsedTx = await connection.getParsedTransaction(signature, {
       commitment: "confirmed",
-      maxSupportedTransactionVersion: 0
+      maxSupportedTransactionVersion: 0,
     });
 
     if (!parsedTx) {
@@ -221,13 +257,15 @@ export const parseTransactionAmounts = async (
     }
 
     if (parsedTx.meta.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(parsedTx.meta.err)}`);
+      throw new Error(
+        `Transaction failed: ${JSON.stringify(parsedTx.meta.err)}`
+      );
     }
 
     // Find the wallet's account index in the transaction
     const walletPubkey = new PublicKey(walletAddress);
     const accountKeys = parsedTx.transaction.message.accountKeys;
-    const walletIndex = accountKeys.findIndex(key => 
+    const walletIndex = accountKeys.findIndex((key) =>
       key.pubkey.equals(walletPubkey)
     );
 
@@ -243,22 +281,20 @@ export const parseTransactionAmounts = async (
     // Parse token balance changes
     const preTokenBalances = parsedTx.meta.preTokenBalances || [];
     const postTokenBalances = parsedTx.meta.postTokenBalances || [];
-    
+
     // Find token balance changes for our specific token and wallet
     const preTokenBalance = preTokenBalances.find(
-      balance => balance.mint === tokenMint && 
-                balance.owner === walletAddress
+      (balance) => balance.mint === tokenMint && balance.owner === walletAddress
     );
-    
+
     const postTokenBalance = postTokenBalances.find(
-      balance => balance.mint === tokenMint && 
-                balance.owner === walletAddress
+      (balance) => balance.mint === tokenMint && balance.owner === walletAddress
     );
 
     let tokenChange = "0";
     if (postTokenBalance && preTokenBalance) {
       tokenChange = (
-        BigInt(postTokenBalance.uiTokenAmount.amount) - 
+        BigInt(postTokenBalance.uiTokenAmount.amount) -
         BigInt(preTokenBalance.uiTokenAmount.amount)
       ).toString();
     } else if (postTokenBalance && !preTokenBalance) {
@@ -276,19 +312,25 @@ export const parseTransactionAmounts = async (
     if (transactionType === "buy") {
       result.actualSolSpent = Math.abs(solChange); // Positive value for amount spent
       result.actualTokensReceived = tokenChange; // Should be positive for buys
-      
-      logger.info(`[parse-tx]: Buy transaction parsed - SOL spent: ${result.actualSolSpent}, Tokens received: ${result.actualTokensReceived}`);
+
+      logger.info(
+        `[parse-tx]: Buy transaction parsed - SOL spent: ${result.actualSolSpent}, Tokens received: ${result.actualTokensReceived}`
+      );
     } else {
       result.actualSolReceived = Math.abs(solChange); // Positive value for amount received
       result.actualTokensSold = Math.abs(Number(tokenChange)).toString(); // Positive value for tokens sold
-      
-      logger.info(`[parse-tx]: Sell transaction parsed - SOL received: ${result.actualSolReceived}, Tokens sold: ${result.actualTokensSold}`);
+
+      logger.info(
+        `[parse-tx]: Sell transaction parsed - SOL received: ${result.actualSolReceived}, Tokens sold: ${result.actualTokensSold}`
+      );
     }
 
     return result;
-
   } catch (error: any) {
-    logger.error(`[parse-tx]: Failed to parse transaction ${signature}:`, error);
+    logger.error(
+      `[parse-tx]: Failed to parse transaction ${signature}:`,
+      error
+    );
     return {
       success: false,
       error: error.message || "Unknown parsing error",
@@ -302,7 +344,13 @@ export const parseTransactionAmounts = async (
 export const recordTransactionWithActualAmounts = async (
   tokenAddress: string,
   walletPublicKey: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell",
+  transactionType:
+    | "token_creation"
+    | "dev_buy"
+    | "snipe_buy"
+    | "dev_sell"
+    | "wallet_sell"
+    | "external_sell",
   signature: string,
   success: boolean,
   launchAttempt: number,
@@ -318,7 +366,7 @@ export const recordTransactionWithActualAmounts = async (
   parseActualAmounts: boolean = true
 ) => {
   const { recordTransaction } = await import("./functions");
-  
+
   if (!success || !signature || !parseActualAmounts) {
     // Use estimated amounts for failed transactions or when parsing is disabled
     return await recordTransaction(
@@ -334,7 +382,9 @@ export const recordTransactionWithActualAmounts = async (
 
   try {
     // Parse actual amounts from blockchain
-    const transactionTypeForParsing = transactionType.includes("sell") ? "sell" : "buy";
+    const transactionTypeForParsing = transactionType.includes("sell")
+      ? "sell"
+      : "buy";
     const actualAmounts = await parseTransactionAmounts(
       signature,
       walletPublicKey,
@@ -347,15 +397,19 @@ export const recordTransactionWithActualAmounts = async (
       const recordingData = {
         ...estimatedAmounts,
         // Override with actual amounts
-        amountSol: transactionTypeForParsing === "buy" 
-          ? actualAmounts.actualSolSpent 
-          : actualAmounts.actualSolReceived,
-        amountTokens: transactionTypeForParsing === "buy"
-          ? actualAmounts.actualTokensReceived
-          : actualAmounts.actualTokensSold,
+        amountSol:
+          transactionTypeForParsing === "buy"
+            ? actualAmounts.actualSolSpent
+            : actualAmounts.actualSolReceived,
+        amountTokens:
+          transactionTypeForParsing === "buy"
+            ? actualAmounts.actualTokensReceived
+            : actualAmounts.actualTokensSold,
       };
 
-      logger.info(`[record-tx]: Using actual amounts from blockchain for ${transactionType} - SOL: ${recordingData.amountSol}, Tokens: ${recordingData.amountTokens}`);
+      logger.info(
+        `[record-tx]: Using actual amounts from blockchain for ${transactionType} - SOL: ${recordingData.amountSol}, Tokens: ${recordingData.amountTokens}`
+      );
 
       return await recordTransaction(
         tokenAddress,
@@ -368,7 +422,9 @@ export const recordTransactionWithActualAmounts = async (
       );
     } else {
       // Fallback to estimated amounts if parsing failed
-      logger.warn(`[record-tx]: Failed to parse actual amounts, using estimates: ${actualAmounts.error}`);
+      logger.warn(
+        `[record-tx]: Failed to parse actual amounts, using estimates: ${actualAmounts.error}`
+      );
       return await recordTransaction(
         tokenAddress,
         walletPublicKey,
@@ -381,7 +437,10 @@ export const recordTransactionWithActualAmounts = async (
     }
   } catch (error: any) {
     // Fallback to estimated amounts on any error
-    logger.error(`[record-tx]: Error parsing transaction amounts, using estimates:`, error);
+    logger.error(
+      `[record-tx]: Error parsing transaction amounts, using estimates:`,
+      error
+    );
     return await recordTransaction(
       tokenAddress,
       walletPublicKey,
@@ -393,3 +452,40 @@ export const recordTransactionWithActualAmounts = async (
     );
   }
 };
+
+export async function checkTokenRenouncedAndFrozen(
+  tokenMintAddress: string
+): Promise<{
+  isRenounced: boolean;
+  isFrozen: boolean;
+  mintAuthority: string | null;
+  freezeAuthority: string | null;
+}> {
+  try {
+    const mintPubkey = new PublicKey(tokenMintAddress);
+    const mintAccountInfo = await connection.getParsedAccountInfo(mintPubkey);
+
+    if (!mintAccountInfo.value) {
+      throw new Error("Mint account not found");
+    }
+
+    // @ts-ignore
+    const mintData = mintAccountInfo.value.data.parsed.info;
+
+    const mintAuthority = mintData.mintAuthority ?? null;
+    const freezeAuthority = mintData.freezeAuthority ?? null;
+
+    const isRenounced = mintAuthority === null;
+    const isFrozen = freezeAuthority === null;
+
+    return {
+      isRenounced,
+      isFrozen,
+      mintAuthority,
+      freezeAuthority,
+    };
+  } catch (error) {
+    logger.error(`[checkTokenRenouncedAndFrozen] Error:`, error);
+    throw error;
+  }
+}
