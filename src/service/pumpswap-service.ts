@@ -163,11 +163,12 @@ export default class PumpswapService {
     const { poolId, baseMint, quoteMint, poolBaseTokenAccount, poolQuoteTokenAccount } = poolInfo;
     console.log("CHecking 2 ...");
 
-    const wsolAta = await getOrCreateAssociatedTokenAccount(connection, payer, NATIVE_MINT, payer.publicKey);
-    const tokenAta = await getOrCreateAssociatedTokenAccount(connection, payer, mint, payer.publicKey);
+    // Get associated token addresses without creating accounts (they will be created in transaction)
+    const wsolAtaAddress = getAssociatedTokenAddressSync(NATIVE_MINT, payer.publicKey);
+    const tokenAtaAddress = getAssociatedTokenAddressSync(mint, payer.publicKey);
 
-    const quoteTokenAta = wsolAta;
-    const baseTokenAta = tokenAta;
+    const quoteTokenAta = { address: wsolAtaAddress };
+    const baseTokenAta = { address: tokenAtaAddress };
     console.log("CHecking 3 ...");
     const protocol_fee_ata = new PublicKey("7xQYoUjUJF1Kg6WVczoTAkaNhn5syQYcbvjmFrhjWpx");
     const amountOut = await getBuyAmountOut(poolInfo, amount, slippage);
@@ -215,10 +216,18 @@ export default class PumpswapService {
       Buffer.from([1])
     );
 
+    const createTokenAccountBase = createAssociatedTokenAccountIdempotentInstruction(
+      payer.publicKey,
+      baseTokenAta.address,
+      payer.publicKey,
+      mint
+    );
+
     const syncNativeInstruction = createSyncNativeInstruction(quoteTokenAta.address);
 
     const instructions = [
       addPriorityFee,
+      createTokenAccountBase,
       createTokenAccountWsol,
       transferForWsol,
       syncNativeInstruction,
@@ -307,11 +316,12 @@ export default class PumpswapService {
     }
     const { poolId, baseMint, quoteMint, poolBaseTokenAccount, poolQuoteTokenAccount } = poolInfo;
 
-    const wsolAta = await getOrCreateAssociatedTokenAccount(connection, payer, NATIVE_MINT, payer.publicKey);
-    const tokenAta = await getOrCreateAssociatedTokenAccount(connection, payer, mint, payer.publicKey);
+    // Get associated token addresses without creating accounts (they will be created in transaction if needed)
+    const wsolAtaAddress = getAssociatedTokenAddressSync(NATIVE_MINT, payer.publicKey);
+    const tokenAtaAddress = getAssociatedTokenAddressSync(mint, payer.publicKey);
 
-    const quoteTokenAta = wsolAta;
-    const baseTokenAta = tokenAta;
+    const quoteTokenAta = { address: wsolAtaAddress };
+    const baseTokenAta = { address: tokenAtaAddress };
     const protocol_fee_ata = new PublicKey("7xQYoUjUJF1Kg6WVczoTAkaNhn5syQYcbvjmFrhjWpx");
     const userBaseTokenBalanceInfo = await connection.getTokenAccountBalance(baseTokenAta.address);
     const amount = BigInt(userBaseTokenBalanceInfo.value.amount || 0);
@@ -362,8 +372,7 @@ export default class PumpswapService {
 
     console.log("MMMMMMMM");
 
-    // console.log({ quoteTokenAta })
-
+    // Close account instruction to close WSOL account and get SOL back
     const closeAccount = createCloseAccountInstruction(quoteTokenAta.address, payer.publicKey, payer.publicKey);
 
     console.log("KKKKKKK");
