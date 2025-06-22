@@ -6,6 +6,9 @@ import { decryptPrivateKey } from "../../backend/utils";
 import { logger } from "../common/logger";
 import { sellInstruction } from "./instructions";
 import { getGlobalSetting, getBondingCurve, getBondingCurveData, applySlippage } from "./utils";
+import { detectTokenPlatform } from "../../service/token-detection-service";
+import PumpswapService from "../../service/pumpswap-service";
+import bs58 from "bs58";
 
 interface ExternalSellResult {
   success: boolean;
@@ -268,4 +271,213 @@ export const executeExternalTokenSell = async (
       error: error.message,
     };
   }
-}; 
+};
+
+// Simple external sell interface for individual wallet sells
+interface SimpleExternalSellResult {
+  success: boolean;
+  signature?: string;
+  error?: string;
+  platform?: 'pumpswap' | 'pumpfun';
+  solReceived?: string;
+}
+
+/**
+ * Executes a sell transaction for an external token from a single wallet.
+ * Automatically detects if token is on Pumpswap or PumpFun and uses appropriate method.
+ * @param tokenAddress The address of the token to sell
+ * @param sellerKeypair The keypair of the seller wallet
+ * @param tokenAmount The amount of tokens to sell
+ * @returns The transaction result
+ */
+export async function executeExternalSell(tokenAddress: string, sellerKeypair: Keypair, tokenAmount: number): Promise<SimpleExternalSellResult> {
+  const logId = `external-sell-${tokenAddress.substring(0, 8)}`;
+  const walletId = sellerKeypair.publicKey.toBase58().substring(0, 8);
+  
+  logger.info(`[${logId}] Starting external sell: ${tokenAmount} tokens of ${tokenAddress} from wallet ${walletId}...`);
+  
+  try {
+    // Validate inputs
+    if (tokenAmount <= 0) {
+      throw new Error('Token amount must be greater than 0');
+    }
+    
+    // Detect which platform the token is on
+    logger.info(`[${logId}] Detecting token platform...`);
+    const detection = await detectTokenPlatform(tokenAddress);
+    
+    if (detection.error) {
+      logger.error(`[${logId}] Token detection failed:`, detection.error);
+      return {
+        success: false,
+        error: detection.error
+      };
+    }
+    
+    // Try Pumpswap first if available
+    if (detection.isPumpswap) {
+      logger.info(`[${logId}] Token detected on Pumpswap, using Pumpswap service`);
+      
+      try {
+        const pumpswapService = new PumpswapService();
+        const privateKeyBase58 = bs58.encode(sellerKeypair.secretKey);
+        
+        const sellData = {
+          mint: new PublicKey(tokenAddress),
+          amount: BigInt(Math.floor(tokenAmount)),
+          privateKey: privateKeyBase58
+        };
+        
+        logger.info(`[${logId}] Creating Pumpswap sell transaction...`);
+        const sellTx = await pumpswapService.sellTx(sellData);
+        
+        logger.info(`[${logId}] Sending Pumpswap transaction...`);
+        const { connection } = await import('../../service/config');
+        const signature = await connection.sendTransaction(sellTx, {
+          skipPreflight: false,
+          preflightCommitment: 'confirmed',
+          maxRetries: 3
+        });
+        
+        logger.info(`[${logId}] Pumpswap transaction sent: ${signature}`);
+        
+        // Wait for confirmation
+        const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+        
+        if (confirmation.value.err) {
+          throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+        }
+        
+        logger.info(`[${logId}] Pumpswap sell successful: ${signature}`);
+        
+        return {
+          success: true,
+          signature,
+          platform: 'pumpswap'
+        };
+        
+      } catch (pumpswapError: any) {
+        logger.error(`[${logId}] Pumpswap sell failed:`, pumpswapError);
+        
+        // If Pumpswap fails, try PumpFun as fallback
+        if (detection.isPumpfun) {
+          logger.info(`[${logId}] Falling back to PumpFun after Pumpswap failure`);
+        } else {
+          return {
+            success: false,
+            error: `Pumpswap sell failed: ${pumpswapError.message}`,
+            platform: 'pumpswap'
+          };
+        }
+      }
+    }
+    
+    // Use PumpFun if token is on PumpFun or as fallback
+    if (detection.isPumpfun) {
+      logger.info(`[${logId}] Using PumpFun for token sell`);
+      
+      try {
+        const mintPublicKey = new PublicKey(tokenAddress);
+        const ata = getAssociatedTokenAddressSync(mintPublicKey, sellerKeypair.publicKey);
+        
+        // Check token balance
+        const balance = (await connection.getTokenAccountBalance(ata)).value.amount;
+        const availableTokens = BigInt(balance);
+        
+        if (availableTokens <= BigInt(0)) {
+          throw new Error('No tokens available to sell');
+        }
+        
+        // Use the minimum of requested amount and available balance
+        const tokensToSell = BigInt(tokenAmount) > availableTokens ? availableTokens : BigInt(tokenAmount);
+        
+        // Get bonding curve data
+        const { bondingCurve } = getBondingCurve(mintPublicKey);
+        const bondingCurveData = await getBondingCurveData(bondingCurve);
+        
+        if (!bondingCurveData) {
+          throw new Error('Token bonding curve not found - token may not be a PumpFun token');
+        }
+        
+        // Quote the sell
+        const { solOut } = quoteSell(
+          tokensToSell,
+          bondingCurveData.virtualTokenReserves,
+          bondingCurveData.virtualSolReserves,
+          bondingCurveData.realTokenReserves,
+        );
+        
+        const solOutWithSlippage = applySlippage(solOut, 50); // 50% slippage
+        
+        // Create sell instruction
+        const sellIx = sellInstruction(
+          mintPublicKey,
+          new PublicKey(bondingCurveData.creator),
+          sellerKeypair.publicKey,
+          tokensToSell,
+          solOutWithSlippage,
+        );
+        
+        // Create and send transaction
+        const blockHash = await connection.getLatestBlockhash("processed");
+        const sellTx = new VersionedTransaction(
+          new TransactionMessage({
+            instructions: [sellIx],
+            payerKey: sellerKeypair.publicKey,
+            recentBlockhash: blockHash.blockhash,
+          }).compileToV0Message(),
+        );
+        
+        sellTx.sign([sellerKeypair]);
+        
+        const signature = await connection.sendTransaction(sellTx, {
+          skipPreflight: false,
+          preflightCommitment: "processed",
+        });
+        
+        // Wait for confirmation
+        const confirmation = await connection.confirmTransaction({
+          signature,
+          blockhash: blockHash.blockhash,
+          lastValidBlockHeight: blockHash.lastValidBlockHeight,
+        }, "confirmed");
+        
+        if (confirmation.value.err) {
+          throw new Error(`PumpFun transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+        }
+        
+        const solReceived = Number(solOut) / LAMPORTS_PER_SOL;
+        logger.info(`[${logId}] PumpFun sell successful: ${signature} - ${solReceived.toFixed(6)} SOL received`);
+        
+        return {
+          success: true,
+          signature,
+          platform: 'pumpfun',
+          solReceived: solReceived.toString()
+        };
+        
+      } catch (pumpfunError: any) {
+        logger.error(`[${logId}] PumpFun sell error:`, pumpfunError);
+        return {
+          success: false,
+          error: `PumpFun sell failed: ${pumpfunError.message}`,
+          platform: 'pumpfun'
+        };
+      }
+    }
+    
+    // Token not found on either platform
+    logger.error(`[${logId}] Token not available on supported platforms`);
+    return {
+      success: false,
+      error: 'Token not available on supported platforms (Pumpswap or PumpFun)'
+    };
+    
+  } catch (error: any) {
+    logger.error(`[${logId}] External sell error:`, error);
+    return {
+      success: false,
+      error: `External sell failed: ${error.message}`
+    };
+  }
+} 

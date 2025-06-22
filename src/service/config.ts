@@ -12,7 +12,7 @@ export const initializeOwner = (privakeKey: string) => {
     )
   );
 };
-export const connection = new Connection(env.HELIUS_RPC_URL); //<YOUR_RPC_URL>
+export const connection = new Connection(env.TRADING_HELIUS_RPC); //<YOUR_RPC_URL>
 export const txVersion = TxVersion.V0; // or TxVersion.LEGACY
 const cluster = "mainnet"; // 'mainnet' | 'devnet'
 

@@ -37,7 +37,7 @@ export const POOL_LAYOUT = struct<PumpSwapPool>([
   publicKey("poolBaseTokenAccount"),
   publicKey("poolQuoteTokenAccount"),
   u64("lpSupply"),
-  u64("coinCreator"),
+  publicKey("coinCreator"),
 ]);
 
 export const getTokenPoolInfo = async (tokenMint: string): Promise<PoolInfo | null> => {

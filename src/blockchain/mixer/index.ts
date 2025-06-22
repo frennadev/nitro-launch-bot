@@ -13,7 +13,7 @@ dotenv.config();
 
 const MONGODB_URI = env.MONGODB_URI;
 const DATABASE_NAME = process.env.DATABASE_NAME || "test";
-const SOLANA_RPC_ENDPOINT = env.HELIUS_MIXER_RPC_URL;
+const SOLANA_RPC_ENDPOINT = env.MIXER_HELIUS_RPC;
 const ENCRYPTION_KEY = env.ENCRYPTION_SECRET;
 
 // Constants for amount distribution
@@ -27,19 +27,19 @@ const MAX_AMOUNT_PER_DESTINATION = 2.0; // 2 SOL maximum
  */
 function generateRandomAmounts(totalSol: number, destinationCount: number): number[] {
   const totalLamports = Math.floor(totalSol * 1e9);
-  
+
   // First 15 wallets sequence (in SOL): 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1
   const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
-  const firstFifteenSequenceLamports = firstFifteenSequence.map(sol => Math.floor(sol * 1e9));
+  const firstFifteenSequenceLamports = firstFifteenSequence.map((sol) => Math.floor(sol * 1e9));
   const firstFifteenTotal = firstFifteenSequenceLamports.reduce((sum, amount) => sum + amount, 0); // Calculate exact total
-  
+
   const amounts: number[] = [];
-  
+
   if (totalLamports <= firstFifteenTotal) {
     // Use only the sequence wallets needed for amounts ≤ 21.5 SOL
     let remainingLamports = totalLamports;
     let walletIndex = 0;
-    
+
     while (remainingLamports > 0 && walletIndex < firstFifteenSequence.length && walletIndex < destinationCount) {
       const sequenceAmount = firstFifteenSequenceLamports[walletIndex];
       if (remainingLamports >= sequenceAmount) {
@@ -56,19 +56,19 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
     // Use all 15 sequence wallets + additional wallets (last 5 with 4-5 SOL each)
     // Add all fixed sequence amounts
     amounts.push(...firstFifteenSequenceLamports);
-    
+
     let remainingLamports = totalLamports - firstFifteenTotal;
     const additionalWallets = Math.min(5, destinationCount - 15); // Max 5 additional wallets
-    
+
     if (additionalWallets > 0) {
       const minAdditionalLamports = Math.floor(4.0 * 1e9); // 4.0 SOL
       const maxAdditionalLamports = Math.floor(5.0 * 1e9); // 5.0 SOL
-      
+
       // Generate amounts for additional wallets (4-5 SOL each)
       for (let i = 0; i < additionalWallets - 1; i++) {
         const maxForThis = Math.min(maxAdditionalLamports, remainingLamports - minAdditionalLamports);
         const minForThis = Math.min(minAdditionalLamports, maxForThis);
-        
+
         if (minForThis <= maxForThis) {
           // Prefer amounts closer to 4.5 SOL for better distribution
           const preferredAmount = Math.floor(4.5 * 1e9);
@@ -82,20 +82,21 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
           break;
         }
       }
-      
+
       // Last additional wallet gets remaining amount
       if (remainingLamports > 0) {
         amounts.push(remainingLamports);
       }
     }
   }
-  
+
   // Validate total matches (within rounding tolerance)
   const actualTotal = amounts.reduce((sum, amount) => sum + amount, 0);
-  if (Math.abs(actualTotal - totalLamports) > destinationCount) { // Allow small rounding differences
+  if (Math.abs(actualTotal - totalLamports) > destinationCount) {
+    // Allow small rounding differences
     console.warn(`Amount distribution mismatch: expected ${totalLamports}, got ${actualTotal}`);
   }
-  
+
   return amounts;
 }
 

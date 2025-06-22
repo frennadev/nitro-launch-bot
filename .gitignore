@@ -205,3 +205,18 @@ dist
 
 # Finder (MacOS) folder config
 .DS_Store
+.test-wallet
+*.test-wallet*
+test-helpers.js
+test-pumpswap.js
+test-pumpswap.ts
+test-pumpswap-fixed.ts
+test-pumpswap-manual.ts
+test-pumpswap-0.02.ts
+check-balance.ts
+test-pumpswap-sell.ts
+debug-sell-transaction.ts
+test-pumpswap-new-token.ts
+check-new-token-balance.ts
+sell-new-token.ts
+debug-new-sell.ts
