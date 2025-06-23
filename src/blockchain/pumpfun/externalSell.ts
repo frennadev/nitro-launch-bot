@@ -314,7 +314,8 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       try {
         const sellTx = await pumpswapService.sellTx({
           mint: mintPublicKey,
-          privateKey: bs58.encode(sellerKeypair.secretKey)
+          privateKey: bs58.encode(sellerKeypair.secretKey),
+          amount: tokensToSell
         });
         
         const signature = await connection.sendTransaction(sellTx, {
@@ -360,7 +361,8 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
           // Route to Pumpswap for graduated tokens
           const sellTx = await pumpswapService.sellTx({
             mint: mintPublicKey,
-            privateKey: bs58.encode(sellerKeypair.secretKey)
+            privateKey: bs58.encode(sellerKeypair.secretKey),
+            amount: tokensToSell
           });
           
           const signature = await connection.sendTransaction(sellTx, {
@@ -476,11 +478,12 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       if (graduated === true) {
         logger.info(`[${logId}] Token has graduated to Raydium - routing directly to Pumpswap`);
         
-        // Route directly to Pumpswap for graduated tokens
-        const sellTx = await pumpswapService.sellTx({
-          mint: mintPublicKey,
-          privateKey: bs58.encode(sellerKeypair.secretKey)
-        });
+                  // Route directly to Pumpswap for graduated tokens
+          const sellTx = await pumpswapService.sellTx({
+            mint: mintPublicKey,
+            privateKey: bs58.encode(sellerKeypair.secretKey),
+            amount: tokensToSell
+          });
         
         const signature = await connection.sendTransaction(sellTx, {
           skipPreflight: false,
@@ -535,7 +538,8 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
           // Route to Pumpswap for graduated tokens
           const sellTx = await pumpswapService.sellTx({
             mint: mintPublicKey,
-            privateKey: bs58.encode(sellerKeypair.secretKey)
+            privateKey: bs58.encode(sellerKeypair.secretKey),
+            amount: tokensToSell
           });
           
           const signature = await connection.sendTransaction(sellTx, {
@@ -637,7 +641,8 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     try {
       const sellTx = await pumpswapService.sellTx({
         mint: mintPublicKey,
-        privateKey: bs58.encode(sellerKeypair.secretKey)
+        privateKey: bs58.encode(sellerKeypair.secretKey),
+        amount: tokensToSell
       });
       
       const signature = await connection.sendTransaction(sellTx, {

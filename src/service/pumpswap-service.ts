@@ -67,6 +67,7 @@ interface BuyData {
 interface SellData {
   mint: PublicKey;
   privateKey: string;
+  amount?: bigint; // Optional: if provided, sell this specific amount; if not provided, sell full balance
 }
 interface CloseAccountInstructionData {
   instruction: TokenInstruction.CloseAccount;
@@ -663,7 +664,7 @@ export default class PumpswapService {
   sellTx = async (sellData: SellData) => {
     console.log("[PumpswapService] Starting optimized sell transaction");
     const start = Date.now();
-    const { mint, privateKey } = sellData;
+    const { mint, privateKey, amount } = sellData;
     const slippage = 5;
     const payer = Keypair.fromSecretKey(base58.decode(privateKey));
     const tokenMint = mint.toBase58();
@@ -677,16 +678,28 @@ export default class PumpswapService {
     console.log(`[PumpswapService] Getting user token balance...`);
     const balanceStart = Date.now();
     const userBaseTokenBalanceInfo = await connection.getTokenAccountBalance(associatedTokenAccounts.tokenAta);
-    const amount = BigInt(userBaseTokenBalanceInfo.value.amount || 0);
-    console.log(`[PumpswapService] User balance: ${amount} tokens (fetched in ${Date.now() - balanceStart}ms)`);
+    const userBalance = BigInt(userBaseTokenBalanceInfo.value.amount || 0);
+    console.log(`[PumpswapService] User balance: ${userBalance} tokens (fetched in ${Date.now() - balanceStart}ms)`);
 
-    if (amount === BigInt(0)) {
+    if (userBalance === BigInt(0)) {
       throw new Error("No tokens to sell");
     }
 
-    console.log(`[PumpswapService] Calculating optimal sell amount...`);
+    // Determine amount to sell: use provided amount or full balance
+    const amountToSell = amount !== undefined ? amount : userBalance;
+    
+    // Validate the amount to sell
+    if (amountToSell > userBalance) {
+      throw new Error(`Cannot sell ${amountToSell} tokens - only ${userBalance} available`);
+    }
+    
+    if (amountToSell <= BigInt(0)) {
+      throw new Error("Amount to sell must be greater than 0");
+    }
+
+    console.log(`[PumpswapService] Calculating optimal sell amount for ${amountToSell} tokens...`);
     const calcStart = Date.now();
-    const minQuoteOut = await this.getOptimizedSellAmountOut(tokenMint, poolInfo, amount, slippage);
+    const minQuoteOut = await this.getOptimizedSellAmountOut(tokenMint, poolInfo, amountToSell, slippage);
     console.log(`[PumpswapService] Sell amount calculated in ${Date.now() - calcStart}ms`);
 
     console.log(`[PumpswapService] Creating sell instruction...`);
@@ -700,7 +713,7 @@ export default class PumpswapService {
       pool_base_token_ata: poolInfo.poolBaseTokenAccount,
       pool_quote_token_ata: poolInfo.poolQuoteTokenAccount,
       protocol_fee_ata: protocolFeeAta,
-      base_amount_in: amount,
+      base_amount_in: amountToSell,
       min_quote_amount_out: minQuoteOut,
       coin_creator_vault_ata: creatorVault.ata,
       coin_creator_vault_authority: creatorVault.authority,
