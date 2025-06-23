@@ -115,22 +115,8 @@ export async function executeExternalBuy(
         // If Pumpswap fails, log the error and continue to fallback
         logger.warn(`[${logId}] Pumpswap buy failed for graduated token: ${pumpswapResult.error}`);
         
-        // Check if this is a known creator authority mismatch error
-        if (pumpswapResult.error?.includes('ConstraintSeeds') || 
-            pumpswapResult.error?.includes('0x7d6') ||
-            pumpswapResult.error?.includes('coin_creator_vault_authority')) {
-          logger.warn(`[${logId}] Detected creator authority mismatch - this token may have inconsistent creator data`);
-          
-          return {
-            success: false,
-            signature: '',
-            platform: 'pumpswap',
-            error: `Token has creator authority mismatch between PumpFun and Pumpswap. This token cannot be traded through either platform due to inconsistent on-chain data. Error: ${pumpswapResult.error}`
-          };
-        }
-        
       } catch (error: any) {
-        logger.warn(`[${logId}] Graduation check failed, falling back to standard detection: ${error.message}`);
+        logger.warn(`[${logId}] Pumpswap buy threw error: ${error.message}`);
       }
     }
     
@@ -178,19 +164,6 @@ export async function executeExternalBuy(
         
         logger.warn(`[${logId}] Pumpswap buy failed: ${pumpswapResult.error}`);
         
-        // Check for creator authority mismatch in fallback too
-        if (pumpswapResult.error?.includes('ConstraintSeeds') || 
-            pumpswapResult.error?.includes('0x7d6') ||
-            pumpswapResult.error?.includes('coin_creator_vault_authority')) {
-          
-          return {
-            success: false,
-            signature: '',
-            platform: 'pumpswap',
-            error: `Token has creator authority mismatch. This appears to be a token with inconsistent on-chain creator data that cannot be traded through standard DEX interfaces. Error: ${pumpswapResult.error}`
-          };
-        }
-        
       } catch (error: any) {
         logger.error(`[${logId}] Pumpswap buy threw error: ${error.message}`);
       }
@@ -201,7 +174,7 @@ export async function executeExternalBuy(
       success: false,
       signature: '',
       platform: 'unknown',
-      error: 'Both PumpFun and Pumpswap transactions failed. This token may not be tradeable or may have account derivation issues.'
+      error: 'Both PumpFun and Pumpswap transactions failed. This token may not be tradeable or may have technical issues.'
     };
     
   } catch (error: any) {

@@ -334,7 +334,34 @@ export default class PumpswapService {
     const mint = new PublicKey(tokenMint);
     const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, userPublicKey);
     const tokenAta = getAssociatedTokenAddressSync(mint, userPublicKey);
-    const creatorVaultAuthority = getCreatorVaultAuthority(new PublicKey(poolInfo.coinCreator));
+    
+    // For graduated tokens, we need to fetch the original bonding curve creator
+    // instead of using the pool creator, as they can be different
+    let creatorVaultAuthority: PublicKey;
+    try {
+      // Import bonding curve utilities
+      const { getBondingCurve, getBondingCurveData } = await import("../blockchain/pumpfun/utils");
+      
+      // Get the original bonding curve data to find the correct creator
+      const { bondingCurve } = getBondingCurve(mint);
+      const bondingCurveData = await getBondingCurveData(bondingCurve);
+      
+      if (bondingCurveData && bondingCurveData.creator) {
+        // Use the original bonding curve creator (this is the correct one for vault authority)
+        const originalCreator = new PublicKey(bondingCurveData.creator);
+        creatorVaultAuthority = getCreatorVaultAuthority(originalCreator);
+        console.log(`[PumpswapService] Using original bonding curve creator: ${originalCreator.toBase58()}`);
+      } else {
+        // Fallback to pool creator if bonding curve data is not available
+        console.log(`[PumpswapService] Bonding curve data not available, falling back to pool creator`);
+        creatorVaultAuthority = getCreatorVaultAuthority(new PublicKey(poolInfo.coinCreator));
+      }
+    } catch (error: any) {
+      // If there's any error fetching bonding curve data, fallback to pool creator
+      console.warn(`[PumpswapService] Error fetching bonding curve creator, using pool creator: ${error.message}`);
+      creatorVaultAuthority = getCreatorVaultAuthority(new PublicKey(poolInfo.coinCreator));
+    }
+    
     const creatorVaultAta = getAssociatedTokenAddressSync(poolInfo.quoteMint, creatorVaultAuthority, true);
     const protocolFeeAta = new PublicKey("7xQYoUjUJF1Kg6WVczoTAkaNhn5syQYcbvjmFrhjWpx");
 
