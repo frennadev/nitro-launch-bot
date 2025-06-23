@@ -301,11 +301,11 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     const tokensToSell = BigInt(Math.floor(tokenAmount));
     
     // Check if we have cached platform info from token display
-    const { getCachedPlatform, markTokenAsPumpFun, markTokenAsPumpswap } = await import('../../service/token-detection-service');
+    const { getCachedPlatform, markTokenAsPumpFun, markTokenAsPumpswap, isTokenGraduated } = await import('../../service/token-detection-service');
     const cachedPlatform = getCachedPlatform(tokenAddress);
     
     if (cachedPlatform === 'pumpswap') {
-      logger.info(`[${logId}] Using cached Pumpswap detection`);
+      logger.info(`[${logId}] Using cached Pumpswap detection - going directly to Pumpswap`);
       // Try Pumpswap first since it's cached as confirmed Pumpswap
       try {
         const pumpswapService = new PumpswapService();
@@ -346,7 +346,49 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     
     if (cachedPlatform === 'pumpfun') {
       logger.info(`[${logId}] Using cached PumpFun detection`);
-      // Try PumpFun directly since it's cached as confirmed PumpFun
+      
+      // Even if cached as PumpFun, check if it has graduated (for optimal routing)
+      try {
+        const graduated = await isTokenGraduated(tokenAddress);
+        if (graduated === true) {
+          logger.info(`[${logId}] Cached PumpFun token has graduated - switching to Pumpswap for better performance`);
+          markTokenAsPumpswap(tokenAddress); // Update cache to Pumpswap
+          
+          // Route to Pumpswap for graduated tokens
+          const pumpswapService = new PumpswapService();
+          const sellTx = await pumpswapService.sellTx({
+            mint: mintPublicKey,
+            privateKey: bs58.encode(sellerKeypair.secretKey)
+          });
+          
+          const signature = await connection.sendTransaction(sellTx, {
+            skipPreflight: false,
+            preflightCommitment: "processed",
+          });
+          
+          const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash: sellTx.message.recentBlockhash!,
+            lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
+          }, "confirmed");
+          
+          if (confirmation.value.err) {
+            throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          }
+          
+          logger.info(`[${logId}] Pumpswap sell successful for graduated token: ${signature}`);
+          return {
+            success: true,
+            signature,
+            platform: 'pumpswap',
+            solReceived: "Success"
+          };
+        }
+      } catch (graduationError: any) {
+        logger.warn(`[${logId}] Could not check graduation status, proceeding with cached PumpFun: ${graduationError.message}`);
+      }
+      
+      // Try PumpFun directly since it's cached as confirmed PumpFun (and not graduated)
       try {
         // Need to get token creator for sellInstruction (same as executeWalletSell)
         const { bondingCurve } = getBondingCurve(mintPublicKey);
@@ -423,10 +465,57 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       }
     }
 
-    // No cache or unknown - use bonding curve detection approach
-    logger.info(`[${logId}] No cached platform, using bonding curve detection approach`);
+    // No cache or unknown - use bonding curve detection approach with graduation check
+    logger.info(`[${logId}] No cached platform, using bonding curve detection with graduation check`);
     
-    // Try PumpFun first using bonding curve detection
+    // First, check if token has graduated (fast routing decision)
+    try {
+      const graduated = await isTokenGraduated(tokenAddress);
+      if (graduated === true) {
+        logger.info(`[${logId}] Token has graduated to Raydium - routing directly to Pumpswap`);
+        
+        // Route directly to Pumpswap for graduated tokens
+        const pumpswapService = new PumpswapService();
+        const sellTx = await pumpswapService.sellTx({
+          mint: mintPublicKey,
+          privateKey: bs58.encode(sellerKeypair.secretKey)
+        });
+        
+        const signature = await connection.sendTransaction(sellTx, {
+          skipPreflight: false,
+          preflightCommitment: "processed",
+        });
+        
+        const confirmation = await connection.confirmTransaction({
+          signature,
+          blockhash: sellTx.message.recentBlockhash!,
+          lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
+        }, "confirmed");
+        
+        if (confirmation.value.err) {
+          throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+        }
+        
+        logger.info(`[${logId}] Pumpswap sell successful for graduated token: ${signature}`);
+        markTokenAsPumpswap(tokenAddress); // Mark as permanently Pumpswap
+        return {
+          success: true,
+          signature,
+          platform: 'pumpswap',
+          solReceived: "Success"
+        };
+      } else if (graduated === false) {
+        logger.info(`[${logId}] Token is still on PumpFun bonding curve - routing to PumpFun`);
+        // Continue to PumpFun logic below
+      } else {
+        logger.info(`[${logId}] Could not determine graduation status - using fallback detection`);
+        // Continue to fallback logic below
+      }
+    } catch (graduationError: any) {
+      logger.warn(`[${logId}] Graduation check failed, falling back to standard detection: ${graduationError.message}`);
+    }
+    
+    // Try PumpFun first using bonding curve detection (for non-graduated or unknown tokens)
     logger.info(`[${logId}] Attempting PumpFun sell with bonding curve detection`);
     try {
       // Use bonding curve fetching to detect if it's PumpFun (same logic as launch/buy)
@@ -436,6 +525,45 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       if (bondingCurveData) {
         // Successfully fetched bonding curve data = PumpFun token
         logger.info(`[${logId}] Bonding curve data found - confirmed PumpFun token`);
+        
+        // Check if it's graduated (should not happen if graduation check above worked)
+        if (bondingCurveData.complete) {
+          logger.info(`[${logId}] Token is graduated but missed earlier check - routing to Pumpswap`);
+          markTokenAsPumpswap(tokenAddress); // Mark as permanently Pumpswap
+          
+          // Route to Pumpswap for graduated tokens
+          const pumpswapService = new PumpswapService();
+          const sellTx = await pumpswapService.sellTx({
+            mint: mintPublicKey,
+            privateKey: bs58.encode(sellerKeypair.secretKey)
+          });
+          
+          const signature = await connection.sendTransaction(sellTx, {
+            skipPreflight: false,
+            preflightCommitment: "processed",
+          });
+          
+          const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash: sellTx.message.recentBlockhash!,
+            lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
+          }, "confirmed");
+          
+          if (confirmation.value.err) {
+            throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          }
+          
+          logger.info(`[${logId}] Pumpswap sell successful for graduated token: ${signature}`);
+          return {
+            success: true,
+            signature,
+            platform: 'pumpswap',
+            solReceived: "Success"
+          };
+        }
+        
+        // Active bonding curve - use PumpFun
+        logger.info(`[${logId}] Active bonding curve - using PumpFun sell`);
         
         // Use exact same sell logic as executeWalletSell (needs token creator)
         const sellIx = sellInstruction(

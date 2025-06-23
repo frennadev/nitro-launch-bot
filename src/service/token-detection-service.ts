@@ -26,6 +26,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes for non-permanent entries
  * Detect platform using bonding curve data fetching (same approach as launch process)
  * If bonding curve data can be fetched successfully, it's a PumpFun token
  * If bonding curve data cannot be fetched, it's likely a Pumpswap token
+ * If bonding curve is complete (graduated), it should use Pumpswap
  */
 export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'unknown'> {
   const logId = `platform-detect-${tokenAddress.substring(0, 8)}`;
@@ -148,14 +149,23 @@ export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpsw
     
     if (bondingCurveData) {
       // Successfully fetched bonding curve data = PumpFun token
-      logger.info(`[${logId}]: Bonding curve data found - token is PumpFun`);
+      logger.info(`[${logId}]: Bonding curve data found - token originated from PumpFun`);
       logger.info(`[${logId}]: Bonding curve creator: ${bondingCurveData.creator}`);
-      logger.info(`[${logId}]: Virtual token reserves: ${bondingCurveData.virtualTokenReserves.toString()}`);
-      logger.info(`[${logId}]: Virtual SOL reserves: ${bondingCurveData.virtualSolReserves.toString()}`);
-      return 'pumpfun';
+      logger.info(`[${logId}]: Bonding curve complete: ${bondingCurveData.complete}`);
+      
+      // Check if bonding curve is complete (graduated to Raydium)
+      if (bondingCurveData.complete) {
+        logger.info(`[${logId}]: Token has graduated to Raydium - should use Pumpswap for best performance`);
+        return 'pumpswap';
+      } else {
+        logger.info(`[${logId}]: Token still on PumpFun bonding curve - should use PumpFun`);
+        logger.info(`[${logId}]: Virtual token reserves: ${bondingCurveData.virtualTokenReserves.toString()}`);
+        logger.info(`[${logId}]: Virtual SOL reserves: ${bondingCurveData.virtualSolReserves.toString()}`);
+        return 'pumpfun';
+      }
     } else {
       // Could not fetch bonding curve data = likely Pumpswap token
-      logger.info(`[${logId}]: No bonding curve data found - token is likely Pumpswap`);
+      logger.info(`[${logId}]: No bonding curve data found - token is likely native Pumpswap`);
       return 'pumpswap';
     }
     
@@ -252,5 +262,38 @@ export async function isPumpfunToken(tokenAddress: string): Promise<boolean> {
   } catch (error) {
     logger.error(`Error in isPumpfunToken check:`, error);
     return false;
+  }
+}
+
+/**
+ * Quick check if a token has graduated to Raydium (bonding curve complete)
+ * This is useful for making fast routing decisions
+ */
+export async function isTokenGraduated(tokenAddress: string): Promise<boolean | null> {
+  const logId = `graduation-check-${tokenAddress.substring(0, 8)}`;
+  
+  try {
+    const mintPk = new PublicKey(tokenAddress);
+    const { bondingCurve } = getBondingCurve(mintPk);
+    
+    // Quick check with processed commitment for speed
+    const accountInfo = await connection.getAccountInfo(bondingCurve, "processed");
+    if (!accountInfo?.data) {
+      logger.info(`[${logId}]: No bonding curve account - likely native Pumpswap token`);
+      return null; // No bonding curve = not a PumpFun token
+    }
+    
+    const bondingCurveData = await getBondingCurveData(bondingCurve);
+    if (!bondingCurveData) {
+      logger.warn(`[${logId}]: Could not decode bonding curve data`);
+      return null;
+    }
+    
+    logger.info(`[${logId}]: Token graduation status: ${bondingCurveData.complete ? 'graduated' : 'active'}`);
+    return bondingCurveData.complete;
+    
+  } catch (error: any) {
+    logger.error(`[${logId}]: Error checking graduation status: ${error.message}`);
+    return null;
   }
 } 
