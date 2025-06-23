@@ -300,6 +300,12 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     const mintPublicKey = new PublicKey(tokenAddress);
     const tokensToSell = BigInt(Math.floor(tokenAmount));
     
+    // Preload Pumpswap data in background for faster transactions (non-blocking)
+    const pumpswapService = new PumpswapService();
+    pumpswapService.preloadTokenData(tokenAddress).catch(err => {
+      logger.warn(`[${logId}] Pumpswap preload failed (non-critical): ${err.message}`);
+    });
+    
     // Check if we have cached platform info from token display
     const { getCachedPlatform, markTokenAsPumpFun, markTokenAsPumpswap, isTokenGraduated } = await import('../../service/token-detection-service');
     const cachedPlatform = getCachedPlatform(tokenAddress);
@@ -308,7 +314,6 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       logger.info(`[${logId}] Using cached Pumpswap detection - going directly to Pumpswap`);
       // Try Pumpswap first since it's cached as confirmed Pumpswap
       try {
-        const pumpswapService = new PumpswapService();
         const sellTx = await pumpswapService.sellTx({
           mint: mintPublicKey,
           privateKey: bs58.encode(sellerKeypair.secretKey)
@@ -355,7 +360,6 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
           markTokenAsPumpswap(tokenAddress); // Update cache to Pumpswap
           
           // Route to Pumpswap for graduated tokens
-          const pumpswapService = new PumpswapService();
           const sellTx = await pumpswapService.sellTx({
             mint: mintPublicKey,
             privateKey: bs58.encode(sellerKeypair.secretKey)
@@ -475,7 +479,6 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
         logger.info(`[${logId}] Token has graduated to Raydium - routing directly to Pumpswap`);
         
         // Route directly to Pumpswap for graduated tokens
-        const pumpswapService = new PumpswapService();
         const sellTx = await pumpswapService.sellTx({
           mint: mintPublicKey,
           privateKey: bs58.encode(sellerKeypair.secretKey)
@@ -532,7 +535,6 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
           markTokenAsPumpswap(tokenAddress); // Mark as permanently Pumpswap
           
           // Route to Pumpswap for graduated tokens
-          const pumpswapService = new PumpswapService();
           const sellTx = await pumpswapService.sellTx({
             mint: mintPublicKey,
             privateKey: bs58.encode(sellerKeypair.secretKey)
@@ -635,7 +637,6 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     // Try Pumpswap as fallback
     logger.info(`[${logId}] Attempting Pumpswap sell as fallback`);
     try {
-      const pumpswapService = new PumpswapService();
       const sellTx = await pumpswapService.sellTx({
         mint: mintPublicKey,
         privateKey: bs58.encode(sellerKeypair.secretKey)

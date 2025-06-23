@@ -1412,6 +1412,38 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
     return;
   }
 
+  // Preload Pumpswap and platform detection data in background for faster transactions
+  logger.info(`[TokenDisplay] Starting background preloading for token ${tokenAddress}`);
+  const preloadPromises = [
+    // Preload Pumpswap pool data
+    import("../../service/pumpswap-service").then(module => {
+      const PumpswapService = module.default;
+      const service = new PumpswapService();
+      return service.preloadTokenData(tokenAddress);
+    }).catch(err => {
+      logger.warn(`[TokenDisplay] Pumpswap preload failed (non-critical): ${err.message}`);
+    }),
+    
+    // Preload platform detection
+    import("../../service/token-detection-service").then(module => {
+      return module.detectTokenPlatform(tokenAddress);
+    }).catch(err => {
+      logger.warn(`[TokenDisplay] Platform detection preload failed (non-critical): ${err.message}`);
+    }),
+
+    // Preload pool discovery
+    import("../../backend/get-poolInfo").then(module => {
+      return module.preloadPumpswapPools();
+    }).catch(err => {
+      logger.warn(`[TokenDisplay] Pool preload failed (non-critical): ${err.message}`);
+    })
+  ];
+
+  // Start preloading immediately (non-blocking)
+  Promise.allSettled(preloadPromises).then(() => {
+    logger.info(`[TokenDisplay] Background preloading completed for token ${tokenAddress}`);
+  });
+
   let tokenName = "Unknown Token";
   let tokenSymbol = "UNK";
   let isUserToken = false;
@@ -1457,7 +1489,9 @@ Market Data
 💵 Price: ${price}
 
 Your Holdings
-${holdingsText}`,
+${holdingsText}
+
+⚡ <i>Optimized for fast trading</i>`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()

@@ -26,6 +26,12 @@ export async function executeExternalBuy(
   logger.info(`[${logId}] Starting external buy for ${solAmount} SOL`);
 
   try {
+    // Preload Pumpswap data in background for faster transactions (non-blocking)
+    const pumpswapService = new PumpswapService();
+    pumpswapService.preloadTokenData(tokenAddress).catch(err => {
+      logger.warn(`[${logId}] Pumpswap preload failed (non-critical): ${err.message}`);
+    });
+
     // Check if we have cached platform info from token display
     const cachedPlatform = getCachedPlatform(tokenAddress);
     
@@ -33,7 +39,6 @@ export async function executeExternalBuy(
       logger.info(`[${logId}] Using cached Pumpswap detection - going directly to Pumpswap`);
       // Try Pumpswap first since it's cached as confirmed Pumpswap
       try {
-        const pumpswapService = new PumpswapService();
         const privateKeyBase58 = bs58.encode(buyerKeypair.secretKey);
         
         const buyData = {
@@ -86,7 +91,6 @@ export async function executeExternalBuy(
           markTokenAsPumpswap(tokenAddress); // Update cache to Pumpswap
           
           // Route to Pumpswap for graduated tokens
-          const pumpswapService = new PumpswapService();
           const privateKeyBase58 = bs58.encode(buyerKeypair.secretKey);
           
           const buyData = {
@@ -120,6 +124,12 @@ export async function executeExternalBuy(
             signature,
             platform: 'pumpswap'
           };
+        } else if (graduated === false) {
+          logger.info(`[${logId}] Token is still on PumpFun bonding curve - routing to PumpFun`);
+          // Continue to PumpFun logic below
+        } else {
+          logger.info(`[${logId}] Could not determine graduation status - using fallback detection`);
+          // Continue to fallback logic below
         }
       } catch (graduationError: any) {
         logger.warn(`[${logId}] Could not check graduation status, proceeding with cached PumpFun: ${graduationError.message}`);
@@ -142,25 +152,14 @@ export async function executeExternalBuy(
             platform: 'pumpfun'
           };
         } else {
-          logger.warn(`[${logId}] PumpFun buy failed despite cache`);
-          return {
-            success: false,
-            error: 'PumpFun buy failed',
-            platform: 'pumpfun'
-          };
+          logger.info(`[${logId}] PumpFun buy failed (possibly incorrect cache)`);
+          // Fall through to try Pumpswap
         }
       } catch (pumpfunError: any) {
-        logger.error(`[${logId}] PumpFun buy failed for cached PumpFun token:`, pumpfunError);
-        return {
-          success: false,
-          error: `PumpFun buy failed: ${pumpfunError.message}`,
-          platform: 'pumpfun'
-        };
+        logger.info(`[${logId}] PumpFun buy threw error: ${pumpfunError.message}`);
+        // Fall through to try Pumpswap
       }
     }
-
-    // No cache or unknown - use bonding curve detection approach with graduation check
-    logger.info(`[${logId}] No cached platform, using bonding curve detection with graduation check`);
     
     // First, check if token has graduated (fast routing decision)
     try {
@@ -169,7 +168,6 @@ export async function executeExternalBuy(
         logger.info(`[${logId}] Token has graduated to Raydium - routing directly to Pumpswap`);
         
         // Route directly to Pumpswap for graduated tokens
-        const pumpswapService = new PumpswapService();
         const privateKeyBase58 = bs58.encode(buyerKeypair.secretKey);
         
         const buyData = {
@@ -244,7 +242,6 @@ export async function executeExternalBuy(
     // Try Pumpswap as fallback
     logger.info(`[${logId}] Attempting Pumpswap buy as fallback`);
     try {
-      const pumpswapService = new PumpswapService();
       const privateKeyBase58 = bs58.encode(buyerKeypair.secretKey);
       
       const buyData = {
