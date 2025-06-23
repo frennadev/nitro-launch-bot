@@ -129,7 +129,7 @@ const externalTokenSellConversation = async (
       try {
         // Execute the external token sell using funding wallet
         const keypair = secretKeyToKeypair(fundingWallet.privateKey);
-        const result = await executeExternalSell(tokenAddress, keypair, sellPercent);
+        const result = await executeExternalSell(tokenAddress, keypair, tokensToSell);
 
         if (result.success) {
           const platformText = result.platform === 'pumpswap' ? '⚡ Pumpswap' : '🚀 PumpFun';
