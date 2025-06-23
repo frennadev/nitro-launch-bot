@@ -1412,10 +1412,10 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
     return;
   }
 
-  // Preload Pumpswap and platform detection data in background for faster transactions
-  logger.info(`[TokenDisplay] Starting background preloading for token ${tokenAddress}`);
+  // Start coordinated preloading for faster transactions
+  logger.info(`[TokenDisplay] Starting coordinated preloading for token ${tokenAddress}`);
   const preloadPromises = [
-    // Preload Pumpswap pool data
+    // Preload Pumpswap pool data (coordinated to prevent race conditions)
     import("../../service/pumpswap-service").then(module => {
       const PumpswapService = module.default;
       const service = new PumpswapService();
@@ -1439,9 +1439,9 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
     })
   ];
 
-  // Start preloading immediately (non-blocking)
+  // Start preloading immediately (non-blocking, but coordinated)
   Promise.allSettled(preloadPromises).then(() => {
-    logger.info(`[TokenDisplay] Background preloading completed for token ${tokenAddress}`);
+    logger.info(`[TokenDisplay] Coordinated preloading completed for token ${tokenAddress}`);
   });
 
   let tokenName = "Unknown Token";

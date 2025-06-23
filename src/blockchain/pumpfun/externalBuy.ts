@@ -26,11 +26,9 @@ export async function executeExternalBuy(
   logger.info(`[${logId}] Starting external buy for ${solAmount} SOL`);
 
   try {
-    // Preload Pumpswap data in background for faster transactions (non-blocking)
+    // Start Pumpswap data preloading immediately (coordinated with transaction)
     const pumpswapService = new PumpswapService();
-    pumpswapService.preloadTokenData(tokenAddress).catch(err => {
-      logger.warn(`[${logId}] Pumpswap preload failed (non-critical): ${err.message}`);
-    });
+    const preloadPromise = pumpswapService.preloadTokenData(tokenAddress);
 
     // Check if we have cached platform info from token display
     const cachedPlatform = getCachedPlatform(tokenAddress);

@@ -115,6 +115,7 @@ class PumpswapCache {
   private static instance: PumpswapCache;
   private poolCache = new Map<string, CachedPoolData>();
   private preparedDataCache = new Map<string, PreparedTransactionData>();
+  private preloadingPromises = new Map<string, Promise<void>>(); // Track ongoing preloads
   
   // Cache TTL configurations
   private readonly POOL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes for pool data
@@ -200,10 +201,51 @@ class PumpswapCache {
     return cached;
   }
   
+  // Wait for ongoing preload to complete before starting new operations
+  async waitForPreloadIfInProgress(tokenMint: string): Promise<void> {
+    const ongoingPreload = this.preloadingPromises.get(tokenMint);
+    if (ongoingPreload) {
+      console.log(`[PumpswapCache] Waiting for ongoing preload for ${tokenMint}...`);
+      try {
+        await ongoingPreload;
+        console.log(`[PumpswapCache] Preload completed for ${tokenMint}`);
+      } catch (err) {
+        console.warn(`[PumpswapCache] Preload failed for ${tokenMint}, continuing anyway`);
+      }
+    }
+  }
+  
   // Preload pool data in background (non-blocking)
   async preloadPoolData(tokenMint: string): Promise<void> {
+    // Check if already preloading
+    if (this.preloadingPromises.has(tokenMint)) {
+      console.log(`[PumpswapCache] Preload already in progress for ${tokenMint}`);
+      return this.preloadingPromises.get(tokenMint)!;
+    }
+    
+    // Check if we already have fresh data
+    const cached = this.getPoolInfo(tokenMint);
+    if (cached) {
+      console.log(`[PumpswapCache] Pool data already cached for ${tokenMint}`);
+      return;
+    }
+    
+    const preloadPromise = this._performPreload(tokenMint);
+    this.preloadingPromises.set(tokenMint, preloadPromise);
+    
+    // Clean up promise when done
+    preloadPromise.finally(() => {
+      this.preloadingPromises.delete(tokenMint);
+    });
+    
+    return preloadPromise;
+  }
+  
+  private async _performPreload(tokenMint: string): Promise<void> {
     try {
-      console.log(`[PumpswapCache] Preloading pool data for ${tokenMint}...`);
+      console.log(`[PumpswapCache] Starting preload for ${tokenMint}...`);
+      const start = Date.now();
+      
       const poolInfo = await getTokenPoolInfo(tokenMint);
       if (poolInfo) {
         this.setPoolInfo(tokenMint, poolInfo);
@@ -221,9 +263,14 @@ class PumpswapCache {
         } catch (err) {
           console.warn(`[PumpswapCache] Failed to preload reserve balances for ${tokenMint}:`, err);
         }
+        
+        console.log(`[PumpswapCache] Preload completed for ${tokenMint} in ${Date.now() - start}ms`);
+      } else {
+        console.log(`[PumpswapCache] No pool found for ${tokenMint}`);
       }
     } catch (err) {
       console.warn(`[PumpswapCache] Failed to preload pool data for ${tokenMint}:`, err);
+      throw err; // Re-throw so waiters know it failed
     }
   }
   
@@ -264,9 +311,13 @@ export default class PumpswapService {
     console.log(`[PumpswapService] Preparing transaction data for ${tokenMint}...`);
     const start = Date.now();
 
-    // Get pool info with caching
+    // Wait for any ongoing preload to complete first
+    await this.cache.waitForPreloadIfInProgress(tokenMint);
+
+    // Get pool info with caching (should be available from preload)
     let poolInfo = this.cache.getPoolInfo(tokenMint);
     if (!poolInfo) {
+      console.log(`[PumpswapService] Pool info not in cache after preload, fetching directly...`);
       poolInfo = await getTokenPoolInfo(tokenMint);
       if (!poolInfo) {
         throw new Error("Pool not found");

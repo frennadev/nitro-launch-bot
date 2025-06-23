@@ -300,11 +300,9 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     const mintPublicKey = new PublicKey(tokenAddress);
     const tokensToSell = BigInt(Math.floor(tokenAmount));
     
-    // Preload Pumpswap data in background for faster transactions (non-blocking)
+    // Start Pumpswap data preloading immediately (coordinated with transaction)
     const pumpswapService = new PumpswapService();
-    pumpswapService.preloadTokenData(tokenAddress).catch(err => {
-      logger.warn(`[${logId}] Pumpswap preload failed (non-critical): ${err.message}`);
-    });
+    const preloadPromise = pumpswapService.preloadTokenData(tokenAddress);
     
     // Check if we have cached platform info from token display
     const { getCachedPlatform, markTokenAsPumpFun, markTokenAsPumpswap, isTokenGraduated } = await import('../../service/token-detection-service');
