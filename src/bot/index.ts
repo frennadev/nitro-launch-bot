@@ -684,9 +684,13 @@ bot.callbackQuery(CallBackQueries.VIEW_REFERRALS, async (ctx) => {
 
 // Callback handlers for token CA sell buttons
 bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
-  await safeAnswerCallbackQuery(ctx);
   const sellPercent = parseInt(ctx.match![1]);
   const tokenAddress = ctx.match![2];
+  
+  // Answer callback query immediately with feedback
+  await safeAnswerCallbackQuery(ctx, `💸 Selling ${sellPercent}% of tokens...`);
+
+  logger.info(`[ExternalTokenSell] Executing ${sellPercent}% sell for token: ${tokenAddress}`);
 
   // Start the external token sell conversation
   await ctx.conversation.enter(
@@ -1657,14 +1661,16 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
 
 // Handle external token sell button clicks (from token address messages)
 bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
-  await safeAnswerCallbackQuery(ctx);
+  // Answer callback query immediately for instant feedback
+  await safeAnswerCallbackQuery(ctx, "💸 Loading sell options...");
+  
   const tokenAddress = ctx.match![1];
 
   logger.info(
     `[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`
   );
 
-  // Show sell percentage options
+  // Show sell percentage options immediately
   const keyboard = new InlineKeyboard()
     .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
     .text("💸 Sell 50%", `sell_ca_50_${tokenAddress}`)
@@ -1674,11 +1680,23 @@ bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
     .row()
     .text("❌ Cancel", CallBackQueries.CANCEL);
 
-  await ctx.editMessageText(
-    `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
-    }
-  );
+  try {
+    await ctx.editMessageText(
+      `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: keyboard,
+      }
+    );
+  } catch (error) {
+    logger.warn(`[ExternalTokenSell] Could not edit message, sending new one:`, error);
+    // If editing fails, send a new message
+    await ctx.reply(
+      `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: keyboard,
+      }
+    );
+  }
 });

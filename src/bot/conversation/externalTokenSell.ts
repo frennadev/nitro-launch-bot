@@ -15,11 +15,11 @@ const externalTokenSellConversation = async (
   tokenAddress: string,
   sellPercent: number
 ) => {
-  await ctx.answerCallbackQuery();
+  // Don't answer callback query here - already handled by main handler
   
   // Show immediate loading state
   await ctx.editMessageText(
-    "🔄 **Preparing sell order...**\n\n⏳ Loading token information...",
+    `🔄 **Preparing ${sellPercent}% sell order...**\n\n⏳ Validating wallet and balance...`,
     { parse_mode: "Markdown" }
   );
   
@@ -42,13 +42,7 @@ const externalTokenSellConversation = async (
   }
 
   try {
-    // Update loading state
-    await ctx.editMessageText(
-      "🔄 **Preparing sell order...**\n\n⏳ Checking token balance...",
-      { parse_mode: "Markdown" }
-    );
-
-    // Check token balance first (faster than getTokenInfo)
+    // Check token balance first (this is the critical check)
     logger.info(
       `[ExternalTokenSell] Checking balance for token ${tokenAddress} in funding wallet ${fundingWallet.publicKey}`
     );
@@ -79,37 +73,36 @@ const externalTokenSellConversation = async (
       return;
     }
 
-    // Update loading state
-    await ctx.editMessageText(
-      "🔄 **Preparing sell order...**\n\n⏳ Fetching token information...",
-      { parse_mode: "Markdown" }
-    );
+    // Calculate tokens to sell immediately
+    const tokensToSell = Math.floor((totalTokenBalance * sellPercent) / 100);
 
-    // Get token information (slower operation, done after balance check)
-    let tokenInfo;
+    // Get token information in background (optional, don't block on this)
     let tokenName = "Unknown Token";
     let tokenSymbol = "Unknown";
     let tokenPrice = 0;
+    let valueToSell = 0;
     
+    // Quick token info fetch with timeout
     try {
-      tokenInfo = await getTokenInfo(tokenAddress);
+      const tokenInfo = await Promise.race([
+        getTokenInfo(tokenAddress),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+      ]) as any; // Type assertion since Promise.race with mixed types is complex
+      
       if (tokenInfo && tokenInfo.baseToken) {
         tokenName = tokenInfo.baseToken.name || "Unknown Token";
         tokenSymbol = tokenInfo.baseToken.symbol || "Unknown";
       }
       if (tokenInfo && tokenInfo.priceUsd) {
         tokenPrice = parseFloat(tokenInfo.priceUsd) || 0;
+        valueToSell = (totalTokenBalance * tokenPrice * sellPercent) / 100;
       }
     } catch (error) {
-      logger.warn(`[ExternalTokenSell] Could not fetch token info, using defaults:`, error);
-      // Continue with defaults instead of failing
+      logger.warn(`[ExternalTokenSell] Token info fetch failed or timed out, proceeding with defaults:`, error);
+      // Continue with defaults - don't let this block the sell
     }
 
-    const totalValue = totalTokenBalance * tokenPrice;
-    const tokensToSell = Math.floor((totalTokenBalance * sellPercent) / 100);
-    const valueToSell = (totalValue * sellPercent) / 100;
-
-    // Show confirmation
+    // Show confirmation immediately
     const confirmationMessage = [
       `🔍 **Confirm External Token Sell**`,
       ``,
