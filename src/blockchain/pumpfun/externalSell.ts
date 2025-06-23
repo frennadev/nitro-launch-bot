@@ -408,7 +408,9 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
         }
         
         // Use the minimum of requested amount and available balance
-        const tokensToSell = BigInt(tokenAmount) > availableTokens ? availableTokens : BigInt(tokenAmount);
+        // Ensure tokenAmount is converted to integer before BigInt conversion
+        const tokenAmountInt = Math.floor(tokenAmount);
+        const tokensToSell = BigInt(tokenAmountInt) > availableTokens ? availableTokens : BigInt(tokenAmountInt);
         
         // Get bonding curve data
         const { bondingCurve } = getBondingCurve(mintPublicKey);
