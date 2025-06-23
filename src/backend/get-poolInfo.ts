@@ -21,9 +21,9 @@ export type PumpSwapPool = {
   coinCreator: PublicKey;
 };
 
-export interface PoolInfo extends PumpSwapPool {
+export type PoolInfo = PumpSwapPool & {
   poolId: PublicKey;
-}
+};
 
 export const PUMP_SWAP_POOL_DISCRIMINATOR = [241, 154, 109, 4, 17, 177, 109, 188];
 export const POOL_LAYOUT = struct<PumpSwapPool>([
@@ -40,55 +40,87 @@ export const POOL_LAYOUT = struct<PumpSwapPool>([
   publicKey("coinCreator"),
 ]);
 
-// Enhanced caching system for pool discovery
+// Enhanced caching system for pool discovery with aggressive optimization
 class PoolDiscoveryCache {
   private static instance: PoolDiscoveryCache;
   private allPoolsCache: { pools: PoolInfo[]; lastUpdated: number } | null = null;
   private poolByTokenCache = new Map<string, PoolInfo>();
+  private poolByIndexCache = new Map<number, PoolInfo>(); // NEW: Index-based lookup
+  private isPreloading = false;
+  private preloadPromise: Promise<void> | null = null;
+  
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes for full pool scan cache
   private readonly TOKEN_CACHE_TTL = 10 * 60 * 1000; // 10 minutes for individual token pools
+  private readonly AGGRESSIVE_PRELOAD_INTERVAL = 2 * 60 * 1000; // Preload every 2 minutes
 
   static getInstance(): PoolDiscoveryCache {
     if (!PoolDiscoveryCache.instance) {
       PoolDiscoveryCache.instance = new PoolDiscoveryCache();
+      // Start aggressive background preloading immediately
+      PoolDiscoveryCache.instance.startAggressivePreloading();
     }
     return PoolDiscoveryCache.instance;
   }
 
-  // Cache all pools data
+  // Start aggressive background preloading
+  private startAggressivePreloading(): void {
+    console.log(`[PoolDiscoveryCache] Starting aggressive background preloading...`);
+    
+    // Immediate preload
+    this.preloadAllPools();
+    
+    // Continuous preloading every 2 minutes
+    setInterval(() => {
+      if (!this.isPreloading) {
+        this.preloadAllPools();
+      }
+    }, this.AGGRESSIVE_PRELOAD_INTERVAL);
+  }
+
+  // Cache all pools data with index mapping
   setAllPools(pools: PoolInfo[]): void {
     this.allPoolsCache = {
       pools,
       lastUpdated: Date.now()
     };
 
-    // Also cache individual token lookups
+    // Clear and rebuild all caches
+    this.poolByTokenCache.clear();
+    this.poolByIndexCache.clear();
+
+    // Cache individual token lookups and index lookups
     for (const pool of pools) {
       const baseKey = pool.baseMint.toBase58();
       const quoteKey = pool.quoteMint.toBase58();
+      
+      // Token-based cache
       this.poolByTokenCache.set(baseKey, pool);
       this.poolByTokenCache.set(quoteKey, pool);
+      
+      // Index-based cache
+      this.poolByIndexCache.set(pool.index, pool);
     }
 
-    console.log(`[PoolDiscoveryCache] Cached ${pools.length} pools`);
+    console.log(`[PoolDiscoveryCache] Aggressively cached ${pools.length} pools with ${this.poolByTokenCache.size} token mappings`);
   }
 
-  // Get all pools from cache if available
+  // Get all pools with TTL check
   getAllPools(): PoolInfo[] | null {
     if (!this.allPoolsCache) return null;
 
     const isExpired = Date.now() - this.allPoolsCache.lastUpdated > this.CACHE_TTL;
     if (isExpired) {
+      console.log(`[PoolDiscoveryCache] All pools cache expired, clearing...`);
       this.allPoolsCache = null;
-      console.log(`[PoolDiscoveryCache] All pools cache expired`);
+      this.poolByTokenCache.clear();
+      this.poolByIndexCache.clear();
       return null;
     }
 
-    console.log(`[PoolDiscoveryCache] Using cached pools (${this.allPoolsCache.pools.length} pools)`);
     return this.allPoolsCache.pools;
   }
 
-  // Get specific token pool from cache
+  // Get specific token pool from cache with priority lookup
   getPoolByToken(tokenMint: string): PoolInfo | null {
     const cached = this.poolByTokenCache.get(tokenMint);
     if (!cached) return null;
@@ -100,17 +132,54 @@ class PoolDiscoveryCache {
   // Cache individual token pool
   setPoolByToken(tokenMint: string, pool: PoolInfo): void {
     this.poolByTokenCache.set(tokenMint, pool);
+    this.poolByIndexCache.set(pool.index, pool);
     console.log(`[PoolDiscoveryCache] Cached pool for token ${tokenMint}`);
   }
 
-  // Preload all pools in background (non-blocking)
+  // Wait for ongoing preload to complete
+  async waitForPreload(): Promise<void> {
+    if (this.preloadPromise) {
+      console.log(`[PoolDiscoveryCache] Waiting for ongoing preload to complete...`);
+      try {
+        await this.preloadPromise;
+        console.log(`[PoolDiscoveryCache] Preload completed, cache ready`);
+      } catch (err) {
+        console.warn(`[PoolDiscoveryCache] Preload failed, will fallback to RPC:`, err);
+      }
+    }
+  }
+
+  // Preload all pools in background with deduplication
   async preloadAllPools(): Promise<void> {
+    if (this.isPreloading) {
+      console.log(`[PoolDiscoveryCache] Preload already in progress, skipping...`);
+      return this.preloadPromise || Promise.resolve();
+    }
+
+    this.isPreloading = true;
+    this.preloadPromise = this._performPreload();
+    
     try {
-      console.log(`[PoolDiscoveryCache] Preloading all pools in background...`);
+      await this.preloadPromise;
+    } finally {
+      this.isPreloading = false;
+      this.preloadPromise = null;
+    }
+  }
+
+  private async _performPreload(): Promise<void> {
+    try {
+      console.log(`[PoolDiscoveryCache] Starting aggressive pool preload...`);
       const start = Date.now();
       
-      const accounts = await connection.getProgramAccounts(pumpswap_amm_program_id);
+      const accounts = await connection.getProgramAccounts(pumpswap_amm_program_id, {
+        commitment: 'confirmed', // Use confirmed for faster response
+        dataSlice: undefined, // Get full account data
+      });
+      
       const pools: PoolInfo[] = [];
+      let successCount = 0;
+      let errorCount = 0;
       
       for (const { pubkey, account } of accounts) {
         try {
@@ -119,53 +188,55 @@ class PoolDiscoveryCache {
             ...poolInfo,
             poolId: pubkey,
           });
+          successCount++;
         } catch (err) {
+          errorCount++;
           console.warn(`[PoolDiscoveryCache] Failed to decode pool ${pubkey.toBase58()}:`, err);
         }
       }
       
       this.setAllPools(pools);
-      console.log(`[PoolDiscoveryCache] Preloaded ${pools.length} pools in ${Date.now() - start}ms`);
+      console.log(`[PoolDiscoveryCache] Aggressive preload completed: ${successCount} pools cached, ${errorCount} errors, took ${Date.now() - start}ms`);
     } catch (err) {
-      console.warn(`[PoolDiscoveryCache] Failed to preload pools:`, err);
+      console.error(`[PoolDiscoveryCache] Failed to preload pools:`, err);
+      throw err;
     }
   }
 
-  // Clear expired entries
-  clearExpired(): void {
-    if (this.allPoolsCache && Date.now() - this.allPoolsCache.lastUpdated > this.CACHE_TTL) {
-      this.allPoolsCache = null;
-      this.poolByTokenCache.clear();
-      console.log(`[PoolDiscoveryCache] Cleared expired cache`);
-    }
+  // Get cache statistics
+  getCacheStats(): { totalPools: number; tokenMappings: number; isPreloading: boolean; lastUpdate: number | null } {
+    return {
+      totalPools: this.allPoolsCache?.pools.length || 0,
+      tokenMappings: this.poolByTokenCache.size,
+      isPreloading: this.isPreloading,
+      lastUpdate: this.allPoolsCache?.lastUpdated || null
+    };
   }
 }
 
 // Global cache instance
 const poolCache = PoolDiscoveryCache.getInstance();
 
-// Start background pool preloading immediately
-poolCache.preloadAllPools();
+// Export preload function for external use
+export const preloadPumpswapPools = async (): Promise<void> => {
+  return poolCache.preloadAllPools();
+};
 
-// Refresh pools every 4 minutes to stay ahead of cache expiry
-setInterval(() => {
-  poolCache.preloadAllPools();
-}, 4 * 60 * 1000);
-
+// OPTIMIZED: Fast token pool lookup with multiple fallback strategies
 export const getTokenPoolInfo = async (tokenMint: string): Promise<PoolInfo | null> => {
   const start = Date.now();
   console.log(`[getTokenPoolInfo] Looking for pool with token ${tokenMint}`);
 
-  // First check individual token cache
+  // STRATEGY 1: Check individual token cache first (fastest)
   const cachedPool = poolCache.getPoolByToken(tokenMint);
   if (cachedPool) {
     console.log(`[getTokenPoolInfo] Found cached pool in ${Date.now() - start}ms`);
     return cachedPool;
   }
 
-  // Check if we have all pools cached
+  // STRATEGY 2: Check if we have all pools cached and search them
   const allPools = poolCache.getAllPools();
-  if (allPools) {
+  if (allPools && allPools.length > 0) {
     console.log(`[getTokenPoolInfo] Searching in cached pools (${allPools.length} pools)`);
     for (const pool of allPools) {
       if (pool.baseMint.toBase58() === tokenMint || pool.quoteMint.toBase58() === tokenMint) {
@@ -178,21 +249,64 @@ export const getTokenPoolInfo = async (tokenMint: string): Promise<PoolInfo | nu
     return null;
   }
 
-  // Fallback to fresh RPC call
-  console.log(`[getTokenPoolInfo] No cache available, fetching from RPC...`);
+  // STRATEGY 3: Wait for ongoing preload if in progress
+  await poolCache.waitForPreload();
+  
+  // STRATEGY 4: Check cache again after preload
+  const poolAfterPreload = poolCache.getPoolByToken(tokenMint);
+  if (poolAfterPreload) {
+    console.log(`[getTokenPoolInfo] Found pool after preload in ${Date.now() - start}ms`);
+    return poolAfterPreload;
+  }
+
+  // STRATEGY 5: Last resort - fresh RPC call (should be rare)
+  console.log(`[getTokenPoolInfo] No cache available, fetching from RPC as last resort...`);
   let decoded: any = null;
   let poolPubkey: PublicKey | null = null;
 
-  const accounts = await connection.getProgramAccounts(pumpswap_amm_program_id);
+  try {
+    const accounts = await connection.getProgramAccounts(pumpswap_amm_program_id, {
+      commitment: 'confirmed',
+      filters: [
+        // Try to filter by token mint if possible to reduce data transfer
+        {
+          memcmp: {
+            offset: 8 + 1 + 2 + 32, // Skip discriminator, poolBump, index, creator
+            bytes: tokenMint,
+          },
+        },
+      ],
+    });
 
-  for (const { pubkey, account } of accounts) {
-    const poolInfo = POOL_LAYOUT.decode(account.data as Buffer);
-    if (poolInfo.baseMint.toBase58() === tokenMint || poolInfo.quoteMint.toBase58() === tokenMint) {
-      console.log("Matched Base Mint:", poolInfo.baseMint.toBase58());
-      decoded = poolInfo;
-      poolPubkey = pubkey;
-      break;
+    // If no filtered results, fall back to full scan
+    if (accounts.length === 0) {
+      console.log(`[getTokenPoolInfo] No filtered results, falling back to full scan...`);
+      const allAccounts = await connection.getProgramAccounts(pumpswap_amm_program_id);
+      
+      for (const { pubkey, account } of allAccounts) {
+        const poolInfo = POOL_LAYOUT.decode(account.data as Buffer);
+        if (poolInfo.baseMint.toBase58() === tokenMint || poolInfo.quoteMint.toBase58() === tokenMint) {
+          console.log("Matched Base Mint:", poolInfo.baseMint.toBase58());
+          decoded = poolInfo;
+          poolPubkey = pubkey;
+          break;
+        }
+      }
+    } else {
+      // Process filtered results
+      for (const { pubkey, account } of accounts) {
+        const poolInfo = POOL_LAYOUT.decode(account.data as Buffer);
+        if (poolInfo.baseMint.toBase58() === tokenMint || poolInfo.quoteMint.toBase58() === tokenMint) {
+          console.log("Matched Base Mint:", poolInfo.baseMint.toBase58());
+          decoded = poolInfo;
+          poolPubkey = pubkey;
+          break;
+        }
+      }
     }
+  } catch (err) {
+    console.warn(`[getTokenPoolInfo] RPC call failed:`, err);
+    return null;
   }
 
   if (!decoded || !poolPubkey) {
@@ -246,9 +360,4 @@ export const getSellAmountOut = async (poolInfo: PoolInfo, amountIn: bigint, sli
   const tokensOut = poolQuoteBalance - newPoolQuoteBalance;
   const tokensOutWithSlippage = (tokensOut * BigInt(100 - slippage)) / BigInt(100);
   return tokensOutWithSlippage;
-};
-
-// Export cache for external use (like preloading)
-export const preloadPumpswapPools = () => {
-  return poolCache.preloadAllPools();
 };

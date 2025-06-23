@@ -243,14 +243,17 @@ class PumpswapCache {
   
   private async _performPreload(tokenMint: string): Promise<void> {
     try {
-      console.log(`[PumpswapCache] Starting preload for ${tokenMint}...`);
+      console.log(`[PumpswapCache] Starting optimized preload for ${tokenMint}...`);
       const start = Date.now();
+      
+      // Import the optimized pool discovery function
+      const { getTokenPoolInfo } = await import("../backend/get-poolInfo");
       
       const poolInfo = await getTokenPoolInfo(tokenMint);
       if (poolInfo) {
         this.setPoolInfo(tokenMint, poolInfo);
         
-        // Also preload reserve balances
+        // Also preload reserve balances in parallel for immediate use
         try {
           const [baseInfo, quoteInfo] = await Promise.all([
             connection.getTokenAccountBalance(poolInfo.poolBaseTokenAccount),
@@ -260,13 +263,15 @@ class PumpswapCache {
           const baseBalance = BigInt(baseInfo.value?.amount || 0);
           const quoteBalance = BigInt(quoteInfo.value?.amount || 0);
           this.setReserveBalances(tokenMint, baseBalance, quoteBalance);
+          
+          console.log(`[PumpswapCache] Optimized preload completed for ${tokenMint} in ${Date.now() - start}ms`);
         } catch (err) {
           console.warn(`[PumpswapCache] Failed to preload reserve balances for ${tokenMint}:`, err);
+          // Still cache pool info even if balance fetch fails
+          console.log(`[PumpswapCache] Pool info cached despite balance fetch failure for ${tokenMint} in ${Date.now() - start}ms`);
         }
-        
-        console.log(`[PumpswapCache] Preload completed for ${tokenMint} in ${Date.now() - start}ms`);
       } else {
-        console.log(`[PumpswapCache] No pool found for ${tokenMint}`);
+        console.log(`[PumpswapCache] No pool found for ${tokenMint} in ${Date.now() - start}ms`);
       }
     } catch (err) {
       console.warn(`[PumpswapCache] Failed to preload pool data for ${tokenMint}:`, err);
@@ -493,11 +498,15 @@ export default class PumpswapService {
     const tokenMint = mint.toBase58();
 
     console.log(`[PumpswapService] Preparing transaction data...`);
+    const prepareStart = Date.now();
     const preparedData = await this.prepareTransactionData(tokenMint, payer.publicKey);
     const { poolInfo, associatedTokenAccounts, creatorVault, protocolFeeAta } = preparedData;
+    console.log(`[PumpswapService] Transaction data prepared in ${Date.now() - prepareStart}ms`);
 
     console.log(`[PumpswapService] Calculating optimal buy amount...`);
+    const calcStart = Date.now();
     const amountOut = await this.getOptimizedBuyAmountOut(tokenMint, poolInfo, amount, slippage);
+    console.log(`[PumpswapService] Buy amount calculated in ${Date.now() - calcStart}ms`);
 
     console.log(`[PumpswapService] Creating buy instruction...`);
     const ixData: CreateBuyIXParams = {
@@ -633,20 +642,25 @@ export default class PumpswapService {
     const tokenMint = mint.toBase58();
 
     console.log(`[PumpswapService] Preparing transaction data...`);
+    const prepareStart = Date.now();
     const preparedData = await this.prepareTransactionData(tokenMint, payer.publicKey);
     const { poolInfo, associatedTokenAccounts, creatorVault, protocolFeeAta } = preparedData;
+    console.log(`[PumpswapService] Transaction data prepared in ${Date.now() - prepareStart}ms`);
 
     console.log(`[PumpswapService] Getting user token balance...`);
+    const balanceStart = Date.now();
     const userBaseTokenBalanceInfo = await connection.getTokenAccountBalance(associatedTokenAccounts.tokenAta);
     const amount = BigInt(userBaseTokenBalanceInfo.value.amount || 0);
-    console.log(`[PumpswapService] User balance: ${amount} tokens`);
+    console.log(`[PumpswapService] User balance: ${amount} tokens (fetched in ${Date.now() - balanceStart}ms)`);
 
     if (amount === BigInt(0)) {
       throw new Error("No tokens to sell");
     }
 
     console.log(`[PumpswapService] Calculating optimal sell amount...`);
+    const calcStart = Date.now();
     const minQuoteOut = await this.getOptimizedSellAmountOut(tokenMint, poolInfo, amount, slippage);
+    console.log(`[PumpswapService] Sell amount calculated in ${Date.now() - calcStart}ms`);
 
     console.log(`[PumpswapService] Creating sell instruction...`);
     const ixData: CreateSellIXParams = {
