@@ -703,34 +703,6 @@ bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   await ctx.conversation.enter("sellIndividualToken");
 });
 
-// Handle external token sell button clicks (from token address messages)
-bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
-  await safeAnswerCallbackQuery(ctx);
-  const tokenAddress = ctx.match![1];
-
-  logger.info(
-    `[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`
-  );
-
-  // Show sell percentage options
-  const keyboard = new InlineKeyboard()
-    .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
-    .text("💸 Sell 50%", `sell_ca_50_${tokenAddress}`)
-    .row()
-    .text("💸 Sell 75%", `sell_ca_75_${tokenAddress}`)
-    .text("💸 Sell 100%", `sell_ca_100_${tokenAddress}`)
-    .row()
-    .text("❌ Cancel", CallBackQueries.CANCEL);
-
-  await ctx.editMessageText(
-    `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
-    }
-  );
-});
-
 // Handle external token buy button clicks (from token address messages)
 bot.callbackQuery(/^buy_external_token_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
@@ -742,6 +714,23 @@ bot.callbackQuery(/^buy_external_token_(.+)$/, async (ctx) => {
 
   // Start the external token buy conversation
   await ctx.conversation.enter("buyExternalTokenConversation");
+});
+
+// Fast cancel button handler - must be before generic callback handler
+bot.callbackQuery(CallBackQueries.CANCEL, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "❌ Cancelled");
+  
+  try {
+    await ctx.editMessageText(
+      "❌ **Operation Cancelled**\n\nYou can send a token address to start over.",
+      { parse_mode: "Markdown" }
+    );
+  } catch (error) {
+    // If editing fails, send a new message
+    await ctx.reply(
+      "❌ **Operation Cancelled**\n\nYou can send a token address to start over."
+    );
+  }
 });
 
 // Callback handler for refresh button
@@ -1665,3 +1654,31 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
     return false;
   }
 }
+
+// Handle external token sell button clicks (from token address messages)
+bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  const tokenAddress = ctx.match![1];
+
+  logger.info(
+    `[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`
+  );
+
+  // Show sell percentage options
+  const keyboard = new InlineKeyboard()
+    .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
+    .text("💸 Sell 50%", `sell_ca_50_${tokenAddress}`)
+    .row()
+    .text("💸 Sell 75%", `sell_ca_75_${tokenAddress}`)
+    .text("💸 Sell 100%", `sell_ca_100_${tokenAddress}`)
+    .row()
+    .text("❌ Cancel", CallBackQueries.CANCEL);
+
+  await ctx.editMessageText(
+    `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    }
+  );
+});
