@@ -83,6 +83,40 @@ export function getPlatformFromCache(tokenAddress: string): 'pumpswap' | 'pumpfu
   return getCachedPlatform(tokenAddress);
 }
 
+// Background platform detection function
+async function detectPlatformInBackground(tokenAddress: string, chatId: number) {
+  const logId = `bg-detect-${tokenAddress.substring(0, 8)}`;
+  
+  try {
+    logger.info(`[${logId}] Starting background platform detection for ${tokenAddress}`);
+    
+    const { detectTokenPlatform } = await import("../service/token-detection-service");
+    const detectionResult = await detectTokenPlatform(tokenAddress);
+    
+    let detectedPlatform: 'pumpswap' | 'pumpfun' | 'unknown' = 'unknown';
+    let platformInfo = "❓ Unknown platform";
+    
+    if (detectionResult.isPumpswap) {
+      detectedPlatform = 'pumpswap';
+      platformInfo = "⚡ Pumpswap";
+    } else if (detectionResult.isPumpfun) {
+      detectedPlatform = 'pumpfun';
+      platformInfo = "🚀 PumpFun";
+    }
+    
+    // Cache the result
+    setCachedPlatform(tokenAddress, detectedPlatform);
+    logger.info(`[${logId}] Platform detected and cached: ${detectedPlatform}`);
+    
+    // Platform detection complete - cached for future use
+    // Next buy/sell operations will be much faster
+    
+  } catch (error) {
+    logger.warn(`[${logId}] Background platform detection failed:`, error);
+    setCachedPlatform(tokenAddress, 'unknown');
+  }
+}
+
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
 // Global error handler
@@ -783,14 +817,10 @@ bot.on("message:text", async (ctx) => {
             holdingsText = "📌 Error checking token holdings";
           }
         }
-        // Detect platform for faster buy/sell operations (with caching)
-        let platformInfo = "🔍 Detecting platform...";
-        let detectedPlatform: 'pumpswap' | 'pumpfun' | 'unknown' = 'unknown';
-        
-        // Check cache first
+        // Check if we have cached platform info
+        let platformInfo = "🔍 Detecting...";
         const cachedPlatform = getCachedPlatform(text);
         if (cachedPlatform) {
-          detectedPlatform = cachedPlatform;
           if (cachedPlatform === 'pumpswap') {
             platformInfo = "⚡ Pumpswap";
           } else if (cachedPlatform === 'pumpfun') {
@@ -800,30 +830,8 @@ bot.on("message:text", async (ctx) => {
           }
           logger.info(`[token-display] Using cached platform for ${text}: ${cachedPlatform}`);
         } else {
-          // Detect platform and cache result
-          try {
-            const { detectTokenPlatform } = await import("../service/token-detection-service");
-            const detectionResult = await detectTokenPlatform(text);
-            if (detectionResult.isPumpswap) {
-              detectedPlatform = 'pumpswap';
-              platformInfo = "⚡ Pumpswap";
-            } else if (detectionResult.isPumpfun) {
-              detectedPlatform = 'pumpfun';
-              platformInfo = "🚀 PumpFun";
-            } else {
-              detectedPlatform = 'unknown';
-              platformInfo = "❓ Unknown platform";
-            }
-            
-            // Cache the result
-            setCachedPlatform(text, detectedPlatform);
-            logger.info(`[token-display] Platform detected and cached for ${text}: ${detectedPlatform}`);
-          } catch (error) {
-            logger.warn(`[token-display] Error detecting platform for ${text}:`, error);
-            platformInfo = "❓ Platform detection failed";
-            detectedPlatform = 'unknown';
-            setCachedPlatform(text, detectedPlatform);
-          }
+          // Start platform detection in background (non-blocking)
+          detectPlatformInBackground(text, ctx.chat.id);
         }
 
         // TODO: Fetch actual market data; this is placeholder data
