@@ -848,10 +848,7 @@ bot.on("message:text", async (ctx) => {
         new PublicKey(text); // Validate if it's a valid Solana address
         logger.info(`User sent token address: ${text}`);
         
-        // Check if this token belongs to user's created tokens
-        const user = await getUser(ctx.chat.id.toString());
-        
-        // **FAST DISPLAY: Show token page immediately with minimal data**
+        // **ULTRA-FAST DISPLAY: Show token page IMMEDIATELY with zero blocking operations**
         let initialTokenName = "Loading...";
         let initialTokenSymbol = "...";
         let initialPlatformInfo = "🔍 Detecting...";
@@ -863,7 +860,7 @@ bot.on("message:text", async (ctx) => {
         let initialRenouncedText = "🔍 Checking...";
         let initialFrozenText = "🔍 Checking...";
         
-        // Check cache first for instant results
+        // Only check cache (this is instant, no blocking calls)
         const cachedPlatform = getCachedPlatform(text);
         if (cachedPlatform) {
           if (cachedPlatform === "pumpswap") {
@@ -874,17 +871,6 @@ bot.on("message:text", async (ctx) => {
             initialPlatformInfo = "❓ Unknown platform";
           }
           logger.info(`[token-display] Using cached platform for ${text}: ${cachedPlatform}`);
-        }
-        
-        // Quick check for user token (this is fast)
-        let isUserToken = false;
-        if (user) {
-          const userToken = await getUserTokenWithBuyWallets(user.id, text);
-          if (userToken) {
-            initialTokenName = userToken.name;
-            initialTokenSymbol = userToken.symbol;
-            isUserToken = true;
-          }
         }
         
         const links = [
@@ -937,7 +923,7 @@ bot.on("message:text", async (ctx) => {
 
         const linksHtml = links.map((link) => `<a href="${link.url}" target="_blank">${link.abbr}</a>`).join(" • ");
 
-        // **IMMEDIATE DISPLAY: Show token page right away**
+        // **INSTANT DISPLAY: Show token page immediately with ZERO blocking operations**
         const message = await ctx.reply(
           `
 🪙 ${initialTokenName} (${initialTokenSymbol})
@@ -1000,45 +986,86 @@ ${initialHoldingsText}`,
           }
         );
 
-        // **BACKGROUND UPDATES: Fetch all data in parallel and update the message**
+        // **BACKGROUND UPDATES: ALL data fetching happens in background, including user checks**
         const updatePromises = [
-          // Token info fetch
-          getTokenInfo(text).then(tokenInfo => {
-            if (tokenInfo && tokenInfo.baseToken && !isUserToken) {
+          // User and token info fetch (moved to background)
+          (async () => {
+            try {
+              // Get user info in background
+              const user = await getUser(ctx.chat.id.toString());
+              let tokenName = initialTokenName;
+              let tokenSymbol = initialTokenSymbol;
+              let isUserToken = false;
+              
+              // Check if it's a user token
+              if (user) {
+                const userToken = await getUserTokenWithBuyWallets(user.id, text);
+                if (userToken) {
+                  tokenName = userToken.name;
+                  tokenSymbol = userToken.symbol;
+                  isUserToken = true;
+                }
+              }
+              
+              // If not a user token, fetch from external API
+              if (!isUserToken) {
+                const tokenInfo = await getTokenInfo(text);
+                if (tokenInfo && tokenInfo.baseToken) {
+                  tokenName = tokenInfo.baseToken.name || tokenName;
+                  tokenSymbol = tokenInfo.baseToken.symbol || tokenSymbol;
+                  return {
+                    type: 'tokenInfo',
+                    name: tokenName,
+                    symbol: tokenSymbol,
+                    marketCap: formatUSD(tokenInfo.marketCap),
+                    price: tokenInfo.priceUsd,
+                    liquidity: tokenInfo.liquidity ? formatUSD(tokenInfo.liquidity.usd) : "N/A",
+                    dex: tokenInfo.dexId,
+                    pairAddress: tokenInfo.pairAddress,
+                    isUserToken: false
+                  };
+                }
+              }
+              
+              // Return user token info
               return {
                 type: 'tokenInfo',
-                name: tokenInfo.baseToken.name || initialTokenName,
-                symbol: tokenInfo.baseToken.symbol || initialTokenSymbol,
-                marketCap: formatUSD(tokenInfo.marketCap),
-                price: tokenInfo.priceUsd,
-                liquidity: tokenInfo.liquidity ? formatUSD(tokenInfo.liquidity.usd) : "N/A",
-                dex: tokenInfo.dexId,
-                pairAddress: tokenInfo.pairAddress
+                name: tokenName,
+                symbol: tokenSymbol,
+                marketCap: "User Token",
+                price: "N/A",
+                liquidity: "N/A",
+                dex: "PUMPFUN",
+                pairAddress: null,
+                isUserToken: true
               };
+            } catch (error: any) {
+              logger.warn(`Token info fetch failed: ${error.message}`);
+              return null;
             }
-            return null;
-                     }).catch((error: any) => {
-             logger.warn(`Token info fetch failed: ${error.message}`);
-             return null;
-           }),
+          })(),
           
-          // Holdings check
-          user ? (async () => {
+          // Holdings check (moved to background)
+          (async () => {
             try {
-              const fundingWallet = await getFundingWallet(user.id);
-              if (fundingWallet) {
-                const balance = await getTokenBalance(text, fundingWallet.publicKey);
-                return {
-                  type: 'holdings',
-                  balance: balance,
-                  walletsWithBalance: balance > 0 ? 1 : 0
-                };
+              const user = await getUser(ctx.chat.id.toString());
+              if (user) {
+                const fundingWallet = await getFundingWallet(user.id);
+                if (fundingWallet) {
+                  const balance = await getTokenBalance(text, fundingWallet.publicKey);
+                  return {
+                    type: 'holdings',
+                    balance: balance,
+                    walletsWithBalance: balance > 0 ? 1 : 0
+                  };
+                }
               }
-            } catch (error) {
+              return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
+            } catch (error: any) {
               logger.warn(`Holdings check failed: ${error.message}`);
+              return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
             }
-            return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
-          })() : Promise.resolve({ type: 'holdings', balance: 0, walletsWithBalance: 0 }),
+          })(),
           
           // Platform detection (only if not cached)
           !cachedPlatform ? (async () => {
