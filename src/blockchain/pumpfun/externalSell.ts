@@ -391,129 +391,122 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     logger.info(`[${logId}] Attempting PumpFun sell`);
     try {
       logger.info(`[${logId}] Attempting PumpFun sell with launch-style logic`);
+      
+      // Need to get token creator for sellInstruction (same as executeWalletSell)
+      const { bondingCurve } = getBondingCurve(mintPublicKey);
+      const bondingCurveData = await getBondingCurveData(bondingCurve);
+      
+      if (!bondingCurveData) {
+        throw new Error("Token bonding curve not found - token may not be a PumpFun token");
+      }
+      
+      // Use exact same sell logic as executeWalletSell (needs token creator)
+      const sellIx = sellInstruction(
+        mintPublicKey, 
+        new PublicKey(bondingCurveData.creator), // Token creator (like executeWalletSell)
+        sellerKeypair.publicKey, // Seller wallet
+        tokensToSell, 
+        BigInt(0) // No minimum SOL output
+      );
+      
+      // Add compute budget instructions (same as launch sells)
+      const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
+        units: 151595,
+      });
+      const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: 1_000_000,
+      });
+      
+      // Create and send transaction (same pattern as launch sells)
+      const blockHash = await connection.getLatestBlockhash("processed");
+      const sellTx = new VersionedTransaction(
+        new TransactionMessage({
+          instructions: [modifyComputeUnits, addPriorityFee, sellIx],
+          payerKey: sellerKeypair.publicKey,
+          recentBlockhash: blockHash.blockhash,
+        }).compileToV0Message(),
+      );
+      
+      sellTx.sign([sellerKeypair]);
+      
+      // Send with retry logic (same as launch sells)
+      const result = await sendAndConfirmTransactionWithRetry(
+        sellTx,
+        {
+          payer: sellerKeypair.publicKey,
+          signers: [sellerKeypair],
+          instructions: [modifyComputeUnits, addPriorityFee, sellIx],
+        },
+        10_000,
+        3,
+        1000,
+        logId
+      );
+      
+      if (!result.success) {
+        throw new Error("PumpFun sell transaction failed");
+      }
+      
+      logger.info(`[${logId}] PumpFun sell successful: ${result.signature}`);
+      
+      return {
+        success: true,
+        signature: result.signature!,
+        platform: 'pumpfun',
+        solReceived: "Success" // executeDevSell doesn't calculate exact SOL received
+      };
+      
+    } catch (pumpfunError: any) {
+      logger.error(`[${logId}] PumpFun sell error:`, pumpfunError);
+      
+      // If PumpFun fails, mark as Pumpswap and retry once
+      logger.info(`[${logId}] PumpFun sell failed, marking as Pumpswap and retrying`);
+      
+      try {
+        const { markTokenAsPumpswap } = await import('../../bot/index');
+        markTokenAsPumpswap(tokenAddress);
         
-        // Need to get token creator for sellInstruction (same as executeWalletSell)
-        const { bondingCurve } = getBondingCurve(mintPublicKey);
-        const bondingCurveData = await getBondingCurveData(bondingCurve);
+        logger.info(`[${logId}] Retrying with Pumpswap after PumpFun failure`);
+        const pumpswapService = new PumpswapService();
+        const sellTx = await pumpswapService.sellTx({
+          mint: mintPublicKey,
+          privateKey: bs58.encode(sellerKeypair.secretKey)
+        });
         
-        if (!bondingCurveData) {
-          throw new Error("Token bonding curve not found - token may not be a PumpFun token");
+        const signature = await connection.sendTransaction(sellTx, {
+          skipPreflight: false,
+          preflightCommitment: "processed",
+        });
+        
+        const confirmation = await connection.confirmTransaction({
+          signature,
+          blockhash: sellTx.message.recentBlockhash!,
+          lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
+        }, "confirmed");
+        
+        if (confirmation.value.err) {
+          throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
         }
         
-        // Use exact same sell logic as executeWalletSell (needs token creator)
-        const sellIx = sellInstruction(
-          mintPublicKey, 
-          new PublicKey(bondingCurveData.creator), // Token creator (like executeWalletSell)
-          sellerKeypair.publicKey, // Seller wallet
-          tokensToSell, 
-          BigInt(0) // No minimum SOL output
-        );
-        
-        // Add compute budget instructions (same as launch sells)
-        const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
-          units: 151595,
-        });
-        const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-          microLamports: 1_000_000,
-        });
-        
-        // Create and send transaction (same pattern as launch sells)
-        const blockHash = await connection.getLatestBlockhash("processed");
-        const sellTx = new VersionedTransaction(
-          new TransactionMessage({
-            instructions: [modifyComputeUnits, addPriorityFee, sellIx],
-            payerKey: sellerKeypair.publicKey,
-            recentBlockhash: blockHash.blockhash,
-          }).compileToV0Message(),
-        );
-        
-        sellTx.sign([sellerKeypair]);
-        
-        // Send with retry logic (same as launch sells)
-        const result = await sendAndConfirmTransactionWithRetry(
-          sellTx,
-          {
-            payer: sellerKeypair.publicKey,
-            signers: [sellerKeypair],
-            instructions: [modifyComputeUnits, addPriorityFee, sellIx],
-          },
-          10_000,
-          3,
-          1000,
-          logId
-        );
-        
-        if (!result.success) {
-          throw new Error("PumpFun sell transaction failed");
-        }
-        
-        logger.info(`[${logId}] PumpFun sell successful: ${result.signature}`);
+        logger.info(`[${logId}] Pumpswap retry successful: ${signature}`);
         
         return {
           success: true,
-          signature: result.signature!,
-          platform: 'pumpfun',
-          solReceived: "Success" // executeDevSell doesn't calculate exact SOL received
+          signature,
+          platform: 'pumpswap',
+          solReceived: "Success"
         };
         
-      } catch (pumpfunError: any) {
-        logger.error(`[${logId}] PumpFun sell error:`, pumpfunError);
-        
-        // If PumpFun fails, mark as Pumpswap and retry once
-        logger.info(`[${logId}] PumpFun sell failed, marking as Pumpswap and retrying`);
-        
-        try {
-          const { markTokenAsPumpswap } = await import('../../bot/index');
-          markTokenAsPumpswap(tokenAddress);
-          
-          logger.info(`[${logId}] Retrying with Pumpswap after PumpFun failure`);
-          const pumpswapService = new PumpswapService();
-          const sellTx = await pumpswapService.sellTx({
-            mint: mintPublicKey,
-            privateKey: bs58.encode(sellerKeypair.secretKey)
-          });
-          
-          const signature = await connection.sendTransaction(sellTx, {
-            skipPreflight: false,
-            preflightCommitment: "processed",
-          });
-          
-          const confirmation = await connection.confirmTransaction({
-            signature,
-            blockhash: sellTx.message.recentBlockhash!,
-            lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
-          }, "confirmed");
-          
-          if (confirmation.value.err) {
-            throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-          }
-          
-          logger.info(`[${logId}] Pumpswap retry successful: ${signature}`);
-          
-          return {
-            success: true,
-            signature,
-            platform: 'pumpswap',
-            solReceived: "Success"
-          };
-          
-        } catch (pumpswapRetryError: any) {
-          logger.error(`[${logId}] Pumpswap retry also failed:`, pumpswapRetryError);
-          return {
-            success: false,
-            error: `Both PumpFun and Pumpswap sells failed. PumpFun: ${pumpfunError.message}, Pumpswap: ${pumpswapRetryError.message}`,
-            platform: 'unknown'
-          };
-        }
+      } catch (pumpswapRetryError: any) {
+        logger.error(`[${logId}] Pumpswap retry also failed:`, pumpswapRetryError);
+        return {
+          success: false,
+          error: `Both PumpFun and Pumpswap sells failed. PumpFun: ${pumpfunError.message}, Pumpswap: ${pumpswapRetryError.message}`,
+          platform: 'unknown'
+        };
       }
-    } catch (error: any) {
-      logger.error(`[${logId}] External sell error:`, error);
-      return {
-        success: false,
-        error: `External sell failed: ${error.message}`,
-        platform: 'unknown'
-      };
     }
+    
   } catch (error: any) {
     logger.error(`[${logId}] External sell error:`, error);
     return {
