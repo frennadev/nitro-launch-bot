@@ -136,14 +136,56 @@ export async function editMessage(
 export async function getTokenBalance(tokenAddress: string, walletAddress: string): Promise<number> {
   try {
     console.log({ walletAddress });
-    const mint = new PublicKey(tokenAddress);
-    const owner = new PublicKey(walletAddress);
+    
+    // Validate addresses first
+    let mint: PublicKey;
+    let owner: PublicKey;
+    
+    try {
+      mint = new PublicKey(tokenAddress);
+      owner = new PublicKey(walletAddress);
+    } catch (error) {
+      console.error(`[getTokenBalance] Invalid address format - token: ${tokenAddress}, wallet: ${walletAddress}`);
+      return 0;
+    }
 
     console.log(`[getTokenBalance] Checking balance for token ${tokenAddress} in wallet ${walletAddress}`);
 
-    const resp = await connection.getParsedTokenAccountsByOwner(owner, {
-      mint,
-    });
+    // Try to get token accounts with better error handling
+    let resp;
+    try {
+      resp = await connection.getParsedTokenAccountsByOwner(owner, {
+        mint,
+      });
+    } catch (rpcError: any) {
+      // Handle specific RPC errors
+      if (rpcError.message?.includes("Token mint could not be unpacked")) {
+        console.warn(`[getTokenBalance] Token mint unpacking failed for ${tokenAddress} - token may not exist or use different program`);
+        return 0;
+      } else if (rpcError.message?.includes("Invalid param")) {
+        console.warn(`[getTokenBalance] Invalid parameters for token ${tokenAddress}`);
+        return 0;
+      } else {
+        console.error(`[getTokenBalance] RPC error for token ${tokenAddress}:`, rpcError);
+        // Try alternative approach for Token-2022 or other programs
+        try {
+          const { TOKEN_2022_PROGRAM_ID } = await import("@solana/spl-token");
+          resp = await connection.getParsedTokenAccountsByOwner(owner, {
+            mint,
+            programId: TOKEN_2022_PROGRAM_ID,
+          });
+          console.log(`[getTokenBalance] Successfully fetched using Token-2022 program`);
+        } catch (token2022Error) {
+          console.error(`[getTokenBalance] Token-2022 attempt also failed:`, token2022Error);
+          return 0;
+        }
+      }
+    }
+
+    if (!resp || !resp.value) {
+      console.log(`[getTokenBalance] No response received for token ${tokenAddress}`);
+      return 0;
+    }
 
     console.log(`[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress}`);
 
@@ -153,9 +195,14 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
     }
 
     const totalBalance = resp.value.reduce((sum, { account }) => {
-      const amt = account.data.parsed.info.tokenAmount.uiAmount || 0;
-      console.log(`[getTokenBalance] Account balance: ${amt} tokens`);
-      return sum + amt;
+      try {
+        const amt = account.data.parsed.info.tokenAmount.uiAmount || 0;
+        console.log(`[getTokenBalance] Account balance: ${amt} tokens`);
+        return sum + amt;
+      } catch (parseError) {
+        console.warn(`[getTokenBalance] Error parsing account data:`, parseError);
+        return sum;
+      }
     }, 0);
 
     console.log(`[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens`);
@@ -165,7 +212,8 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
       `[getTokenBalance] Error checking balance for token ${tokenAddress} in wallet ${walletAddress}:`,
       error
     );
-    throw error; // Re-throw the error instead of silently returning 0
+    // Return 0 instead of throwing to prevent cascade failures
+    return 0;
   }
 }
 
