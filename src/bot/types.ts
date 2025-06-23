@@ -68,4 +68,6 @@ export enum CallBackQueries {
   SELL_WALLET_SUPPLY = "sell_wallet_supply",
 
   SELL_INDIVIDUAL = "sell_individual",
+
+  VIEW_TOKEN_TRADES = "view_token_trades",
 }
