@@ -134,7 +134,8 @@ export async function executeExternalBuy(tokenAddress: string, buyerKeypair: Key
         const privateKeyBase58 = bs58.encode(buyerKeypair.secretKey);
         
         logger.info(`[${logId}] Executing PumpFun buy...`);
-        const pumpfunResult = await executeFundingBuy(tokenAddress, privateKeyBase58, solAmount);
+        const { executeExternalPumpFunBuy } = await import('./buy');
+        const pumpfunResult = await executeExternalPumpFunBuy(tokenAddress, privateKeyBase58, solAmount);
         
                  if (pumpfunResult.success && pumpfunResult.signature) {
            logger.info(`[${logId}] PumpFun buy successful: ${pumpfunResult.signature}`);
