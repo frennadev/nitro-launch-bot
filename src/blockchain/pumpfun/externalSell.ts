@@ -311,10 +311,9 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       };
     }
     
-    // Calculate tokens to sell (convert percentage to actual amount)
-    const tokensToSell = tokenAmount === 100 ? 
-      tokenBalance : 
-      (BigInt(Math.floor(tokenAmount)) * BigInt(100) * tokenBalance) / BigInt(10_000);
+    // Calculate tokens to sell (ensure integer for BigInt conversion)
+    // tokenAmount is already the actual number of tokens to sell (not a percentage)
+    const tokensToSell = BigInt(Math.floor(tokenAmount));
     
     if (tokensToSell <= BigInt(0)) {
       return {
@@ -324,7 +323,7 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       };
     }
     
-    logger.info(`[${logId}] Selling ${tokensToSell.toString()} tokens (${tokenAmount}% of balance)`);
+    logger.info(`[${logId}] Selling ${tokensToSell.toString()} tokens`);
     
     // Try Pumpswap first
     try {
