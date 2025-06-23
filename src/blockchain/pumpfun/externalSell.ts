@@ -365,149 +365,15 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       try {
         logger.info(`[${logId}] Attempting PumpFun sell with launch-style logic`);
         
-        // Get bonding curve data with robust retry strategy (same as buy.ts)
-        const { bondingCurve } = getBondingCurve(mintPublicKey);
-        let bondingCurveData: any = null;
-        const curveDataStart = performance.now();
+        // executeDevSell doesn't need bonding curve data - it uses the token creator as the dev wallet
         
-        try {
-          // Strategy 1: Parallel fetch with different commitment levels (fastest)
-          const parallelFetchPromises = [
-            // Most likely to succeed quickly
-            (async () => {
-              try {
-                const accountInfo = await connection.getAccountInfo(bondingCurve, "processed");
-                if (accountInfo?.data) {
-                  const data = await getBondingCurveData(bondingCurve);
-                  if (data) {
-                    console.log(`[${logId}]: Fast curve data fetch successful with 'processed' commitment`);
-                    return { data, commitment: "processed" };
-                  }
-                }
-              } catch (error) {
-                return null;
-              }
-              return null;
-            })(),
-            
-            // Backup with confirmed
-            (async () => {
-              await new Promise(resolve => setTimeout(resolve, 500)); // Small delay to prefer processed
-              try {
-                const accountInfo = await connection.getAccountInfo(bondingCurve, "confirmed");
-                if (accountInfo?.data) {
-                  const data = await getBondingCurveData(bondingCurve);
-                  if (data) {
-                    console.log(`[${logId}]: Curve data fetch successful with 'confirmed' commitment`);
-                    return { data, commitment: "confirmed" };
-                  }
-                }
-              } catch (error) {
-                return null;
-              }
-              return null;
-            })(),
-            
-            // Final fallback with finalized
-            (async () => {
-              await new Promise(resolve => setTimeout(resolve, 1000)); // Delay to prefer faster options
-              try {
-                const accountInfo = await connection.getAccountInfo(bondingCurve, "finalized");
-                if (accountInfo?.data) {
-                  const data = await getBondingCurveData(bondingCurve);
-                  if (data) {
-                    console.log(`[${logId}]: Curve data fetch successful with 'finalized' commitment`);
-                    return { data, commitment: "finalized" };
-                  }
-                }
-              } catch (error) {
-                return null;
-              }
-              return null;
-            })()
-          ];
-          
-          // Race to get the first successful result
-          const results = await Promise.allSettled(parallelFetchPromises);
-          const successfulResult = results.find(result => 
-            result.status === 'fulfilled' && result.value !== null
-          );
-          
-          if (successfulResult && successfulResult.status === 'fulfilled' && successfulResult.value) {
-            bondingCurveData = successfulResult.value.data;
-            const fetchTime = performance.now() - curveDataStart;
-            console.log(`[${logId}]: Parallel curve data fetch completed in ${Math.round(fetchTime)}ms using ${successfulResult.value.commitment} commitment`);
-          }
-          
-        } catch (error: any) {
-          console.warn(`[${logId}]: Parallel curve data fetch failed: ${error.message}`);
-        }
-        
-        // Fallback to sequential retry logic if parallel fetch failed
-        if (!bondingCurveData) {
-          console.log(`[${logId}]: Parallel fetch failed, falling back to sequential retry logic...`);
-          
-          let retries = 0;
-          const maxRetries = 5;
-          const baseDelay = 1000;
-          
-          while (!bondingCurveData && retries < maxRetries) {
-            try {
-              const commitmentLevel = retries < 2 ? "processed" : retries < 4 ? "confirmed" : "finalized";
-              
-              const accountInfo = await connection.getAccountInfo(bondingCurve, commitmentLevel);
-              if (accountInfo && accountInfo.data) {
-                bondingCurveData = await getBondingCurveData(bondingCurve);
-                if (bondingCurveData) {
-                  console.log(`[${logId}]: Sequential fallback successful on attempt ${retries + 1} with ${commitmentLevel} commitment`);
-                  break;
-                }
-              }
-            } catch (error: any) {
-              console.warn(`[${logId}]: Sequential fallback attempt ${retries + 1} failed: ${error.message}`);
-            }
-            
-            retries += 1;
-            if (!bondingCurveData && retries < maxRetries) {
-              const delay = Math.min(baseDelay * Math.pow(1.5, retries), 3000) + Math.random() * 500;
-              console.log(`[${logId}]: Retrying in ${Math.round(delay)}ms (attempt ${retries}/${maxRetries})`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-            }
-          }
-        }
-        
-        if (!bondingCurveData) {
-          console.error(`[${logId}]: Failed to fetch curve data after all attempts`);
-          throw new Error("Unable to fetch bonding curve data");
-        }
-        
-        // Quote the sell
-        console.log(`[${logId}] Sell quote inputs:`, {
-          tokensToSell: tokensToSell.toString(),
-          virtualTokenReserves: bondingCurveData.virtualTokenReserves.toString(),
-          virtualSolReserves: bondingCurveData.virtualSolReserves.toString(),
-          realTokenReserves: bondingCurveData.realTokenReserves.toString()
-        });
-        
-        const { solOut } = quoteSell(
-          tokensToSell,
-          bondingCurveData.virtualTokenReserves,
-          bondingCurveData.virtualSolReserves,
-          bondingCurveData.realTokenReserves,
-        );
-        
-        console.log(`[${logId}] Sell quote result: solOut = ${solOut.toString()} lamports (${Number(solOut) / LAMPORTS_PER_SOL} SOL)`);
-        
-        const solOutWithSlippage = applySlippage(solOut, 50); // 50% slippage for external tokens
-        console.log(`[${logId}] After slippage: ${solOutWithSlippage.toString()} lamports (${Number(solOutWithSlippage) / LAMPORTS_PER_SOL} SOL)`);
-        
-        // Create sell instruction (same as launch sells)
+        // Use exact same sell logic as executeDevSell (no quote calculation needed)
         const sellIx = sellInstruction(
-          mintPublicKey,
-          new PublicKey(bondingCurveData.creator),
-          sellerKeypair.publicKey,
-          tokensToSell,
-          solOutWithSlippage,
+          mintPublicKey, 
+          sellerKeypair.publicKey, 
+          sellerKeypair.publicKey, 
+          tokensToSell, 
+          BigInt(0) // Same as executeDevSell - no minimum SOL output
         );
         
         // Add compute budget instructions (same as launch sells)
@@ -548,14 +414,13 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
           throw new Error("PumpFun sell transaction failed");
         }
         
-        const solReceived = Number(solOut) / LAMPORTS_PER_SOL;
-        logger.info(`[${logId}] PumpFun sell successful: ${result.signature} - ${solReceived.toFixed(6)} SOL received`);
+        logger.info(`[${logId}] PumpFun sell successful: ${result.signature}`);
         
         return {
           success: true,
           signature: result.signature!,
           platform: 'pumpfun',
-          solReceived: solReceived.toString()
+          solReceived: "Success" // executeDevSell doesn't calculate exact SOL received
         };
         
       } catch (pumpfunError: any) {
