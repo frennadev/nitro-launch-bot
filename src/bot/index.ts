@@ -62,6 +62,27 @@ import { executeFundingBuy } from "../blockchain/pumpfun/buy";
 import { buyCustonConversation } from "./conversation/buyCustom";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 
+// Simple in-memory cache for platform detection results
+const platformCache = new Map<string, { platform: 'pumpswap' | 'pumpfun' | 'unknown', timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+function getCachedPlatform(tokenAddress: string): 'pumpswap' | 'pumpfun' | 'unknown' | null {
+  const cached = platformCache.get(tokenAddress);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.platform;
+  }
+  return null;
+}
+
+function setCachedPlatform(tokenAddress: string, platform: 'pumpswap' | 'pumpfun' | 'unknown') {
+  platformCache.set(tokenAddress, { platform, timestamp: Date.now() });
+}
+
+// Export function for use in external buy/sell operations
+export function getPlatformFromCache(tokenAddress: string): 'pumpswap' | 'pumpfun' | 'unknown' | null {
+  return getCachedPlatform(tokenAddress);
+}
+
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
 // Global error handler
@@ -762,8 +783,50 @@ bot.on("message:text", async (ctx) => {
             holdingsText = "📌 Error checking token holdings";
           }
         }
-        // TODO: Fetch actual market data; this is placeholder data
+        // Detect platform for faster buy/sell operations (with caching)
+        let platformInfo = "🔍 Detecting platform...";
+        let detectedPlatform: 'pumpswap' | 'pumpfun' | 'unknown' = 'unknown';
+        
+        // Check cache first
+        const cachedPlatform = getCachedPlatform(text);
+        if (cachedPlatform) {
+          detectedPlatform = cachedPlatform;
+          if (cachedPlatform === 'pumpswap') {
+            platformInfo = "⚡ Pumpswap";
+          } else if (cachedPlatform === 'pumpfun') {
+            platformInfo = "🚀 PumpFun";
+          } else {
+            platformInfo = "❓ Unknown platform";
+          }
+          logger.info(`[token-display] Using cached platform for ${text}: ${cachedPlatform}`);
+        } else {
+          // Detect platform and cache result
+          try {
+            const { detectTokenPlatform } = await import("../service/token-detection-service");
+            const detectionResult = await detectTokenPlatform(text);
+            if (detectionResult.isPumpswap) {
+              detectedPlatform = 'pumpswap';
+              platformInfo = "⚡ Pumpswap";
+            } else if (detectionResult.isPumpfun) {
+              detectedPlatform = 'pumpfun';
+              platformInfo = "🚀 PumpFun";
+            } else {
+              detectedPlatform = 'unknown';
+              platformInfo = "❓ Unknown platform";
+            }
+            
+            // Cache the result
+            setCachedPlatform(text, detectedPlatform);
+            logger.info(`[token-display] Platform detected and cached for ${text}: ${detectedPlatform}`);
+          } catch (error) {
+            logger.warn(`[token-display] Error detecting platform for ${text}:`, error);
+            platformInfo = "❓ Platform detection failed";
+            detectedPlatform = 'unknown';
+            setCachedPlatform(text, detectedPlatform);
+          }
+        }
 
+        // TODO: Fetch actual market data; this is placeholder data
         const marketCap = formatUSD(tokenInfo.marketCap); // Placeholder
         const price = tokenInfo.priceUsd; // Placeholder
         let liquidity = null;
@@ -837,6 +900,7 @@ bot.on("message:text", async (ctx) => {
 🪙 ${tokenName} (${tokenSymbol})
 <code>${text}</code>
 🔗Dex: ${dex.toLocaleUpperCase()}
+🎯Platform: ${platformInfo}
 🤑 <a href="${"https://t.me/@NITROLAUNCHBOT"}">Share Token & Earn</a>
 
 Market Data

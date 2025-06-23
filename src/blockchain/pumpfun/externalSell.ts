@@ -302,9 +302,28 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       throw new Error('Token amount must be greater than 0');
     }
     
-    // Detect which platform the token is on
-    logger.info(`[${logId}] Detecting token platform...`);
-    const detection = await detectTokenPlatform(tokenAddress);
+    // Try to get platform from cache first (for speed)
+    let detection: any;
+    try {
+      const { getPlatformFromCache } = await import('../../bot/index');
+      const cachedPlatform = getPlatformFromCache(tokenAddress);
+      
+      if (cachedPlatform) {
+        logger.info(`[${logId}] Using cached platform detection: ${cachedPlatform}`);
+        detection = {
+          isPumpswap: cachedPlatform === 'pumpswap',
+          isPumpfun: cachedPlatform === 'pumpfun',
+          error: cachedPlatform === 'unknown' ? 'Token not found on supported platforms' : undefined
+        };
+      } else {
+        logger.info(`[${logId}] No cached platform found, detecting token platform...`);
+        detection = await detectTokenPlatform(tokenAddress);
+      }
+    } catch (cacheError) {
+      logger.warn(`[${logId}] Cache access failed, falling back to detection:`, cacheError);
+      logger.info(`[${logId}] Detecting token platform...`);
+      detection = await detectTokenPlatform(tokenAddress);
+    }
     
     if (detection.error) {
       logger.error(`[${logId}] Token detection failed:`, detection.error);
