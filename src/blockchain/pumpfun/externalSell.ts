@@ -365,15 +365,21 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       try {
         logger.info(`[${logId}] Attempting PumpFun sell with launch-style logic`);
         
-        // executeDevSell doesn't need bonding curve data - it uses the token creator as the dev wallet
+        // Need to get token creator for sellInstruction (same as executeWalletSell)
+        const { bondingCurve } = getBondingCurve(mintPublicKey);
+        const bondingCurveData = await getBondingCurveData(bondingCurve);
         
-        // Use exact same sell logic as executeDevSell (no quote calculation needed)
+        if (!bondingCurveData) {
+          throw new Error("Token bonding curve not found - token may not be a PumpFun token");
+        }
+        
+        // Use exact same sell logic as executeWalletSell (needs token creator)
         const sellIx = sellInstruction(
           mintPublicKey, 
-          sellerKeypair.publicKey, 
-          sellerKeypair.publicKey, 
+          new PublicKey(bondingCurveData.creator), // Token creator (like executeWalletSell)
+          sellerKeypair.publicKey, // Seller wallet
           tokensToSell, 
-          BigInt(0) // Same as executeDevSell - no minimum SOL output
+          BigInt(0) // No minimum SOL output
         );
         
         // Add compute budget instructions (same as launch sells)
