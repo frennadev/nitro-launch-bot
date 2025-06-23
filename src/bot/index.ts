@@ -29,7 +29,7 @@ import {
   getFundingWallet,
 } from "../backend/functions";
 import { CallBackQueries } from "./types";
-import { escape, formatUSD } from "./utils";
+import { escape, formatUSD, safeEditMessageReplyMarkup, safeEditMessageText, safeEditOrSendMessage } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
 import devSellConversation from "./conversation/devSell";
@@ -70,18 +70,37 @@ import {
   markTokenAsPumpFun,
 } from "../service/token-detection-service";
 
+// Platform detection and caching for external tokens
+const platformCache = new Map<string, { platform: 'pumpswap' | 'pumpfun' | 'unknown'; timestamp: number; permanent: boolean }>();
+
+// Cache TTL: 5 minutes for temporary results, permanent for confirmed detections
+const PLATFORM_CACHE_TTL = 5 * 60 * 1000;
+
 // Platform detection now handled by service layer
 
 // Export function for external use
 export function markTokenAsPumpswap(tokenAddress: string) {
-  markTokenAsPumpswapService(tokenAddress);
+  platformCache.set(tokenAddress, { platform: 'pumpswap', timestamp: Date.now(), permanent: true });
+  console.log(`[platform-cache]: Cached ${tokenAddress.substring(0, 8)} as pumpswap (permanent: true)`);
 }
 
 // Export function for use in external buy/sell operations
 export function getPlatformFromCache(
   tokenAddress: string
 ): "pumpswap" | "pumpfun" | "unknown" | null {
-  return getCachedPlatform(tokenAddress);
+  const cached = platformCache.get(tokenAddress);
+  if (!cached) return null;
+  
+  // Permanent cache entries never expire
+  if (cached.permanent) return cached.platform;
+  
+  // Check if temporary cache has expired
+  if (Date.now() - cached.timestamp > PLATFORM_CACHE_TTL) {
+    platformCache.delete(tokenAddress);
+    return null;
+  }
+  
+  return cached.platform;
 }
 
 // Background platform detection function
@@ -1350,7 +1369,8 @@ bot.on("callback_query:data", async (ctx) => {
       )
       .row()
       .text("❌ Cancel", CallBackQueries.CANCEL);
-    await ctx.editMessageReplyMarkup({ reply_markup: backKb });
+    
+    await safeEditMessageReplyMarkup(ctx, backKb);
     return;
   }
 
@@ -1377,7 +1397,7 @@ bot.on("callback_query:data", async (ctx) => {
           .row()
           .text("Menu", CallBackQueries.BACK);
 
-        await ctx.editMessageReplyMarkup({ reply_markup: kb });
+        await safeEditMessageReplyMarkup(ctx, kb);
         break;
 
       case "sell":
@@ -1399,7 +1419,7 @@ bot.on("callback_query:data", async (ctx) => {
           .row()
           .text("Menu", CallBackQueries.BACK);
 
-        await ctx.editMessageReplyMarkup({ reply_markup: sellKb });
+        await safeEditMessageReplyMarkup(ctx, sellKb);
         break;
 
       default:
@@ -1918,26 +1938,11 @@ bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
     .row()
     .text("❌ Cancel", CallBackQueries.CANCEL);
 
-  try {
-    await ctx.editMessageText(
-      `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
-      {
-        parse_mode: "Markdown",
-        reply_markup: keyboard,
-      }
-    );
-  } catch (error) {
-    logger.warn(
-      `[ExternalTokenSell] Could not edit message, sending new one:`,
-      error
-    );
-    // If editing fails, send a new message
-    await ctx.reply(
-      `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
-      {
-        parse_mode: "Markdown",
-        reply_markup: keyboard,
-      }
-    );
-  }
+  await safeEditOrSendMessage(ctx,
+    `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    }
+  );
 });

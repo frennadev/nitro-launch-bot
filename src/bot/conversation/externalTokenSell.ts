@@ -7,7 +7,7 @@ import { sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
 import { executeExternalSell } from "../../blockchain/pumpfun/externalSell";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
-import { escape } from "../utils";
+import { escape, safeEditMessageText } from "../utils";
 
 const externalTokenSellConversation = async (
   conversation: Conversation,
@@ -18,7 +18,7 @@ const externalTokenSellConversation = async (
   // Don't answer callback query here - already handled by main handler
   
   // Show immediate loading state
-  await ctx.editMessageText(
+  await safeEditMessageText(ctx,
     `🔄 **Preparing ${sellPercent}% sell order...**\n\n⏳ Validating wallet and balance...`,
     { parse_mode: "Markdown" }
   );
@@ -26,7 +26,7 @@ const externalTokenSellConversation = async (
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.editMessageText("Unrecognized user ❌");
+    await safeEditMessageText(ctx, "Unrecognized user ❌");
     await conversation.halt();
     return;
   }
@@ -34,7 +34,7 @@ const externalTokenSellConversation = async (
   // -------- GET FUNDING WALLET ----------
   const fundingWallet = await getFundingWallet(user.id);
   if (!fundingWallet) {
-    await ctx.editMessageText(
+    await safeEditMessageText(ctx,
       "❌ No funding wallet found. Please configure a funding wallet first."
     );
     await conversation.halt();
@@ -58,7 +58,7 @@ const externalTokenSellConversation = async (
         `[ExternalTokenSell] Error checking balance for funding wallet:`,
         error
       );
-      await ctx.editMessageText(
+      await safeEditMessageText(ctx,
         "❌ Error checking token balance in funding wallet. Please try again."
       );
       await conversation.halt();
@@ -66,7 +66,7 @@ const externalTokenSellConversation = async (
     }
 
     if (totalTokenBalance === 0) {
-      await ctx.editMessageText(
+      await safeEditMessageText(ctx,
         "❌ No tokens found in your funding wallet for this token address."
       );
       await conversation.halt();
@@ -128,7 +128,7 @@ const externalTokenSellConversation = async (
       .text("❌ Cancel", "cancel_external_sell")
       .row();
 
-    await ctx.editMessageText(confirmationMessage, {
+    await safeEditMessageText(ctx, confirmationMessage, {
       parse_mode: "Markdown",
       reply_markup: keyboard,
     });
