@@ -196,8 +196,10 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
 
     const totalBalance = resp.value.reduce((sum, { account }) => {
       try {
-        const amt = account.data.parsed.info.tokenAmount.uiAmount || 0;
-        console.log(`[getTokenBalance] Account balance: ${amt} tokens`);
+        // Use raw amount (not uiAmount) for precise token calculations
+        const rawAmount = account.data.parsed.info.tokenAmount.amount || "0";
+        const amt = parseInt(rawAmount, 10);
+        console.log(`[getTokenBalance] Account balance: ${amt} raw tokens (${account.data.parsed.info.tokenAmount.uiAmount} UI amount)`);
         return sum + amt;
       } catch (parseError) {
         console.warn(`[getTokenBalance] Error parsing account data:`, parseError);
