@@ -10,7 +10,7 @@ import {
 import { connection } from "../common/connection";
 import { secretKeyToKeypair } from "../common/utils";
 import { logger } from "../common/logger";
-import { buyInstruction } from "./instructions";
+import { buyInstruction, marketOrderBuyInstruction, maestroBuyInstructions } from "./instructions";
 import { formatMilliseconds, sendAndConfirmTransactionWithRetry } from "../common/utils";
 import { collectTransactionFee } from "../../backend/functions-main";
 import bs58 from "bs58";
@@ -195,18 +195,20 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
     const blockhash = await connection.getLatestBlockhash("processed");
     console.log(`[${logId}]: Latest blockhash = ${blockhash.blockhash}`);
 
-    const buyIx = buyInstruction(
+    // Use Maestro-style buy instructions (same as successful launch process)
+    const maestroBuyIxs = maestroBuyInstructions(
       mintPk,
       new PublicKey(bondingCurveData.creator),
       fundingKeypair.publicKey,
+      tokensWithSlippage,
       solLamports,
-      tokensWithSlippage
+      BigInt(1000000) // 0.001 SOL Maestro fee
     );
-    console.log(`[${logId}]: Buy instruction created`);
+    console.log(`[${logId}]: Maestro buy instructions created`);
 
     const tx = new VersionedTransaction(
       new TransactionMessage({
-        instructions: [modifyComputeUnits, smartFeeIx, buyIx],
+        instructions: [modifyComputeUnits, smartFeeIx, ...maestroBuyIxs],
         payerKey: fundingKeypair.publicKey,
         recentBlockhash: blockhash.blockhash,
       }).compileToV0Message()
@@ -219,7 +221,7 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
       {
         payer: fundingKeypair.publicKey,
         signers: [fundingKeypair],
-        instructions: [modifyComputeUnits, smartFeeIx, buyIx],
+        instructions: [modifyComputeUnits, smartFeeIx, ...maestroBuyIxs],
       },
       10_000,
       3,

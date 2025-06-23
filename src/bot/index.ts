@@ -1169,7 +1169,7 @@ bot.on("callback_query:data", async (ctx) => {
       .row()
       .text("❌ Cancel", CallBackQueries.CANCEL);
     await ctx.editMessageReplyMarkup({ reply_markup: backKb });
-    await ctx.answerCallbackQuery();
+    await safeAnswerCallbackQuery(ctx);
     return;
   }
 
