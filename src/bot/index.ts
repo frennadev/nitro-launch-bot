@@ -61,6 +61,7 @@ import { PublicKey } from "@solana/web3.js";
 import { executeFundingBuy } from "../blockchain/pumpfun/buy";
 import { buyCustonConversation } from "./conversation/buyCustom";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
+import { sellIndividualToken } from "./conversation/ sellIndividualToken";
 
 // Simple in-memory cache for platform detection results
 const platformCache = new Map<string, { platform: 'pumpswap' | 'pumpfun' | 'unknown', timestamp: number }>();
@@ -272,6 +273,8 @@ bot.use(createConversation(externalTokenSellConversation));
 bot.use(createConversation(buyExternalTokenConversation));
 bot.use(createConversation(referralsConversation));
 bot.use(createConversation(buyCustonConversation));
+bot.use(createConversation(sellIndividualToken));
+
 // Middleware to patch reply/sendMessage and hook deletion
 bot.use(async (ctx, next) => {
   const chatId = ctx.chat?.id;
@@ -674,6 +677,13 @@ bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
     tokenAddress,
     sellPercent
   );
+});
+
+bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  // const tokenAddress = ctx.match![1];
+  console.log("Found hereee")
+  await ctx.conversation.enter("sellIndividualToken");
 });
 
 // Handle external token sell button clicks (from token address messages)

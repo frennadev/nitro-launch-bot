@@ -112,6 +112,7 @@ const viewTokensConversation = async (
         )
         .row()
         .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
+        .text("📊 Sell Individual Wallet", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`)
         .row();
     } else {
       keyboard
