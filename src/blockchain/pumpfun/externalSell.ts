@@ -311,9 +311,11 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       };
     }
     
-    // Calculate tokens to sell (ensure integer for BigInt conversion)
-    // tokenAmount is already the actual number of tokens to sell (not a percentage)
-    const tokensToSell = BigInt(Math.floor(tokenAmount));
+    // For external tokens, we should sell the entire balance (like executeDevSell with 100%)
+    // The tokenAmount parameter represents the calculated amount, but we want to sell everything
+    const tokensToSell = tokenBalance; // Sell entire balance
+    
+    logger.info(`[${logId}] Token balance: ${tokenBalance.toString()}, selling entire balance: ${tokensToSell.toString()}`);
     
     if (tokensToSell <= BigInt(0)) {
       return {
@@ -322,8 +324,6 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
         platform: 'unknown'
       };
     }
-    
-    logger.info(`[${logId}] Selling ${tokensToSell.toString()} tokens`);
     
     // Use smart platform detection from cache
     let detectedPlatform: 'pumpswap' | 'pumpfun' | 'unknown' | null = null;
