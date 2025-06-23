@@ -67,7 +67,7 @@ interface BuyData {
 interface SellData {
   mint: PublicKey;
   privateKey: string;
-  amount?: bigint; // Optional: if provided, sell this specific amount; if not provided, sell full balance
+  amount?: bigint;
 }
 interface CloseAccountInstructionData {
   instruction: TokenInstruction.CloseAccount;
@@ -117,44 +117,44 @@ class PumpswapCache {
   private poolCache = new Map<string, CachedPoolData>();
   private preparedDataCache = new Map<string, PreparedTransactionData>();
   private preloadingPromises = new Map<string, Promise<void>>(); // Track ongoing preloads
-  
+
   // Cache TTL configurations
   private readonly POOL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes for pool data
   private readonly RESERVE_CACHE_TTL = 30 * 1000; // 30 seconds for reserve balances
   private readonly PREPARED_DATA_TTL = 10 * 60 * 1000; // 10 minutes for prepared transaction data
-  
+
   static getInstance(): PumpswapCache {
     if (!PumpswapCache.instance) {
       PumpswapCache.instance = new PumpswapCache();
     }
     return PumpswapCache.instance;
   }
-  
+
   // Cache pool information with automatic TTL management
   setPoolInfo(tokenMint: string, poolInfo: PoolInfo): void {
     this.poolCache.set(tokenMint, {
       poolInfo,
-      lastUpdated: Date.now()
+      lastUpdated: Date.now(),
     });
     console.log(`[PumpswapCache] Cached pool info for ${tokenMint}`);
   }
-  
+
   // Get cached pool info with TTL check
   getPoolInfo(tokenMint: string): PoolInfo | null {
     const cached = this.poolCache.get(tokenMint);
     if (!cached) return null;
-    
+
     const isExpired = Date.now() - cached.lastUpdated > this.POOL_CACHE_TTL;
     if (isExpired) {
       this.poolCache.delete(tokenMint);
       console.log(`[PumpswapCache] Pool cache expired for ${tokenMint}`);
       return null;
     }
-    
+
     console.log(`[PumpswapCache] Using cached pool info for ${tokenMint}`);
     return cached.poolInfo;
   }
-  
+
   // Cache reserve balances for pricing calculations
   setReserveBalances(tokenMint: string, baseBalance: bigint, quoteBalance: bigint): void {
     const cached = this.poolCache.get(tokenMint);
@@ -162,46 +162,46 @@ class PumpswapCache {
       cached.reserveBalances = {
         baseBalance,
         quoteBalance,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
       console.log(`[PumpswapCache] Cached reserve balances for ${tokenMint}`);
     }
   }
-  
+
   // Get cached reserve balances with TTL check
   getReserveBalances(tokenMint: string): { baseBalance: bigint; quoteBalance: bigint } | null {
     const cached = this.poolCache.get(tokenMint);
     if (!cached?.reserveBalances) return null;
-    
+
     const isExpired = Date.now() - cached.reserveBalances.timestamp > this.RESERVE_CACHE_TTL;
     if (isExpired) {
       cached.reserveBalances = undefined;
       console.log(`[PumpswapCache] Reserve cache expired for ${tokenMint}`);
       return null;
     }
-    
+
     console.log(`[PumpswapCache] Using cached reserve balances for ${tokenMint}`);
     return {
       baseBalance: cached.reserveBalances.baseBalance,
-      quoteBalance: cached.reserveBalances.quoteBalance
+      quoteBalance: cached.reserveBalances.quoteBalance,
     };
   }
-  
+
   // Cache prepared transaction data (addresses, accounts, etc.)
   setPreparedData(tokenMint: string, data: PreparedTransactionData): void {
     this.preparedDataCache.set(tokenMint, data);
     console.log(`[PumpswapCache] Cached prepared transaction data for ${tokenMint}`);
   }
-  
+
   // Get cached prepared transaction data
   getPreparedData(tokenMint: string): PreparedTransactionData | null {
     const cached = this.preparedDataCache.get(tokenMint);
     if (!cached) return null;
-    
+
     console.log(`[PumpswapCache] Using cached prepared transaction data for ${tokenMint}`);
     return cached;
   }
-  
+
   // Wait for ongoing preload to complete before starting new operations
   async waitForPreloadIfInProgress(tokenMint: string): Promise<void> {
     const ongoingPreload = this.preloadingPromises.get(tokenMint);
@@ -215,7 +215,7 @@ class PumpswapCache {
       }
     }
   }
-  
+
   // Preload pool data in background (non-blocking)
   async preloadPoolData(tokenMint: string): Promise<void> {
     // Check if already preloading
@@ -223,53 +223,55 @@ class PumpswapCache {
       console.log(`[PumpswapCache] Preload already in progress for ${tokenMint}`);
       return this.preloadingPromises.get(tokenMint)!;
     }
-    
+
     // Check if we already have fresh data
     const cached = this.getPoolInfo(tokenMint);
     if (cached) {
       console.log(`[PumpswapCache] Pool data already cached for ${tokenMint}`);
       return;
     }
-    
+
     const preloadPromise = this._performPreload(tokenMint);
     this.preloadingPromises.set(tokenMint, preloadPromise);
-    
+
     // Clean up promise when done
     preloadPromise.finally(() => {
       this.preloadingPromises.delete(tokenMint);
     });
-    
+
     return preloadPromise;
   }
-  
+
   private async _performPreload(tokenMint: string): Promise<void> {
     try {
       console.log(`[PumpswapCache] Starting optimized preload for ${tokenMint}...`);
       const start = Date.now();
-      
+
       // Import the optimized pool discovery function
       const { getTokenPoolInfo } = await import("../backend/get-poolInfo");
-      
+
       const poolInfo = await getTokenPoolInfo(tokenMint);
       if (poolInfo) {
         this.setPoolInfo(tokenMint, poolInfo);
-        
+
         // Also preload reserve balances in parallel for immediate use
         try {
           const [baseInfo, quoteInfo] = await Promise.all([
             connection.getTokenAccountBalance(poolInfo.poolBaseTokenAccount),
-            connection.getTokenAccountBalance(poolInfo.poolQuoteTokenAccount)
+            connection.getTokenAccountBalance(poolInfo.poolQuoteTokenAccount),
           ]);
-          
+
           const baseBalance = BigInt(baseInfo.value?.amount || 0);
           const quoteBalance = BigInt(quoteInfo.value?.amount || 0);
           this.setReserveBalances(tokenMint, baseBalance, quoteBalance);
-          
+
           console.log(`[PumpswapCache] Optimized preload completed for ${tokenMint} in ${Date.now() - start}ms`);
         } catch (err) {
           console.warn(`[PumpswapCache] Failed to preload reserve balances for ${tokenMint}:`, err);
           // Still cache pool info even if balance fetch fails
-          console.log(`[PumpswapCache] Pool info cached despite balance fetch failure for ${tokenMint} in ${Date.now() - start}ms`);
+          console.log(
+            `[PumpswapCache] Pool info cached despite balance fetch failure for ${tokenMint} in ${Date.now() - start}ms`
+          );
         }
       } else {
         console.log(`[PumpswapCache] No pool found for ${tokenMint} in ${Date.now() - start}ms`);
@@ -279,25 +281,25 @@ class PumpswapCache {
       throw err; // Re-throw so waiters know it failed
     }
   }
-  
+
   // Clear all expired entries (maintenance)
   clearExpired(): void {
     const now = Date.now();
     let clearedCount = 0;
-    
+
     for (const [key, cached] of this.poolCache.entries()) {
       if (now - cached.lastUpdated > this.POOL_CACHE_TTL) {
         this.poolCache.delete(key);
         clearedCount++;
       }
     }
-    
+
     for (const [key] of this.preparedDataCache.entries()) {
       // Since we don't track timestamp for prepared data, clear all (they'll be recreated quickly)
       this.preparedDataCache.delete(key);
       clearedCount++;
     }
-    
+
     if (clearedCount > 0) {
       console.log(`[PumpswapCache] Cleared ${clearedCount} expired cache entries`);
     }
@@ -335,18 +337,18 @@ export default class PumpswapService {
     const mint = new PublicKey(tokenMint);
     const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, userPublicKey);
     const tokenAta = getAssociatedTokenAddressSync(mint, userPublicKey);
-    
+
     // For graduated tokens, we need to fetch the original bonding curve creator
     // instead of using the pool creator, as they can be different
     let creatorVaultAuthority: PublicKey;
     try {
       // Import bonding curve utilities
       const { getBondingCurve, getBondingCurveData } = await import("../blockchain/pumpfun/utils");
-      
+
       // Get the original bonding curve data to find the correct creator
       const { bondingCurve } = getBondingCurve(mint);
       const bondingCurveData = await getBondingCurveData(bondingCurve);
-      
+
       if (bondingCurveData && bondingCurveData.creator) {
         // Use the original bonding curve creator (this is the correct one for vault authority)
         const originalCreator = new PublicKey(bondingCurveData.creator);
@@ -362,7 +364,7 @@ export default class PumpswapService {
       console.warn(`[PumpswapService] Error fetching bonding curve creator, using pool creator: ${error.message}`);
       creatorVaultAuthority = getCreatorVaultAuthority(new PublicKey(poolInfo.coinCreator));
     }
-    
+
     const creatorVaultAta = getAssociatedTokenAddressSync(poolInfo.quoteMint, creatorVaultAuthority, true);
     const protocolFeeAta = new PublicKey("7xQYoUjUJF1Kg6WVczoTAkaNhn5syQYcbvjmFrhjWpx");
 
@@ -370,23 +372,28 @@ export default class PumpswapService {
       poolInfo,
       associatedTokenAccounts: {
         wsolAta,
-        tokenAta
+        tokenAta,
       },
       creatorVault: {
         authority: creatorVaultAuthority,
-        ata: creatorVaultAta
+        ata: creatorVaultAta,
       },
-      protocolFeeAta
+      protocolFeeAta,
     };
 
     this.cache.setPreparedData(tokenMint, preparedData);
     console.log(`[PumpswapService] Transaction data prepared in ${Date.now() - start}ms`);
-    
+
     return preparedData;
   }
 
   // Optimized amount calculation with caching
-  private async getOptimizedBuyAmountOut(tokenMint: string, poolInfo: PoolInfo, amountIn: bigint, slippage: number): Promise<bigint> {
+  private async getOptimizedBuyAmountOut(
+    tokenMint: string,
+    poolInfo: PoolInfo,
+    amountIn: bigint,
+    slippage: number
+  ): Promise<bigint> {
     // Try to use cached reserve balances first
     const cachedReserves = this.cache.getReserveBalances(tokenMint);
     if (cachedReserves) {
@@ -402,7 +409,7 @@ export default class PumpswapService {
     // Fallback to fresh RPC calls and cache the results
     const [baseInfo, quoteInfo] = await Promise.all([
       connection.getTokenAccountBalance(poolInfo.poolBaseTokenAccount),
-      connection.getTokenAccountBalance(poolInfo.poolQuoteTokenAccount)
+      connection.getTokenAccountBalance(poolInfo.poolQuoteTokenAccount),
     ]);
 
     const baseBalance = BigInt(baseInfo.value?.amount || 0);
@@ -421,7 +428,12 @@ export default class PumpswapService {
   }
 
   // Optimized amount calculation for sells
-  private async getOptimizedSellAmountOut(tokenMint: string, poolInfo: PoolInfo, amountIn: bigint, slippage: number): Promise<bigint> {
+  private async getOptimizedSellAmountOut(
+    tokenMint: string,
+    poolInfo: PoolInfo,
+    amountIn: bigint,
+    slippage: number
+  ): Promise<bigint> {
     // Try to use cached reserve balances first
     const cachedReserves = this.cache.getReserveBalances(tokenMint);
     if (cachedReserves) {
@@ -437,7 +449,7 @@ export default class PumpswapService {
     // Fallback to fresh RPC calls and cache the results
     const [baseInfo, quoteInfo] = await Promise.all([
       connection.getTokenAccountBalance(poolInfo.poolBaseTokenAccount),
-      connection.getTokenAccountBalance(poolInfo.poolQuoteTokenAccount)
+      connection.getTokenAccountBalance(poolInfo.poolQuoteTokenAccount),
     ]);
 
     const baseBalance = BigInt(baseInfo.value?.amount || 0);
@@ -664,13 +676,13 @@ export default class PumpswapService {
   sellTx = async (sellData: SellData) => {
     console.log("[PumpswapService] Starting optimized sell transaction");
     const start = Date.now();
-    const { mint, privateKey, amount } = sellData;
+    const { mint, privateKey, amount: sellAmount, amount } = sellData;
     const slippage = 5;
     const payer = Keypair.fromSecretKey(base58.decode(privateKey));
     const tokenMint = mint.toBase58();
 
     // **DEBUG LOGGING - Track exact values being used**
-    console.log(`[PumpswapService] DEBUG: Received amount parameter = ${amount?.toString() || 'undefined'}`);
+    console.log(`[PumpswapService] DEBUG: Received amount parameter = ${amount?.toString() || "undefined"}`);
 
     console.log(`[PumpswapService] Preparing transaction data...`);
     const prepareStart = Date.now();
@@ -690,17 +702,17 @@ export default class PumpswapService {
 
     // Determine amount to sell: use provided amount or full balance
     const amountToSell = amount !== undefined ? amount : userBalance;
-    
+
     // **DEBUG LOGGING - Track amount calculation**
     console.log(`[PumpswapService] DEBUG: userBalance = ${userBalance.toString()}`);
-    console.log(`[PumpswapService] DEBUG: amount parameter = ${amount?.toString() || 'undefined'}`);
+    console.log(`[PumpswapService] DEBUG: amount parameter = ${amount?.toString() || "undefined"}`);
     console.log(`[PumpswapService] DEBUG: amountToSell calculated = ${amountToSell.toString()}`);
-    
+
     // Validate the amount to sell
     if (amountToSell > userBalance) {
       throw new Error(`Cannot sell ${amountToSell} tokens - only ${userBalance} available`);
     }
-    
+
     if (amountToSell <= BigInt(0)) {
       throw new Error("Amount to sell must be greater than 0");
     }
@@ -721,7 +733,7 @@ export default class PumpswapService {
       pool_base_token_ata: poolInfo.poolBaseTokenAccount,
       pool_quote_token_ata: poolInfo.poolQuoteTokenAccount,
       protocol_fee_ata: protocolFeeAta,
-      base_amount_in: amountToSell,
+      base_amount_in: sellAmount ?? amountToSell,
       min_quote_amount_out: minQuoteOut,
       coin_creator_vault_ata: creatorVault.ata,
       coin_creator_vault_authority: creatorVault.authority,
@@ -745,7 +757,11 @@ export default class PumpswapService {
     );
 
     // Close account instruction to close WSOL account and get SOL back
-    const closeAccount = createCloseAccountInstruction(associatedTokenAccounts.wsolAta, payer.publicKey, payer.publicKey);
+    const closeAccount = createCloseAccountInstruction(
+      associatedTokenAccounts.wsolAta,
+      payer.publicKey,
+      payer.publicKey
+    );
 
     const instructions = [modifyComputeUnits, addPriorityFee, tokenAccountInstruction, sellInstruction, closeAccount];
 

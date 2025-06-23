@@ -29,6 +29,8 @@ export const sellIndividualToken = async (conversation: Conversation<Context>, c
   const totalTokens = holdersWallet.reduce((sum, w) => sum + w.balance, 0);
   const totalValueUsd = holdersWallet.reduce((sum, w) => sum + w.tokenPrice, 0);
 
+  const shortTokenAddress = address.slice(0, 6) + "-" + address.slice(-4);
+
   const header = `
 💊 *${token.name}*
 🔑 Address: \`${token.tokenAddress}\`
@@ -49,6 +51,8 @@ export const sellIndividualToken = async (conversation: Conversation<Context>, c
     })
     .join("\n");
 
+  if (holdersWallet.length < 1) return ctx.reply("🔴 No wallet holds token");
+
   const message = `${header}
 
 *Per-Wallet Breakdown:*
@@ -60,8 +64,8 @@ ${details}`;
     const shortAddr = w.pubkey.slice(0, 6) + "…" + w.pubkey.slice(-4);
     kb.row(
       { text: `🏦 ${shortAddr}`, callback_data: `wallet_${w.pubkey}` },
-      { text: `📈 Sell %`, callback_data: `sellPct_${w.pubkey}` },
-      { text: `💸 Sell All`, callback_data: `sellAll_${w.pubkey}` }
+      { text: `📈 Sell %`, callback_data: `sellPct_${w.pubkey}_${shortTokenAddress}` },
+      { text: `💸 Sell All`, callback_data: `sellAll_${w.pubkey}_${shortTokenAddress}` }
     );
   });
 

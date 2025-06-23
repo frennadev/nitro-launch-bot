@@ -52,6 +52,9 @@ import {
   markTokenAsPumpswap as markTokenAsPumpswapService,
   markTokenAsPumpFun,
 } from "../service/token-detection-service";
+import { TokenModel } from "../backend/models";
+import { handleSingleSell } from "../blockchain/common/singleSell";
+import { sellPercentageMessage } from "./conversation/sellPercent";
 
 // Platform detection and caching for external tokens
 const platformCache = new Map<
@@ -251,6 +254,7 @@ bot.use(createConversation(buyExternalTokenConversation));
 bot.use(createConversation(referralsConversation));
 bot.use(createConversation(buyCustonConversation));
 bot.use(createConversation(sellIndividualToken));
+bot.use(createConversation(sellPercentageMessage));
 
 // Middleware to patch reply/sendMessage and hook deletion
 bot.use(async (ctx, next) => {
@@ -641,6 +645,45 @@ bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   const tokenAddress = ctx.match![1];
   console.log("Found hereee");
   await ctx.conversation.enter("sellIndividualToken", tokenAddress);
+});
+
+bot.callbackQuery(/^sellAll_([^_]+)_([^_]+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  const [, walletAddress, tokenAddress] = ctx.match!;
+
+  console.log("Found hereee", { walletAddress, tokenAddress });
+  const [prefix, suffix] = tokenAddress.split("-");
+  const re = new RegExp(`^${prefix}[A-Za-z0-9]*${suffix}$`);
+
+  const token = await TokenModel.findOne({
+    tokenAddress: { $regex: re },
+  }).exec();
+
+  if (!token) return ctx.reply("Token not found");
+
+  const result = await handleSingleSell(new PublicKey(token.tokenAddress), walletAddress, "all");
+  if (!result) return ctx.reply("❌ Error selling all token in address");
+  const { success, signature } = result;
+  if (success)return ctx.reply(
+    `✅ Sold all tokens in address.\n\nTransaction Signature: <a href="https://solscan.io/tx/${signature}">View Transaction</a>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+bot.callbackQuery(/^sellPct_([^_]+)_([^_]+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  const [, walletAddress, tokenAddress] = ctx.match!;
+
+  console.log("Found hereee", { walletAddress, tokenAddress });
+  const [prefix, suffix] = tokenAddress.split("-");
+  const re = new RegExp(`^${prefix}[A-Za-z0-9]*${suffix}$`);
+
+  const token = await TokenModel.findOne({
+    tokenAddress: { $regex: re },
+  }).exec();
+
+  if (!token) return ctx.reply("Token not found");
+  await ctx.conversation.enter("sellPercentageMessage", { tokenAddress, walletAddress })
 });
 
 // Handle external token buy button clicks (from token address messages)
@@ -1564,6 +1607,7 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
   logger.info(`[TokenDisplay] Starting coordinated preloading for token ${tokenAddress}`);
   const preloadPromises = [
     // Preload Pumpswap pool data (coordinated to prevent race conditions)
+    // @ts-ignore
     import("../../service/pumpswap-service")
       .then((module) => {
         const PumpswapService = module.default;
@@ -1575,6 +1619,7 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
       }),
 
     // Preload platform detection
+    // @ts-ignore
     import("../../service/token-detection-service")
       .then((module) => {
         return module.detectTokenPlatform(tokenAddress);
@@ -1584,6 +1629,7 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
       }),
 
     // Preload pool discovery
+    // @ts-ignore
     import("../../backend/get-poolInfo")
       .then((module) => {
         return module.preloadPumpswapPools();
