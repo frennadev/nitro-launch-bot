@@ -669,6 +669,9 @@ export default class PumpswapService {
     const payer = Keypair.fromSecretKey(base58.decode(privateKey));
     const tokenMint = mint.toBase58();
 
+    // **DEBUG LOGGING - Track exact values being used**
+    console.log(`[PumpswapService] DEBUG: Received amount parameter = ${amount?.toString() || 'undefined'}`);
+
     console.log(`[PumpswapService] Preparing transaction data...`);
     const prepareStart = Date.now();
     const preparedData = await this.prepareTransactionData(tokenMint, payer.publicKey);
@@ -687,6 +690,11 @@ export default class PumpswapService {
 
     // Determine amount to sell: use provided amount or full balance
     const amountToSell = amount !== undefined ? amount : userBalance;
+    
+    // **DEBUG LOGGING - Track amount calculation**
+    console.log(`[PumpswapService] DEBUG: userBalance = ${userBalance.toString()}`);
+    console.log(`[PumpswapService] DEBUG: amount parameter = ${amount?.toString() || 'undefined'}`);
+    console.log(`[PumpswapService] DEBUG: amountToSell calculated = ${amountToSell.toString()}`);
     
     // Validate the amount to sell
     if (amountToSell > userBalance) {

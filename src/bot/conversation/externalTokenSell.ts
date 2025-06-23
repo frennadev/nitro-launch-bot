@@ -76,6 +76,12 @@ const externalTokenSellConversation = async (
     // Calculate tokens to sell immediately
     const tokensToSell = Math.floor((totalTokenBalance * sellPercent) / 100);
 
+    // **DEBUG LOGGING - Track exact calculation**
+    logger.info(`[ExternalTokenSell] DEBUG: totalTokenBalance = ${totalTokenBalance}`);
+    logger.info(`[ExternalTokenSell] DEBUG: sellPercent = ${sellPercent}%`);
+    logger.info(`[ExternalTokenSell] DEBUG: tokensToSell calculated = ${tokensToSell}`);
+    logger.info(`[ExternalTokenSell] DEBUG: Calculation: Math.floor((${totalTokenBalance} * ${sellPercent}) / 100) = ${tokensToSell}`);
+
     // Get token information in background (optional, don't block on this)
     let tokenName = "Unknown Token";
     let tokenSymbol = "Unknown";

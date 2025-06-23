@@ -300,6 +300,10 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     const mintPublicKey = new PublicKey(tokenAddress);
     const tokensToSell = BigInt(Math.floor(tokenAmount));
     
+    // **DEBUG LOGGING - Track exact values being used**
+    logger.info(`[${logId}] DEBUG: tokenAmount parameter = ${tokenAmount}`);
+    logger.info(`[${logId}] DEBUG: tokensToSell calculated = ${tokensToSell.toString()}`);
+    
     // Start Pumpswap data preloading immediately (coordinated with transaction)
     const pumpswapService = new PumpswapService();
     const preloadPromise = pumpswapService.preloadTokenData(tokenAddress);
@@ -310,6 +314,7 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     
     if (cachedPlatform === 'pumpswap') {
       logger.info(`[${logId}] Using cached Pumpswap detection - going directly to Pumpswap`);
+      logger.info(`[${logId}] DEBUG: Calling Pumpswap with amount = ${tokensToSell.toString()}`);
       // Try Pumpswap first since it's cached as confirmed Pumpswap
       try {
         const sellTx = await pumpswapService.sellTx({
@@ -356,6 +361,7 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
         const graduated = await isTokenGraduated(tokenAddress);
         if (graduated === true) {
           logger.info(`[${logId}] Cached PumpFun token has graduated - switching to Pumpswap for better performance`);
+          logger.info(`[${logId}] DEBUG: Calling Pumpswap for graduated token with amount = ${tokensToSell.toString()}`);
           markTokenAsPumpswap(tokenAddress); // Update cache to Pumpswap
           
           // Route to Pumpswap for graduated tokens
@@ -394,6 +400,7 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       
       // Try PumpFun directly since it's cached as confirmed PumpFun (and not graduated)
       try {
+        logger.info(`[${logId}] DEBUG: Calling PumpFun with tokensToSell = ${tokensToSell.toString()}`);
         // Need to get token creator for sellInstruction (same as executeWalletSell)
         const { bondingCurve } = getBondingCurve(mintPublicKey);
         const bondingCurveData = await getBondingCurveData(bondingCurve);
@@ -410,6 +417,8 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
           tokensToSell, 
           BigInt(0) // No minimum SOL output
         );
+        
+        logger.info(`[${logId}] DEBUG: Created PumpFun sellInstruction with amount = ${tokensToSell.toString()}`);
         
         // Add compute budget instructions (same as launch sells)
         const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
@@ -477,6 +486,7 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
       const graduated = await isTokenGraduated(tokenAddress);
       if (graduated === true) {
         logger.info(`[${logId}] Token has graduated to Raydium - routing directly to Pumpswap`);
+        logger.info(`[${logId}] DEBUG: Calling Pumpswap for graduated token (no cache) with amount = ${tokensToSell.toString()}`);
         
                   // Route directly to Pumpswap for graduated tokens
           const sellTx = await pumpswapService.sellTx({
@@ -533,6 +543,7 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
         // Check if it's graduated (should not happen if graduation check above worked)
         if (bondingCurveData.complete) {
           logger.info(`[${logId}] Token is graduated but missed earlier check - routing to Pumpswap`);
+          logger.info(`[${logId}] DEBUG: Calling Pumpswap for missed graduated token with amount = ${tokensToSell.toString()}`);
           markTokenAsPumpswap(tokenAddress); // Mark as permanently Pumpswap
           
           // Route to Pumpswap for graduated tokens
@@ -568,6 +579,7 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
         
         // Active bonding curve - use PumpFun
         logger.info(`[${logId}] Active bonding curve - using PumpFun sell`);
+        logger.info(`[${logId}] DEBUG: Calling PumpFun (fallback detection) with tokensToSell = ${tokensToSell.toString()}`);
         
         // Use exact same sell logic as executeWalletSell (needs token creator)
         const sellIx = sellInstruction(
@@ -577,6 +589,8 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
           tokensToSell, 
           BigInt(0) // No minimum SOL output
         );
+        
+        logger.info(`[${logId}] DEBUG: Created PumpFun sellInstruction (fallback) with amount = ${tokensToSell.toString()}`);
         
         // Add compute budget instructions (same as launch sells)
         const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
@@ -617,7 +631,7 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
         }
         
         logger.info(`[${logId}] PumpFun sell successful: ${result.signature}`);
-        markTokenAsPumpFun(tokenAddress); // Mark as permanently PumpFun
+        markTokenAsPumpFun(tokenAddress);
         
         return {
           success: true,
@@ -638,6 +652,7 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
 
     // Try Pumpswap as fallback
     logger.info(`[${logId}] Attempting Pumpswap sell as fallback`);
+    logger.info(`[${logId}] DEBUG: Calling Pumpswap (final fallback) with amount = ${tokensToSell.toString()}`);
     try {
       const sellTx = await pumpswapService.sellTx({
         mint: mintPublicKey,
