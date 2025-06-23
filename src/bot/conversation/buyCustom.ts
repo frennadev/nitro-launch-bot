@@ -2,7 +2,8 @@ import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { sendMessage } from "../../backend/sender";
 import { getFundingWallet, getUser } from "../../backend/functions";
-import { executeFundingBuy } from "../../blockchain/pumpfun/buy";
+import { executeExternalBuy } from "../../blockchain/pumpfun/externalBuy";
+import { secretKeyToKeypair } from "../../blockchain/common/utils";
 
 export const buyCustonConversation = async (
   conversation: Conversation<Context>,
@@ -36,24 +37,25 @@ export const buyCustonConversation = async (
       return conversation.halt();
     }
     await ctx.reply(`💰 Buying ${buyAmount} SOL of token: ${mint}...`);
-    const result = await executeFundingBuy(
-      mint,
-      fundingWallet.privateKey,
-      buyAmount
-    );
+    
+    // Use new external buy system with automatic platform detection
+    const buyerKeypair = secretKeyToKeypair(fundingWallet.privateKey);
+    const result = await executeExternalBuy(mint, buyerKeypair, buyAmount);
+    
     if (result.success) {
+      const platformText = result.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
       await ctx.reply(
-        `✅ Successfully bought ${buyAmount} SOL of token!\n\nTransaction Signature:\n<code>${result.signature}</code>`,
+        `✅ Successfully bought ${buyAmount} SOL of token via ${platformText}!\n\nTransaction Signature:\n<code>${result.signature}</code>`,
         { parse_mode: "HTML" }
       );
     } else {
       await ctx.reply(
-        "❌ Failed to buy token. Please try again or contact support."
+        `❌ Failed to buy token: ${result.error || "Unknown error"}\n\nPlease try again or contact support.`
       );
     }
     return conversation.halt();
-  } catch (error) {
-    await sendMessage(ctx, `❌ Error buying token`);
+  } catch (error: any) {
+    await sendMessage(ctx, `❌ Error buying token: ${error.message}`);
     return conversation.halt();
   }
 };
