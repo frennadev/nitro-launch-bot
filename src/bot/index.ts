@@ -1,17 +1,5 @@
-import {
-  Bot,
-  InlineKeyboard,
-  type Context,
-  type BotError,
-  GrammyError,
-  HttpError,
-} from "grammy";
-import {
-  Conversation,
-  conversations,
-  createConversation,
-  type ConversationFlavor,
-} from "@grammyjs/conversations";
+import { Bot, InlineKeyboard, type Context, type BotError, GrammyError, HttpError } from "grammy";
+import { Conversation, conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
 import { env } from "../config";
 import {
   createUser,
@@ -48,12 +36,7 @@ import {
 import viewTokensConversation from "./conversation/viewTokenConversation";
 import externalTokenSellConversation from "./conversation/externalTokenSell";
 import { logger } from "../blockchain/common/logger";
-import {
-  getTokenInfo,
-  getTokenBalance,
-  decryptPrivateKey,
-  checkTokenRenouncedAndFrozen,
-} from "../backend/utils";
+import { getTokenInfo, getTokenBalance, decryptPrivateKey, checkTokenRenouncedAndFrozen } from "../backend/utils";
 import { getTransactionFinancialStats } from "../backend/functions-main";
 import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
 import { referralsConversation } from "./conversation/referrals";
@@ -71,7 +54,10 @@ import {
 } from "../service/token-detection-service";
 
 // Platform detection and caching for external tokens
-const platformCache = new Map<string, { platform: 'pumpswap' | 'pumpfun' | 'unknown'; timestamp: number; permanent: boolean }>();
+const platformCache = new Map<
+  string,
+  { platform: "pumpswap" | "pumpfun" | "unknown"; timestamp: number; permanent: boolean }
+>();
 
 // Cache TTL: 5 minutes for temporary results, permanent for confirmed detections
 const PLATFORM_CACHE_TTL = 5 * 60 * 1000;
@@ -80,40 +66,33 @@ const PLATFORM_CACHE_TTL = 5 * 60 * 1000;
 
 // Export function for external use
 export function markTokenAsPumpswap(tokenAddress: string) {
-  platformCache.set(tokenAddress, { platform: 'pumpswap', timestamp: Date.now(), permanent: true });
+  platformCache.set(tokenAddress, { platform: "pumpswap", timestamp: Date.now(), permanent: true });
   console.log(`[platform-cache]: Cached ${tokenAddress.substring(0, 8)} as pumpswap (permanent: true)`);
 }
 
 // Export function for use in external buy/sell operations
-export function getPlatformFromCache(
-  tokenAddress: string
-): "pumpswap" | "pumpfun" | "unknown" | null {
+export function getPlatformFromCache(tokenAddress: string): "pumpswap" | "pumpfun" | "unknown" | null {
   const cached = platformCache.get(tokenAddress);
   if (!cached) return null;
-  
+
   // Permanent cache entries never expire
   if (cached.permanent) return cached.platform;
-  
+
   // Check if temporary cache has expired
   if (Date.now() - cached.timestamp > PLATFORM_CACHE_TTL) {
     platformCache.delete(tokenAddress);
     return null;
   }
-  
+
   return cached.platform;
 }
 
 // Background platform detection function
-async function detectPlatformInBackground(
-  tokenAddress: string,
-  chatId: number
-) {
+async function detectPlatformInBackground(tokenAddress: string, chatId: number) {
   const logId = `bg-detect-${tokenAddress.substring(0, 8)}`;
 
   try {
-    logger.info(
-      `[${logId}]: Starting background platform detection using bonding curve approach`
-    );
+    logger.info(`[${logId}]: Starting background platform detection using bonding curve approach`);
 
     const platform = await detectTokenPlatformWithCache(tokenAddress);
     logger.info(`[${logId}]: Background detection completed: ${platform}`);
@@ -122,9 +101,7 @@ async function detectPlatformInBackground(
     // Note: We're not updating the message here since it's background detection
     // The platform info will be available immediately on next view due to caching
   } catch (error: any) {
-    logger.error(
-      `[${logId}]: Background platform detection failed: ${error.message}`
-    );
+    logger.error(`[${logId}]: Background platform detection failed: ${error.message}`);
   }
 }
 
@@ -141,10 +118,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
 
   // Handle Grammy.js conversation state errors
   if (err.stack && err.stack.includes("Bad replay, expected op")) {
-    logger.warn(
-      "Grammy.js conversation state error detected in global handler:",
-      err.stack
-    );
+    logger.warn("Grammy.js conversation state error detected in global handler:", err.stack);
 
     // Clear the conversation state completely
     const cleared = await clearConversationState(ctx);
@@ -177,8 +151,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   // Don't crash the bot for callback query timeout errors
   if (
     err.error instanceof GrammyError &&
-    (err.error.description.includes("query is too old") ||
-      err.error.description.includes("response timeout expired"))
+    (err.error.description.includes("query is too old") || err.error.description.includes("response timeout expired"))
   ) {
     logger.info("Ignoring callback query timeout error");
     return;
@@ -187,18 +160,13 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   // For other errors, try to notify the user if possible
   if (ctx.chat) {
     ctx
-      .reply(
-        "❌ An unexpected error occurred. Please try again or contact support."
-      )
+      .reply("❌ An unexpected error occurred. Please try again or contact support.")
       .catch(() => logger.error("Failed to send error message to user"));
   }
 });
 
 // Safe wrapper for answerCallbackQuery to handle timeout errors
-async function safeAnswerCallbackQuery(
-  ctx: Context,
-  text?: string
-): Promise<void> {
+async function safeAnswerCallbackQuery(ctx: Context, text?: string): Promise<void> {
   try {
     await ctx.answerCallbackQuery(text);
   } catch (error: any) {
@@ -233,10 +201,7 @@ bot.use(async (ctx, next) => {
   } catch (error: any) {
     // Handle conversation-specific errors
     if (error.message && error.message.includes("Bad replay, expected op")) {
-      logger.warn(
-        "Conversation replay error caught in middleware:",
-        error.message
-      );
+      logger.warn("Conversation replay error caught in middleware:", error.message);
 
       // Clear conversation state completely
       const cleared = await clearConversationState(ctx);
@@ -329,11 +294,7 @@ bot.command("start", async (ctx) => {
     const startPayload = ctx.match; // This gets the text after /start
     let referralCode: string | undefined;
 
-    if (
-      startPayload &&
-      typeof startPayload === "string" &&
-      startPayload.startsWith("REF_")
-    ) {
+    if (startPayload && typeof startPayload === "string" && startPayload.startsWith("REF_")) {
       referralCode = startPayload.replace("REF_", "");
       console.log(`New user with referral code: ${referralCode}`);
     }
@@ -348,12 +309,7 @@ bot.command("start", async (ctx) => {
         referralCode
       );
     } else {
-      user = await createUser(
-        ctx.chat.first_name,
-        ctx.chat.last_name,
-        ctx.chat.username!,
-        ctx.chat.id.toString()
-      );
+      user = await createUser(ctx.chat.first_name, ctx.chat.last_name, ctx.chat.username!, ctx.chat.id.toString());
     }
   }
 
@@ -454,9 +410,7 @@ Choose an option below to get started ⬇️
 
 bot.command("admin", async (ctx) => {
   // Simple admin check - you can enhance this with proper admin user IDs
-  const adminIds = env.ADMIN_IDS
-    ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id))
-    : [];
+  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
     await ctx.reply("❌ Access denied. Admin only command.");
@@ -490,9 +444,7 @@ ${stats.available < 100 ? "⚠️ *Warning: Low address pool\\!*" : "✅ *Addres
 
 bot.command("markused", async (ctx) => {
   // Simple admin check
-  const adminIds = env.ADMIN_IDS
-    ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id))
-    : [];
+  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
     await ctx.reply("❌ Access denied. Admin only command.");
@@ -501,9 +453,7 @@ bot.command("markused", async (ctx) => {
 
   const args = ctx.message?.text?.split(" ");
   if (!args || args.length < 2) {
-    await ctx.reply(
-      "❌ Usage: /markused <address>\n\nExample: /markused <your_token_address>"
-    );
+    await ctx.reply("❌ Usage: /markused <address>\n\nExample: /markused <your_token_address>");
     return;
   }
 
@@ -522,9 +472,7 @@ bot.command("markused", async (ctx) => {
 
 bot.command("removetoken", async (ctx) => {
   // Simple admin check
-  const adminIds = env.ADMIN_IDS
-    ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id))
-    : [];
+  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
     await ctx.reply("❌ Access denied. Admin only command.");
@@ -594,10 +542,7 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
 bot.callbackQuery("del_message", async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "Message deleted");
   if (ctx.callbackQuery.message) {
-    await ctx.api.deleteMessage(
-      ctx.chat!.id,
-      ctx.callbackQuery.message.message_id
-    );
+    await ctx.api.deleteMessage(ctx.chat!.id, ctx.callbackQuery.message.message_id);
   }
 });
 bot.callbackQuery(/^launch_token_(.+)$/, async (ctx) => {
@@ -683,23 +628,17 @@ bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
   // Answer callback query immediately with feedback
   await safeAnswerCallbackQuery(ctx, `💸 Selling ${sellPercent}% of tokens...`);
 
-  logger.info(
-    `[ExternalTokenSell] Executing ${sellPercent}% sell for token: ${tokenAddress}`
-  );
+  logger.info(`[ExternalTokenSell] Executing ${sellPercent}% sell for token: ${tokenAddress}`);
 
   // Start the external token sell conversation
-  await ctx.conversation.enter(
-    "externalTokenSellConversation",
-    tokenAddress,
-    sellPercent
-  );
+  await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, sellPercent);
 });
 
 bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
-  // const tokenAddress = ctx.match![1];
+  const tokenAddress = ctx.match![1];
   console.log("Found hereee");
-  await ctx.conversation.enter("sellIndividualToken");
+  await ctx.conversation.enter("sellIndividualToken", tokenAddress);
 });
 
 // Handle external token buy button clicks (from token address messages)
@@ -707,9 +646,7 @@ bot.callbackQuery(/^buy_external_token_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
 
-  logger.info(
-    `[ExternalTokenBuy] Buy button clicked for token: ${tokenAddress}`
-  );
+  logger.info(`[ExternalTokenBuy] Buy button clicked for token: ${tokenAddress}`);
 
   // Start the external token buy conversation
   await ctx.conversation.enter("buyExternalTokenConversation");
@@ -720,15 +657,12 @@ bot.callbackQuery(CallBackQueries.CANCEL, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "❌ Cancelled");
 
   try {
-    await ctx.editMessageText(
-      "❌ **Operation Cancelled**\n\nYou can send a token address to start over.",
-      { parse_mode: "Markdown" }
-    );
+    await ctx.editMessageText("❌ **Operation Cancelled**\n\nYou can send a token address to start over.", {
+      parse_mode: "Markdown",
+    });
   } catch (error) {
     // If editing fails, send a new message
-    await ctx.reply(
-      "❌ **Operation Cancelled**\n\nYou can send a token address to start over."
-    );
+    await ctx.reply("❌ **Operation Cancelled**\n\nYou can send a token address to start over.");
   }
 });
 
@@ -737,14 +671,11 @@ bot.callbackQuery(CallBackQueries.CANCEL_EXTERNAL_BUY, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "❌ Buy cancelled");
 
   try {
-    await ctx.editMessageText(
-      "❌ **External token buy cancelled**\n\nYou can send a token address to start over.",
-      { parse_mode: "Markdown" }
-    );
+    await ctx.editMessageText("❌ **External token buy cancelled**\n\nYou can send a token address to start over.", {
+      parse_mode: "Markdown",
+    });
   } catch (error) {
-    await ctx.reply(
-      "❌ **External token buy cancelled**\n\nYou can send a token address to start over."
-    );
+    await ctx.reply("❌ **External token buy cancelled**\n\nYou can send a token address to start over.");
   }
 });
 
@@ -752,14 +683,11 @@ bot.callbackQuery(CallBackQueries.CANCEL_WITHDRAWAL, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "❌ Withdrawal cancelled");
 
   try {
-    await ctx.editMessageText(
-      "❌ **Withdrawal cancelled**\n\nUse /menu to return to main menu.",
-      { parse_mode: "Markdown" }
-    );
+    await ctx.editMessageText("❌ **Withdrawal cancelled**\n\nUse /menu to return to main menu.", {
+      parse_mode: "Markdown",
+    });
   } catch (error) {
-    await ctx.reply(
-      "❌ **Withdrawal cancelled**\n\nUse /menu to return to main menu."
-    );
+    await ctx.reply("❌ **Withdrawal cancelled**\n\nUse /menu to return to main menu.");
   }
 });
 
@@ -767,14 +695,11 @@ bot.callbackQuery(CallBackQueries.CANCEL_DEV_WALLET, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "❌ Dev wallet operation cancelled");
 
   try {
-    await ctx.editMessageText(
-      "❌ **Dev wallet operation cancelled**\n\nUse /menu to return to main menu.",
-      { parse_mode: "Markdown" }
-    );
+    await ctx.editMessageText("❌ **Dev wallet operation cancelled**\n\nUse /menu to return to main menu.", {
+      parse_mode: "Markdown",
+    });
   } catch (error) {
-    await ctx.reply(
-      "❌ **Dev wallet operation cancelled**\n\nUse /menu to return to main menu."
-    );
+    await ctx.reply("❌ **Dev wallet operation cancelled**\n\nUse /menu to return to main menu.");
   }
 });
 
@@ -782,14 +707,11 @@ bot.callbackQuery(CallBackQueries.CANCEL_BUYER_WALLET, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "❌ Buyer wallet operation cancelled");
 
   try {
-    await ctx.editMessageText(
-      "❌ **Buyer wallet operation cancelled**\n\nUse /menu to return to main menu.",
-      { parse_mode: "Markdown" }
-    );
+    await ctx.editMessageText("❌ **Buyer wallet operation cancelled**\n\nUse /menu to return to main menu.", {
+      parse_mode: "Markdown",
+    });
   } catch (error) {
-    await ctx.reply(
-      "❌ **Buyer wallet operation cancelled**\n\nUse /menu to return to main menu."
-    );
+    await ctx.reply("❌ **Buyer wallet operation cancelled**\n\nUse /menu to return to main menu.");
   }
 });
 
@@ -815,15 +737,11 @@ bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
       await ctx.conversation.enter("launchTokenConversation", tokenAddress);
     } else {
       // If we can't extract the token address, guide user to tokens list
-      await ctx.reply(
-        "🔄 Please go to 'View Tokens' and select the token you want to launch."
-      );
+      await ctx.reply("🔄 Please go to 'View Tokens' and select the token you want to launch.");
     }
   } catch (error) {
     logger.error("Error handling RETRY_LAUNCH:", error);
-    await ctx.reply(
-      "❌ Unable to retry launch. Please go to 'View Tokens' and try launching again."
-    );
+    await ctx.reply("❌ Unable to retry launch. Please go to 'View Tokens' and try launching again.");
   }
 });
 
@@ -832,43 +750,41 @@ bot.command("buyexternal", async (ctx) => {
   await ctx.conversation.enter("buy-external-token");
 });
 
-bot.callbackQuery(
-  new RegExp(`^${CallBackQueries.VIEW_TOKEN_TRADES}_`),
-  async (ctx) => {
-    // Get user ID from context
-    const userId = ctx.chat.id.toString();
-    const user = await getUser(userId);
-    if (!user) {
-      await ctx.reply("Unrecognized user ❌");
+bot.callbackQuery(new RegExp(`^${CallBackQueries.VIEW_TOKEN_TRADES}_`), async (ctx) => {
+  // Get user ID from context
+  const userId = ctx?.chat!.id.toString();
+  const user = await getUser(userId);
+  if (!user) {
+    await ctx.reply("Unrecognized user ❌");
+    return;
+  }
+  await safeAnswerCallbackQuery(ctx, "💰 Loading");
+
+  const tokenAddress = ctx.callbackQuery.data.split("_").pop();
+  if (!tokenAddress) {
+    await ctx.reply("❌ Invalid token address.");
+    return;
+  }
+
+  try {
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    if (!tokenInfo) {
+      await ctx.reply("❌ Token not found.");
       return;
     }
-    await safeAnswerCallbackQuery(ctx, "💰 Loading");
 
-    const tokenAddress = ctx.callbackQuery.data.split("_").pop();
-    if (!tokenAddress) {
-      await ctx.reply("❌ Invalid token address.");
-      return;
-    }
+    // TODO fetch actual trade history
+    const pnl = "-65.92%";
+    const pi = "-0.02%";
+    const age = "35:00";
+    const initial = 1.5;
+    const payout = 2.0;
+    const marketCap = formatUSD(tokenInfo.marketCap);
+    const price = tokenInfo.priceUsd;
+    const curveProgress = "50%"; // Placeholder
 
-    try {
-      const tokenInfo = await getTokenInfo(tokenAddress);
-      if (!tokenInfo) {
-        await ctx.reply("❌ Token not found.");
-        return;
-      }
-
-      // TODO fetch actual trade history
-      const pnl = "-65.92%";
-      const pi = "-0.02%";
-      const age = "35:00";
-      const initial = 1.5;
-      const payout = 2.0;
-      const marketCap = formatUSD(tokenInfo.marketCap);
-      const price = tokenInfo.priceUsd;
-      const curveProgress = "50%"; // Placeholder
-
-      const message = await ctx.reply(
-        `
+    const message = await ctx.reply(
+      `
 🌑 $${tokenInfo.baseToken.symbol} 🕛 ${age} 🌟<a href="">Refererral</a> 
 
 💳 Main 🚀 ${pnl} PI: ${pi}
@@ -881,72 +797,42 @@ Tokens: 2.3% | Worth: ${payout.toFixed(2)} SOL
 📈 Bonding Curve Progress: <b>${curveProgress}</b>
 
 ⚠️ Automatic updates are disabled and can be resumed by clicking the 🔄 Refresh button. Limit orders are not impacted.`,
-        {
-          parse_mode: "HTML",
-          reply_markup: new InlineKeyboard()
-            .text("🔙 Back", `sell_external_token_`)
-            .text("🔃 Refresh", `launch_token_`)
-            .text("⏭️ Next", `${CallBackQueries.VIEW_TOKEN_TRADES}_`)
-            .row()
-            .text(`Copy CA`, `launch_token_`)
-            .text(`↔️ Go to Buy`, `launch_token_`)
-            .row()
-            .text(`💳 Main 🔄`, `launch_token_`)
-            .text(`🔴 Multi`, `launch_token_`)
-            .row()
-            .text(
-              "Sell initials",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "☢️ Sell All",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "Sell X %",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .row()
-            .text(
-              "25%",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "50%",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "75%",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "100%",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .row()
-            .text(
-              "💸 Generate PNL",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "📊 Chart",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
+      {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard()
+          .text("🔙 Back", `sell_external_token_`)
+          .text("🔃 Refresh", `launch_token_`)
+          .text("⏭️ Next", `${CallBackQueries.VIEW_TOKEN_TRADES}_`)
+          .row()
+          .text(`Copy CA`, `launch_token_`)
+          .text(`↔️ Go to Buy`, `launch_token_`)
+          .row()
+          .text(`💳 Main 🔄`, `launch_token_`)
+          .text(`🔴 Multi`, `launch_token_`)
+          .row()
+          .text("Sell initials", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+          .text("☢️ Sell All", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+          .text("Sell X %", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+          .row()
+          .text("25%", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+          .text("50%", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+          .text("75%", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+          .text("100%", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+          .row()
+          .text("💸 Generate PNL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+          .text("📊 Chart", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
 
-            .row()
-            .text("❌ Cancel", CallBackQueries.CANCEL),
-        }
-      );
+          .row()
+          .text("❌ Cancel", CallBackQueries.CANCEL),
+      }
+    );
 
-      await bot.api.pinChatMessage(userId, message.message_id);
-    } catch (error) {
-      logger.error("Error fetching trade history:", error);
-      await ctx.reply(
-        "❌ Error fetching trade history. Please try again later."
-      );
-    }
+    await bot.api.pinChatMessage(userId, message.message_id);
+  } catch (error) {
+    logger.error("Error fetching trade history:", error);
+    await ctx.reply("❌ Error fetching trade history. Please try again later.");
   }
-);
+});
 
 bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
 
@@ -984,19 +870,13 @@ bot.on("message:text", async (ctx) => {
               let totalTokenBalance = 0;
 
               try {
-                const balance = await getTokenBalance(
-                  text,
-                  fundingWallet.publicKey
-                );
+                const balance = await getTokenBalance(text, fundingWallet.publicKey);
                 if (balance > 0) {
                   totalTokenBalance = balance;
                   walletsWithBalance = 1;
                 }
               } catch (error) {
-                logger.warn(
-                  `Error checking balance for funding wallet ${fundingWallet.publicKey}:`,
-                  error
-                );
+                logger.warn(`Error checking balance for funding wallet ${fundingWallet.publicKey}:`, error);
               }
 
               if (walletsWithBalance > 0) {
@@ -1023,9 +903,7 @@ bot.on("message:text", async (ctx) => {
           } else {
             platformInfo = "❓ Unknown platform";
           }
-          logger.info(
-            `[token-display] Using cached platform for ${text}: ${cachedPlatform}`
-          );
+          logger.info(`[token-display] Using cached platform for ${text}: ${cachedPlatform}`);
         } else {
           // Start platform detection in background (non-blocking)
           detectPlatformInBackground(text, ctx.chat.id);
@@ -1093,11 +971,7 @@ bot.on("message:text", async (ctx) => {
           },
         ];
 
-        const linksHtml = links
-          .map(
-            (link) => `<a href="${link.url}" target="_blank">${link.abbr}</a>`
-          )
-          .join(" • ");
+        const linksHtml = links.map((link) => `<a href="${link.url}" target="_blank">${link.abbr}</a>`).join(" • ");
 
         await ctx.reply(
           `
@@ -1127,74 +1001,35 @@ ${holdingsText}`,
             parse_mode: "HTML",
             reply_markup: new InlineKeyboard()
               .text("🔀 Switch to Sell", `sell_external_token_${text}`)
-              .text(
-                "👀 Monitor",
-                `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`
-              )
+              .text("👀 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
               .text("🔃 Refresh", `launch_token_${text}`)
               .row()
-              .text(
-                `💰 Active wallets: ${walletsWithBalance}`,
-                `launch_token_${text}`
-              )
+              .text(`💰 Active wallets: ${walletsWithBalance}`, `launch_token_${text}`)
               .row()
-              .text(
-                "💰 0.5 SOL",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
+              .text("💰 0.5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .text("💰 1 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .text("💰 2 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .row()
               .text("💰 5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text(
-                "💰 10 SOL",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
+              .text("💰 10 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .text("💰 X SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .row()
-              .text(
-                "💰 Buy Tip: 0 SOL",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
-              .text(
-                "🛍️ Slippage: 0%",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
+              .text("💰 Buy Tip: 0 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .text("🛍️ Slippage: 0%", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .row()
-              .text(
-                "📈 Limit Orders",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
-              .text(
-                "💸 Generate PNL",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
+              .text("📈 Limit Orders", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .text("💸 Generate PNL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .row()
-              .text(
-                "🔴 Auto Tip (0.0001 SOL)",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
-              .text(
-                "🔴 Buy Protection",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
+              .text("🔴 Auto Tip (0.0001 SOL)", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .text("🔴 Buy Protection", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .row()
-              .text(
-                "🔀 Split Tokens",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
-              .text(
-                "👀 Hide Position",
-                `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`
-              )
+              .text("🔀 Split Tokens", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .text("👀 Hide Position", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .row()
               .text("🔙 Back", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .text("📊 Chart", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .row()
-              .text(
-                "💸 Sell Token",
-                `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`
-              )
+              .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
               .row()
               .text("❌ Cancel", CallBackQueries.CANCEL),
           }
@@ -1215,13 +1050,9 @@ bot.command("reset", async (ctx) => {
   try {
     const cleared = await clearConversationState(ctx);
     if (cleared) {
-      await ctx.reply(
-        "✅ Conversation state cleared successfully. You can now start fresh conversations."
-      );
+      await ctx.reply("✅ Conversation state cleared successfully. You can now start fresh conversations.");
     } else {
-      await ctx.reply(
-        "⚠️ Failed to clear conversation state completely. Please try again or contact support."
-      );
+      await ctx.reply("⚠️ Failed to clear conversation state completely. Please try again or contact support.");
     }
   } catch (error: any) {
     logger.error("Error in reset command:", error);
@@ -1291,9 +1122,7 @@ bot.command("fixlaunch", async (ctx) => {
     logger.info("Fix launch completed for user:", ctx.chat?.id);
   } catch (error: any) {
     logger.error("Error in fix launch command:", error);
-    await ctx.reply(
-      "❌ Fix launch failed. Please try /forcefix or contact support."
-    );
+    await ctx.reply("❌ Fix launch failed. Please try /forcefix or contact support.");
   }
 });
 
@@ -1365,13 +1194,10 @@ bot.on("callback_query:data", async (ctx) => {
     const backKb = new InlineKeyboard()
       .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${address}`)
       .row()
-      .text(
-        "💸 Sell Token",
-        `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${address}`
-      )
+      .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${address}`)
       .row()
       .text("❌ Cancel", CallBackQueries.CANCEL);
-    
+
     await safeEditMessageReplyMarkup(ctx, backKb);
     return;
   }
@@ -1444,9 +1270,7 @@ bot.on("callback_query:data", async (ctx) => {
     // Answer callback query immediately for buy/sell operations
     await safeAnswerCallbackQuery(
       ctx,
-      tradeAction === "buy"
-        ? `💰 Buying ${buyAmount} SOL...`
-        : `💸 Selling ${buyAmount}%...`
+      tradeAction === "buy" ? `💰 Buying ${buyAmount} SOL...` : `💸 Selling ${buyAmount}%...`
     );
 
     switch (tradeAction) {
@@ -1454,24 +1278,15 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.reply(`💰 Buying ${buyAmount} SOL of token`);
 
         // Use new external buy system with automatic platform detection
-        const { executeExternalBuy } = await import(
-          "../blockchain/pumpfun/externalBuy"
-        );
-        const { secretKeyToKeypair } = await import(
-          "../blockchain/common/utils"
-        );
+        const { executeExternalBuy } = await import("../blockchain/pumpfun/externalBuy");
+        const { secretKeyToKeypair } = await import("../blockchain/common/utils");
 
         try {
           const buyerKeypair = secretKeyToKeypair(fundingWallet!.privateKey);
-          const buyResult = await executeExternalBuy(
-            mint,
-            buyerKeypair,
-            Number(buyAmount)
-          );
+          const buyResult = await executeExternalBuy(mint, buyerKeypair, Number(buyAmount));
 
           if (buyResult.success) {
-            const platformText =
-              buyResult.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
+            const platformText = buyResult.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
             await ctx.reply(
               `✅ Successfully bought ${buyAmount} SOL of token via ${platformText}!\n\nTransaction Signature:\n<code>${buyResult.signature}</code>`,
               { parse_mode: "HTML" }
@@ -1483,9 +1298,7 @@ bot.on("callback_query:data", async (ctx) => {
           }
         } catch (error: any) {
           logger.error(`Quick buy error for ${mint}:`, error);
-          await ctx.reply(
-            `❌ Failed to buy token: ${error.message}\n\nPlease try again or contact support.`
-          );
+          await ctx.reply(`❌ Failed to buy token: ${error.message}\n\nPlease try again or contact support.`);
         }
         break;
 
@@ -1493,43 +1306,27 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.reply(`💰 Selling ${buyAmount}% of token`);
 
         // Use new external sell system with automatic platform detection
-        const { executeExternalSell } = await import(
-          "../blockchain/pumpfun/externalSell"
-        );
-        const { secretKeyToKeypair: sellSecretKeyToKeypair } = await import(
-          "../blockchain/common/utils"
-        );
+        const { executeExternalSell } = await import("../blockchain/pumpfun/externalSell");
+        const { secretKeyToKeypair: sellSecretKeyToKeypair } = await import("../blockchain/common/utils");
         const { getTokenBalance } = await import("../backend/utils");
 
         try {
-          const sellerKeypair = sellSecretKeyToKeypair(
-            fundingWallet!.privateKey
-          );
+          const sellerKeypair = sellSecretKeyToKeypair(fundingWallet!.privateKey);
 
           // Get current token balance
-          const currentBalance = await getTokenBalance(
-            mint,
-            sellerKeypair.publicKey.toBase58()
-          );
+          const currentBalance = await getTokenBalance(mint, sellerKeypair.publicKey.toBase58());
           if (currentBalance <= 0) {
             await ctx.reply("❌ No tokens found to sell.");
             break;
           }
 
           // Calculate tokens to sell based on percentage
-          const tokensToSell = Math.floor(
-            (currentBalance * Number(buyAmount)) / 100
-          );
+          const tokensToSell = Math.floor((currentBalance * Number(buyAmount)) / 100);
 
-          const sellResult = await executeExternalSell(
-            mint,
-            sellerKeypair,
-            tokensToSell
-          );
+          const sellResult = await executeExternalSell(mint, sellerKeypair, tokensToSell);
 
           if (sellResult.success) {
-            const platformText =
-              sellResult.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
+            const platformText = sellResult.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
             const solReceived = sellResult.solReceived
               ? ` (${parseFloat(sellResult.solReceived).toFixed(6)} SOL received)`
               : "";
@@ -1544,9 +1341,7 @@ bot.on("callback_query:data", async (ctx) => {
           }
         } catch (error: any) {
           logger.error(`Quick sell error for ${mint}:`, error);
-          await ctx.reply(
-            `❌ Failed to sell token: ${error.message}\n\nPlease try again or contact support.`
-          );
+          await ctx.reply(`❌ Failed to sell token: ${error.message}\n\nPlease try again or contact support.`);
         }
         break;
 
@@ -1572,9 +1367,7 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
   }
 
   // Start coordinated preloading for faster transactions
-  logger.info(
-    `[TokenDisplay] Starting coordinated preloading for token ${tokenAddress}`
-  );
+  logger.info(`[TokenDisplay] Starting coordinated preloading for token ${tokenAddress}`);
   const preloadPromises = [
     // Preload Pumpswap pool data (coordinated to prevent race conditions)
     import("../../service/pumpswap-service")
@@ -1584,9 +1377,7 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
         return service.preloadTokenData(tokenAddress);
       })
       .catch((err) => {
-        logger.warn(
-          `[TokenDisplay] Pumpswap preload failed (non-critical): ${err.message}`
-        );
+        logger.warn(`[TokenDisplay] Pumpswap preload failed (non-critical): ${err.message}`);
       }),
 
     // Preload platform detection
@@ -1595,9 +1386,7 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
         return module.detectTokenPlatform(tokenAddress);
       })
       .catch((err) => {
-        logger.warn(
-          `[TokenDisplay] Platform detection preload failed (non-critical): ${err.message}`
-        );
+        logger.warn(`[TokenDisplay] Platform detection preload failed (non-critical): ${err.message}`);
       }),
 
     // Preload pool discovery
@@ -1606,17 +1395,13 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
         return module.preloadPumpswapPools();
       })
       .catch((err) => {
-        logger.warn(
-          `[TokenDisplay] Pool preload failed (non-critical): ${err.message}`
-        );
+        logger.warn(`[TokenDisplay] Pool preload failed (non-critical): ${err.message}`);
       }),
   ];
 
   // Start preloading immediately (non-blocking, but coordinated)
   Promise.allSettled(preloadPromises).then(() => {
-    logger.info(
-      `[TokenDisplay] Coordinated preloading completed for token ${tokenAddress}`
-    );
+    logger.info(`[TokenDisplay] Coordinated preloading completed for token ${tokenAddress}`);
   });
 
   let tokenName = "Unknown Token";
@@ -1670,15 +1455,9 @@ ${holdingsText}
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
-        .text(
-          "💰 Buy Token",
-          `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-        )
+        .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
         .row()
-        .text(
-          "💸 Sell Token",
-          `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${tokenAddress}`
-        )
+        .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${tokenAddress}`)
         .row()
         .text("❌ Cancel", CallBackQueries.CANCEL),
     }
@@ -1686,34 +1465,24 @@ ${holdingsText}
 }
 
 // Callback query handlers for external token actions
-bot.callbackQuery(
-  new RegExp(`^${CallBackQueries.BUY_EXTERNAL_TOKEN}_`),
-  async (ctx) => {
-    try {
-      // Answer callback query immediately
-      await safeAnswerCallbackQuery(ctx, "💰 Loading buy conversation...");
+bot.callbackQuery(new RegExp(`^${CallBackQueries.BUY_EXTERNAL_TOKEN}_`), async (ctx) => {
+  try {
+    // Answer callback query immediately
+    await safeAnswerCallbackQuery(ctx, "💰 Loading buy conversation...");
 
-      const tokenAddress = ctx.callbackQuery.data.split("_").pop();
-      if (tokenAddress) {
-        // Store token address in session or context if needed
-        await ctx.conversation.enter("buy-external-token", { overwrite: true });
-        // You might need to pass the token address to the conversation
-        // This is a simple way; adjust based on your conversation setup
-        await sendMessage(
-          ctx,
-          `💰 Buying external token: <code>${tokenAddress}</code>`,
-          { parse_mode: "HTML" }
-        );
-      }
-    } catch (error) {
-      logger.error("Error handling buy external token callback:", error);
-      await safeAnswerCallbackQuery(
-        ctx,
-        "❌ Error occurred. Please try again."
-      );
+    const tokenAddress = ctx.callbackQuery.data.split("_").pop();
+    if (tokenAddress) {
+      // Store token address in session or context if needed
+      await ctx.conversation.enter("buy-external-token", { overwrite: true });
+      // You might need to pass the token address to the conversation
+      // This is a simple way; adjust based on your conversation setup
+      await sendMessage(ctx, `💰 Buying external token: <code>${tokenAddress}</code>`, { parse_mode: "HTML" });
     }
+  } catch (error) {
+    logger.error("Error handling buy external token callback:", error);
+    await safeAnswerCallbackQuery(ctx, "❌ Error occurred. Please try again.");
   }
-);
+});
 
 // Emergency bypass for token launch when conversation state is corrupted
 bot.callbackQuery(/^emergency_launch_(.+)$/, async (ctx) => {
@@ -1735,9 +1504,7 @@ bot.callbackQuery(/^emergency_launch_(.+)$/, async (ctx) => {
     });
   } catch (error: any) {
     logger.error("Emergency launch bypass failed:", error);
-    await ctx.reply(
-      "❌ Emergency launch failed. Please try using /forcefix and then launch normally."
-    );
+    await ctx.reply("❌ Emergency launch failed. Please try using /forcefix and then launch normally.");
   }
 });
 
@@ -1760,9 +1527,7 @@ bot.callbackQuery("direct_launch_recovery", async (ctx) => {
     );
   } catch (error) {
     logger.error("Direct launch recovery failed:", error);
-    await ctx.reply(
-      "❌ Please try: `/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`"
-    );
+    await ctx.reply("❌ Please try: `/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`");
   }
 });
 
@@ -1825,9 +1590,7 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
       // Clear Grammy.js internal conversation state keys
       const grammyConversationKeys = sessionKeys.filter(
         (key) =>
-          key.startsWith("__grammyjs_conversations") ||
-          key.startsWith("__conversations") ||
-          key.includes("__conv_")
+          key.startsWith("__grammyjs_conversations") || key.startsWith("__conversations") || key.includes("__conv_")
       );
 
       grammyConversationKeys.forEach((key) => {
@@ -1851,9 +1614,7 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
           cleared = true;
           logger.info("Successfully exited conversation");
         } else {
-          logger.warn(
-            "Conversation object exists but no halt/exit methods available"
-          );
+          logger.warn("Conversation object exists but no halt/exit methods available");
           // Force clear the conversation object
           delete sessionCtx.conversation;
           cleared = true;
@@ -1889,15 +1650,9 @@ async function clearConversationState(ctx: Context): Promise<boolean> {
     }
 
     if (cleared) {
-      logger.info(
-        "Successfully cleared conversation state for user:",
-        ctx.chat?.id
-      );
+      logger.info("Successfully cleared conversation state for user:", ctx.chat?.id);
     } else {
-      logger.warn(
-        "No conversation state found to clear for user:",
-        ctx.chat?.id
-      );
+      logger.warn("No conversation state found to clear for user:", ctx.chat?.id);
     }
 
     return true; // Return true even if nothing was cleared, as the goal is achieved
@@ -1914,20 +1669,14 @@ bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
 
   const tokenAddress = ctx.match![1];
 
-  logger.info(
-    `[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`
-  );
+  logger.info(`[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`);
 
   // Check if platform detection is still running and cache the result if available
   const cachedPlatform = getCachedPlatform(tokenAddress);
   if (!cachedPlatform) {
-    logger.info(
-      `[ExternalTokenSell] Platform not yet detected for ${tokenAddress}, proceeding anyway`
-    );
+    logger.info(`[ExternalTokenSell] Platform not yet detected for ${tokenAddress}, proceeding anyway`);
   } else {
-    logger.info(
-      `[ExternalTokenSell] Using cached platform ${cachedPlatform} for ${tokenAddress}`
-    );
+    logger.info(`[ExternalTokenSell] Using cached platform ${cachedPlatform} for ${tokenAddress}`);
   }
 
   // Show sell percentage options immediately
@@ -1940,11 +1689,8 @@ bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
     .row()
     .text("❌ Cancel", CallBackQueries.CANCEL);
 
-  await safeEditOrSendMessage(ctx,
-    `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
-    }
-  );
+  await safeEditOrSendMessage(ctx, `💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:`, {
+    parse_mode: "Markdown",
+    reply_markup: keyboard,
+  });
 });
