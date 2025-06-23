@@ -62,57 +62,19 @@ import { executeFundingBuy } from "../blockchain/pumpfun/buy";
 import { buyCustonConversation } from "./conversation/buyCustom";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { sellIndividualToken } from "./conversation/ sellIndividualToken";
+import {
+  getCachedPlatform,
+  setCachedPlatform,
+  detectTokenPlatformWithCache,
+  markTokenAsPumpswap as markTokenAsPumpswapService,
+  markTokenAsPumpFun,
+} from "../service/token-detection-service";
 
-// Enhanced platform cache with permanent Pumpswap storage and smart PumpFun retry
-const platformCache = new Map<
-  string,
-  {
-    platform: "pumpswap" | "pumpfun" | "unknown";
-    timestamp: number;
-    permanent?: boolean;
-  }
->();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes for PumpFun, permanent for Pumpswap
+// Platform detection now handled by service layer
 
-function getCachedPlatform(
-  tokenAddress: string
-): "pumpswap" | "pumpfun" | "unknown" | null {
-  const cached = platformCache.get(tokenAddress);
-  if (!cached) return null;
-
-  // Pumpswap detections are permanent
-  if (cached.platform === "pumpswap" || cached.permanent) {
-    return cached.platform;
-  }
-
-  // PumpFun and unknown have TTL
-  if (Date.now() - cached.timestamp < CACHE_DURATION) {
-    return cached.platform;
-  }
-
-  return null;
-}
-
-function setCachedPlatform(
-  tokenAddress: string,
-  platform: "pumpswap" | "pumpfun" | "unknown",
-  permanent: boolean = false
-) {
-  // Pumpswap is always permanent
-  const isPermanent = platform === "pumpswap" || permanent;
-  platformCache.set(tokenAddress, {
-    platform,
-    timestamp: Date.now(),
-    permanent: isPermanent,
-  });
-}
-
-// Function to mark a token as Pumpswap after PumpFun sell failure
+// Export function for external use
 export function markTokenAsPumpswap(tokenAddress: string) {
-  setCachedPlatform(tokenAddress, "pumpswap", true);
-  logger.info(
-    `Token ${tokenAddress.substring(0, 8)} marked as Pumpswap after PumpFun sell failure`
-  );
+  markTokenAsPumpswapService(tokenAddress);
 }
 
 // Export function for use in external buy/sell operations
@@ -131,34 +93,19 @@ async function detectPlatformInBackground(
 
   try {
     logger.info(
-      `[${logId}] Starting background platform detection for ${tokenAddress}`
+      `[${logId}]: Starting background platform detection using bonding curve approach`
     );
 
-    const { detectTokenPlatform } = await import(
-      "../service/token-detection-service"
+    const platform = await detectTokenPlatformWithCache(tokenAddress);
+    logger.info(`[${logId}]: Background detection completed: ${platform}`);
+
+    // Update the token display with platform info
+    // Note: We're not updating the message here since it's background detection
+    // The platform info will be available immediately on next view due to caching
+  } catch (error: any) {
+    logger.error(
+      `[${logId}]: Background platform detection failed: ${error.message}`
     );
-    const detectionResult = await detectTokenPlatform(tokenAddress);
-
-    let detectedPlatform: "pumpswap" | "pumpfun" | "unknown" = "unknown";
-    let platformInfo = "❓ Unknown platform";
-
-    if (detectionResult.isPumpswap) {
-      detectedPlatform = "pumpswap";
-      platformInfo = "⚡ Pumpswap";
-    } else if (detectionResult.isPumpfun) {
-      detectedPlatform = "pumpfun";
-      platformInfo = "🚀 PumpFun";
-    }
-
-    // Cache the result
-    setCachedPlatform(tokenAddress, detectedPlatform);
-    logger.info(`[${logId}] Platform detected and cached: ${detectedPlatform}`);
-
-    // Platform detection complete - cached for future use
-    // Next buy/sell operations will be much faster
-  } catch (error) {
-    logger.warn(`[${logId}] Background platform detection failed:`, error);
-    setCachedPlatform(tokenAddress, "unknown");
   }
 }
 
@@ -1602,6 +1549,54 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
     return;
   }
 
+  // Start coordinated preloading for faster transactions
+  logger.info(
+    `[TokenDisplay] Starting coordinated preloading for token ${tokenAddress}`
+  );
+  const preloadPromises = [
+    // Preload Pumpswap pool data (coordinated to prevent race conditions)
+    import("../../service/pumpswap-service")
+      .then((module) => {
+        const PumpswapService = module.default;
+        const service = new PumpswapService();
+        return service.preloadTokenData(tokenAddress);
+      })
+      .catch((err) => {
+        logger.warn(
+          `[TokenDisplay] Pumpswap preload failed (non-critical): ${err.message}`
+        );
+      }),
+
+    // Preload platform detection
+    import("../../service/token-detection-service")
+      .then((module) => {
+        return module.detectTokenPlatform(tokenAddress);
+      })
+      .catch((err) => {
+        logger.warn(
+          `[TokenDisplay] Platform detection preload failed (non-critical): ${err.message}`
+        );
+      }),
+
+    // Preload pool discovery
+    import("../../backend/get-poolInfo")
+      .then((module) => {
+        return module.preloadPumpswapPools();
+      })
+      .catch((err) => {
+        logger.warn(
+          `[TokenDisplay] Pool preload failed (non-critical): ${err.message}`
+        );
+      }),
+  ];
+
+  // Start preloading immediately (non-blocking, but coordinated)
+  Promise.allSettled(preloadPromises).then(() => {
+    logger.info(
+      `[TokenDisplay] Coordinated preloading completed for token ${tokenAddress}`
+    );
+  });
+
   let tokenName = "Unknown Token";
   let tokenSymbol = "UNK";
   let isUserToken = false;
@@ -1647,7 +1642,9 @@ Market Data
 💵 Price: ${price}
 
 Your Holdings
-${holdingsText}`,
+${holdingsText}
+
+⚡ <i>Optimized for fast trading</i>`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
