@@ -1,9 +1,12 @@
 import { PublicKey } from "@solana/web3.js";
-import { pumpswap_amm_program_id } from "../service/pumpswap-service";
 
-export const getCreatorVaultAuthority = (creator: PublicKey) => {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from([99, 114, 101, 97, 116, 111, 114, 95, 118, 97, 117, 108, 116]), creator.toBuffer()],
-    pumpswap_amm_program_id
-  )[0];
+// Define the program ID directly to avoid circular imports
+const PUMPSWAP_AMM_PROGRAM_ID = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+
+export const getCreatorVaultAuthority = (creator: PublicKey): PublicKey => {
+  const [vaultAuthority] = PublicKey.findProgramAddressSync(
+    [Buffer.from("vault-authority"), creator.toBuffer()],
+    PUMPSWAP_AMM_PROGRAM_ID
+  );
+  return vaultAuthority;
 };
