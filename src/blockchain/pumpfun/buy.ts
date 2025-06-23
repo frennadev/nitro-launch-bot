@@ -11,6 +11,7 @@ import { connection } from "../common/connection";
 import { secretKeyToKeypair } from "../common/utils";
 import { logger } from "../common/logger";
 import { buyInstruction, marketOrderBuyInstruction } from "./instructions";
+import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { formatMilliseconds, sendAndConfirmTransactionWithRetry } from "../common/utils";
 import { collectTransactionFee } from "../../backend/functions-main";
 import bs58 from "bs58";
@@ -320,6 +321,16 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
     const blockhash = await connection.getLatestBlockhash("processed");
     console.log(`[${logId}]: Latest blockhash = ${blockhash.blockhash}`);
 
+    // Create ATA instruction for external token (same as launch process)
+    const buyerAta = getAssociatedTokenAddressSync(mintPk, fundingKeypair.publicKey);
+    const createAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+      fundingKeypair.publicKey,
+      buyerAta,
+      fundingKeypair.publicKey,
+      mintPk
+    );
+    console.log(`[${logId}]: ATA instruction created`);
+
     // Use standard buy instruction for external tokens
     const buyIx = buyInstruction(
       mintPk,
@@ -332,7 +343,7 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
 
     const tx = new VersionedTransaction(
       new TransactionMessage({
-        instructions: [modifyComputeUnits, smartFeeIx, buyIx],
+        instructions: [modifyComputeUnits, smartFeeIx, createAtaIx, buyIx],
         payerKey: fundingKeypair.publicKey,
         recentBlockhash: blockhash.blockhash,
       }).compileToV0Message()
@@ -345,7 +356,7 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
       {
         payer: fundingKeypair.publicKey,
         signers: [fundingKeypair],
-        instructions: [modifyComputeUnits, smartFeeIx, buyIx],
+        instructions: [modifyComputeUnits, smartFeeIx, createAtaIx, buyIx],
       },
       10_000,
       3,
