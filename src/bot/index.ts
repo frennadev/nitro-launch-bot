@@ -737,6 +737,67 @@ bot.callbackQuery(CallBackQueries.CANCEL, async (ctx) => {
   }
 });
 
+// Optimized handlers for specific cancel types
+bot.callbackQuery(CallBackQueries.CANCEL_EXTERNAL_BUY, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "❌ Buy cancelled");
+  
+  try {
+    await ctx.editMessageText(
+      "❌ **External token buy cancelled**\n\nYou can send a token address to start over.",
+      { parse_mode: "Markdown" }
+    );
+  } catch (error) {
+    await ctx.reply(
+      "❌ **External token buy cancelled**\n\nYou can send a token address to start over."
+    );
+  }
+});
+
+bot.callbackQuery(CallBackQueries.CANCEL_WITHDRAWAL, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "❌ Withdrawal cancelled");
+  
+  try {
+    await ctx.editMessageText(
+      "❌ **Withdrawal cancelled**\n\nUse /menu to return to main menu.",
+      { parse_mode: "Markdown" }
+    );
+  } catch (error) {
+    await ctx.reply(
+      "❌ **Withdrawal cancelled**\n\nUse /menu to return to main menu."
+    );
+  }
+});
+
+bot.callbackQuery(CallBackQueries.CANCEL_DEV_WALLET, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "❌ Dev wallet operation cancelled");
+  
+  try {
+    await ctx.editMessageText(
+      "❌ **Dev wallet operation cancelled**\n\nUse /menu to return to main menu.",
+      { parse_mode: "Markdown" }
+    );
+  } catch (error) {
+    await ctx.reply(
+      "❌ **Dev wallet operation cancelled**\n\nUse /menu to return to main menu."
+    );
+  }
+});
+
+bot.callbackQuery(CallBackQueries.CANCEL_BUYER_WALLET, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "❌ Buyer wallet operation cancelled");
+  
+  try {
+    await ctx.editMessageText(
+      "❌ **Buyer wallet operation cancelled**\n\nUse /menu to return to main menu.",
+      { parse_mode: "Markdown" }
+    );
+  } catch (error) {
+    await ctx.reply(
+      "❌ **Buyer wallet operation cancelled**\n\nUse /menu to return to main menu."
+    );
+  }
+});
+
 // Callback handler for refresh button
 bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
@@ -1179,6 +1240,9 @@ bot.on("callback_query:data", async (ctx) => {
   if (data.startsWith("back-_")) {
     const [action, address] = data.split("_");
     console.log("reached bbbbb");
+    // Answer callback query immediately
+    await safeAnswerCallbackQuery(ctx, "🔄 Loading options...");
+    
     const backKb = new InlineKeyboard()
       .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${address}`)
       .row()
@@ -1189,7 +1253,6 @@ bot.on("callback_query:data", async (ctx) => {
       .row()
       .text("❌ Cancel", CallBackQueries.CANCEL);
     await ctx.editMessageReplyMarkup({ reply_markup: backKb });
-    await safeAnswerCallbackQuery(ctx);
     return;
   }
 
@@ -1199,6 +1262,9 @@ bot.on("callback_query:data", async (ctx) => {
     logger.info(`${action} called`);
     switch (action) {
       case "buy":
+        // Answer callback query immediately
+        await safeAnswerCallbackQuery(ctx, "💰 Loading buy options...");
+        
         const kb = new InlineKeyboard()
           .text("← Back", `back-_${address}`)
           .text("↻ Refresh", `refresh_buy_${address}`)
@@ -1214,10 +1280,12 @@ bot.on("callback_query:data", async (ctx) => {
           .text("Menu", CallBackQueries.BACK);
 
         await ctx.editMessageReplyMarkup({ reply_markup: kb });
-        await ctx.answerCallbackQuery();
         break;
 
       case "sell":
+        // Answer callback query immediately
+        await safeAnswerCallbackQuery(ctx, "💸 Loading sell options...");
+        
         const sellKb = new InlineKeyboard()
           .text("← Back", `back-_${address}`)
           .text("↻ Refresh", `refresh_sell_${address}`)
@@ -1234,7 +1302,6 @@ bot.on("callback_query:data", async (ctx) => {
           .text("Menu", CallBackQueries.BACK);
 
         await ctx.editMessageReplyMarkup({ reply_markup: sellKb });
-        await ctx.answerCallbackQuery();
         break;
 
       default:
@@ -1253,6 +1320,9 @@ bot.on("callback_query:data", async (ctx) => {
       return;
     }
     const fundingWallet = await getFundingWallet(String(user.id));
+
+    // Answer callback query immediately for buy/sell operations
+    await safeAnswerCallbackQuery(ctx, tradeAction === "buy" ? `💰 Buying ${buyAmount} SOL...` : `💸 Selling ${buyAmount}%...`);
 
     switch (tradeAction) {
       case "buy":
@@ -1445,7 +1515,9 @@ bot.callbackQuery(
   new RegExp(`^${CallBackQueries.BUY_EXTERNAL_TOKEN}_`),
   async (ctx) => {
     try {
-      await ctx.answerCallbackQuery();
+      // Answer callback query immediately
+      await safeAnswerCallbackQuery(ctx, "💰 Loading buy conversation...");
+      
       const tokenAddress = ctx.callbackQuery.data.split("_").pop();
       if (tokenAddress) {
         // Store token address in session or context if needed
@@ -1460,9 +1532,7 @@ bot.callbackQuery(
       }
     } catch (error) {
       logger.error("Error handling buy external token callback:", error);
-      await ctx.answerCallbackQuery({
-        text: "❌ Error occurred. Please try again.",
-      });
+      await safeAnswerCallbackQuery(ctx, "❌ Error occurred. Please try again.");
     }
   }
 );
