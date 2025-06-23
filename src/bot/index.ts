@@ -845,84 +845,46 @@ bot.on("message:text", async (ctx) => {
       try {
         new PublicKey(text); // Validate if it's a valid Solana address
         logger.info(`User sent token address: ${text}`);
+        
         // Check if this token belongs to user's created tokens
         const user = await getUser(ctx.chat.id.toString());
-        const tokenInfo = await getTokenInfo(text);
-        let tokenName = tokenInfo.baseToken.name || "Unknown Token";
-        let tokenSymbol = tokenInfo.baseToken.symbol || "Unknown Symbol";
-        let isUserToken = false;
-        let holdingsText = "📌 Checking token holdings...";
-        let walletsWithBalance = 0;
-
-        if (user) {
-          const userToken = await getUserTokenWithBuyWallets(user.id, text);
-          if (userToken) {
-            // Token belongs to user
-            tokenName = userToken.name;
-            tokenSymbol = userToken.symbol;
-            isUserToken = true;
-          }
-
-          // Check actual holdings in funding wallet (external tokens use funding wallet only)
-          try {
-            const fundingWallet = await getFundingWallet(user.id);
-            if (fundingWallet) {
-              let totalTokenBalance = 0;
-
-              try {
-                const balance = await getTokenBalance(text, fundingWallet.publicKey);
-                if (balance > 0) {
-                  totalTokenBalance = balance;
-                  walletsWithBalance = 1;
-                }
-              } catch (error) {
-                logger.warn(`Error checking balance for funding wallet ${fundingWallet.publicKey}:`, error);
-              }
-
-              if (walletsWithBalance > 0) {
-                holdingsText = `📌 ${totalTokenBalance.toLocaleString()} tokens found in funding wallet`;
-              } else {
-                holdingsText = `📌 No tokens found in your funding wallet`;
-              }
-            } else {
-              holdingsText = "📌 No funding wallet configured";
-            }
-          } catch (error) {
-            logger.error("Error checking token holdings:", error);
-            holdingsText = "📌 Error checking token holdings";
-          }
-        }
-        // Check if we have cached platform info
-        let platformInfo = "🔍 Detecting...";
+        
+        // **FAST DISPLAY: Show token page immediately with minimal data**
+        let initialTokenName = "Loading...";
+        let initialTokenSymbol = "...";
+        let initialPlatformInfo = "🔍 Detecting...";
+        let initialHoldingsText = "📌 Checking token holdings...";
+        let initialMarketCap = "Loading...";
+        let initialPrice = "Loading...";
+        let initialLiquidity = "Loading...";
+        let initialDex = "Loading...";
+        let initialRenouncedText = "🔍 Checking...";
+        let initialFrozenText = "🔍 Checking...";
+        
+        // Check cache first for instant results
         const cachedPlatform = getCachedPlatform(text);
         if (cachedPlatform) {
           if (cachedPlatform === "pumpswap") {
-            platformInfo = "⚡ Pumpswap";
+            initialPlatformInfo = "⚡ Pumpswap";
           } else if (cachedPlatform === "pumpfun") {
-            platformInfo = "🚀 PumpFun";
+            initialPlatformInfo = "🚀 PumpFun";
           } else {
-            platformInfo = "❓ Unknown platform";
+            initialPlatformInfo = "❓ Unknown platform";
           }
           logger.info(`[token-display] Using cached platform for ${text}: ${cachedPlatform}`);
-        } else {
-          // Start platform detection in background (non-blocking)
-          detectPlatformInBackground(text, ctx.chat.id);
         }
-
-        // TODO: Fetch actual market data; this is placeholder data
-        const marketCap = formatUSD(tokenInfo.marketCap); // Placeholder
-        const price = tokenInfo.priceUsd; // Placeholder
-        let liquidity = null;
-        if (tokenInfo.liquidity) {
-          liquidity = formatUSD(tokenInfo.liquidity.usd);
-        } else {
-          liquidity = "N/A"; // Handle case where liquidity is not available
+        
+        // Quick check for user token (this is fast)
+        let isUserToken = false;
+        if (user) {
+          const userToken = await getUserTokenWithBuyWallets(user.id, text);
+          if (userToken) {
+            initialTokenName = userToken.name;
+            initialTokenSymbol = userToken.symbol;
+            isUserToken = true;
+          }
         }
-        // Display token detail page with buy and sell options
-        const dex = tokenInfo.dexId;
-        logger.info(".... Token details fetched successfully");
-        const renouncedAndFrozen = await checkTokenRenouncedAndFrozen(text);
-        logger.info(renouncedAndFrozen);
+        
         const links = [
           {
             abbr: "CA",
@@ -942,7 +904,7 @@ bot.on("message:text", async (ctx) => {
           {
             abbr: "PHO",
             text: "Photon",
-            url: `https://photon-sol.tinyastro.io/en/lp/${tokenInfo.pairAddress}`,
+            url: `https://photon-sol.tinyastro.io/en/lp/loading`,
           },
           {
             abbr: "NEO",
@@ -973,21 +935,22 @@ bot.on("message:text", async (ctx) => {
 
         const linksHtml = links.map((link) => `<a href="${link.url}" target="_blank">${link.abbr}</a>`).join(" • ");
 
-        await ctx.reply(
+        // **IMMEDIATE DISPLAY: Show token page right away**
+        const message = await ctx.reply(
           `
-🪙 ${tokenName} (${tokenSymbol})
+🪙 ${initialTokenName} (${initialTokenSymbol})
 <code>${text}</code>
-🔗Dex: ${dex.toLocaleUpperCase()}
-🎯Platform: ${platformInfo}
+🔗Dex: ${initialDex}
+🎯Platform: ${initialPlatformInfo}
 🤑 <a href="${"https://t.me/@NITROLAUNCHBOT"}">Share Token & Earn</a>
 
 Market Data
-📊 Market Cap: ${marketCap}
-💸 Price: $${price}
-🏦 Liquidity: ${liquidity}
+📊 Market Cap: ${initialMarketCap}
+💸 Price: ${initialPrice}
+🏦 Liquidity: ${initialLiquidity}
 
-${renouncedAndFrozen.isRenounced ? "🟢 Renounced" : "🔴 Not Renounced"}
-${renouncedAndFrozen.isFrozen ? "🟢 Freeze" : "🔴 Not Freezed"}
+${initialRenouncedText}
+${initialFrozenText}
 
 🧐 No active limit orders
 
@@ -996,7 +959,7 @@ ${renouncedAndFrozen.isFrozen ? "🟢 Freeze" : "🔴 Not Freezed"}
 ${linksHtml}
 
 Your Holdings
-${holdingsText}`,
+${initialHoldingsText}`,
           {
             parse_mode: "HTML",
             reply_markup: new InlineKeyboard()
@@ -1004,7 +967,7 @@ ${holdingsText}`,
               .text("👀 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
               .text("🔃 Refresh", `launch_token_${text}`)
               .row()
-              .text(`💰 Active wallets: ${walletsWithBalance}`, `launch_token_${text}`)
+              .text(`💰 Active wallets: 0`, `launch_token_${text}`)
               .row()
               .text("💰 0.5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
               .text("💰 1 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
@@ -1034,6 +997,204 @@ ${holdingsText}`,
               .text("❌ Cancel", CallBackQueries.CANCEL),
           }
         );
+
+        // **BACKGROUND UPDATES: Fetch all data in parallel and update the message**
+        const updatePromises = [
+          // Token info fetch
+          getTokenInfo(text).then(tokenInfo => {
+            if (tokenInfo && tokenInfo.baseToken && !isUserToken) {
+              return {
+                type: 'tokenInfo',
+                name: tokenInfo.baseToken.name || initialTokenName,
+                symbol: tokenInfo.baseToken.symbol || initialTokenSymbol,
+                marketCap: formatUSD(tokenInfo.marketCap),
+                price: tokenInfo.priceUsd,
+                liquidity: tokenInfo.liquidity ? formatUSD(tokenInfo.liquidity.usd) : "N/A",
+                dex: tokenInfo.dexId,
+                pairAddress: tokenInfo.pairAddress
+              };
+            }
+            return null;
+                     }).catch((error: any) => {
+             logger.warn(`Token info fetch failed: ${error.message}`);
+             return null;
+           }),
+          
+          // Holdings check
+          user ? (async () => {
+            try {
+              const fundingWallet = await getFundingWallet(user.id);
+              if (fundingWallet) {
+                const balance = await getTokenBalance(text, fundingWallet.publicKey);
+                return {
+                  type: 'holdings',
+                  balance: balance,
+                  walletsWithBalance: balance > 0 ? 1 : 0
+                };
+              }
+            } catch (error) {
+              logger.warn(`Holdings check failed: ${error.message}`);
+            }
+            return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
+          })() : Promise.resolve({ type: 'holdings', balance: 0, walletsWithBalance: 0 }),
+          
+          // Platform detection (if not cached)
+          !cachedPlatform ? detectPlatformInBackground(text, ctx.chat.id).then(() => {
+            const newCachedPlatform = getCachedPlatform(text);
+            if (newCachedPlatform) {
+              let platformText = "❓ Unknown platform";
+              if (newCachedPlatform === "pumpswap") {
+                platformText = "⚡ Pumpswap";
+              } else if (newCachedPlatform === "pumpfun") {
+                platformText = "🚀 PumpFun";
+              }
+              return { type: 'platform', platform: platformText };
+            }
+            return null;
+          }).catch(() => null) : Promise.resolve(null),
+          
+          // Renounced and frozen check
+          checkTokenRenouncedAndFrozen(text).then(renouncedAndFrozen => {
+            return {
+              type: 'security',
+              renouncedText: renouncedAndFrozen.isRenounced ? "🟢 Renounced" : "🔴 Not Renounced",
+              frozenText: renouncedAndFrozen.isFrozen ? "🟢 Freeze" : "🔴 Not Freezed"
+            };
+                     }).catch((error: any) => {
+             logger.warn(`Security check failed: ${error.message}`);
+             return {
+               type: 'security',
+               renouncedText: "❓ Renounced check failed",
+               frozenText: "❓ Freeze check failed"
+             };
+           })
+        ];
+
+        // Wait for all background operations and update the message
+        Promise.allSettled(updatePromises).then(async (results) => {
+          try {
+            let tokenName = initialTokenName;
+            let tokenSymbol = initialTokenSymbol;
+            let marketCap = initialMarketCap;
+            let price = initialPrice;
+            let liquidity = initialLiquidity;
+            let dex = initialDex;
+            let platformInfo = initialPlatformInfo;
+            let holdingsText = initialHoldingsText;
+            let walletsWithBalance = 0;
+            let renouncedText = initialRenouncedText;
+            let frozenText = initialFrozenText;
+            let pairAddress = null;
+
+                         // Process results
+             results.forEach(result => {
+               if (result.status === 'fulfilled' && result.value) {
+                 const data = result.value;
+                 if (data.type === 'tokenInfo') {
+                   tokenName = (data as any).name;
+                   tokenSymbol = (data as any).symbol;
+                   marketCap = (data as any).marketCap;
+                   price = (data as any).price;
+                   liquidity = (data as any).liquidity;
+                   dex = (data as any).dex.toLocaleUpperCase();
+                   pairAddress = (data as any).pairAddress;
+                 } else if (data.type === 'holdings') {
+                   walletsWithBalance = (data as any).walletsWithBalance;
+                   if ((data as any).balance > 0) {
+                     holdingsText = `📌 ${(data as any).balance.toLocaleString()} tokens found in funding wallet`;
+                   } else {
+                     holdingsText = `📌 No tokens found in your funding wallet`;
+                   }
+                 } else if (data.type === 'platform') {
+                   platformInfo = (data as any).platform;
+                 } else if (data.type === 'security') {
+                   renouncedText = (data as any).renouncedText;
+                   frozenText = (data as any).frozenText;
+                 }
+               }
+             });
+
+            // Update Photon link with actual pair address if available
+            if (pairAddress) {
+              const photonLink = links.find(link => link.abbr === "PHO");
+              if (photonLink) {
+                photonLink.url = `https://photon-sol.tinyastro.io/en/lp/${pairAddress}`;
+              }
+            }
+
+            const updatedLinksHtml = links.map((link) => `<a href="${link.url}" target="_blank">${link.abbr}</a>`).join(" • ");
+
+            // Update the message with all the fetched data
+            await ctx.api.editMessageText(
+              ctx.chat!.id,
+              message.message_id,
+              `
+🪙 ${tokenName} (${tokenSymbol})
+<code>${text}</code>
+🔗Dex: ${dex}
+🎯Platform: ${platformInfo}
+🤑 <a href="${"https://t.me/@NITROLAUNCHBOT"}">Share Token & Earn</a>
+
+Market Data
+📊 Market Cap: ${marketCap}
+💸 Price: $${price}
+🏦 Liquidity: ${liquidity}
+
+${renouncedText}
+${frozenText}
+
+🧐 No active limit orders
+
+⭐️ W1: 0 SOLs
+
+${updatedLinksHtml}
+
+Your Holdings
+${holdingsText}`,
+              {
+                parse_mode: "HTML",
+                reply_markup: new InlineKeyboard()
+                  .text("🔀 Switch to Sell", `sell_external_token_${text}`)
+                  .text("👀 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
+                  .text("🔃 Refresh", `launch_token_${text}`)
+                  .row()
+                  .text(`💰 Active wallets: ${walletsWithBalance}`, `launch_token_${text}`)
+                  .row()
+                  .text("💰 0.5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("💰 1 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("💰 2 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .row()
+                  .text("💰 5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("💰 10 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("💰 X SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .row()
+                  .text("💰 Buy Tip: 0 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("🛍️ Slippage: 0%", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .row()
+                  .text("📈 Limit Orders", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("💸 Generate PNL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .row()
+                  .text("🔴 Auto Tip (0.0001 SOL)", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("🔴 Buy Protection", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .row()
+                  .text("🔀 Split Tokens", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("👀 Hide Position", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .row()
+                  .text("🔙 Back", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("📊 Chart", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .row()
+                  .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
+                  .row()
+                  .text("❌ Cancel", CallBackQueries.CANCEL),
+              }
+            );
+
+            logger.info(`[token-display] Successfully updated token details for ${text}`);
+                     } catch (updateError: any) {
+             logger.error(`[token-display] Failed to update message: ${updateError.message}`);
+           }
+        });
+
         return;
       } catch (e) {
         // Not a valid Solana address, ignore or handle as regular text
@@ -1407,7 +1568,8 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
   let tokenName = "Unknown Token";
   let tokenSymbol = "UNK";
   let isUserToken = false;
-  let holdingsText = "📌 No tokens found in your buyer wallets";
+  let holdingsText = "📌 Checking token holdings...";
+  let walletsWithBalance = 0;
 
   try {
     // Get token information from DexScreener or other source if available
@@ -1445,17 +1607,47 @@ ${tokenAddress}
 Pump.fun 🔗 SO
 
 Market Data
-💠 Market Cap: ${marketCap}
-💵 Price: ${price}
+📊 Market Cap: ${marketCap}
+💸 Price: ${price}
+🏦 Liquidity: ${liquidity}
+
+🧐 No active limit orders
+
+⭐️ W1: 0 SOLs
 
 Your Holdings
-${holdingsText}
-
-⚡ <i>Optimized for fast trading</i>`,
+${holdingsText}`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
-        .text("💰 Buy Token", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("🔀 Switch to Sell", `sell_external_token_${tokenAddress}`)
+        .text("👀 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`)
+        .text("🔃 Refresh", `launch_token_${tokenAddress}`)
+        .row()
+        .text(`💰 Active wallets: ${walletsWithBalance}`, `launch_token_${tokenAddress}`)
+        .row()
+        .text("💰 0.5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("💰 1 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("💰 2 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .row()
+        .text("💰 5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("💰 10 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("💰 X SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .row()
+        .text("💰 Buy Tip: 0 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("🛍️ Slippage: 0%", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .row()
+        .text("📈 Limit Orders", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("💸 Generate PNL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .row()
+        .text("🔴 Auto Tip (0.0001 SOL)", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("🔴 Buy Protection", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .row()
+        .text("🔀 Split Tokens", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("👀 Hide Position", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .row()
+        .text("🔙 Back", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
+        .text("📊 Chart", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
         .row()
         .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${tokenAddress}`)
         .row()
