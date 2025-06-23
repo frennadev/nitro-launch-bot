@@ -848,7 +848,7 @@ bot.callbackQuery(
       const price = tokenInfo.priceUsd;
       const curveProgress = "50%"; // Placeholder
 
-      await ctx.reply(
+      const message = await ctx.reply(
         `
 🌑 $${tokenInfo.baseToken.symbol} 🕛 ${age} 🌟<a href="">Refererral</a> 
 
@@ -918,6 +918,8 @@ Tokens: 2.3% | Worth: ${payout.toFixed(2)} SOL
             .text("❌ Cancel", CallBackQueries.CANCEL),
         }
       );
+
+      await bot.api.pinChatMessage(userId, message.message_id);
     } catch (error) {
       logger.error("Error fetching trade history:", error);
       await ctx.reply(
