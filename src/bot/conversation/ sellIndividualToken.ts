@@ -1,79 +1,73 @@
 import { Conversation } from "@grammyjs/conversations";
 import { Context, InlineKeyboard } from "grammy";
+import { TokenModel } from "../../backend/models";
+import { abbreviateNumber, getNonEmptyBalances, getUser } from "../../backend/functions";
+import { sendMessage } from "../../backend/sender";
 
-interface WalletDetail {
-  address: string;
-  tokenAmount: number;
-  usdValue: number;
-}
+type Holder = {
+  pubkey: string;
+  balance: number; // token amount
+  tokenPrice: number; // USD value of that wallet’s tokens
+};
 
-interface TokenStats {
-  name: string;
-  tokenAddress: string;
-  symbol: string;
-  description?: string;
-  walletsCount: number;
-  totalValueUsd: number;
-  totalTokens: number;
-  walletDetails: WalletDetail[];
-}
+export const sellIndividualToken = async (conversation: Conversation<Context>, ctx: Context, address: string) => {
+  const user = await getUser(ctx.chat!.id.toString());
+  if (!user) {
+    await sendMessage(ctx, "Unrecognized user ❌");
+    return conversation.halt();
+  }
 
-export const sellIndividualToken = async (conversation: Conversation<Context>, ctx: Context) => {
-  // — Dummy data inline —
-  const stats: TokenStats = {
-    name: "DemoToken",
-    tokenAddress: "D4CX9j7S8WTMPQ56PqQ3eHMdLpoTVjWF7ZLvSagj6vaV",
-    symbol: "DMT",
-    description: "This is just a demo token",
-    walletsCount: 3,
-    totalValueUsd: 1500,
-    totalTokens: 3000,
-    walletDetails: [
-      { address: "0xAA...111", tokenAmount: 1000, usdValue: 500 },
-      { address: "0xB3...222", tokenAmount: 500, usdValue: 250 },
-      { address: "0xCC...333", tokenAmount: 1500, usdValue: 750 },
-    ],
-  };
+  const token = await TokenModel.findOne({ tokenAddress: address }).sort({ createdAt: -1 }).exec();
+  if (!token) {
+    await sendMessage(ctx, "Token not found ❌");
+    return conversation.halt();
+  }
 
-  // Build the text message
+  const holdersWallet = (await getNonEmptyBalances(String(user._id), address)) as Holder[];
+
+  const walletsCount = holdersWallet.length;
+  const totalTokens = holdersWallet.reduce((sum, w) => sum + w.balance, 0);
+  const totalValueUsd = holdersWallet.reduce((sum, w) => sum + w.tokenPrice, 0);
+
   const header = `
-💊 *${stats.name}*
-🔑 Address: \`${stats.tokenAddress}\`
-🏷️ Symbol: \`${stats.symbol}\`
-📝 Description: ${stats.description}
+💊 *${token.name}*
+🔑 Address: \`${token.tokenAddress}\`
+🏷️ Symbol: \`${token.symbol}\`
+📝 Description: ${token.description || "–"}
 
-📊 *Summary* \n👝 ${stats.walletsCount} wallets | \💰 $${stats.totalValueUsd} total | 🪙 ${stats.totalTokens} tokens
+📊 *Summary:*  
+👝 ${walletsCount} wallets  
+💰 $${abbreviateNumber(totalValueUsd)} total  
+🪙 ${abbreviateNumber(totalTokens)} tokens
   `.trim();
 
-  const details = stats.walletDetails
-    .map((w) => `\`${w.address}\` | ${w.tokenAmount} ${stats.symbol} | \$${w.usdValue}`)
+  // 3) Build the per-wallet breakdown
+  const details = holdersWallet
+    .map((w) => {
+      const shortAddr = w.pubkey.slice(0, 6) + "…" + w.pubkey.slice(-4);
+      return `\`${shortAddr}\` | ${abbreviateNumber(w.balance)} ${token.symbol} | $${abbreviateNumber(w.tokenPrice)}`;
+    })
     .join("\n");
 
   const message = `${header}
 
-*Per‐Wallet Breakdown:*
-${details}
-  `;
+*Per-Wallet Breakdown:*
+${details}`;
 
-  // Build the inline keyboard: one row per wallet, with emojis
+  // 4) Build an inline keyboard row per wallet
   const kb = new InlineKeyboard();
-  stats.walletDetails.forEach((w) => {
-    // truncate address for display
-    const shortAddr = w.address.slice(0, 6) + "…" + w.address.slice(-4);
-
+  holdersWallet.forEach((w) => {
+    const shortAddr = w.pubkey.slice(0, 6) + "…" + w.pubkey.slice(-4);
     kb.row(
-      { text: `${shortAddr}`, callback_data: `wallet_${w.address}` },
-      { text: `🟢 Sell %`, callback_data: `sellPct_${w.address}` },
-      { text: `✅ Sell All`, callback_data: `sellAll_${w.address}` }
+      { text: `🏦 ${shortAddr}`, callback_data: `wallet_${w.pubkey}` },
+      { text: `📈 Sell %`, callback_data: `sellPct_${w.pubkey}` },
+      { text: `💸 Sell All`, callback_data: `sellAll_${w.pubkey}` }
     );
   });
 
-  // Send the message with inline buttons
+  // 5) Send it off
   await ctx.reply(message, {
     parse_mode: "Markdown",
     reply_markup: kb,
   });
 };
-
-// In your bot flow:
-// await sellIndividualToken(conversation, ctx);

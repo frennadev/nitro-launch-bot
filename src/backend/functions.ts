@@ -11,7 +11,14 @@ import {
   RetryDataModel,
   type RetryData,
 } from "./models";
-import { decryptPrivateKey, encryptPrivateKey, uploadFileToPinata, uploadJsonToPinata } from "./utils";
+import {
+  decryptPrivateKey,
+  encryptPrivateKey,
+  getTokenBalance,
+  getTokenInfo,
+  uploadFileToPinata,
+  uploadJsonToPinata,
+} from "./utils";
 import { TokenState } from "./types";
 import {
   devSellQueue,
@@ -629,7 +636,9 @@ export const enqueueTokenLaunchRetry = async (userId: string, chatId: number, to
         ),
         funderWallet: decryptPrivateKey(updatedToken.launchData!.funderPrivateKey),
         devBuy: updatedToken.launchData!.devBuy,
-        buyDistribution: updatedToken.launchData!.buyDistribution || generateBuyDistribution(updatedToken.launchData!.buyAmount, updatedToken.launchData!.buyWallets.length),
+        buyDistribution:
+          updatedToken.launchData!.buyDistribution ||
+          generateBuyDistribution(updatedToken.launchData!.buyAmount, updatedToken.launchData!.buyWallets.length),
         launchStage: updatedToken.launchData!.launchStage || 1,
       };
       await tokenLaunchQueue.add(`launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`, data);
@@ -1838,12 +1847,12 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
   // First 15 wallets sequence
   const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
   const firstFifteenTotal = firstFifteenSequence.reduce((sum, amount) => sum + amount, 0); // Calculate exact total
-  
+
   if (buyAmount <= firstFifteenTotal) {
     // Count how many sequence wallets are needed from first 15
     let total = 0;
     let walletsNeeded = 0;
-    
+
     for (const amount of firstFifteenSequence) {
       if (total + amount <= buyAmount) {
         total += amount;
@@ -1856,7 +1865,7 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
         break;
       }
     }
-    
+
     return Math.max(1, walletsNeeded); // At least 1 wallet
   } else {
     // Need all 15 sequence wallets + additional wallets from last 5 (4-5 SOL each)
@@ -1888,15 +1897,15 @@ export const generateBuyDistribution = (buyAmount: number, availableWallets: num
   const maxWallets = Math.min(availableWallets, 20);
   const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
   const firstFifteenTotal = firstFifteenSequence.reduce((sum, amount) => sum + amount, 0); // Calculate exact total
-  
+
   if (buyAmount <= firstFifteenTotal) {
     // Use only the first sequence wallets needed
     const distribution: number[] = [];
     let remaining = buyAmount;
-    
+
     for (let i = 0; i < Math.min(maxWallets, firstFifteenSequence.length); i++) {
       if (remaining <= 0) break;
-      
+
       if (remaining >= firstFifteenSequence[i]) {
         distribution.push(firstFifteenSequence[i]);
         remaining -= firstFifteenSequence[i];
@@ -1906,21 +1915,21 @@ export const generateBuyDistribution = (buyAmount: number, availableWallets: num
         remaining = 0;
       }
     }
-    
+
     return distribution;
   } else {
     // Use all 15 sequence wallets + distribute remaining across last 5 wallets (4-5 SOL each)
     const distribution = [...firstFifteenSequence];
     let remaining = buyAmount - firstFifteenTotal;
-    
+
     // Calculate how many additional wallets we need (max 5)
     const additionalWalletsNeeded = Math.min(5, Math.min(maxWallets - 15, Math.ceil(remaining / 4.0)));
-    
+
     if (additionalWalletsNeeded > 0) {
       // Distribute remaining amount across additional wallets (4-5 SOL each)
       for (let i = 0; i < additionalWalletsNeeded; i++) {
         if (remaining <= 0) break;
-        
+
         if (i === additionalWalletsNeeded - 1) {
           // Last additional wallet gets all remaining
           distribution.push(remaining);
@@ -1932,7 +1941,7 @@ export const generateBuyDistribution = (buyAmount: number, availableWallets: num
         }
       }
     }
-    
+
     return distribution;
   }
 };
@@ -1961,8 +1970,8 @@ export const initializeWalletPool = async (count: number = 2000) => {
   const batches = Math.ceil(walletsToGenerate / batchSize);
 
   for (let i = 0; i < batches; i++) {
-    const currentBatchSize = Math.min(batchSize, walletsToGenerate - (i * batchSize));
-    
+    const currentBatchSize = Math.min(batchSize, walletsToGenerate - i * batchSize);
+
     const walletDocs = [];
     for (let j = 0; j < currentBatchSize; j++) {
       const keypair = Keypair.generate();
@@ -1971,7 +1980,7 @@ export const initializeWalletPool = async (count: number = 2000) => {
         privateKey: encryptPrivateKey(bs58.default.encode(keypair.secretKey)),
         isAllocated: false,
         allocatedTo: null,
-        allocatedAt: null
+        allocatedAt: null,
       });
     }
 
@@ -1990,7 +1999,7 @@ export const allocateWalletsFromPool = async (userId: string, count: number) => 
 
   // Find available wallets in pool
   const availableWallets = await WalletPoolModel.find({
-    isAllocated: false
+    isAllocated: false,
   }).limit(count);
 
   if (availableWallets.length < count) {
@@ -1998,45 +2007,44 @@ export const allocateWalletsFromPool = async (userId: string, count: number) => 
   }
 
   const session = await mongoose.startSession();
-  
+
   try {
     await session.withTransaction(async () => {
       // Mark wallets as allocated in pool
-      const walletIds = availableWallets.map(w => w._id);
+      const walletIds = availableWallets.map((w) => w._id);
       await WalletPoolModel.updateMany(
         { _id: { $in: walletIds } },
-        { 
-          $set: { 
-            isAllocated: true, 
-            allocatedTo: userId, 
-            allocatedAt: new Date() 
-          } 
+        {
+          $set: {
+            isAllocated: true,
+            allocatedTo: userId,
+            allocatedAt: new Date(),
+          },
         },
         { session }
       );
 
       // Create buyer wallet records for user
-      const buyerWalletDocs = availableWallets.map(poolWallet => ({
+      const buyerWalletDocs = availableWallets.map((poolWallet) => ({
         user: userId,
         publicKey: poolWallet.publicKey,
         privateKey: poolWallet.privateKey, // Already encrypted
         isDev: false,
         isBuyer: true,
-        isFunding: false
+        isFunding: false,
       }));
 
       await WalletModel.insertMany(buyerWalletDocs, { session });
     });
 
     console.log(`✅ Successfully allocated ${count} wallets to user ${userId}`);
-    
+
     // Return the allocated wallets
-    return availableWallets.map(w => ({
+    return availableWallets.map((w) => ({
       id: w._id.toString(),
       publicKey: w.publicKey,
-      privateKey: decryptPrivateKey(w.privateKey)
+      privateKey: decryptPrivateKey(w.privateKey),
     }));
-
   } catch (error: any) {
     console.error(`❌ Failed to allocate wallets: ${error.message}`);
     throw error;
@@ -2054,9 +2062,9 @@ export const getWalletPoolStats = async () => {
         _id: null,
         total: { $sum: 1 },
         allocated: { $sum: { $cond: ["$isAllocated", 1, 0] } },
-        available: { $sum: { $cond: ["$isAllocated", 0, 1] } }
-      }
-    }
+        available: { $sum: { $cond: ["$isAllocated", 0, 1] } },
+      },
+    },
   ]);
 
   return stats.length > 0 ? stats[0] : { total: 0, allocated: 0, available: 0 };
@@ -2065,7 +2073,7 @@ export const getWalletPoolStats = async () => {
 export const ensureWalletPoolHealth = async () => {
   const stats = await getWalletPoolStats();
   const minThreshold = 500; // Minimum available wallets
-  
+
   if (stats.available < minThreshold) {
     console.log(`⚠️ Wallet pool low: ${stats.available} available, ${minThreshold} minimum required`);
     const walletsToAdd = 2000 - stats.total;
@@ -2073,7 +2081,7 @@ export const ensureWalletPoolHealth = async () => {
       await initializeWalletPool(stats.total + walletsToAdd);
     }
   }
-  
+
   return stats;
 };
 
@@ -2083,8 +2091,8 @@ export const ensureWalletPoolHealth = async () => {
  * Generate a unique random affiliate code
  */
 const generateAffiliateCode = (length: number = 8): string => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let result = "";
   for (let i = 0; i < length; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -2114,11 +2122,11 @@ export const getOrCreateAffiliateCode = async (userId: string): Promise<string> 
     do {
       affiliateCode = generateAffiliateCode();
       attempts++;
-      
+
       if (attempts >= maxAttempts) {
         throw new Error("Failed to generate unique affiliate code");
       }
-      
+
       // Check if code already exists
       const existingUser = await UserModel.findOne({ affiliateCode });
       if (!existingUser) {
@@ -2128,7 +2136,7 @@ export const getOrCreateAffiliateCode = async (userId: string): Promise<string> 
 
     // Save the new code
     await UserModel.findByIdAndUpdate(userId, { affiliateCode });
-    
+
     return affiliateCode;
   } catch (error) {
     logger.error("Error generating affiliate code:", error);
@@ -2182,7 +2190,7 @@ export const processReferral = async (newUserId: string, referralCode: string): 
 
     // Increment the referring user's referral count
     await UserModel.findByIdAndUpdate(referringUser._id, {
-      $inc: { referralCount: 1 }
+      $inc: { referralCount: 1 },
     });
 
     logger.info(`Referral processed: User ${newUserId} referred by ${referringUser._id} (code: ${referralCode})`);
@@ -2236,3 +2244,50 @@ export const createUserWithReferral = async (
     throw error;
   }
 };
+
+interface WalletBalance {
+  pubkey: string;
+  balance: number;
+  tokenPrice: number;
+}
+
+export async function getNonEmptyBalances(userId: string, tokenAddress: string): Promise<WalletBalance[]> {
+  const tokenInfo = await getTokenInfo(tokenAddress);
+  const price = tokenInfo?.priceUsd ?? 0;
+  console.log(tokenInfo);
+  const buyerWallets = await getAllBuyerWallets(userId);
+  const balances = await Promise.all(
+    buyerWallets.map(async ({ publicKey }) => {
+      const tokenBal = await getTokenBalance(tokenAddress, publicKey);
+      return {
+        pubkey: publicKey,
+        balance: tokenBal,
+        tokenPrice: tokenBal * price,
+      };
+    })
+  );
+  return balances.filter(({ balance }) => balance > 0);
+}
+
+export function abbreviateNumber(num: number): string {
+  const abs = Math.abs(num);
+  const sign = num < 0 ? "-" : "";
+  let value: number;
+  let suffix = "";
+
+  if (abs >= 1e9) {
+    value = abs / 1e9;
+    suffix = "b";
+  } else if (abs >= 1e6) {
+    value = abs / 1e6;
+    suffix = "m";
+  } else if (abs >= 1e3) {
+    value = abs / 1e3;
+    suffix = "k";
+  } else {
+    return `${sign}${abs}`;
+  }
+
+  const str = value.toFixed(2).replace(/\.?0+$/, "");
+  return `${sign}${str}${suffix}`;
+}
