@@ -1670,6 +1670,14 @@ bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
     `[ExternalTokenSell] Sell button clicked for token: ${tokenAddress}`
   );
 
+  // Check if platform detection is still running and cache the result if available
+  const cachedPlatform = getCachedPlatform(tokenAddress);
+  if (!cachedPlatform) {
+    logger.info(`[ExternalTokenSell] Platform not yet detected for ${tokenAddress}, proceeding anyway`);
+  } else {
+    logger.info(`[ExternalTokenSell] Using cached platform ${cachedPlatform} for ${tokenAddress}`);
+  }
+
   // Show sell percentage options immediately
   const keyboard = new InlineKeyboard()
     .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
