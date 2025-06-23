@@ -63,20 +63,37 @@ import { buyCustonConversation } from "./conversation/buyCustom";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { sellIndividualToken } from "./conversation/ sellIndividualToken";
 
-// Simple in-memory cache for platform detection results
-const platformCache = new Map<string, { platform: 'pumpswap' | 'pumpfun' | 'unknown', timestamp: number }>();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+// Enhanced platform cache with permanent Pumpswap storage and smart PumpFun retry
+const platformCache = new Map<string, { platform: 'pumpswap' | 'pumpfun' | 'unknown', timestamp: number, permanent?: boolean }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes for PumpFun, permanent for Pumpswap
 
 function getCachedPlatform(tokenAddress: string): 'pumpswap' | 'pumpfun' | 'unknown' | null {
   const cached = platformCache.get(tokenAddress);
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+  if (!cached) return null;
+  
+  // Pumpswap detections are permanent
+  if (cached.platform === 'pumpswap' || cached.permanent) {
     return cached.platform;
   }
+  
+  // PumpFun and unknown have TTL
+  if (Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.platform;
+  }
+  
   return null;
 }
 
-function setCachedPlatform(tokenAddress: string, platform: 'pumpswap' | 'pumpfun' | 'unknown') {
-  platformCache.set(tokenAddress, { platform, timestamp: Date.now() });
+function setCachedPlatform(tokenAddress: string, platform: 'pumpswap' | 'pumpfun' | 'unknown', permanent: boolean = false) {
+  // Pumpswap is always permanent
+  const isPermanent = platform === 'pumpswap' || permanent;
+  platformCache.set(tokenAddress, { platform, timestamp: Date.now(), permanent: isPermanent });
+}
+
+// Function to mark a token as Pumpswap after PumpFun sell failure
+export function markTokenAsPumpswap(tokenAddress: string) {
+  setCachedPlatform(tokenAddress, 'pumpswap', true);
+  logger.info(`Token ${tokenAddress.substring(0, 8)} marked as Pumpswap after PumpFun sell failure`);
 }
 
 // Export function for use in external buy/sell operations

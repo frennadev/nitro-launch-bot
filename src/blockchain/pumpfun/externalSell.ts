@@ -325,45 +325,72 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
     
     logger.info(`[${logId}] Selling ${tokensToSell.toString()} tokens`);
     
-    // Try Pumpswap first
+    // Use smart platform detection from cache
+    let detectedPlatform: 'pumpswap' | 'pumpfun' | 'unknown' | null = null;
     try {
-      logger.info(`[${logId}] Attempting Pumpswap sell`);
-      const pumpswapService = new PumpswapService();
-      const sellTx = await pumpswapService.sellTx({
-        mint: mintPublicKey,
-        privateKey: bs58.encode(sellerKeypair.secretKey)
-      });
+      const { getPlatformFromCache } = await import('../../bot/index');
+      detectedPlatform = getPlatformFromCache(tokenAddress);
       
-      const signature = await connection.sendTransaction(sellTx, {
-        skipPreflight: false,
-        preflightCommitment: "processed",
-      });
-      
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash: sellTx.message.recentBlockhash!,
-        lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
-      }, "confirmed");
-      
-      if (confirmation.value.err) {
-        throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      if (detectedPlatform) {
+        logger.info(`[${logId}] Using cached platform detection: ${detectedPlatform}`);
+      } else {
+        logger.info(`[${logId}] No cached platform found, will try PumpFun first`);
+        detectedPlatform = 'pumpfun'; // Default to PumpFun if no cache
       }
+    } catch (cacheError) {
+      logger.warn(`[${logId}] Cache access failed, defaulting to PumpFun:`, cacheError);
+      detectedPlatform = 'pumpfun';
+    }
+    
+    // If we know it's Pumpswap, go directly there
+    if (detectedPlatform === 'pumpswap') {
+      logger.info(`[${logId}] Token confirmed as Pumpswap, using Pumpswap service`);
       
-      logger.info(`[${logId}] Pumpswap sell successful: ${signature}`);
-      
-      return {
-        success: true,
-        signature,
-        platform: 'pumpswap',
-        solReceived: "Unknown" // Pumpswap doesn't easily provide this info
-      };
-      
-    } catch (pumpswapError: any) {
-      logger.info(`[${logId}] Pumpswap sell failed, trying PumpFun: ${pumpswapError.message}`);
-      
-      // Try PumpFun with the same sell logic as working launch sells
       try {
-        logger.info(`[${logId}] Attempting PumpFun sell with launch-style logic`);
+        const pumpswapService = new PumpswapService();
+        const sellTx = await pumpswapService.sellTx({
+          mint: mintPublicKey,
+          privateKey: bs58.encode(sellerKeypair.secretKey)
+        });
+        
+        const signature = await connection.sendTransaction(sellTx, {
+          skipPreflight: false,
+          preflightCommitment: "processed",
+        });
+        
+        const confirmation = await connection.confirmTransaction({
+          signature,
+          blockhash: sellTx.message.recentBlockhash!,
+          lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
+        }, "confirmed");
+        
+        if (confirmation.value.err) {
+          throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+        }
+        
+        logger.info(`[${logId}] Pumpswap sell successful: ${signature}`);
+        
+        return {
+          success: true,
+          signature,
+          platform: 'pumpswap',
+          solReceived: "Unknown" // Pumpswap doesn't easily provide this info
+        };
+        
+      } catch (pumpswapError: any) {
+        logger.error(`[${logId}] Pumpswap sell failed for confirmed Pumpswap token:`, pumpswapError);
+        return {
+          success: false,
+          error: `Pumpswap sell failed: ${pumpswapError.message}`,
+          platform: 'pumpswap'
+        };
+      }
+    }
+    
+    // Try PumpFun (either detected as PumpFun or unknown)
+    logger.info(`[${logId}] Attempting PumpFun sell`);
+    try {
+      logger.info(`[${logId}] Attempting PumpFun sell with launch-style logic`);
         
         // Need to get token creator for sellInstruction (same as executeWalletSell)
         const { bondingCurve } = getBondingCurve(mintPublicKey);
@@ -431,14 +458,62 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
         
       } catch (pumpfunError: any) {
         logger.error(`[${logId}] PumpFun sell error:`, pumpfunError);
-        return {
-          success: false,
-          error: `Both Pumpswap and PumpFun sells failed. PumpFun error: ${pumpfunError.message}`,
-          platform: 'pumpfun'
-        };
+        
+        // If PumpFun fails, mark as Pumpswap and retry once
+        logger.info(`[${logId}] PumpFun sell failed, marking as Pumpswap and retrying`);
+        
+        try {
+          const { markTokenAsPumpswap } = await import('../../bot/index');
+          markTokenAsPumpswap(tokenAddress);
+          
+          logger.info(`[${logId}] Retrying with Pumpswap after PumpFun failure`);
+          const pumpswapService = new PumpswapService();
+          const sellTx = await pumpswapService.sellTx({
+            mint: mintPublicKey,
+            privateKey: bs58.encode(sellerKeypair.secretKey)
+          });
+          
+          const signature = await connection.sendTransaction(sellTx, {
+            skipPreflight: false,
+            preflightCommitment: "processed",
+          });
+          
+          const confirmation = await connection.confirmTransaction({
+            signature,
+            blockhash: sellTx.message.recentBlockhash!,
+            lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
+          }, "confirmed");
+          
+          if (confirmation.value.err) {
+            throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          }
+          
+          logger.info(`[${logId}] Pumpswap retry successful: ${signature}`);
+          
+          return {
+            success: true,
+            signature,
+            platform: 'pumpswap',
+            solReceived: "Success"
+          };
+          
+        } catch (pumpswapRetryError: any) {
+          logger.error(`[${logId}] Pumpswap retry also failed:`, pumpswapRetryError);
+          return {
+            success: false,
+            error: `Both PumpFun and Pumpswap sells failed. PumpFun: ${pumpfunError.message}, Pumpswap: ${pumpswapRetryError.message}`,
+            platform: 'unknown'
+          };
+        }
       }
+    } catch (error: any) {
+      logger.error(`[${logId}] External sell error:`, error);
+      return {
+        success: false,
+        error: `External sell failed: ${error.message}`,
+        platform: 'unknown'
+      };
     }
-    
   } catch (error: any) {
     logger.error(`[${logId}] External sell error:`, error);
     return {
