@@ -10,7 +10,7 @@ import {
 import { connection } from "../common/connection";
 import { secretKeyToKeypair } from "../common/utils";
 import { logger } from "../common/logger";
-import { buyInstruction, marketOrderBuyInstruction, maestroBuyInstructions } from "./instructions";
+import { buyInstruction, marketOrderBuyInstruction } from "./instructions";
 import { formatMilliseconds, sendAndConfirmTransactionWithRetry } from "../common/utils";
 import { collectTransactionFee } from "../../backend/functions-main";
 import bs58 from "bs58";
@@ -161,11 +161,136 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
     const { bondingCurve } = getBondingCurve(mintPk);
     console.log(`[${logId}]: bondingCurve = ${bondingCurve.toBase58()}`);
 
-    const bondingCurveData = await getBondingCurveData(bondingCurve);
-    console.log(`[${logId}]: bondingCurveData fetched`);
-    if (!bondingCurveData) {
-      throw new Error("Bonding curve data not found");
+    // Use robust bonding curve data fetching (same as launch process)
+    console.log(`[${logId}]: Fetching bonding curve data with retry strategy...`);
+    const curveDataStart = performance.now();
+    
+    let bondingCurveData = null;
+    
+    try {
+      // Strategy 1: Parallel fetch with different commitment levels (fastest)
+      const parallelFetchPromises = [
+        // Most likely to succeed quickly
+        (async () => {
+          try {
+            const accountInfo = await connection.getAccountInfo(bondingCurve, "processed");
+            if (accountInfo?.data) {
+              const data = await getBondingCurveData(bondingCurve);
+              if (data) {
+                console.log(`[${logId}]: Fast curve data fetch successful with 'processed' commitment`);
+                return { data, commitment: "processed" };
+              }
+            }
+          } catch (error) {
+            return null;
+          }
+          return null;
+        })(),
+        
+        // Backup with confirmed
+        (async () => {
+          await new Promise(resolve => setTimeout(resolve, 500)); // Small delay to prefer processed
+          try {
+            const accountInfo = await connection.getAccountInfo(bondingCurve, "confirmed");
+            if (accountInfo?.data) {
+              const data = await getBondingCurveData(bondingCurve);
+              if (data) {
+                console.log(`[${logId}]: Curve data fetch successful with 'confirmed' commitment`);
+                return { data, commitment: "confirmed" };
+              }
+            }
+          } catch (error) {
+            return null;
+          }
+          return null;
+        })(),
+        
+        // Final fallback with finalized
+        (async () => {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Delay to prefer faster options
+          try {
+            const accountInfo = await connection.getAccountInfo(bondingCurve, "finalized");
+            if (accountInfo?.data) {
+              const data = await getBondingCurveData(bondingCurve);
+              if (data) {
+                console.log(`[${logId}]: Curve data fetch successful with 'finalized' commitment`);
+                return { data, commitment: "finalized" };
+              }
+            }
+          } catch (error) {
+            return null;
+          }
+          return null;
+        })()
+      ];
+      
+      // Race to get the first successful result
+      const results = await Promise.allSettled(parallelFetchPromises);
+      const successfulResult = results.find(result => 
+        result.status === 'fulfilled' && result.value !== null
+      );
+      
+      if (successfulResult && successfulResult.status === 'fulfilled' && successfulResult.value) {
+        bondingCurveData = successfulResult.value.data;
+        const fetchTime = performance.now() - curveDataStart;
+        console.log(`[${logId}]: Parallel curve data fetch completed in ${Math.round(fetchTime)}ms using ${successfulResult.value.commitment} commitment`);
+      }
+      
+    } catch (error: any) {
+      console.warn(`[${logId}]: Parallel curve data fetch failed: ${error.message}`);
     }
+    
+    // Fallback to sequential retry logic if parallel fetch failed
+    if (!bondingCurveData) {
+      console.log(`[${logId}]: Parallel fetch failed, falling back to sequential retry logic...`);
+      
+      let retries = 0;
+      const maxRetries = 5;
+      const baseDelay = 1000;
+      
+      while (!bondingCurveData && retries < maxRetries) {
+        try {
+          const commitmentLevel = retries < 2 ? "processed" : retries < 4 ? "confirmed" : "finalized";
+          
+          const accountInfo = await connection.getAccountInfo(bondingCurve, commitmentLevel);
+          if (accountInfo && accountInfo.data) {
+            bondingCurveData = await getBondingCurveData(bondingCurve);
+            if (bondingCurveData) {
+              console.log(`[${logId}]: Sequential fallback successful on attempt ${retries + 1} with ${commitmentLevel} commitment`);
+              break;
+            }
+          }
+        } catch (error: any) {
+          console.warn(`[${logId}]: Sequential fallback attempt ${retries + 1} failed: ${error.message}`);
+        }
+        
+        retries += 1;
+        if (!bondingCurveData && retries < maxRetries) {
+          const delay = Math.min(baseDelay * Math.pow(1.5, retries), 3000) + Math.random() * 500;
+          console.log(`[${logId}]: Retrying in ${Math.round(delay)}ms (attempt ${retries}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    if (!bondingCurveData) {
+      console.error(`[${logId}]: Failed to fetch curve data after all attempts`);
+      
+      // Additional debugging - check if bonding curve account exists
+      try {
+        const accountInfo = await connection.getAccountInfo(bondingCurve, "finalized");
+        if (!accountInfo) {
+          throw new Error(`Bonding curve account does not exist: ${bondingCurve.toBase58()}`);
+        } else {
+          throw new Error(`Bonding curve account exists but data is invalid. Account owner: ${accountInfo.owner.toBase58()}, Data length: ${accountInfo.data.length}`);
+        }
+      } catch (debugError: any) {
+        console.error(`[${logId}]: Bonding curve debug info: ${debugError.message}`);
+        throw new Error(`Unable to fetch curve data: ${debugError.message}`);
+      }
+    }
+
+    console.log(`[${logId}]: bondingCurveData fetched successfully`);
 
     const solLamports = BigInt(Math.floor(solAmount * LAMPORTS_PER_SOL));
     console.log(`[${logId}]: solLamports = ${solLamports}`);
@@ -195,20 +320,19 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
     const blockhash = await connection.getLatestBlockhash("processed");
     console.log(`[${logId}]: Latest blockhash = ${blockhash.blockhash}`);
 
-    // Use Maestro-style buy instructions (same as successful launch process)
-    const maestroBuyIxs = maestroBuyInstructions(
+    // Use standard buy instruction for external tokens
+    const buyIx = buyInstruction(
       mintPk,
       new PublicKey(bondingCurveData.creator),
       fundingKeypair.publicKey,
       tokensWithSlippage,
-      solLamports,
-      BigInt(1000000) // 0.001 SOL Maestro fee
+      solLamports
     );
-    console.log(`[${logId}]: Maestro buy instructions created`);
+    console.log(`[${logId}]: Buy instruction created`);
 
     const tx = new VersionedTransaction(
       new TransactionMessage({
-        instructions: [modifyComputeUnits, smartFeeIx, ...maestroBuyIxs],
+        instructions: [modifyComputeUnits, smartFeeIx, buyIx],
         payerKey: fundingKeypair.publicKey,
         recentBlockhash: blockhash.blockhash,
       }).compileToV0Message()
@@ -221,7 +345,7 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
       {
         payer: fundingKeypair.publicKey,
         signers: [fundingKeypair],
-        instructions: [modifyComputeUnits, smartFeeIx, ...maestroBuyIxs],
+        instructions: [modifyComputeUnits, smartFeeIx, buyIx],
       },
       10_000,
       3,
