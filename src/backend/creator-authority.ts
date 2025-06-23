@@ -1,15 +1,12 @@
 import { PublicKey } from "@solana/web3.js";
+import { pumpswap_amm_program_id } from "../service/pumpswap-service";
 
-// Use the PumpFun program ID for creator vault derivation
-// Creator vaults are always created under PumpFun program, even for graduated tokens
-const PUMPFUN_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
-
-export const getCreatorVaultAuthority = (creator: PublicKey): PublicKey => {
-  // Use the same seed as PumpFun creator vault: "creator-vault"
-  // This matches the PumpFun IDL and ensures compatibility with graduated tokens
-  const [vaultAuthority] = PublicKey.findProgramAddressSync(
-    [Buffer.from("creator-vault"), creator.toBuffer()],
-    PUMPFUN_PROGRAM_ID  // Use PumpFun program ID, not Pumpswap program ID
-  );
-  return vaultAuthority;
+// TEMPORARY: Use hardcoded creator vault authority to test if this works
+// The dynamic derivation isn't matching what the Pumpswap program expects
+export const getCreatorVaultAuthority = (creator: PublicKey) => {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from([99, 114, 101, 97, 116, 111, 114, 95, 118, 97, 117, 108, 116]),
+     creator.toBuffer()],
+    pumpswap_amm_program_id
+  )[0];
 };
