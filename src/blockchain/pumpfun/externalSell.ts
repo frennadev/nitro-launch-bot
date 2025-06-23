@@ -482,6 +482,13 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
         }
         
         // Quote the sell
+        console.log(`[${logId}] Sell quote inputs:`, {
+          tokensToSell: tokensToSell.toString(),
+          virtualTokenReserves: bondingCurveData.virtualTokenReserves.toString(),
+          virtualSolReserves: bondingCurveData.virtualSolReserves.toString(),
+          realTokenReserves: bondingCurveData.realTokenReserves.toString()
+        });
+        
         const { solOut } = quoteSell(
           tokensToSell,
           bondingCurveData.virtualTokenReserves,
@@ -489,7 +496,10 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
           bondingCurveData.realTokenReserves,
         );
         
+        console.log(`[${logId}] Sell quote result: solOut = ${solOut.toString()} lamports (${Number(solOut) / LAMPORTS_PER_SOL} SOL)`);
+        
         const solOutWithSlippage = applySlippage(solOut, 50); // 50% slippage for external tokens
+        console.log(`[${logId}] After slippage: ${solOutWithSlippage.toString()} lamports (${Number(solOutWithSlippage) / LAMPORTS_PER_SOL} SOL)`);
         
         // Create sell instruction (same as launch sells)
         const sellIx = sellInstruction(
