@@ -92,16 +92,18 @@ async function detectPlatformInBackground(tokenAddress: string, chatId: number) 
   const logId = `bg-detect-${tokenAddress.substring(0, 8)}`;
 
   try {
-    logger.info(`[${logId}]: Starting background platform detection using bonding curve approach`);
+    logger.info(`[${logId}]: Starting fast background platform detection`);
 
-    const platform = await detectTokenPlatformWithCache(tokenAddress);
-    logger.info(`[${logId}]: Background detection completed: ${platform}`);
+    // Use fast detection that respects recent cache
+    const { detectTokenPlatformFast } = await import('../service/token-detection-service');
+    const platform = await detectTokenPlatformFast(tokenAddress);
+    logger.info(`[${logId}]: Fast background detection completed: ${platform}`);
 
     // Update the token display with platform info
     // Note: We're not updating the message here since it's background detection
     // The platform info will be available immediately on next view due to caching
   } catch (error: any) {
-    logger.error(`[${logId}]: Background platform detection failed: ${error.message}`);
+    logger.error(`[${logId}]: Fast background platform detection failed: ${error.message}`);
   }
 }
 
@@ -1038,20 +1040,24 @@ ${initialHoldingsText}`,
             return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
           })() : Promise.resolve({ type: 'holdings', balance: 0, walletsWithBalance: 0 }),
           
-          // Platform detection (if not cached)
-          !cachedPlatform ? detectPlatformInBackground(text, ctx.chat.id).then(() => {
-            const newCachedPlatform = getCachedPlatform(text);
-            if (newCachedPlatform) {
+          // Platform detection (only if not cached)
+          !cachedPlatform ? (async () => {
+            try {
+              // Use fast detection that respects recent cache
+              const { detectTokenPlatformFast } = await import('../../service/token-detection-service');
+              const platform = await detectTokenPlatformFast(text);
+              
               let platformText = "❓ Unknown platform";
-              if (newCachedPlatform === "pumpswap") {
+              if (platform === "pumpswap") {
                 platformText = "⚡ Pumpswap";
-              } else if (newCachedPlatform === "pumpfun") {
+              } else if (platform === "pumpfun") {
                 platformText = "🚀 PumpFun";
               }
               return { type: 'platform', platform: platformText };
+            } catch (error) {
+              return null;
             }
-            return null;
-          }).catch(() => null) : Promise.resolve(null),
+          })() : Promise.resolve(null),
           
           // Renounced and frozen check
           checkTokenRenouncedAndFrozen(text).then(renouncedAndFrozen => {

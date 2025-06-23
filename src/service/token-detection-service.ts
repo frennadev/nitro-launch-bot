@@ -23,6 +23,26 @@ const platformCache = new Map<string, {
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes for non-permanent entries
 
 /**
+ * Fast lightweight platform detection for UI display
+ * Skips expensive bonding curve checks for recently cached tokens
+ */
+export async function detectTokenPlatformFast(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'unknown'> {
+  // Check cache first
+  const cached = getCachedPlatform(tokenAddress);
+  if (cached) {
+    // If we have a recent cache result, use it without re-checking
+    // Only re-check if the cache is old and not permanent
+    const cacheEntry = platformCache.get(tokenAddress);
+    if (cacheEntry?.permanent || (Date.now() - cacheEntry!.timestamp < 60000)) { // 1 minute for fast checks
+      return cached;
+    }
+  }
+  
+  // For new tokens or old cache, do a quick check
+  return await detectTokenPlatform(tokenAddress);
+}
+
+/**
  * Detect platform using bonding curve data fetching (same approach as launch process)
  * If bonding curve data can be fetched successfully, it's a PumpFun token
  * If bonding curve data cannot be fetched, it's likely a Pumpswap token
