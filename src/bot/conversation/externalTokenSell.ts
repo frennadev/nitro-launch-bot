@@ -16,10 +16,17 @@ const externalTokenSellConversation = async (
   sellPercent: number
 ) => {
   await ctx.answerCallbackQuery();
+  
+  // Show immediate loading state
+  await ctx.editMessageText(
+    "🔄 **Preparing sell order...**\n\n⏳ Loading token information...",
+    { parse_mode: "Markdown" }
+  );
+  
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("Unrecognized user ❌");
+    await ctx.editMessageText("Unrecognized user ❌");
     await conversation.halt();
     return;
   }
@@ -27,7 +34,7 @@ const externalTokenSellConversation = async (
   // -------- GET FUNDING WALLET ----------
   const fundingWallet = await getFundingWallet(user.id);
   if (!fundingWallet) {
-    await ctx.reply(
+    await ctx.editMessageText(
       "❌ No funding wallet found. Please configure a funding wallet first."
     );
     await conversation.halt();
@@ -35,33 +42,29 @@ const externalTokenSellConversation = async (
   }
 
   try {
-    // Get token information
-    const tokenInfo = await getTokenInfo(tokenAddress);
-    if (!tokenInfo) {
-      await ctx.reply(
-        "❌ Token information not available. Cannot proceed with sell."
-      );
-      await conversation.halt();
-      return;
-    }
+    // Update loading state
+    await ctx.editMessageText(
+      "🔄 **Preparing sell order...**\n\n⏳ Checking token balance...",
+      { parse_mode: "Markdown" }
+    );
 
-    // Check token balance in funding wallet
+    // Check token balance first (faster than getTokenInfo)
     logger.info(
       `[ExternalTokenSell] Checking balance for token ${tokenAddress} in funding wallet ${fundingWallet.publicKey}`
     );
 
     let totalTokenBalance = 0;
-      try {
+    try {
       totalTokenBalance = await getTokenBalance(tokenAddress, fundingWallet.publicKey);
-        logger.info(
+      logger.info(
         `[ExternalTokenSell] Funding wallet balance: ${totalTokenBalance} tokens`
-          );
-      } catch (error) {
-        logger.error(
+      );
+    } catch (error) {
+      logger.error(
         `[ExternalTokenSell] Error checking balance for funding wallet:`,
-          error
-        );
-      await ctx.reply(
+        error
+      );
+      await ctx.editMessageText(
         "❌ Error checking token balance in funding wallet. Please try again."
       );
       await conversation.halt();
@@ -69,28 +72,54 @@ const externalTokenSellConversation = async (
     }
 
     if (totalTokenBalance === 0) {
-      await ctx.reply(
+      await ctx.editMessageText(
         "❌ No tokens found in your funding wallet for this token address."
       );
       await conversation.halt();
       return;
     }
 
-    const totalValue = totalTokenBalance * (tokenInfo.priceUsd || 0);
-    const tokensToSell = (totalTokenBalance * sellPercent) / 100;
+    // Update loading state
+    await ctx.editMessageText(
+      "🔄 **Preparing sell order...**\n\n⏳ Fetching token information...",
+      { parse_mode: "Markdown" }
+    );
+
+    // Get token information (slower operation, done after balance check)
+    let tokenInfo;
+    let tokenName = "Unknown Token";
+    let tokenSymbol = "Unknown";
+    let tokenPrice = 0;
+    
+    try {
+      tokenInfo = await getTokenInfo(tokenAddress);
+      if (tokenInfo && tokenInfo.baseToken) {
+        tokenName = tokenInfo.baseToken.name || "Unknown Token";
+        tokenSymbol = tokenInfo.baseToken.symbol || "Unknown";
+      }
+      if (tokenInfo && tokenInfo.priceUsd) {
+        tokenPrice = parseFloat(tokenInfo.priceUsd) || 0;
+      }
+    } catch (error) {
+      logger.warn(`[ExternalTokenSell] Could not fetch token info, using defaults:`, error);
+      // Continue with defaults instead of failing
+    }
+
+    const totalValue = totalTokenBalance * tokenPrice;
+    const tokensToSell = Math.floor((totalTokenBalance * sellPercent) / 100);
     const valueToSell = (totalValue * sellPercent) / 100;
 
     // Show confirmation
     const confirmationMessage = [
       `🔍 **Confirm External Token Sell**`,
       ``,
-      `**Token:** ${escape(tokenInfo.name || "Unknown")} (${escape(tokenInfo.symbol || "Unknown")})`,
+      `**Token:** ${escape(tokenName)} (${escape(tokenSymbol)})`,
       `**Address:** \`${tokenAddress}\``,
       ``,
       `📊 **Sell Details:**`,
       `• Sell Percentage: ${sellPercent}%`,
       `• Tokens to Sell: ${escape(tokensToSell.toLocaleString())}`,
-      `• Estimated Value: ${escape(`$${valueToSell.toFixed(2)}`)}`,
+      tokenPrice > 0 ? `• Estimated Value: ${escape(`$${valueToSell.toFixed(2)}`)}` : `• Estimated Value: Unknown`,
       `• Using: Funding Wallet`,
       ``,
       `⚠️ **Important Notes:**`,
@@ -106,7 +135,7 @@ const externalTokenSellConversation = async (
       .text("❌ Cancel", "cancel_external_sell")
       .row();
 
-    await sendMessage(ctx, confirmationMessage, {
+    await ctx.editMessageText(confirmationMessage, {
       parse_mode: "Markdown",
       reply_markup: keyboard,
     });
@@ -133,9 +162,10 @@ const externalTokenSellConversation = async (
 
         if (result.success) {
           const platformText = result.platform === 'pumpswap' ? '⚡ Pumpswap' : '🚀 PumpFun';
+          const solReceivedText = result.solReceived || "Unknown";
           await sendMessage(
             response,
-                         `✅ **External token sell completed successfully!**\n\n📊 **Results:**\n• Platform: ${platformText}\n• SOL Received: ${typeof result.solReceived === 'number' ? result.solReceived.toFixed(6) : result.solReceived || "0"} SOL\n• Transaction: \`${result.signature}\``,
+            `✅ **External token sell completed successfully!**\n\n📊 **Results:**\n• Platform: ${platformText}\n• SOL Received: ${solReceivedText} SOL\n• Transaction: \`${result.signature}\``,
             { parse_mode: "Markdown" }
           );
         } else {
