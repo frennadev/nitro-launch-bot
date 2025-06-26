@@ -23,7 +23,22 @@ export const generateKeypairs = (count: number) => {
 };
 
 export function secretKeyToKeypair(secretKey: string) {
-  return Keypair.fromSecretKey(bs58.decode(secretKey));
+  if (!secretKey || typeof secretKey !== 'string') {
+    throw new Error('Invalid secret key: key must be a non-empty string');
+  }
+  
+  // Remove any whitespace
+  const cleanKey = secretKey.trim();
+  
+  if (cleanKey.length === 0) {
+    throw new Error('Invalid secret key: key cannot be empty');
+  }
+  
+  try {
+    return Keypair.fromSecretKey(bs58.decode(cleanKey));
+  } catch (error: any) {
+    throw new Error(`Invalid secret key format: ${error.message}`);
+  }
 }
 
 export function randomizeDistribution(

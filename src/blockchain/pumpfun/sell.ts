@@ -9,6 +9,12 @@ export const executeDevSell = async (tokenAddress: string, devWallet: string, se
   if (sellPercent < 1 || sellPercent > 100) {
     throw new Error("Sell % cannot be less than 1 or greater than 100");
   }
+  
+  // Validate devWallet parameter
+  if (!devWallet || typeof devWallet !== 'string') {
+    throw new Error("devWallet must be a non-empty string");
+  }
+  
   const logIdentifier = `sell-dev-${tokenAddress}`;
   logger.info("Starting dev sell");
   const start = performance.now();
@@ -64,6 +70,21 @@ export const executeWalletSell = async (
   if (sellPercent < 1 || sellPercent > 100) {
     throw new Error("Sell % cannot be less than 1 or greater than 100");
   }
+  
+  // Validate buyWallets parameter
+  if (!Array.isArray(buyWallets)) {
+    throw new Error("buyWallets must be an array");
+  }
+  
+  if (buyWallets.length === 0) {
+    throw new Error("buyWallets cannot be empty");
+  }
+  
+  // Validate devWallet parameter
+  if (!devWallet || typeof devWallet !== 'string') {
+    throw new Error("devWallet must be a non-empty string");
+  }
+  
   const logIdentifier = `sell-${tokenAddress}`;
   logger.info("Starting wallets sell");
   const start = performance.now();
@@ -158,4 +179,5 @@ export const executeWalletSell = async (
     throw new Error("Wallet sells failed");
   }
   logger.info(`[${logIdentifier}]: Wallet Sells completed in ${formatMilliseconds(performance.now() - start)}`);
+  return results;
 };
