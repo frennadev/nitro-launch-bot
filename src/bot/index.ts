@@ -1594,7 +1594,6 @@ bot.on("callback_query:data", async (ctx) => {
 });
 
 export default bot;
-
 // Function to handle token contract address messages
 async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
   const user = await getUser(ctx.chat!.id.toString());
@@ -1965,3 +1964,4 @@ bot.callbackQuery(/^sell_external_token_(.+)$/, async (ctx) => {
     reply_markup: keyboard,
   });
 });
+
