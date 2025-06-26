@@ -1,4 +1,4 @@
-import { Context } from "grammy";
+import { Context, GrammyError } from "grammy";
 import { InlineKeyboard } from "grammy";
 
 export function escape(str: string): string {
@@ -114,4 +114,26 @@ export function formatUSD(amount: number): string {
   }
 
   return (amount < 0 ? "-" : "") + "$" + formatted;
+}
+
+/**
+ * Safely answer callback query with timeout error handling
+ */
+export async function safeAnswerCallbackQuery(ctx: Context, text?: string): Promise<void> {
+  try {
+    await ctx.answerCallbackQuery(text);
+  } catch (error: any) {
+    // Ignore callback query timeout errors
+    if (
+      error instanceof GrammyError &&
+      (error.description?.includes("query is too old") ||
+        error.description?.includes("response timeout expired") ||
+        error.description?.includes("query ID is invalid"))
+    ) {
+      console.debug("Callback query timeout ignored (normal behavior):", error.description);
+      return;
+    }
+    // Re-throw other errors
+    throw error;
+  }
 }

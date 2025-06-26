@@ -23,6 +23,7 @@ import { decryptPrivateKey } from "../../backend/utils";
 import { CallBackQueries } from "../types";
 import { env } from "../../config";
 import { startLoadingState, sendLoadingMessage } from "../loading";
+import { safeAnswerCallbackQuery } from "../utils";
 
 enum LaunchCallBackQueries {
   CANCEL = "CANCEL_LAUNCH",
@@ -71,7 +72,7 @@ const launchTokenConversation = async (
   ctx: Context,
   tokenAddress: string
 ) => {
-  await ctx.answerCallbackQuery();
+  await safeAnswerCallbackQuery(ctx);
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
@@ -131,7 +132,7 @@ Would you like to enter new values or use previous ones?`,
     );
 
     const retryChoice = await conversation.waitFor("callback_query:data");
-    await retryChoice.answerCallbackQuery();
+    await safeAnswerCallbackQuery(retryChoice);
 
     if (retryChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
       await sendMessage(ctx, "Launch cancelled.");

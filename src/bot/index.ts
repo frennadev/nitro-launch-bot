@@ -115,11 +115,21 @@ export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 // Global error handler
 bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   const ctx = err.ctx;
-  logger.error("Error in bot middleware:", {
-    error: err.error,
-    update: ctx.update,
-    stack: err.stack,
-  });
+  
+  // Check for callback query timeout errors FIRST (before logging as errors)
+  if (
+    err.error instanceof GrammyError &&
+    (err.error.description.includes("query is too old") || 
+     err.error.description.includes("response timeout expired") ||
+     err.error.description.includes("query ID is invalid"))
+  ) {
+    logger.debug("Callback query timeout ignored (normal behavior):", {
+      description: err.error.description,
+      user: ctx.from?.username || ctx.from?.id,
+      callback_data: ctx.callbackQuery?.data
+    });
+    return;
+  }
 
   // Handle Grammy.js conversation state errors
   if (err.stack && err.stack.includes("Bad replay, expected op")) {
@@ -153,14 +163,12 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
     return;
   }
 
-  // Don't crash the bot for callback query timeout errors
-  if (
-    err.error instanceof GrammyError &&
-    (err.error.description.includes("query is too old") || err.error.description.includes("response timeout expired"))
-  ) {
-    logger.info("Ignoring callback query timeout error");
-    return;
-  }
+  // Log other errors (after filtering out callback timeouts)
+  logger.error("Error in bot middleware:", {
+    error: err.error,
+    update: ctx.update,
+    stack: err.stack,
+  });
 
   // For other errors, try to notify the user if possible
   if (ctx.chat) {
