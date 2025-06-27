@@ -15,138 +15,71 @@ import { connection } from "../../service/config";
 import { sendAndConfirmTransactionWithRetry } from "./utils";
 import { getCachedPlatform, markTokenAsPumpFun } from "../../service/token-detection-service";
 import PumpswapService from "../../service/pumpswap-service";
-import { markTokenAsPumpswap } from "../../bot";
+import { executeExternalSell } from "../pumpfun/externalSell";
 
+/**
+ * Enhanced single sell using external sell mechanism with platform detection
+ * This provides better reliability and platform detection compared to the old method
+ */
 export const handleSingleSell = async (
   mintPublicKey: PublicKey,
   sellerAddress: string,
   selltype: "percent" | "all",
   sellPercent?: number
 ) => {
-  const wallet = await WalletModel.findOne({ publicKey: sellerAddress });
-  const privateKey = decryptPrivateKey(wallet?.privateKey!);
-  const sellerKeypair = Keypair.fromSecretKey(base58.decode(privateKey));
-  const cachedPlatform = getCachedPlatform(mintPublicKey.toBase58());
-  const pumpswapService = new PumpswapService();
-
-  if (cachedPlatform === "pumpswap") {
-    try {
-      let amt: bigint;
-
-          if (selltype === "all") {
-      const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
-      amt = BigInt(Math.floor(tokenBalance)); // getTokenBalance already returns raw token units
-    } else {
-      const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
-      const percentAmt = sellPercent! * tokenBalance;
-      amt = BigInt(Math.floor(percentAmt)); // getTokenBalance already returns raw token units
-    }
-
-      const sellTx = await pumpswapService.sellTx({
-        mint: mintPublicKey,
-        privateKey: base58.encode(sellerKeypair.secretKey),
-        amount: amt
-      });
-
-      const signature = await connection.sendTransaction(sellTx, {
-        skipPreflight: false,
-        preflightCommitment: "processed",
-      });
-
-      const confirmation = await connection.confirmTransaction(
-        {
-          signature,
-          blockhash: sellTx.message.recentBlockhash!,
-          lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
-        },
-        "confirmed"
-      );
-
-      if (confirmation.value.err) {
-        throw new Error(`Pumpswap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-      }
-
-      markTokenAsPumpswap(mintPublicKey.toBase58());
-      return {
-        success: true,
-        signature,
-        platform: "pumpswap",
-        solReceived: "Success",
-      };
-    } catch (pumpswapError: any) {}
-  }
-
+  const logIdentifier = `single-sell-${mintPublicKey.toBase58().slice(0, 8)}`;
+  
   try {
-    const { bondingCurve } = getBondingCurve(mintPublicKey);
-    const bondingCurveData = await getBondingCurveData(bondingCurve);
-
-    if (!bondingCurveData) {
-      throw new Error("Token bonding curve not found - cached data may be incorrect");
+    // Get wallet data from database
+    const wallet = await WalletModel.findOne({ publicKey: sellerAddress });
+    if (!wallet || !wallet.privateKey) {
+      throw new Error("Wallet not found or private key missing");
     }
-
-    let amt: bigint;
-
+    
+    const privateKey = decryptPrivateKey(wallet.privateKey);
+    const sellerKeypair = Keypair.fromSecretKey(base58.decode(privateKey));
+    
+    // Get current token balance
+    const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
+    if (tokenBalance <= 0) {
+      throw new Error("No tokens to sell");
+    }
+    
+    // Calculate amount to sell
+    let amountToSell: number;
     if (selltype === "all") {
-      const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
-      amt = BigInt(Math.floor(tokenBalance)); // getTokenBalance already returns raw token units
+      amountToSell = tokenBalance;
     } else {
-      const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
-      const percentAmt = sellPercent! * tokenBalance;
-      amt = BigInt(Math.floor(percentAmt)); // getTokenBalance already returns raw token units
+      if (!sellPercent || sellPercent <= 0 || sellPercent > 100) {
+        throw new Error("Invalid sell percentage");
+      }
+      amountToSell = Math.floor(tokenBalance * (sellPercent / 100));
     }
-
-    const sellIx = sellInstruction(
-      mintPublicKey,
-      new PublicKey(bondingCurveData.creator),
-      sellerKeypair.publicKey,
-      amt,
-      BigInt(0)
+    
+    console.log(`[${logIdentifier}] Selling ${selltype === "all" ? "ALL" : sellPercent + "%"} of ${tokenBalance} tokens = ${amountToSell} tokens`);
+    
+    // Use enhanced external sell mechanism for better platform detection
+    const result = await executeExternalSell(
+      mintPublicKey.toBase58(),
+      sellerKeypair,
+      amountToSell
     );
-
-    const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
-      units: 151595,
-    });
-    const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-      microLamports: 1_000_000,
-    });
-
-    const blockHash = await connection.getLatestBlockhash("processed");
-    const sellTx = new VersionedTransaction(
-      new TransactionMessage({
-        instructions: [modifyComputeUnits, addPriorityFee, sellIx],
-        payerKey: sellerKeypair.publicKey,
-        recentBlockhash: blockHash.blockhash,
-      }).compileToV0Message()
-    );
-
-    sellTx.sign([sellerKeypair]);
-
-    const result = await sendAndConfirmTransactionWithRetry(
-      sellTx,
-      {
-        payer: sellerKeypair.publicKey,
-        signers: [sellerKeypair],
-        instructions: [modifyComputeUnits, addPriorityFee, sellIx],
-      },
-      10_000,
-      3,
-      1000,
-      `single-sell`
-    );
-
+    
     if (!result.success) {
-      throw new Error("PumpFun sell transaction failed");
+      throw new Error(`External sell failed: ${result.error}`);
     }
-
-    markTokenAsPumpFun(mintPublicKey.toBase58());
-
+    
+    console.log(`[${logIdentifier}] Single sell successful via ${result.platform}: ${result.signature}`);
+    
     return {
       success: true,
-      signature: result.signature!,
-      platform: "pumpfun",
-      solReceived: "Success",
+      signature: result.signature,
+      platform: result.platform,
+      solReceived: result.solReceived,
     };
+    
   } catch (error) {
-    console.log("Error selling single token", error);
+    console.log(`[${logIdentifier}] Enhanced single sell failed:`, error);
+    throw error;
   }
 };

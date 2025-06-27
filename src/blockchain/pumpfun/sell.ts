@@ -4,7 +4,11 @@ import { ComputeBudgetProgram, Keypair, PublicKey, TransactionMessage, Versioned
 import { logger } from "../common/logger";
 import { sellInstruction } from "./instructions";
 import { connection } from "../common/connection";
+import { executeExternalSell } from "./externalSell";
 
+/**
+ * Enhanced dev sell using external sell mechanism with platform detection
+ */
 export const executeDevSell = async (tokenAddress: string, devWallet: string, sellPercent: number) => {
   if (sellPercent < 1 || sellPercent > 100) {
     throw new Error("Sell % cannot be less than 1 or greater than 100");
@@ -16,51 +20,49 @@ export const executeDevSell = async (tokenAddress: string, devWallet: string, se
   }
   
   const logIdentifier = `sell-dev-${tokenAddress}`;
-  logger.info("Starting dev sell");
+  logger.info(`[${logIdentifier}] Starting enhanced dev sell using external sell mechanism`);
   const start = performance.now();
 
-  const mintPublicKey = new PublicKey(tokenAddress);
-  const devKeypair = secretKeyToKeypair(devWallet);
-  const ata = getAssociatedTokenAddressSync(mintPublicKey, devKeypair.publicKey);
-  const devBalance = BigInt((await connection.getTokenAccountBalance(ata)).value.amount);
-  const tokensToSell =
-    sellPercent === 100 ? devBalance : (BigInt(sellPercent) * BigInt(100) * devBalance) / BigInt(10_000);
-  const sellIx = sellInstruction(mintPublicKey, devKeypair.publicKey, devKeypair.publicKey, tokensToSell, BigInt(0));
-  const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
-    units: 151595,
-  });
-  const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-    microLamports: 1_000_000,
-  });
-  const blockHash = await connection.getLatestBlockhash("processed");
-  const sellTx = new VersionedTransaction(
-    new TransactionMessage({
-      instructions: [modifyComputeUnits, addPriorityFee, sellIx],
-      payerKey: devKeypair.publicKey,
-      recentBlockhash: blockHash.blockhash,
-    }).compileToV0Message()
-  );
-  sellTx.sign([devKeypair]);
-  const result = await sendAndConfirmTransactionWithRetry(
-    sellTx,
-    {
-      payer: devKeypair.publicKey,
-      signers: [devKeypair],
-      instructions: [modifyComputeUnits, addPriorityFee, sellIx],
-    },
-    10_000,
-    3,
-    1000,
-    logIdentifier
-  );
-  logger.info(`[${logIdentifier}]: Dev Sell result`, result);
-  if (!result.success) {
-    throw new Error("Dev sell failed");
+  try {
+    const mintPublicKey = new PublicKey(tokenAddress);
+    const devKeypair = secretKeyToKeypair(devWallet);
+    
+    // Get the current token balance to calculate amount to sell
+    const ata = getAssociatedTokenAddressSync(mintPublicKey, devKeypair.publicKey);
+    const devBalance = BigInt((await connection.getTokenAccountBalance(ata)).value.amount);
+    
+    // Calculate tokens to sell based on percentage
+    const tokensToSell = sellPercent === 100 ? devBalance : (BigInt(sellPercent) * BigInt(100) * devBalance) / BigInt(10_000);
+    
+    logger.info(`[${logIdentifier}] Dev balance: ${devBalance.toString()}, selling ${sellPercent}% = ${tokensToSell.toString()} tokens`);
+    
+    // Use external sell mechanism for better platform detection and robustness
+    const result = await executeExternalSell(tokenAddress, devKeypair, Number(tokensToSell));
+    
+    if (!result.success) {
+      throw new Error(`External sell failed: ${result.error}`);
+    }
+    
+    logger.info(`[${logIdentifier}] Enhanced dev sell completed in ${formatMilliseconds(performance.now() - start)} via ${result.platform}`);
+    
+    return {
+      success: true,
+      signature: result.signature,
+      platform: result.platform,
+      solReceived: result.solReceived,
+      expectedSolOut: 0 // External sell doesn't provide this info
+    };
+    
+  } catch (error: any) {
+    logger.error(`[${logIdentifier}] Enhanced dev sell failed:`, error);
+    throw error;
   }
-  logger.info(`[${logIdentifier}]: Dev Sell completed in ${formatMilliseconds(performance.now() - start)}`);
-  return result;
 };
 
+/**
+ * Enhanced wallet sell using external sell mechanism with platform detection
+ * Processes multiple wallets with improved reliability
+ */
 export const executeWalletSell = async (
   tokenAddress: string,
   buyWallets: string[],
@@ -86,98 +88,122 @@ export const executeWalletSell = async (
   }
   
   const logIdentifier = `sell-${tokenAddress}`;
-  logger.info("Starting wallets sell");
+  logger.info(`[${logIdentifier}] Starting enhanced wallet sell using external sell mechanism for ${buyWallets.length} wallets`);
   const start = performance.now();
 
-  const mintPublicKey = new PublicKey(tokenAddress);
-  const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
-  const devKeypair = secretKeyToKeypair(devWallet);
+  try {
+    const mintPublicKey = new PublicKey(tokenAddress);
+    const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
 
-  const walletBalances = (
-    await Promise.all(
-      buyKeypairs.map(async (kp) => {
-        const ata = getAssociatedTokenAddressSync(mintPublicKey, kp.publicKey);
-        let balance = 0;
-        try {
-          balance = Number((await connection.getTokenAccountBalance(ata)).value.amount);
-        } catch (error) {
-          logger.error(
-            `[${logIdentifier}] Error fetching token balance for: ${kp.publicKey.toBase58()} with ATA: ${ata.toBase58()}`
-          );
-        }
-        return {
-          wallet: kp,
-          ata,
-          balance,
-        };
-      })
-    )
-  ).filter(({ balance }) => BigInt(balance) > BigInt(0));
-  if (walletBalances.length == 0) {
-    throw new Error("No wallet has tokens");
-  }
-  walletBalances.sort((a, b) => a.balance - b.balance);
+    // Get wallet balances efficiently
+    const walletBalances = (
+      await Promise.all(
+        buyKeypairs.map(async (kp) => {
+          const ata = getAssociatedTokenAddressSync(mintPublicKey, kp.publicKey);
+          let balance = 0;
+          try {
+            balance = Number((await connection.getTokenAccountBalance(ata)).value.amount);
+          } catch (error) {
+            logger.error(
+              `[${logIdentifier}] Error fetching token balance for: ${kp.publicKey.toBase58()} with ATA: ${ata.toBase58()}`
+            );
+          }
+          return {
+            wallet: kp,
+            ata,
+            balance: BigInt(balance),
+          };
+        })
+      )
+    ).filter(({ balance }) => balance > BigInt(0));
 
-  const totalTokens = walletBalances.reduce((acc, { balance }) => acc + BigInt(balance), BigInt(0));
-  let tokensToSell =
-    sellPercent === 100 ? totalTokens : (BigInt(sellPercent) * BigInt(100) * totalTokens) / BigInt(10_000);
-
-  const sellSetups: { wallet: Keypair; ata: PublicKey; amount: bigint }[] = [];
-  for (const walletInfo of walletBalances) {
-    if (tokensToSell <= BigInt(0)) {
-      break;
+    if (walletBalances.length === 0) {
+      throw new Error("No wallet has tokens");
     }
-    if (tokensToSell <= BigInt(walletInfo.balance)) {
+
+    logger.info(`[${logIdentifier}] Found ${walletBalances.length} wallets with tokens`);
+
+    // Sort by balance (ascending) for optimal distribution
+    walletBalances.sort((a, b) => Number(a.balance - b.balance));
+
+    const totalTokens = walletBalances.reduce((acc, { balance }) => acc + balance, BigInt(0));
+    let tokensToSell = sellPercent === 100 ? totalTokens : (BigInt(sellPercent) * BigInt(100) * totalTokens) / BigInt(10_000);
+
+    logger.info(`[${logIdentifier}] Total tokens: ${totalTokens.toString()}, selling ${sellPercent}% = ${tokensToSell.toString()}`);
+
+    // Calculate sell amounts per wallet
+    const sellSetups: { wallet: Keypair; amount: bigint }[] = [];
+    for (const walletInfo of walletBalances) {
+      if (tokensToSell <= BigInt(0)) {
+        break;
+      }
+      if (tokensToSell <= walletInfo.balance) {
+        sellSetups.push({
+          wallet: walletInfo.wallet,
+          amount: tokensToSell,
+        });
+        break;
+      }
+      tokensToSell -= walletInfo.balance;
       sellSetups.push({
         wallet: walletInfo.wallet,
-        ata: walletInfo.ata,
-        amount: tokensToSell,
+        amount: walletInfo.balance,
       });
-      break;
     }
-    tokensToSell -= BigInt(walletInfo.balance);
-    sellSetups.push({
-      wallet: walletInfo.wallet,
-      ata: walletInfo.ata,
-      amount: BigInt(walletInfo.balance),
+
+    logger.info(`[${logIdentifier}] Prepared ${sellSetups.length} sell transactions using external sell mechanism`);
+
+    // Execute sells using external sell mechanism (with platform detection and retries)
+    const tasks = sellSetups.map(async ({ wallet, amount }, index) => {
+      try {
+        logger.info(`[${logIdentifier}] Processing wallet ${index + 1}/${sellSetups.length}: ${wallet.publicKey.toBase58().slice(0, 8)}...`);
+        
+        const result = await executeExternalSell(tokenAddress, wallet, Number(amount));
+        
+        if (result.success) {
+          logger.info(`[${logIdentifier}] Wallet ${index + 1} sell successful via ${result.platform}: ${result.signature}`);
+          return {
+            success: true,
+            signature: result.signature,
+            platform: result.platform,
+            solReceived: result.solReceived,
+            expectedSolOut: 0, // External sell doesn't provide this info
+            walletAddress: wallet.publicKey.toBase58()
+          };
+        } else {
+          logger.error(`[${logIdentifier}] Wallet ${index + 1} sell failed: ${result.error}`);
+          return {
+            success: false,
+            error: result.error,
+            walletAddress: wallet.publicKey.toBase58()
+          };
+        }
+      } catch (error: any) {
+        logger.error(`[${logIdentifier}] Wallet ${index + 1} sell exception:`, error);
+        return {
+          success: false,
+          error: error.message,
+          walletAddress: wallet.publicKey.toBase58()
+        };
+      }
     });
+
+    const results = await Promise.all(tasks);
+    
+    const successfulSells = results.filter((res) => res.success);
+    const failedSells = results.filter((res) => !res.success);
+    
+    logger.info(`[${logIdentifier}] Enhanced wallet sell completed in ${formatMilliseconds(performance.now() - start)}`);
+    logger.info(`[${logIdentifier}] Results: ${successfulSells.length} successful, ${failedSells.length} failed`);
+    
+    if (successfulSells.length === 0) {
+      throw new Error("All wallet sells failed");
+    }
+    
+    return results;
+
+  } catch (error: any) {
+    logger.error(`[${logIdentifier}] Enhanced wallet sell failed:`, error);
+    throw error;
   }
-  const blockHash = await connection.getLatestBlockhash("processed");
-  const tasks = sellSetups.map(async ({ wallet, amount }) => {
-    const sellIx = sellInstruction(mintPublicKey, devKeypair.publicKey, wallet.publicKey, amount, BigInt(0));
-    const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
-      units: 151595,
-    });
-    const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-      microLamports: 1_000_000,
-    });
-    const sellTx = new VersionedTransaction(
-      new TransactionMessage({
-        instructions: [modifyComputeUnits, addPriorityFee, sellIx],
-        payerKey: wallet.publicKey,
-        recentBlockhash: blockHash.blockhash,
-      }).compileToV0Message()
-    );
-    sellTx.sign([wallet]);
-    return await sendAndConfirmTransactionWithRetry(
-      sellTx,
-      {
-        payer: wallet.publicKey,
-        signers: [wallet],
-        instructions: [modifyComputeUnits, addPriorityFee, sellIx],
-      },
-      10_000,
-      3,
-      1000,
-      logIdentifier
-    );
-  });
-  const results = await Promise.all(tasks);
-  logger.info(`[${logIdentifier}]: Wallet Sell results`, results);
-  const success = results.filter((res) => res.success);
-  if (success.length == 0) {
-    throw new Error("Wallet sells failed");
-  }
-  logger.info(`[${logIdentifier}]: Wallet Sells completed in ${formatMilliseconds(performance.now() - start)}`);
-  return results;
 };
