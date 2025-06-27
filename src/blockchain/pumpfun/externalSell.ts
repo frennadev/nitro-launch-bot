@@ -298,12 +298,47 @@ export async function executeExternalSell(tokenAddress: string, sellerKeypair: K
   
   try {
     const mintPublicKey = new PublicKey(tokenAddress);
-    const tokensToSell = BigInt(Math.floor(tokenAmount));
+    
+    // **CRITICAL FIX: Validate actual balance before attempting to sell**
+    const ata = getAssociatedTokenAddressSync(mintPublicKey, sellerKeypair.publicKey);
+    let actualBalance: bigint;
+    
+    try {
+      const balanceInfo = await connection.getTokenAccountBalance(ata);
+      actualBalance = BigInt(balanceInfo.value.amount);
+      logger.info(`[${logId}] DEBUG: Actual wallet balance = ${actualBalance.toString()}`);
+    } catch (balanceError: any) {
+      logger.error(`[${logId}] Failed to get token balance:`, balanceError);
+      return {
+        success: false,
+        error: `Failed to get token balance: ${balanceError.message}`
+      };
+    }
+    
+    // Convert tokenAmount to BigInt and ensure it doesn't exceed actual balance
+    const requestedAmount = BigInt(Math.floor(Math.abs(tokenAmount))); // Ensure positive
+    const tokensToSell = requestedAmount > actualBalance ? actualBalance : requestedAmount;
     
     // **DEBUG LOGGING - Track exact values being used**
     logger.info(`[${logId}] DEBUG: tokenAmount parameter = ${tokenAmount}`);
-    logger.info(`[${logId}] DEBUG: tokensToSell calculated = ${tokensToSell.toString()}`);
+    logger.info(`[${logId}] DEBUG: requestedAmount = ${requestedAmount.toString()}`);
+    logger.info(`[${logId}] DEBUG: actualBalance = ${actualBalance.toString()}`);
+    logger.info(`[${logId}] DEBUG: tokensToSell (adjusted) = ${tokensToSell.toString()}`);
     
+    // Early validation: ensure we have tokens to sell
+    if (tokensToSell === BigInt(0)) {
+      logger.warn(`[${logId}] No tokens to sell - balance is zero or insufficient`);
+      return {
+        success: false,
+        error: `No tokens available to sell. Actual balance: ${actualBalance.toString()}`
+      };
+    }
+    
+    // Warn if we had to adjust the amount
+    if (tokensToSell < requestedAmount) {
+      logger.warn(`[${logId}] Adjusted sell amount from ${requestedAmount.toString()} to ${tokensToSell.toString()} due to insufficient balance`);
+    }
+
     // Start Pumpswap data preloading immediately (coordinated with transaction)
     const pumpswapService = new PumpswapService();
     const preloadPromise = pumpswapService.preloadTokenData(tokenAddress);
