@@ -322,15 +322,24 @@ export async function executeExternalSell(
         `[${logId}] Adjusted sell amount from ${requestedAmount.toString()} to ${tokensToSell.toString()} due to insufficient balance`
       );
     }
-    // Start Pumpswap data preloading immediately (coordinated with transaction)
+    // OPTIMIZATION: Smart cache preloading - only preload if likely to be Pumpswap
     const pumpswapService = new PumpswapService();
-    const preloadPromise = pumpswapService.preloadTokenData(tokenAddress);
-
+    
     // Check if we have cached platform info from token display
     const { getCachedPlatform, markTokenAsPumpFun, markTokenAsPumpswap, isTokenGraduated } = await import(
       "../../service/token-detection-service"
     );
     const cachedPlatform = getCachedPlatform(tokenAddress);
+    
+    // Only preload Pumpswap data if we suspect it's actually on Pumpswap
+    let preloadPromise: Promise<void> | null = null;
+    if (cachedPlatform === "pumpswap" || cachedPlatform === null) {
+      // Start preloading only for Pumpswap tokens or unknown tokens
+      preloadPromise = pumpswapService.preloadTokenData(tokenAddress);
+      logger.info(`[${logId}] Starting Pumpswap preload for ${cachedPlatform || 'unknown'} platform`);
+    } else {
+      logger.info(`[${logId}] Skipping Pumpswap preload for cached ${cachedPlatform} token`);
+    }
 
     if (cachedPlatform === "pumpswap") {
       logger.info(`[${logId}] Using cached Pumpswap detection - going directly to Pumpswap`);
@@ -476,7 +485,7 @@ export async function executeExternalSell(
 
         sellTx.sign([sellerKeypair]);
 
-        // Send with retry logic (same as launch sells)
+        // Send with optimized retry logic (increased timeout and dynamic priority fees)
         const result = await sendAndConfirmTransactionWithRetry(
           sellTx,
           {
@@ -484,10 +493,15 @@ export async function executeExternalSell(
             signers: [sellerKeypair],
             instructions: [modifyComputeUnits, addPriorityFee, sellIx],
           },
-          10_000,
+          30_000, // Increased from 10_000 to 30_000 (30 seconds)
           3,
-          1000,
-          logId
+          2000, // Increased retry interval from 1000 to 2000ms
+          logId,
+          {
+            useSmartPriorityFees: true,
+            transactionType: "sell",
+            basePriorityFee: 2_000_000 // Higher base priority fee for sells
+          }
         );
 
         if (!result.success) {
@@ -513,10 +527,34 @@ export async function executeExternalSell(
       }
     }
 
-    // No cache or unknown - use bonding curve detection approach with graduation check
-    logger.info(`[${logId}] No cached platform, using bonding curve detection with graduation check`);
+    // No cache or unknown - use smart detection approach 
+    logger.info(`[${logId}] No cached platform, using smart detection with graduation check`);
 
-    // First, check if token has graduated (fast routing decision)
+    // OPTIMIZATION: Check token platform first to avoid unnecessary preloading
+    let platformDetected = "unknown";
+    try {
+      const { detectTokenPlatformFast } = await import("../../service/token-detection-service");
+      platformDetected = await detectTokenPlatformFast(tokenAddress);
+      logger.info(`[${logId}] Fast platform detection result: ${platformDetected}`);
+      
+      if (platformDetected === "pumpfun") {
+        // Token is on PumpFun - no need for Pumpswap preload
+        logger.info(`[${logId}] Token confirmed as PumpFun - skipping Pumpswap operations`);
+        // Skip to PumpFun sell attempt directly
+      }
+    } catch (error) {
+      logger.warn(`[${logId}] Platform detection failed, will proceed with fallback detection:`, error);
+    }
+
+    // Only wait for Pumpswap preload if we started it AND token might be on Pumpswap
+    if (preloadPromise && platformDetected !== "pumpfun") {
+      logger.info(`[${logId}] Waiting for Pumpswap preload to complete...`);
+      try {
+        await preloadPromise;
+      } catch (error) {
+        logger.warn(`[${logId}] Pumpswap preload failed, continuing anyway:`, error);
+      }
+    }
     try {
       const graduated = await isTokenGraduated(tokenAddress);
       if (graduated === true) {
@@ -668,7 +706,7 @@ export async function executeExternalSell(
 
         sellTx.sign([sellerKeypair]);
 
-        // Send with retry logic (same as launch sells)
+        // Send with optimized retry logic (increased timeout and dynamic priority fees)
         const result = await sendAndConfirmTransactionWithRetry(
           sellTx,
           {
@@ -676,10 +714,15 @@ export async function executeExternalSell(
             signers: [sellerKeypair],
             instructions: [modifyComputeUnits, addPriorityFee, sellIx],
           },
-          10_000,
+          30_000, // Increased from 10_000 to 30_000 (30 seconds)
           3,
-          1000,
-          logId
+          2000, // Increased retry interval from 1000 to 2000ms
+          logId,
+          {
+            useSmartPriorityFees: true,
+            transactionType: "sell",
+            basePriorityFee: 2_000_000 // Higher base priority fee for sells
+          }
         );
 
         if (!result.success) {
