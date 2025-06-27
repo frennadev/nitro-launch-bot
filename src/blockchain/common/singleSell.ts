@@ -33,14 +33,14 @@ export const handleSingleSell = async (
     try {
       let amt: bigint;
 
-      if (selltype === "all") {
-        const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
-        amt = BigInt(Math.floor(tokenBalance * LAMPORTS_PER_SOL));
-      } else {
-        const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
-        const percentAmt = sellPercent! * tokenBalance;
-        amt = BigInt(Math.floor(percentAmt * LAMPORTS_PER_SOL));
-      }
+          if (selltype === "all") {
+      const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
+      amt = BigInt(Math.floor(tokenBalance)); // getTokenBalance already returns raw token units
+    } else {
+      const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
+      const percentAmt = sellPercent! * tokenBalance;
+      amt = BigInt(Math.floor(percentAmt)); // getTokenBalance already returns raw token units
+    }
 
       const sellTx = await pumpswapService.sellTx({
         mint: mintPublicKey,
@@ -88,11 +88,11 @@ export const handleSingleSell = async (
 
     if (selltype === "all") {
       const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
-      amt = BigInt(Math.floor(tokenBalance * LAMPORTS_PER_SOL));
+      amt = BigInt(Math.floor(tokenBalance)); // getTokenBalance already returns raw token units
     } else {
       const tokenBalance = await getTokenBalance(mintPublicKey.toBase58(), sellerAddress);
       const percentAmt = sellPercent! * tokenBalance;
-      amt = BigInt(Math.floor(percentAmt * LAMPORTS_PER_SOL));
+      amt = BigInt(Math.floor(percentAmt)); // getTokenBalance already returns raw token units
     }
 
     const sellIx = sellInstruction(
