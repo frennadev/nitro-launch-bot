@@ -296,3 +296,38 @@ export function formatMilliseconds(milliseconds: number): string {
 
   return formattedTime.trim();
 }
+
+
+export const quoteSell = (
+  tokenAmountIn: bigint,
+  virtualTokenReserves: bigint,
+  virtualSolReserves: bigint,
+  realTokenReserves: bigint
+) => {
+  const tokenIn = tokenAmountIn > realTokenReserves ? realTokenReserves : tokenAmountIn;
+  const k = virtualSolReserves * virtualTokenReserves;
+  const newVirtualTokenReserves = virtualTokenReserves + tokenIn;
+  const newVirtualSolReserves = k / newVirtualTokenReserves + BigInt(1);
+  const solOut = virtualSolReserves - newVirtualSolReserves;
+  const minSolOut = applySlippage(solOut, 10);
+  return { tokenIn, minSolOut };
+};
+
+export const applySlippage = (amount: bigint, slippage: number) => {
+  const SlippageAdjustment = BigInt(1);
+  const Big10000 = BigInt(10000);
+
+  let slippageBP = (BigInt(Math.floor(100 * slippage)) + BigInt(25)) * SlippageAdjustment;
+  const maxSlippage = Big10000 * SlippageAdjustment;
+
+  if (slippageBP > maxSlippage) {
+    slippageBP = Big10000;
+  }
+
+  const slippageBPBN = slippageBP;
+
+  const slippageNumeratorMul = maxSlippage - slippageBPBN;
+  const slippageNumerator = amount * slippageNumeratorMul;
+
+  return slippageNumerator / maxSlippage;
+};
