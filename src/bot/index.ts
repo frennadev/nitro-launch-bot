@@ -1656,13 +1656,57 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
   let isUserToken = false;
   let holdingsText = "📌 Checking token holdings...";
   let walletsWithBalance = 0;
+  let marketCap = "N/A";
+  let price = "$N/A";
+  let liquidity = "N/A";
+  let platform = "🔍 Detecting...";
+  let renouncedStatus = "🔍 Checking...";
+  let freezeStatus = "🔍 Checking...";
 
   try {
-    // Get token information from DexScreener or other source if available
+    // Get token information from DexScreener
     const tokenInfo = await getTokenInfo(tokenAddress);
-    if (tokenInfo && tokenInfo.baseToken) {
-      tokenName = tokenInfo.baseToken.name || "Unknown";
-      tokenSymbol = tokenInfo.baseToken.symbol || "UNK";
+    if (tokenInfo) {
+      if (tokenInfo.baseToken) {
+        tokenName = tokenInfo.baseToken.name || "Unknown";
+        tokenSymbol = tokenInfo.baseToken.symbol || "UNK";
+      }
+      
+      // Format market data
+      if (tokenInfo.marketCap && tokenInfo.marketCap > 0) {
+        marketCap = `$${tokenInfo.marketCap.toLocaleString()}`;
+      }
+      
+      if (tokenInfo.priceUsd) {
+        const priceNum = parseFloat(tokenInfo.priceUsd);
+        if (priceNum > 0) {
+          if (priceNum < 0.000001) {
+            price = `$${priceNum.toExponential(2)}`;
+          } else if (priceNum < 0.01) {
+            price = `$${priceNum.toFixed(6)}`;
+          } else {
+            price = `$${priceNum.toFixed(4)}`;
+          }
+        }
+      }
+      
+      if (tokenInfo.liquidity && tokenInfo.liquidity.usd && tokenInfo.liquidity.usd > 0) {
+        liquidity = `$${tokenInfo.liquidity.usd.toLocaleString()}`;
+      }
+      
+      // Set platform from DexScreener data
+      if (tokenInfo.dexId) {
+        platform = tokenInfo.dexId.toUpperCase();
+      }
+    }
+
+    // Check token authorities (renounced/freeze status)
+    try {
+      const authorityStatus = await checkTokenRenouncedAndFrozen(tokenAddress);
+      renouncedStatus = authorityStatus.isRenounced ? "🟢 Renounced" : "🔴 Not Renounced";
+      freezeStatus = authorityStatus.isFrozen ? "🔴 Frozen" : "🟢 Not Frozen";
+    } catch (error) {
+      logger.warn(`Could not check token authorities for ${tokenAddress}:`, error);
     }
   } catch (error) {
     logger.warn(`Could not fetch token info for ${tokenAddress}:`, error);
@@ -1682,24 +1726,29 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
     holdingsText = "📌 No tokens found in your 5 buyer wallets"; // Placeholder
   }
 
-  // TODO: Fetch actual market data; this is placeholder data
-  const marketCap = "$4,404.38"; // Placeholder
-  const price = "$0.000004404"; // Placeholder
+  // Market data is now fetched above from DexScreener
 
   // Display token detail page with buy and sell options
   await ctx.reply(
     `🪙 ${tokenName} (${tokenSymbol})
 ${tokenAddress}
-Pump.fun 🔗 SO
+🔗Dex: ${platform}
+🎯Platform: ${platform === "PUMPFUN" ? "PUMP.FUN" : platform}
+🤑 Share Token & Earn
 
 Market Data
 📊 Market Cap: ${marketCap}
 💸 Price: ${price}
 🏦 Liquidity: ${liquidity}
 
+${renouncedStatus}
+${freezeStatus}
+
 🧐 No active limit orders
 
 ⭐️ W1: 0 SOLs
+
+CA • DEX • BRD • PHO • NEO • AXIOM • PF • GMGN • BBL
 
 Your Holdings
 ${holdingsText}`,
