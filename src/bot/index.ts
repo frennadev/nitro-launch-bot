@@ -1666,6 +1666,8 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
   try {
     // Get token information from DexScreener
     const tokenInfo = await getTokenInfo(tokenAddress);
+    logger.info(`[TokenDisplay] DexScreener data for ${tokenAddress}:`, tokenInfo);
+    
     if (tokenInfo) {
       if (tokenInfo.baseToken) {
         tokenName = tokenInfo.baseToken.name || "Unknown";
@@ -1675,6 +1677,9 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
       // Format market data
       if (tokenInfo.marketCap && tokenInfo.marketCap > 0) {
         marketCap = `$${tokenInfo.marketCap.toLocaleString()}`;
+        logger.info(`[TokenDisplay] Market cap formatted: ${marketCap}`);
+      } else {
+        logger.warn(`[TokenDisplay] No market cap data: marketCap=${tokenInfo.marketCap}`);
       }
       
       if (tokenInfo.priceUsd) {
@@ -1687,17 +1692,26 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
           } else {
             price = `$${priceNum.toFixed(4)}`;
           }
+          logger.info(`[TokenDisplay] Price formatted: ${price}`);
         }
+      } else {
+        logger.warn(`[TokenDisplay] No price data: priceUsd=${tokenInfo.priceUsd}`);
       }
       
       if (tokenInfo.liquidity && tokenInfo.liquidity.usd && tokenInfo.liquidity.usd > 0) {
         liquidity = `$${tokenInfo.liquidity.usd.toLocaleString()}`;
+        logger.info(`[TokenDisplay] Liquidity formatted: ${liquidity}`);
+      } else {
+        logger.warn(`[TokenDisplay] No liquidity data:`, tokenInfo.liquidity);
       }
       
       // Set platform from DexScreener data
       if (tokenInfo.dexId) {
         platform = tokenInfo.dexId.toUpperCase();
+        logger.info(`[TokenDisplay] Platform detected: ${platform}`);
       }
+    } else {
+      logger.warn(`[TokenDisplay] No token info returned from DexScreener for ${tokenAddress}`);
     }
 
     // Check token authorities (renounced/freeze status)
@@ -1715,15 +1729,52 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
   // Check if token is in user's list
   const userToken = await getUserTokenWithBuyWallets(user.id, tokenAddress);
   if (userToken) {
-    tokenName = userToken.name;
-    tokenSymbol = userToken.symbol;
+    // Only override token name/symbol if we didn't get it from DexScreener
+    if (tokenName === "Unknown Token") {
+      tokenName = userToken.name;
+    }
+    if (tokenSymbol === "UNK") {
+      tokenSymbol = userToken.symbol;
+    }
     isUserToken = true;
-    // TODO: Fetch actual holdings data if available
-    holdingsText = "📌 No tokens found in your 5 buyer wallets"; // Placeholder
-  } else {
-    // External token, could still check holdings
-    // TODO: Fetch holdings for external tokens if possible
-    holdingsText = "📌 No tokens found in your 5 buyer wallets"; // Placeholder
+  }
+
+  // Check actual token holdings in buyer wallets
+  try {
+    const buyerWallets = await getAllBuyerWallets(user.id);
+    let totalTokenBalance = 0;
+    walletsWithBalance = 0;
+
+    if (buyerWallets && buyerWallets.length > 0) {
+      const balancePromises = buyerWallets.map(async (wallet: any) => {
+        try {
+          const balance = await getTokenBalance(tokenAddress, wallet.address);
+          if (balance > 0) {
+            walletsWithBalance++;
+            return balance;
+          }
+          return 0;
+        } catch (error) {
+          logger.warn(`Error checking balance for wallet ${wallet.address}:`, error);
+          return 0;
+        }
+      });
+
+      const balances = await Promise.all(balancePromises);
+      totalTokenBalance = balances.reduce((sum, balance) => sum + balance, 0);
+    }
+
+    if (totalTokenBalance > 0) {
+      const formattedBalance = (totalTokenBalance / 1e6).toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+      });
+      holdingsText = `💰 ${formattedBalance} ${tokenSymbol} tokens across ${walletsWithBalance} wallet(s)`;
+    } else {
+      holdingsText = `📌 No ${tokenSymbol} tokens found in your ${buyerWallets.length} buyer wallets`;
+    }
+  } catch (error) {
+    logger.warn(`Error checking token holdings:`, error);
+    holdingsText = "📌 Error checking token holdings";
   }
 
   // Market data is now fetched above from DexScreener
