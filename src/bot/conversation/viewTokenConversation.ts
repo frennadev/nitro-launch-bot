@@ -183,9 +183,24 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
 
   while (true) {
     const response = await conversation.waitFor("callback_query:data");
-    await response.answerCallbackQuery();
 
     const data = response.callbackQuery?.data;
+
+    // Check if this is a sell/launch button that should be handled by global handlers
+    const isSellButton = data?.startsWith(`${CallBackQueries.SELL_DEV}_`) ||
+                        data?.startsWith(`${CallBackQueries.SELL_ALL}_`) ||
+                        data?.startsWith(`${CallBackQueries.SELL_PERCENT}_`) ||
+                        data?.startsWith(`${CallBackQueries.SELL_INDIVIDUAL}_`);
+    
+    const isLaunchButton = data?.startsWith(`${CallBackQueries.LAUNCH_TOKEN}_`);
+
+    // For sell/launch buttons, DON'T answer callback query and halt to let global handlers take over
+    if (isSellButton || isLaunchButton) {
+      return conversation.halt();
+    }
+
+    // For all other buttons, answer the callback query as normal
+    await response.answerCallbackQuery();
 
     if (data === "prev" && currentIndex > 0) {
       currentIndex--;
@@ -236,9 +251,6 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
       }
     } else if (data === "cancel_delete") {
       await showToken(currentIndex);
-    } else {
-      // Let other callback handlers take over (launch, sell, etc.)
-      return conversation.halt();
     }
   }
 };
