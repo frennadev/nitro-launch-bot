@@ -667,8 +667,15 @@ bot.callbackQuery(/^sellAll_([^_]+)_([^_]+)$/, async (ctx) => {
     tokenAddress: { $regex: re },
   }).exec();
 
-  if (!token) return ctx.reply("Token not found");
+  if (!token) {
+    // Token not found in database = external token
+    // Route to external sell mechanism using 100% sell
+    logger.info(`[SellAll] Token ${tokenAddress} not found in database - routing to external sell`);
+    await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, 100);
+    return;
+  }
 
+  // Token found in database = launch token, use internal sell mechanism
   const result = await handleSingleSell(new PublicKey(token.tokenAddress), walletAddress, "all");
   if (!result) return ctx.reply("❌ Error selling all token in address");
   const { success, signature } = result;
@@ -690,7 +697,29 @@ bot.callbackQuery(/^sellPct_([^_]+)_([^_]+)$/, async (ctx) => {
     tokenAddress: { $regex: re },
   }).exec();
 
-  if (!token) return ctx.reply("Token not found");
+  if (!token) {
+    // Token not found in database = external token
+    // For external tokens, route to external sell conversation with percentage selector
+    logger.info(`[SellPct] Token ${tokenAddress} not found in database - routing to external sell percentage selector`);
+    
+    // Show percentage selection for external tokens
+    const keyboard = new InlineKeyboard()
+      .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
+      .text("💸 Sell 50%", `sell_ca_50_${tokenAddress}`)
+      .row()
+      .text("💸 Sell 75%", `sell_ca_75_${tokenAddress}`)
+      .text("💸 Sell 100%", `sell_ca_100_${tokenAddress}`)
+      .row()
+      .text("❌ Cancel", CallBackQueries.CANCEL);
+
+    await ctx.reply("💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:", {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    });
+    return;
+  }
+  
+  // Token found in database = launch token, use internal percentage selector
   await ctx.conversation.enter("sellPercentageMessage", { tokenAddress, walletAddress })
 });
 
