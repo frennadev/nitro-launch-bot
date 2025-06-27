@@ -31,6 +31,11 @@ export const sellIndividualToken = async (conversation: Conversation<Context>, c
 
   const shortTokenAddress = address.slice(0, 6) + "-" + address.slice(-4);
 
+  // Format token amounts properly without abbreviation
+  const totalTokensFormatted = (totalTokens / 1e6).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  });
+
   const header = `
 💊 *${token.name}*
 🔑 Address: \`${token.tokenAddress}\`
@@ -40,14 +45,17 @@ export const sellIndividualToken = async (conversation: Conversation<Context>, c
 📊 *Summary:*  
 👝 ${walletsCount} wallets  
 💰 $${abbreviateNumber(totalValueUsd)} total  
-🪙 ${abbreviateNumber(totalTokens / 1e6)} tokens
+🪙 ${totalTokensFormatted} tokens
   `.trim();
 
   // 3) Build the per-wallet breakdown
   const details = holdersWallet
     .map((w) => {
       const shortAddr = w.pubkey.slice(0, 6) + "…" + w.pubkey.slice(-4);
-      return `\`${shortAddr}\` | ${abbreviateNumber(w.balance / 1e6)} ${token.symbol} | $${abbreviateNumber(w.tokenPrice)}`;
+      const walletTokensFormatted = (w.balance / 1e6).toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+      });
+      return `\`${shortAddr}\` | ${walletTokensFormatted} ${token.symbol} | $${abbreviateNumber(w.tokenPrice)}`;
     })
     .join("\n");
 
