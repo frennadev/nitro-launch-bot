@@ -299,7 +299,7 @@ export async function executeExternalSell(
     }
 
     // Convert tokenAmount to BigInt and ensure it doesn't exceed actual balance
-    const requestedAmount = BigInt(Math.floor(tokenAmount * 1000000)); // Ensure positive
+    const requestedAmount = BigInt(Math.floor(tokenAmount));
     const tokensToSell = requestedAmount > actualBalance ? actualBalance : requestedAmount;
 
     // **DEBUG LOGGING - Track exact values being used**
