@@ -572,6 +572,11 @@ bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
 bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
+  
+  // Add logging for debugging
+  logger.info(`[SellAll] Main sell all button clicked for token: ${tokenAddress}`);
+  console.log("Sell All button clicked for token:", tokenAddress);
+  
   await ctx.conversation.enter("walletSellConversation", tokenAddress, 100);
 });
 bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
