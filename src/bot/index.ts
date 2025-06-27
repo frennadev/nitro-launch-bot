@@ -657,40 +657,54 @@ bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
 
 bot.callbackQuery(/^sellAll_([^_]+)_([^_]+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
-  const [, walletAddress, tokenAddress] = ctx.match!;
+  const [, walletAddress, shortTokenAddress] = ctx.match!;
 
-  console.log("Found hereee", { walletAddress, tokenAddress });
-  const [prefix, suffix] = tokenAddress.split("-");
+  console.log("Found hereee", { walletAddress, shortTokenAddress });
+  
+  // Reconstruct full token address from shortened format (E8UwNk-PUMP -> E8UwNkiXc26D5LNHkKRNKPP5ttsY4kzfNRjE5N7GPUMP)
+  const [prefix, suffix] = shortTokenAddress.split("-");
   const re = new RegExp(`^${prefix}[A-Za-z0-9]*${suffix}$`);
 
   const token = await TokenModel.findOne({
     tokenAddress: { $regex: re },
   }).exec();
 
-  if (!token) {
+  if (token) {
+    // Token found in database = launch token, use internal sell mechanism
+    logger.info(`[SellAll] Found launch token in database: ${token.tokenAddress}`);
+    
+    const result = await handleSingleSell(new PublicKey(token.tokenAddress), walletAddress, "all");
+    if (!result) return ctx.reply("❌ Error selling all token in address");
+    const { success, signature } = result;
+    if (success) return ctx.reply(
+      `✅ Sold all tokens in address.\n\nTransaction Signature: <a href="https://solscan.io/tx/${signature}">View Transaction</a>`,
+      { parse_mode: "HTML" }
+    );
+  } else {
     // Token not found in database = external token
-    // Route to external sell mechanism using 100% sell
-    logger.info(`[SellAll] Token ${tokenAddress} not found in database - routing to external sell`);
-    await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, 100);
-    return;
+    // Individual wallet sells are only for launch tokens, redirect to external sell
+    logger.info(`[SellAll] Token ${shortTokenAddress} not found in database - redirecting to external sell`);
+    
+    // Try to reconstruct full address from current message context
+    const messageText = ctx.callbackQuery?.message?.text || "";
+    const fullAddressMatch = messageText.match(/🔑 Address: (\w+)/);
+    
+    if (fullAddressMatch) {
+      const fullTokenAddress = fullAddressMatch[1];
+      logger.info(`[SellAll] Extracted full address ${fullTokenAddress} from message context`);
+      await ctx.conversation.enter("externalTokenSellConversation", fullTokenAddress, 100);
+    } else {
+      return ctx.reply("❌ Could not determine full token address. Please use the main sell buttons from the token display.");
+    }
   }
-
-  // Token found in database = launch token, use internal sell mechanism
-  const result = await handleSingleSell(new PublicKey(token.tokenAddress), walletAddress, "all");
-  if (!result) return ctx.reply("❌ Error selling all token in address");
-  const { success, signature } = result;
-  if (success)return ctx.reply(
-    `✅ Sold all tokens in address.\n\nTransaction Signature: <a href="https://solscan.io/tx/${signature}">View Transaction</a>`,
-    { parse_mode: "HTML" }
-  );
 });
 
 bot.callbackQuery(/^sellPct_([^_]+)_([^_]+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
-  const [, walletAddress, tokenAddress] = ctx.match!;
+  const [, walletAddress, shortTokenAddress] = ctx.match!;
 
-  console.log("Found hereee", { walletAddress, tokenAddress });
-  const [prefix, suffix] = tokenAddress.split("-");
+  console.log("Found hereee", { walletAddress, shortTokenAddress });
+  const [prefix, suffix] = shortTokenAddress.split("-");
   const re = new RegExp(`^${prefix}[A-Za-z0-9]*${suffix}$`);
 
   const token = await TokenModel.findOne({
@@ -699,28 +713,38 @@ bot.callbackQuery(/^sellPct_([^_]+)_([^_]+)$/, async (ctx) => {
 
   if (!token) {
     // Token not found in database = external token
-    // For external tokens, route to external sell conversation with percentage selector
-    logger.info(`[SellPct] Token ${tokenAddress} not found in database - routing to external sell percentage selector`);
+    // Extract full address from message context and route to external sell
+    logger.info(`[SellPct] Token ${shortTokenAddress} not found in database - routing to external sell percentage selector`);
     
-    // Show percentage selection for external tokens
-    const keyboard = new InlineKeyboard()
-      .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
-      .text("💸 Sell 50%", `sell_ca_50_${tokenAddress}`)
-      .row()
-      .text("💸 Sell 75%", `sell_ca_75_${tokenAddress}`)
-      .text("💸 Sell 100%", `sell_ca_100_${tokenAddress}`)
-      .row()
-      .text("❌ Cancel", CallBackQueries.CANCEL);
+    const messageText = ctx.callbackQuery?.message?.text || "";
+    const fullAddressMatch = messageText.match(/🔑 Address: (\w+)/);
+    
+    if (fullAddressMatch) {
+      const fullTokenAddress = fullAddressMatch[1];
+      logger.info(`[SellPct] Extracted full address ${fullTokenAddress} from message context`);
+      
+      // Show percentage selection for external tokens
+      const keyboard = new InlineKeyboard()
+        .text("💸 Sell 25%", `sell_ca_25_${fullTokenAddress}`)
+        .text("💸 Sell 50%", `sell_ca_50_${fullTokenAddress}`)
+        .row()
+        .text("💸 Sell 75%", `sell_ca_75_${fullTokenAddress}`)
+        .text("💸 Sell 100%", `sell_ca_100_${fullTokenAddress}`)
+        .row()
+        .text("❌ Cancel", CallBackQueries.CANCEL);
 
-    await ctx.reply("💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:", {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
-    });
+      await ctx.reply("💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:", {
+        parse_mode: "Markdown",
+        reply_markup: keyboard,
+      });
+    } else {
+      return ctx.reply("❌ Could not determine full token address. Please use the main sell buttons from the token display.");
+    }
     return;
   }
   
   // Token found in database = launch token, use internal percentage selector
-  await ctx.conversation.enter("sellPercentageMessage", { tokenAddress, walletAddress })
+  await ctx.conversation.enter("sellPercentageMessage", { tokenAddress: token.tokenAddress, walletAddress })
 });
 
 // Handle external token buy button clicks (from token address messages)
