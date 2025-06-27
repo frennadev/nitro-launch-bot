@@ -1,6 +1,6 @@
 import { connectDB, disconnectDB } from "./backend/db";
 import { botLogger, dbLogger, logSystemHealth } from "./utils/logger";
-import { env } from "./config";
+import { env, LIGHTWEIGHT_MODE, ENABLE_BACKGROUND_PRELOADING, MAX_POOL_CACHE_SIZE } from "./config";
 
 let bot: any = null; // Will be initialized only with valid token
 let dbConnected = false;
@@ -8,6 +8,21 @@ let dbConnected = false;
 const nitroLaunchRunner = async () => {
   // Initialize logging system
   logSystemHealth();
+  
+  // Log performance configuration
+  if (LIGHTWEIGHT_MODE) {
+    botLogger.info("🪶 LIGHTWEIGHT MODE ENABLED - Optimized for minimal resource usage", {
+      backgroundPreloading: ENABLE_BACKGROUND_PRELOADING,
+      maxPoolCacheSize: MAX_POOL_CACHE_SIZE,
+      mode: "lightweight"
+    });
+  } else {
+    botLogger.info("🚀 FULL MODE ENABLED - Maximum performance with high resource usage", {
+      backgroundPreloading: ENABLE_BACKGROUND_PRELOADING,
+      maxPoolCacheSize: MAX_POOL_CACHE_SIZE,
+      mode: "full"
+    });
+  }
   
   // Try to establish DB connection
   dbLogger.info("Establishing db connection...");

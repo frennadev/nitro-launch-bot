@@ -5,8 +5,12 @@
   "scripts": {
     "build:bot": "bun build src/index.ts --outdir build --sourcemap=linked --target node --external ws --external rpc-websockets --external @solana/web3.js",
     "build:job": "bun build src/jobs/index.ts --outdir build/jobs --sourcemap=linked --target node --external ws --external rpc-websockets --external @solana/web3.js",
-    "start": "node build/index.js",
+    "start": "LIGHTWEIGHT_MODE=true ENABLE_BACKGROUND_PRELOADING=false bun run build/index.js",
+    "start:lightweight": "LIGHTWEIGHT_MODE=true ENABLE_BACKGROUND_PRELOADING=false bun run build/index.js",
+    "start:full": "LIGHTWEIGHT_MODE=false ENABLE_BACKGROUND_PRELOADING=true bun run build/index.js",
     "start:bun": "bun run build/index.js",
+    "start:node": "node build/index.js",
+    "demo:lightweight": "node lightweight-bot.js",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "devDependencies": {

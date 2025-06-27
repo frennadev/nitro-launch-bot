@@ -52,7 +52,7 @@ export const env = cleanEnv(process.env, {
 });
 
 // Performance and resource management
-export const ENABLE_BACKGROUND_PRELOADING = process.env.ENABLE_BACKGROUND_PRELOADING === 'true' || false; // Disable by default
+export const ENABLE_BACKGROUND_PRELOADING = process.env.ENABLE_BACKGROUND_PRELOADING === 'true'; // Disabled by default (only enable explicitly)
 export const ENABLE_POOL_CACHE = process.env.ENABLE_POOL_CACHE !== 'false'; // Enable by default
 export const LIGHTWEIGHT_MODE = process.env.LIGHTWEIGHT_MODE !== 'false'; // Enable lightweight mode by default
 export const MAX_POOL_CACHE_SIZE = parseInt(process.env.MAX_POOL_CACHE_SIZE || '1000'); // Limit cache size

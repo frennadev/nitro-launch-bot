@@ -11,7 +11,7 @@
  * - Minimal memory footprint
  */
 
-const { Connection, PublicKey } = require('@solana/web3.js');
+import { Connection, PublicKey } from '@solana/web3.js';
 
 // Simple configuration
 const config = {
@@ -178,15 +178,15 @@ async function main() {
   showResourceUsage();
 }
 
+// Check if this is the main module (ES module equivalent of require.main === module)
+if (import.meta.url === new URL(process.argv[1], 'file:').href) {
+  main().catch(console.error);
+}
+
 // Export for use as module
-module.exports = {
+export {
   getPoolInfo,
   handleSellTransaction,
   showResourceUsage,
   config
-};
-
-// Run if called directly
-if (require.main === module) {
-  main().catch(console.error);
-} 
+}; 
