@@ -162,8 +162,8 @@ export const executeWalletSell = async (
     return await sendAndConfirmTransactionWithRetry(
       sellTx,
       {
-        payer: devKeypair.publicKey,
-        signers: [devKeypair],
+        payer: wallet.publicKey,
+        signers: [wallet],
         instructions: [modifyComputeUnits, addPriorityFee, sellIx],
       },
       10_000,

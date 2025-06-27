@@ -7,6 +7,7 @@ import {
 } from "../../backend/functions-main";
 import { TokenState } from "../../backend/types";
 import { startLoadingState, sendLoadingMessage } from "../loading";
+import { decryptPrivateKey } from "../../backend/utils";
 
 const walletSellConversation = async (
   conversation: Conversation,
@@ -73,33 +74,49 @@ const walletSellConversation = async (
     "💸 **Submitting wallet sells...**\n\n⏳ Preparing transactions..."
   );
 
-  const buyWallets = token.launchData!.buyWallets.map(
-    (w) => (w as unknown as { privateKey: string }).privateKey
-  );
-  const result = await enqueueWalletSell(
-    user.id,
-    Number(user.telegramId),
-    tokenAddress,
-    (token.launchData!.devWallet! as unknown as { privateKey: string })
-      .privateKey,
-    buyWallets,
-    sellPercent
-  );
-
-  if (!result.success) {
-    await submitLoading.update(
-      "❌ **Failed to submit wallet sells**\n\nAn error occurred while submitting wallet sell details for execution. Please try again."
+  try {
+    // FIXED: Properly decrypt private keys from populated wallet documents
+    const buyWallets = token.launchData!.buyWallets.map((wallet: any) => {
+      if (!wallet.privateKey) {
+        throw new Error("Wallet private key not found in database");
+      }
+      return decryptPrivateKey(wallet.privateKey);
+    });
+    
+    // FIXED: Properly decrypt dev wallet private key
+    const devWalletPrivateKey = decryptPrivateKey(
+      (token.launchData!.devWallet! as any).privateKey
     );
-    await ctx.reply(
-      "An error occurred while submitting wallet sell details for execution ❌. Please try again.."
-    );
-  } else {
-    await submitLoading.update(
-      "🎉 **Wallet sells submitted successfully!**\n\n⏳ Your wallet sells are now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sells are completed."
+    
+    const result = await enqueueWalletSell(
+      user.id,
+      Number(user.telegramId),
+      tokenAddress,
+      devWalletPrivateKey,
+      buyWallets,
+      sellPercent
     );
 
-    // Start the loading state for the actual wallet sell process
-    await startLoadingState(ctx, "wallet_sell", tokenAddress);
+    if (!result.success) {
+      await submitLoading.update(
+        "❌ **Failed to submit wallet sells**\n\nAn error occurred while submitting wallet sell details for execution. Please try again."
+      );
+      await ctx.reply(
+        "An error occurred while submitting wallet sell details for execution ❌. Please try again.."
+      );
+    } else {
+      await submitLoading.update(
+        "🎉 **Wallet sells submitted successfully!**\n\n⏳ Your wallet sells are now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sells are completed."
+      );
+
+      // Start the loading state for the actual wallet sell process
+      await startLoadingState(ctx, "wallet_sell", tokenAddress);
+    }
+  } catch (error: any) {
+    await submitLoading.update(
+      "❌ **Failed to decrypt wallet keys**\n\nThere was an issue accessing your wallet data. Please try again."
+    );
+    await ctx.reply(`Wallet decryption error: ${error.message} ❌`);
   }
 };
 

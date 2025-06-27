@@ -7,6 +7,7 @@ import {
 } from "../../backend/functions-main";
 import { TokenState } from "../../backend/types";
 import { startLoadingState, sendLoadingMessage } from "../loading";
+import { decryptPrivateKey } from "../../backend/utils";
 
 const devSellConversation = async (
   conversation: Conversation,
@@ -70,29 +71,40 @@ const devSellConversation = async (
     "💰 **Submitting dev sell...**\n\n⏳ Preparing transaction..."
   );
 
-  const result = await enqueueDevSell(
-    user.id,
-    updatedCtx.message!.chat.id,
-    tokenAddress,
-    (token.launchData!.devWallet! as unknown as { privateKey: string })
-      .privateKey,
-    sellPercent
-  );
-
-  if (!result.success) {
-    await submitLoading.update(
-      "❌ **Failed to submit dev sell**\n\nAn error occurred while submitting dev sell details for execution. Please try again."
+  try {
+    // FIXED: Properly decrypt dev wallet private key
+    const devWalletPrivateKey = decryptPrivateKey(
+      (token.launchData!.devWallet! as any).privateKey
     );
-    await ctx.reply(
-      "An error occurred while submitting dev sell details for execution ❌. Please try again.."
-    );
-  } else {
-    await submitLoading.update(
-      "🎉 **Dev sell submitted successfully!**\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed."
+    
+    const result = await enqueueDevSell(
+      user.id,
+      updatedCtx.message!.chat.id,
+      tokenAddress,
+      devWalletPrivateKey,
+      sellPercent
     );
 
-    // Start the loading state for the actual dev sell process
-    await startLoadingState(ctx, "dev_sell", tokenAddress);
+    if (!result.success) {
+      await submitLoading.update(
+        "❌ **Failed to submit dev sell**\n\nAn error occurred while submitting dev sell details for execution. Please try again."
+      );
+      await ctx.reply(
+        "An error occurred while submitting dev sell details for execution ❌. Please try again.."
+      );
+    } else {
+      await submitLoading.update(
+        "🎉 **Dev sell submitted successfully!**\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed."
+      );
+
+      // Start the loading state for the actual dev sell process
+      await startLoadingState(ctx, "dev_sell", tokenAddress);
+    }
+  } catch (error: any) {
+    await submitLoading.update(
+      "❌ **Failed to decrypt dev wallet**\n\nThere was an issue accessing your dev wallet data. Please try again."
+    );
+    await ctx.reply(`Dev wallet decryption error: ${error.message} ❌`);
   }
 };
 
