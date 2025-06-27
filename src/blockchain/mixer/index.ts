@@ -21,82 +21,87 @@ const MIN_AMOUNT_PER_DESTINATION = 0.01; // 0.01 SOL minimum
 const MAX_AMOUNT_PER_DESTINATION = 2.0; // 2 SOL maximum
 
 /**
- * Generate incremental amounts for each destination wallet
- * Uses fixed sequence: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2 SOL for first 6 wallets
- * Then random amounts between 1.5-2.1 SOL for additional wallets
+ * Generate optimized amounts for efficient wallet distribution
+ * Uses smart wallet count calculation and incremental pattern distribution
+ * 
+ * Logic:
+ * - 0.5 SOL → 1 wallet
+ * - 0.5-1.2 SOL → 2 wallets (0.5 + 0.7 = 1.2 max)
+ * - 1.2-2.1 SOL → 3 wallets (0.5 + 0.7 + 0.9 = 2.1 max)
+ * - etc.
+ * 
+ * Distribution uses incremental pattern but gives remainder to last wallet if needed
  */
 function generateRandomAmounts(totalSol: number, destinationCount: number): number[] {
   const totalLamports = Math.floor(totalSol * 1e9);
-
-  // First 15 wallets sequence (in SOL): 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1
-  const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
-  const firstFifteenSequenceLamports = firstFifteenSequence.map((sol) => Math.floor(sol * 1e9));
-  const firstFifteenTotal = firstFifteenSequenceLamports.reduce((sum, amount) => sum + amount, 0); // Calculate exact total
-
+  
+  // Incremental sequence in SOL: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5...
+  const incrementalSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
+  const incrementalLamports = incrementalSequence.map(sol => Math.floor(sol * 1e9));
+  
+  // Calculate the optimal number of wallets needed for this amount
+  function calculateOptimalWalletCount(amount: number): number {
+    let cumulativeTotal = 0;
+    for (let i = 0; i < incrementalSequence.length; i++) {
+      cumulativeTotal += incrementalLamports[i];
+      if (amount <= cumulativeTotal) {
+        return i + 1; // Return 1-based wallet count
+      }
+    }
+    // For amounts larger than our sequence, use more wallets proportionally
+    const baseTotal = incrementalLamports.reduce((sum, amt) => sum + amt, 0);
+    const extraWallets = Math.ceil((amount - baseTotal) / (Math.floor(2.5 * 1e9))); // 2.5 SOL per extra wallet
+    return incrementalSequence.length + extraWallets;
+  }
+  
+  // Calculate optimal wallet count for this buy amount
+  const optimalWalletCount = calculateOptimalWalletCount(totalLamports);
+  
+  // Use the minimum of optimal count and available destinations
+  const walletsToUse = Math.min(optimalWalletCount, destinationCount);
+  
+  console.log(`🎯 Buy Amount: ${totalSol} SOL → Using ${walletsToUse}/${destinationCount} wallets (optimized from potential ${destinationCount})`);
+  
   const amounts: number[] = [];
-
-  if (totalLamports <= firstFifteenTotal) {
-    // Use only the sequence wallets needed for amounts ≤ 21.5 SOL
-    let remainingLamports = totalLamports;
-    let walletIndex = 0;
-
-    while (remainingLamports > 0 && walletIndex < firstFifteenSequence.length && walletIndex < destinationCount) {
-      const sequenceAmount = firstFifteenSequenceLamports[walletIndex];
-      if (remainingLamports >= sequenceAmount) {
-        amounts.push(sequenceAmount);
-        remainingLamports -= sequenceAmount;
+  let remainingLamports = totalLamports;
+  
+  // Distribute using incremental pattern for the wallets we're using
+  for (let i = 0; i < walletsToUse; i++) {
+    if (i < incrementalSequence.length) {
+      const incrementAmount = incrementalLamports[i];
+      
+      if (i === walletsToUse - 1) {
+        // Last wallet gets all remaining amount
+        amounts.push(remainingLamports);
+      } else if (remainingLamports >= incrementAmount) {
+        // Use the incremental amount if we have enough
+        amounts.push(incrementAmount);
+        remainingLamports -= incrementAmount;
       } else {
-        // Last wallet gets remaining amount
+        // Give remaining to this wallet if less than increment
         amounts.push(remainingLamports);
         remainingLamports = 0;
       }
-      walletIndex++;
-    }
-  } else {
-    // Use all 15 sequence wallets + additional wallets (last 5 with 4-5 SOL each)
-    // Add all fixed sequence amounts
-    amounts.push(...firstFifteenSequenceLamports);
-
-    let remainingLamports = totalLamports - firstFifteenTotal;
-    const additionalWallets = Math.min(5, destinationCount - 15); // Max 5 additional wallets
-
-    if (additionalWallets > 0) {
-      const minAdditionalLamports = Math.floor(4.0 * 1e9); // 4.0 SOL
-      const maxAdditionalLamports = Math.floor(5.0 * 1e9); // 5.0 SOL
-
-      // Generate amounts for additional wallets (4-5 SOL each)
-      for (let i = 0; i < additionalWallets - 1; i++) {
-        const maxForThis = Math.min(maxAdditionalLamports, remainingLamports - minAdditionalLamports);
-        const minForThis = Math.min(minAdditionalLamports, maxForThis);
-
-        if (minForThis <= maxForThis) {
-          // Prefer amounts closer to 4.5 SOL for better distribution
-          const preferredAmount = Math.floor(4.5 * 1e9);
-          const amount = Math.min(maxForThis, Math.max(minForThis, preferredAmount));
-          amounts.push(amount);
-          remainingLamports -= amount;
-        } else {
-          // If we can't fit minimum, give remaining to this wallet
-          amounts.push(remainingLamports);
-          remainingLamports = 0;
-          break;
-        }
-      }
-
-      // Last additional wallet gets remaining amount
-      if (remainingLamports > 0) {
+    } else {
+      // For wallets beyond sequence, distribute remaining evenly
+      const walletsLeft = walletsToUse - i;
+      const amountPerWallet = Math.floor(remainingLamports / walletsLeft);
+      
+      if (i === walletsToUse - 1) {
         amounts.push(remainingLamports);
+      } else {
+        amounts.push(amountPerWallet);
+        remainingLamports -= amountPerWallet;
       }
     }
   }
-
+  
   // Validate total matches (within rounding tolerance)
   const actualTotal = amounts.reduce((sum, amount) => sum + amount, 0);
-  if (Math.abs(actualTotal - totalLamports) > destinationCount) {
-    // Allow small rounding differences
+  if (Math.abs(actualTotal - totalLamports) > walletsToUse) {
     console.warn(`Amount distribution mismatch: expected ${totalLamports}, got ${actualTotal}`);
   }
-
+  
   return amounts;
 }
 

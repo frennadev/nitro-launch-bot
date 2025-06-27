@@ -119,19 +119,61 @@ export async function simpleDirectTransfer(
 }
 
 /**
- * Generate distribution amounts for buyer wallets
+ * Generate optimized distribution amounts for buyer wallets
+ * Uses smart wallet count calculation based on buy amount for efficiency
  */
 export function generateDistributionAmounts(totalSol: number, destinationCount: number): number[] {
   const totalLamports = Math.floor(totalSol * 1e9);
-  const amountPerWallet = Math.floor(totalLamports / destinationCount);
   
-  // Create equal distribution
-  const amounts = new Array(destinationCount).fill(amountPerWallet);
+  // Incremental sequence in SOL: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5...
+  const incrementalSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
+  const incrementalLamports = incrementalSequence.map(sol => Math.floor(sol * 1e9));
   
-  // Distribute any remainder to the first few wallets
-  const remainder = totalLamports - (amountPerWallet * destinationCount);
-  for (let i = 0; i < remainder && i < destinationCount; i++) {
-    amounts[i] += 1;
+  // Calculate optimal wallet count for this amount
+  function calculateOptimalWalletCount(amount: number): number {
+    let cumulativeTotal = 0;
+    for (let i = 0; i < incrementalSequence.length; i++) {
+      cumulativeTotal += incrementalLamports[i];
+      if (amount <= cumulativeTotal) {
+        return i + 1;
+      }
+    }
+    const baseTotal = incrementalLamports.reduce((sum, amt) => sum + amt, 0);
+    const extraWallets = Math.ceil((amount - baseTotal) / (Math.floor(2.5 * 1e9)));
+    return incrementalSequence.length + extraWallets;
+  }
+  
+  const optimalWalletCount = calculateOptimalWalletCount(totalLamports);
+  const walletsToUse = Math.min(optimalWalletCount, destinationCount);
+  
+  const amounts: number[] = [];
+  let remainingLamports = totalLamports;
+  
+  // Distribute using incremental pattern for optimal wallets
+  for (let i = 0; i < walletsToUse; i++) {
+    if (i < incrementalSequence.length) {
+      const incrementAmount = incrementalLamports[i];
+      
+      if (i === walletsToUse - 1) {
+        amounts.push(remainingLamports);
+      } else if (remainingLamports >= incrementAmount) {
+        amounts.push(incrementAmount);
+        remainingLamports -= incrementAmount;
+      } else {
+        amounts.push(remainingLamports);
+        remainingLamports = 0;
+      }
+    } else {
+      const walletsLeft = walletsToUse - i;
+      const amountPerWallet = Math.floor(remainingLamports / walletsLeft);
+      
+      if (i === walletsToUse - 1) {
+        amounts.push(remainingLamports);
+      } else {
+        amounts.push(amountPerWallet);
+        remainingLamports -= amountPerWallet;
+      }
+    }
   }
   
   return amounts;
