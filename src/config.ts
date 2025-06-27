@@ -8,6 +8,16 @@ const validStr = makeValidator((x) => {
   return x;
 });
 
+const validBool = makeValidator((x) => {
+  if (typeof x !== "boolean") throw new Error("Should be a boolean");
+  return x;
+});
+
+const validInt = makeValidator((x) => {
+  if (typeof x !== "number" || isNaN(x)) throw new Error("Should be a number");
+  return x;
+});
+
 export const env = cleanEnv(process.env, {
   NODE_ENV: str({
     default: "development",
@@ -40,3 +50,9 @@ export const env = cleanEnv(process.env, {
   TRANSACTION_FEE_WALLET: str({ default: "GRx7vW9ndEhqiL5e8scBQTdse3db9GCVyx9JyH2Ho7R" }),
   MIXER_FEE_WALLET: str({ default: "GRx7vW9ndEhqiL5e8scBQTdse3db9GCVyx9JyH2Ho7R" }),
 });
+
+// Performance and resource management
+export const ENABLE_BACKGROUND_PRELOADING = process.env.ENABLE_BACKGROUND_PRELOADING === 'true' || false; // Disable by default
+export const ENABLE_POOL_CACHE = process.env.ENABLE_POOL_CACHE !== 'false'; // Enable by default
+export const LIGHTWEIGHT_MODE = process.env.LIGHTWEIGHT_MODE !== 'false'; // Enable lightweight mode by default
+export const MAX_POOL_CACHE_SIZE = parseInt(process.env.MAX_POOL_CACHE_SIZE || '1000'); // Limit cache size

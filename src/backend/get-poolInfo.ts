@@ -2,12 +2,13 @@ import { PublicKey } from "@solana/web3.js";
 
 import base58 from "bs58";
 
-import { struct, u16, u8 } from "@solana/buffer-layout";
+import { struct, u16, u8, u32 } from "@solana/buffer-layout";
 import { publicKey, u64 } from "@solana/buffer-layout-utils";
 import { connection } from "../blockchain/common/connection";
+import { LIGHTWEIGHT_MODE, ENABLE_BACKGROUND_PRELOADING, MAX_POOL_CACHE_SIZE } from "../config";
 
 // Define the program ID directly to avoid circular imports
-const PUMPSWAP_AMM_PROGRAM_ID = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+const pumpswap_amm_program_id = new PublicKey("D1ZN9Wj1fRSUQfCjhvnu1hqDMT7hzjzBBpi12nVWqQhY");
 
 export type PumpSwapPool = {
   discriminator: bigint;
@@ -42,7 +43,7 @@ export const POOL_LAYOUT = struct<PumpSwapPool>([
   publicKey("coinCreator"),
 ]);
 
-// Enhanced caching system for pool discovery with aggressive optimization
+// Enhanced caching system for pool discovery with lightweight optimization
 class PoolDiscoveryCache {
   private static instance: PoolDiscoveryCache;
   private allPoolsCache: { pools: PoolInfo[]; lastUpdated: number } | null = null;
@@ -52,37 +53,42 @@ class PoolDiscoveryCache {
   private preloadPromise: Promise<void> | null = null;
   private preloadingStarted = false; // Track if preloading has been started
   
-  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes for full pool scan cache
+  private readonly CACHE_TTL = LIGHTWEIGHT_MODE ? 10 * 60 * 1000 : 5 * 60 * 1000; // Longer TTL in lightweight mode
   private readonly TOKEN_CACHE_TTL = 10 * 60 * 1000; // 10 minutes for individual token pools
-  private readonly AGGRESSIVE_PRELOAD_INTERVAL = 2 * 60 * 1000; // Preload every 2 minutes
+  private readonly AGGRESSIVE_PRELOAD_INTERVAL = LIGHTWEIGHT_MODE ? 10 * 60 * 1000 : 2 * 60 * 1000; // Less frequent in lightweight mode
 
   static getInstance(): PoolDiscoveryCache {
     if (!PoolDiscoveryCache.instance) {
       PoolDiscoveryCache.instance = new PoolDiscoveryCache();
-      // Start aggressive background preloading with delay to avoid startup issues
-      setTimeout(() => {
-        PoolDiscoveryCache.instance.startAggressivePreloading();
-      }, 5000); // 5 second delay to ensure all modules are loaded
+      
+      // Only start background preloading if enabled and not in lightweight mode
+      if (ENABLE_BACKGROUND_PRELOADING && !LIGHTWEIGHT_MODE) {
+        setTimeout(() => {
+          PoolDiscoveryCache.instance.startAggressivePreloading();
+        }, 5000); // 5 second delay to ensure all modules are loaded
+      } else {
+        console.log(`[PoolDiscoveryCache] Background preloading disabled (LIGHTWEIGHT_MODE: ${LIGHTWEIGHT_MODE})`);
+      }
     }
     return PoolDiscoveryCache.instance;
   }
 
-  // Start aggressive background preloading with error handling
+  // Start aggressive background preloading with error handling (only if enabled)
   private startAggressivePreloading(): void {
-    if (this.preloadingStarted) {
-      console.log(`[PoolDiscoveryCache] Preloading already started, skipping...`);
+    if (this.preloadingStarted || LIGHTWEIGHT_MODE) {
+      console.log(`[PoolDiscoveryCache] Preloading already started or disabled in lightweight mode, skipping...`);
       return;
     }
     
     this.preloadingStarted = true;
-    console.log(`[PoolDiscoveryCache] Starting aggressive background preloading...`);
+    console.log(`[PoolDiscoveryCache] Starting background preloading (interval: ${this.AGGRESSIVE_PRELOAD_INTERVAL}ms)...`);
     
     // Immediate preload with error handling
     this.preloadAllPools().catch(err => {
       console.warn(`[PoolDiscoveryCache] Initial preload failed, will retry:`, err);
     });
     
-    // Continuous preloading every 2 minutes
+    // Continuous preloading 
     setInterval(() => {
       if (!this.isPreloading) {
         this.preloadAllPools().catch(err => {
@@ -92,10 +98,17 @@ class PoolDiscoveryCache {
     }, this.AGGRESSIVE_PRELOAD_INTERVAL);
   }
 
-  // Cache all pools data with index mapping
+  // Cache all pools data with size limits in lightweight mode
   setAllPools(pools: PoolInfo[]): void {
+    // In lightweight mode, limit the number of cached pools
+    let poolsToCache = pools;
+    if (LIGHTWEIGHT_MODE && pools.length > MAX_POOL_CACHE_SIZE) {
+      poolsToCache = pools.slice(0, MAX_POOL_CACHE_SIZE);
+      console.log(`[PoolDiscoveryCache] Lightweight mode: limiting cache to ${MAX_POOL_CACHE_SIZE} pools`);
+    }
+
     this.allPoolsCache = {
-      pools,
+      pools: poolsToCache,
       lastUpdated: Date.now()
     };
 
@@ -104,7 +117,7 @@ class PoolDiscoveryCache {
     this.poolByIndexCache.clear();
 
     // Cache individual token lookups and index lookups
-    for (const pool of pools) {
+    for (const pool of poolsToCache) {
       const baseKey = pool.baseMint.toBase58();
       const quoteKey = pool.quoteMint.toBase58();
       
@@ -116,7 +129,7 @@ class PoolDiscoveryCache {
       this.poolByIndexCache.set(pool.index, pool);
     }
 
-    console.log(`[PoolDiscoveryCache] Aggressively cached ${pools.length} pools with ${this.poolByTokenCache.size} token mappings`);
+    console.log(`[PoolDiscoveryCache] Cached ${poolsToCache.length}/${pools.length} pools with ${this.poolByTokenCache.size} token mappings (lightweight: ${LIGHTWEIGHT_MODE})`);
   }
 
   // Get all pools with TTL check
@@ -185,14 +198,14 @@ class PoolDiscoveryCache {
   private async _performPreload(): Promise<void> {
     try {
       // Validate that we have the program ID
-      if (!PUMPSWAP_AMM_PROGRAM_ID) {
-        throw new Error("PUMPSWAP_AMM_PROGRAM_ID is not defined");
+      if (!pumpswap_amm_program_id) {
+        throw new Error("pumpswap_amm_program_id is not defined");
       }
 
       console.log(`[PoolDiscoveryCache] Starting aggressive pool preload...`);
       const start = Date.now();
       
-      const accounts = await connection.getProgramAccounts(PUMPSWAP_AMM_PROGRAM_ID, {
+      const accounts = await connection.getProgramAccounts(pumpswap_amm_program_id, {
         commitment: 'confirmed', // Use confirmed for faster response
         dataSlice: undefined, // Get full account data
       });
@@ -286,12 +299,12 @@ export const getTokenPoolInfo = async (tokenMint: string): Promise<PoolInfo | nu
 
   try {
     // Validate program ID before making RPC call
-    if (!PUMPSWAP_AMM_PROGRAM_ID) {
-      console.error(`[getTokenPoolInfo] PUMPSWAP_AMM_PROGRAM_ID is undefined, cannot fetch from RPC`);
+    if (!pumpswap_amm_program_id) {
+      console.error(`[getTokenPoolInfo] pumpswap_amm_program_id is undefined, cannot fetch from RPC`);
       return null;
     }
 
-    const accounts = await connection.getProgramAccounts(PUMPSWAP_AMM_PROGRAM_ID, {
+    const accounts = await connection.getProgramAccounts(pumpswap_amm_program_id, {
       commitment: 'confirmed',
       filters: [
         // Try to filter by token mint if possible to reduce data transfer
@@ -307,7 +320,7 @@ export const getTokenPoolInfo = async (tokenMint: string): Promise<PoolInfo | nu
     // If no filtered results, fall back to full scan
     if (accounts.length === 0) {
       console.log(`[getTokenPoolInfo] No filtered results, falling back to full scan...`);
-      const allAccounts = await connection.getProgramAccounts(PUMPSWAP_AMM_PROGRAM_ID);
+      const allAccounts = await connection.getProgramAccounts(pumpswap_amm_program_id);
       
       for (const { pubkey, account } of allAccounts) {
         const poolInfo = POOL_LAYOUT.decode(account.data as Buffer);
