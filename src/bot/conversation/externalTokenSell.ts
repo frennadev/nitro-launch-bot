@@ -101,7 +101,7 @@ const externalTokenSellConversation = async (
       }
       if (tokenInfo && tokenInfo.priceUsd) {
         tokenPrice = parseFloat(tokenInfo.priceUsd) || 0;
-        valueToSell = (totalTokenBalance * tokenPrice * sellPercent) / 100;
+        valueToSell = ((totalTokenBalance / 1e6) * tokenPrice * sellPercent) / 100;
       }
     } catch (error) {
       logger.warn(`[ExternalTokenSell] Token info fetch failed or timed out, proceeding with defaults:`, error);
@@ -117,7 +117,7 @@ const externalTokenSellConversation = async (
       ``,
       `📊 **Sell Details:**`,
       `• Sell Percentage: ${sellPercent}%`,
-      `• Tokens to Sell: ${escape(tokensToSell.toLocaleString())}`,
+      `• Tokens to Sell: ${escape((tokensToSell / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 }))}`,
       tokenPrice > 0 ? `• Estimated Value: ${escape(`$${valueToSell.toFixed(2)}`)}` : `• Estimated Value: Unknown`,
       `• Using: Funding Wallet`,
       ``,
