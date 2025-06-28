@@ -228,17 +228,187 @@ export async function getSolBalance(walletAddress: string): Promise<number> {
 export const getTokenInfo = async (tokenAddress: string) => {
   const cacheKey = `${tokenAddress}::data`;
   try {
-    const cached = await redisClient.get(cacheKey);
-    if (cached) {
-      return JSON.parse(cached)[0];
+    // Try to get from cache first
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        console.log(`[getTokenInfo] Cache hit for ${tokenAddress}`);
+        return JSON.parse(cached)[0];
+      }
+    } catch (redisError) {
+      console.warn(`[getTokenInfo] Redis cache failed for ${tokenAddress}:`, redisError);
+      // Continue without cache
     }
-    const response = await axios.get(`https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`);
+
+    // Fetch from DexScreener API
+    console.log(`[getTokenInfo] Fetching from DexScreener API for ${tokenAddress}`);
+    const response = await axios.get(`https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`, {
+      timeout: 10000, // 10 second timeout
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; NitroBot/1.0)',
+      }
+    });
+    
     const data = response.data || [];
-    await redisClient.set(cacheKey, JSON.stringify(data), "EX", 180);
+    console.log(`[getTokenInfo] DexScreener response for ${tokenAddress}:`, {
+      status: response.status,
+      dataLength: data.length,
+      hasFirstItem: !!data[0]
+    });
+
+    // If DexScreener returns empty data, try PumpFun fallback
+    if (!data || data.length === 0 || !data[0]) {
+      console.log(`[getTokenInfo] DexScreener returned empty data, trying PumpFun fallback...`);
+      const pumpfunData = await getPumpFunTokenInfo(tokenAddress);
+      if (pumpfunData) {
+        console.log(`[getTokenInfo] PumpFun fallback successful for ${tokenAddress}`);
+        
+        // Try to cache the PumpFun result
+        try {
+          await redisClient.set(cacheKey, JSON.stringify([pumpfunData]), "EX", 60); // Shorter cache for PumpFun data
+        } catch (redisError) {
+          console.warn(`[getTokenInfo] Redis cache set failed for PumpFun data:`, redisError);
+        }
+        
+        return pumpfunData;
+      }
+    }
+
+    // Try to cache the result
+    try {
+      await redisClient.set(cacheKey, JSON.stringify(data), "EX", 180);
+    } catch (redisError) {
+      console.warn(`[getTokenInfo] Redis cache set failed for ${tokenAddress}:`, redisError);
+      // Continue without caching
+    }
 
     return data[0];
-  } catch (error) {
-    console.error("Error fetching token market cap:", error);
+  } catch (error: any) {
+    console.error(`[getTokenInfo] Complete failure for ${tokenAddress}:`, {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data
+    });
+    
+    // Try PumpFun fallback on complete API failure
+    console.log(`[getTokenInfo] API failed, trying PumpFun fallback as last resort...`);
+    try {
+      const pumpfunData = await getPumpFunTokenInfo(tokenAddress);
+      if (pumpfunData) {
+        console.log(`[getTokenInfo] PumpFun fallback successful after API failure`);
+        return pumpfunData;
+      }
+    } catch (pumpfunError) {
+      console.warn(`[getTokenInfo] PumpFun fallback also failed:`, pumpfunError);
+    }
+    
+    return null; // Return null instead of undefined for better error handling
+  }
+};
+
+/**
+ * Get token market data from PumpFun bonding curve (fallback when DexScreener fails)
+ */
+export const getPumpFunTokenInfo = async (tokenAddress: string) => {
+  try {
+    // Import PumpFun utilities dynamically to avoid circular imports
+    const { getBondingCurve, getBondingCurveData } = await import('../blockchain/pumpfun/utils');
+    const { PublicKey } = await import('@solana/web3.js');
+    const { connection } = await import('../blockchain/common/connection');
+    const { getMint } = await import('@solana/spl-token');
+    
+    console.log(`[getPumpFunTokenInfo] Fetching bonding curve data for ${tokenAddress}`);
+    
+    const mintPk = new PublicKey(tokenAddress);
+    const { bondingCurve } = getBondingCurve(mintPk);
+    const bondingCurveData = await getBondingCurveData(bondingCurve);
+    
+    if (!bondingCurveData) {
+      console.log(`[getPumpFunTokenInfo] No bonding curve data found - not a PumpFun token`);
+      return null;
+    }
+    
+    console.log(`[getPumpFunTokenInfo] Bonding curve data found, calculating market metrics...`);
+    
+    // Get token metadata
+    let tokenName = "Unknown Token";
+    let tokenSymbol = "UNK";
+    let tokenDecimals = 6; // PumpFun tokens are typically 6 decimals
+    
+    try {
+      const mintInfo = await getMint(connection, mintPk);
+      tokenDecimals = mintInfo.decimals;
+      console.log(`[getPumpFunTokenInfo] Token decimals: ${tokenDecimals}`);
+    } catch (error) {
+      console.warn(`[getPumpFunTokenInfo] Could not fetch mint info, using default decimals`);
+    }
+    
+    // Calculate market metrics from bonding curve data
+    const virtualSolReserves = Number(bondingCurveData.virtualSolReserves) / 1e9; // Convert lamports to SOL
+    const virtualTokenReserves = Number(bondingCurveData.virtualTokenReserves) / Math.pow(10, tokenDecimals);
+    const realTokenReserves = Number(bondingCurveData.realTokenReserves) / Math.pow(10, tokenDecimals);
+    const tokenTotalSupply = Number(bondingCurveData.tokenTotalSupply) / Math.pow(10, tokenDecimals);
+    
+    // Calculate price: SOL per token
+    const priceInSol = virtualSolReserves / virtualTokenReserves;
+    
+    // Estimate SOL price (this could be fetched from an API for more accuracy)
+    const estimatedSolPrice = 240; // USD, could be made dynamic
+    const priceUsd = priceInSol * estimatedSolPrice;
+    
+    // Calculate market cap: circulating supply * price
+    const circulatingSupply = tokenTotalSupply - realTokenReserves; // Tokens that have been bought
+    const marketCap = circulatingSupply * priceUsd;
+    
+    // Calculate liquidity (total SOL in the curve)
+    const liquidityUsd = virtualSolReserves * estimatedSolPrice;
+    
+    console.log(`[getPumpFunTokenInfo] Calculated metrics:`, {
+      priceUsd: priceUsd.toFixed(8),
+      marketCap: marketCap.toFixed(2),
+      liquidityUsd: liquidityUsd.toFixed(2),
+      circulatingSupply: circulatingSupply.toFixed(0)
+    });
+    
+    // Return data in DexScreener-compatible format
+    return {
+      chainId: "solana",
+      dexId: "pumpfun",
+      url: `https://pump.fun/${tokenAddress}`,
+      pairAddress: bondingCurve.toBase58(),
+      baseToken: {
+        address: tokenAddress,
+        name: tokenName,
+        symbol: tokenSymbol,
+        decimals: tokenDecimals
+      },
+      quoteToken: {
+        address: "So11111111111111111111111111111111111111112", // WSOL
+        name: "Wrapped SOL",
+        symbol: "SOL",
+        decimals: 9
+      },
+      priceNative: priceInSol.toString(),
+      priceUsd: priceUsd.toString(),
+      marketCap: marketCap,
+      liquidity: {
+        usd: liquidityUsd,
+        base: realTokenReserves,
+        quote: virtualSolReserves
+      },
+      fdv: tokenTotalSupply * priceUsd, // Fully diluted valuation
+      pairCreatedAt: Date.now() - 86400000, // Estimate 1 day ago
+      info: {
+        imageUrl: null,
+        websites: [`https://pump.fun/${tokenAddress}`],
+        socials: []
+      }
+    };
+    
+  } catch (error: any) {
+    console.error(`[getPumpFunTokenInfo] Error fetching PumpFun data for ${tokenAddress}:`, error.message);
+    return null;
   }
 };
 
