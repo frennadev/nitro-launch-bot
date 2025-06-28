@@ -1160,15 +1160,34 @@ ${initialHoldingsText}`,
             try {
               const user = await getUser(ctx.chat.id.toString());
               if (user) {
-                const fundingWallet = await getFundingWallet(user.id);
-                if (fundingWallet) {
-                  const balance = await getTokenBalance(text, fundingWallet.publicKey);
-                  return {
-                    type: 'holdings',
-                    balance: balance,
-                    walletsWithBalance: balance > 0 ? 1 : 0
-                  };
+                const buyerWallets = await getAllBuyerWallets(user.id);
+                let totalTokenBalance = 0;
+                let walletsWithBalance = 0;
+
+                if (buyerWallets && buyerWallets.length > 0) {
+                  const balancePromises = buyerWallets.map(async (wallet: any) => {
+                    try {
+                      const balance = await getTokenBalance(text, wallet.publicKey);
+                      if (balance > 0) {
+                        walletsWithBalance++;
+                        return balance;
+                      }
+                      return 0;
+                    } catch (error) {
+                      logger.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
+                      return 0;
+                    }
+                  });
+
+                  const balances = await Promise.all(balancePromises);
+                  totalTokenBalance = balances.reduce((sum, balance) => sum + balance, 0);
                 }
+
+                return {
+                  type: 'holdings',
+                  balance: totalTokenBalance,
+                  walletsWithBalance: walletsWithBalance
+                };
               }
               return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
             } catch (error: any) {
