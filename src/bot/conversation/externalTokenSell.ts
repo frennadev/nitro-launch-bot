@@ -1,11 +1,11 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { getUser, getFundingWallet } from "../../backend/functions";
-import { getTokenBalance, getTokenInfo } from "../../backend/utils";
+import { getUser, getFundingWallet, getAllTradingWallets } from "../../backend/functions";
+import { getTokenBalance, getTokenInfo, decryptPrivateKey } from "../../backend/utils";
 import { sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
-import { executeExternalSell } from "../../blockchain/pumpfun/externalSell";
+import { executeExternalTokenSell } from "../../blockchain/pumpfun/externalSell";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 import { escape, safeEditMessageText } from "../utils";
 
@@ -31,43 +31,54 @@ const externalTokenSellConversation = async (
     return;
   }
 
-  // -------- GET FUNDING WALLET ----------
-  const fundingWallet = await getFundingWallet(user.id);
-  if (!fundingWallet) {
+  // -------- GET BUYER WALLETS ----------
+  const buyerWallets = await getAllTradingWallets(user.id);
+  if (buyerWallets.length === 0) {
     await safeEditMessageText(ctx,
-      "❌ No funding wallet found. Please configure a funding wallet first."
+      "❌ No buyer wallets found. Please configure buyer wallets first."
     );
     await conversation.halt();
     return;
   }
 
   try {
-    // Check token balance first (this is the critical check)
+    // Check token balance across all buyer wallets
     logger.info(
-      `[ExternalTokenSell] Checking balance for token ${tokenAddress} in funding wallet ${fundingWallet.publicKey}`
+      `[ExternalTokenSell] Checking balance for token ${tokenAddress} across ${buyerWallets.length} buyer wallets`
     );
 
     let totalTokenBalance = 0;
-    try {
-      totalTokenBalance = await getTokenBalance(tokenAddress, fundingWallet.publicKey);
-      logger.info(
-        `[ExternalTokenSell] Funding wallet balance: ${totalTokenBalance} tokens`
-      );
-    } catch (error) {
-      logger.error(
-        `[ExternalTokenSell] Error checking balance for funding wallet:`,
-        error
-      );
-      await safeEditMessageText(ctx,
-        "❌ Error checking token balance in funding wallet. Please try again."
-      );
-      await conversation.halt();
-      return;
+    const walletsWithBalance = [];
+    
+    for (const wallet of buyerWallets) {
+      try {
+        const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        if (balance > 0) {
+          totalTokenBalance += balance;
+          walletsWithBalance.push({
+            publicKey: wallet.publicKey,
+            privateKey: wallet.privateKey,
+            balance: balance
+          });
+          logger.info(
+            `[ExternalTokenSell] Wallet ${wallet.publicKey}: ${balance} tokens`
+          );
+        }
+      } catch (error) {
+        logger.warn(
+          `[ExternalTokenSell] Error checking balance for wallet ${wallet.publicKey}:`,
+          error
+        );
+      }
     }
+
+    logger.info(
+      `[ExternalTokenSell] Total balance across buyer wallets: ${totalTokenBalance} tokens`
+    );
 
     if (totalTokenBalance === 0) {
       await safeEditMessageText(ctx,
-        "❌ No tokens found in your funding wallet for this token address."
+        "❌ No tokens found in your buyer wallets for this token address."
       );
       await conversation.halt();
       return;
@@ -119,7 +130,7 @@ const externalTokenSellConversation = async (
       `• Sell Percentage: ${sellPercent}%`,
       `• Tokens to Sell: ${escape((tokensToSell / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 }))}`,
       tokenPrice > 0 ? `• Estimated Value: ${escape(`$${valueToSell.toFixed(2)}`)}` : `• Estimated Value: Unknown`,
-      `• Using: Funding Wallet`,
+      `• Using: Buyer Wallets`,
       ``,
       `⚠️ **Important Notes:**`,
       `• This is an external token sell (not launched via our bot)`,
@@ -155,16 +166,15 @@ const externalTokenSellConversation = async (
       );
 
       try {
-        // Execute the external token sell using funding wallet
-        const keypair = secretKeyToKeypair(fundingWallet.privateKey);
-        const result = await executeExternalSell(tokenAddress, keypair, tokensToSell);
+        // Execute the external token sell using buyer wallets
+        const buyerWalletPrivateKeys = walletsWithBalance.map(w => w.privateKey);
+        const result = await executeExternalTokenSell(tokenAddress, buyerWalletPrivateKeys, sellPercent);
 
         if (result.success) {
-          const platformText = result.platform === 'pumpswap' ? '⚡ Pumpswap' : '🚀 PumpFun';
-          const solReceivedText = result.solReceived || "Unknown";
+          const solReceivedText = result.totalSolReceived?.toFixed(6) || "Unknown";
           await sendMessage(
             response,
-            `✅ **External token sell completed successfully!**\n\n📊 **Results:**\n• Platform: ${platformText}\n• SOL Received: ${solReceivedText} SOL\n• Transaction: \`${result.signature}\``,
+            `✅ **External token sell completed successfully!**\n\n📊 **Results:**\n• Successful Sells: ${result.successfulSells}\n• Failed Sells: ${result.failedSells}\n• Total SOL Received: ${solReceivedText} SOL\n• Platform: 🚀 PumpFun`,
             { parse_mode: "Markdown" }
           );
         } else {

@@ -104,6 +104,7 @@ export const getAllBuyerWallets = originalFunctions.getAllBuyerWallets;
 export const addBuyerWallet = originalFunctions.addBuyerWallet;
 export const generateNewBuyerWallet = originalFunctions.generateNewBuyerWallet;
 export const deleteBuyerWallet = originalFunctions.deleteBuyerWallet;
+export const getBuyerWalletPrivateKey = originalFunctions.getBuyerWalletPrivateKey;
 
 // Wallet Pool Functions
 export const initializeWalletPool = originalFunctions.initializeWalletPool;
@@ -112,7 +113,6 @@ export const getWalletPoolStats = originalFunctions.getWalletPoolStats;
 export const ensureWalletPoolHealth = originalFunctions.ensureWalletPoolHealth;
 export const calculateMaxBuyAmount = originalFunctions.calculateMaxBuyAmount;
 export const calculateRequiredWallets = originalFunctions.calculateRequiredWallets;
-export const getBuyerWalletPrivateKey = originalFunctions.getBuyerWalletPrivateKey;
 export const deleteToken = originalFunctions.deleteToken;
 export const handleTokenLaunchFailure = originalFunctions.handleTokenLaunchFailure;
 export const saveRetryData = originalFunctions.saveRetryData;
@@ -137,3 +137,7 @@ export const getUserReferralStats = originalFunctions.getUserReferralStats;
 export const processReferral = originalFunctions.processReferral;
 export const generateReferralLink = originalFunctions.generateReferralLink;
 export const createUserWithReferral = originalFunctions.createUserWithReferral; 
+
+// Trading Wallet Functions
+export const getWalletForTrading = originalFunctions.getWalletForTrading;
+export const getAllTradingWallets = originalFunctions.getAllTradingWallets; 

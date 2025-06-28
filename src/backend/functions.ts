@@ -2291,3 +2291,85 @@ export function abbreviateNumber(num: number): string {
   const str = value.toFixed(2).replace(/\.?0+$/, "");
   return `${sign}${str}${suffix}`;
 }
+
+// ========== TRADING WALLET FUNCTIONS ==========
+
+/**
+ * Get the best trading wallet for a user
+ * For selling: Returns the buyer wallet with the highest token balance for the given token
+ * For general trading: Returns the first buyer wallet with the highest SOL balance
+ * Falls back to first buyer wallet if none found
+ */
+export const getWalletForTrading = async (userId: string, tokenAddress?: string) => {
+  const buyerWallets = await WalletModel.find({
+    user: userId,
+    isBuyer: true,
+  })
+    .sort({ createdAt: 1 })
+    .lean();
+
+  if (buyerWallets.length === 0) {
+    throw new Error("No buyer wallets found. Please create a buyer wallet first.");
+  }
+
+  // If tokenAddress provided, find wallet with highest token balance
+  if (tokenAddress) {
+    let bestWallet = buyerWallets[0];
+    let highestBalance = 0;
+
+    try {
+      const { getTokenBalance } = await import("./utils");
+      
+      for (const wallet of buyerWallets) {
+        try {
+          const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
+          if (balance > highestBalance) {
+            highestBalance = balance;
+            bestWallet = wallet;
+          }
+        } catch (error) {
+          // Continue to next wallet if balance check fails
+          continue;
+        }
+      }
+    } catch (error) {
+      // If token balance checking fails, fall back to first wallet
+      console.warn(`Error checking token balances for trading wallet selection:`, error);
+    }
+
+    return {
+      id: String(bestWallet._id),
+      walletId: String(bestWallet._id),
+      publicKey: bestWallet.publicKey,
+      privateKey: decryptPrivateKey(bestWallet.privateKey),
+    };
+  }
+
+  // For general trading, return first buyer wallet (could be enhanced to check SOL balance)
+  const firstWallet = buyerWallets[0];
+  return {
+    id: String(firstWallet._id),
+    walletId: String(firstWallet._id),
+    publicKey: firstWallet.publicKey,
+    privateKey: decryptPrivateKey(firstWallet.privateKey),
+  };
+};
+
+/**
+ * Get all buyer wallets with their private keys for trading operations
+ */
+export const getAllTradingWallets = async (userId: string) => {
+  const buyerWallets = await WalletModel.find({
+    user: userId,
+    isBuyer: true,
+  })
+    .sort({ createdAt: 1 })
+    .lean();
+
+  return buyerWallets.map((wallet) => ({
+    id: String(wallet._id),
+    publicKey: wallet.publicKey,
+    privateKey: decryptPrivateKey(wallet.privateKey),
+    createdAt: wallet.createdAt,
+  }));
+};

@@ -25,7 +25,7 @@ export const env = cleanEnv(process.env, {
   }),
   TELEGRAM_BOT_TOKEN: validStr(),
   MONGODB_URI: str({
-    default: "mongodb+srv://alphaadmindev:alphaadmin@bundler.bladbsz.mongodb.net/",
+    default: "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/nitro_launch",
   }),
   REDIS_URI: validStr(),
   ENCRYPTION_SECRET: validStr(),

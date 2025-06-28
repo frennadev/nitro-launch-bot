@@ -15,6 +15,7 @@ import {
   getUserTokenWithBuyWallets,
   createUserWithReferral,
   getFundingWallet,
+  getWalletForTrading,
 } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape, formatUSD, safeEditMessageReplyMarkup, safeEditMessageText, safeEditOrSendMessage } from "./utils";
@@ -1571,7 +1572,8 @@ bot.on("callback_query:data", async (ctx) => {
       await ctx.reply("❌ User not found. Please start the bot with /start.");
       return;
     }
-    const fundingWallet = await getFundingWallet(String(user.id));
+    // Get trading wallet (buyer wallet) instead of funding wallet
+    const tradingWallet = await getWalletForTrading(String(user.id));
 
     // Answer callback query immediately for buy/sell operations
     await safeAnswerCallbackQuery(
@@ -1588,7 +1590,7 @@ bot.on("callback_query:data", async (ctx) => {
         const { secretKeyToKeypair } = await import("../blockchain/common/utils");
 
         try {
-          const buyerKeypair = secretKeyToKeypair(fundingWallet!.privateKey);
+          const buyerKeypair = secretKeyToKeypair(tradingWallet.privateKey);
           const buyResult = await executeExternalBuy(mint, buyerKeypair, Number(buyAmount));
 
           if (buyResult.success) {
@@ -1617,7 +1619,7 @@ bot.on("callback_query:data", async (ctx) => {
         const { getTokenBalance } = await import("../backend/utils");
 
         try {
-          const sellerKeypair = sellSecretKeyToKeypair(fundingWallet!.privateKey);
+          const sellerKeypair = sellSecretKeyToKeypair(tradingWallet.privateKey);
 
           // Get current token balance
           const currentBalance = await getTokenBalance(mint, sellerKeypair.publicKey.toBase58());
