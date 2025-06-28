@@ -9,7 +9,6 @@ import {
 import { getAssociatedTokenAddressSync, createAssociatedTokenAccountInstruction } from "@solana/spl-token";
 import { connection } from "../common/connection";
 import { quoteSell, secretKeyToKeypair } from "../common/utils";
-import { decryptPrivateKey } from "../../backend/utils";
 import { logger } from "../common/logger";
 import { sellInstruction } from "./instructions";
 import { getGlobalSetting, getBondingCurve, getBondingCurveData, applySlippage } from "./utils";
@@ -48,7 +47,7 @@ export const executeExternalTokenSell = async (
 
   try {
     const mintPublicKey = new PublicKey(tokenAddress);
-    const buyerKeypairs = buyerWallets.map((w) => secretKeyToKeypair(decryptPrivateKey(w)));
+    const buyerKeypairs = buyerWallets.map((w) => secretKeyToKeypair(w));
 
     // Get bonding curve data for this specific token
     const { bondingCurve } = getBondingCurve(mintPublicKey);

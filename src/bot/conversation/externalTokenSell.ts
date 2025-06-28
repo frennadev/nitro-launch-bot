@@ -2,7 +2,7 @@ import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { getUser, getFundingWallet, getAllTradingWallets } from "../../backend/functions";
-import { getTokenBalance, getTokenInfo, decryptPrivateKey } from "../../backend/utils";
+import { getTokenBalance, getTokenInfo } from "../../backend/utils";
 import { sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
 import { executeExternalTokenSell } from "../../blockchain/pumpfun/externalSell";
