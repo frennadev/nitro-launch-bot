@@ -1243,9 +1243,12 @@ ${initialHoldingsText}`,
                  } else if (data.type === 'holdings') {
                    walletsWithBalance = (data as any).walletsWithBalance;
                    if ((data as any).balance > 0) {
-                     holdingsText = `📌 ${(data as any).balance.toLocaleString()} tokens found in funding wallet`;
+                     const formattedBalance = ((data as any).balance / 1e6).toLocaleString(undefined, {
+                       maximumFractionDigits: 2,
+                     });
+                     holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)`;
                    } else {
-                     holdingsText = `📌 No tokens found in your funding wallet`;
+                     holdingsText = `📌 No tokens found in your buyer wallets`;
                    }
                  } else if (data.type === 'platform') {
                    platformInfo = (data as any).platform;
