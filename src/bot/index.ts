@@ -1806,14 +1806,14 @@ async function handleTokenAddressMessage(ctx: Context, tokenAddress: string) {
     if (buyerWallets && buyerWallets.length > 0) {
       const balancePromises = buyerWallets.map(async (wallet: any) => {
         try {
-          const balance = await getTokenBalance(tokenAddress, wallet.address);
+          const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
           if (balance > 0) {
             walletsWithBalance++;
             return balance;
           }
           return 0;
         } catch (error) {
-          logger.warn(`Error checking balance for wallet ${wallet.address}:`, error);
+          logger.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
           return 0;
         }
       });

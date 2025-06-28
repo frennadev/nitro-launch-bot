@@ -33,9 +33,9 @@ const nitroLaunchRunner = async () => {
   } catch (error: any) {
     dbLogger.warn("⚠️  Database connection failed:", { error: error.message });
     
-    // In test mode, we can continue without DB for basic functionality testing
-    if (env.TELEGRAM_BOT_TOKEN === "dummy_token") {
-      botLogger.warn("🧪 Continuing in TEST MODE without database");
+    // In test mode or development mode, we can continue without DB for basic functionality testing
+    if (env.TELEGRAM_BOT_TOKEN === "dummy_token" || process.env.ALLOW_NO_DATABASE === "true" || env.NODE_ENV === "development") {
+      botLogger.warn("🧪 Continuing in DEVELOPMENT MODE without database");
       dbConnected = false;
     } else {
       dbLogger.error("❌ Database connection required for production mode");
