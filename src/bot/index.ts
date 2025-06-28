@@ -44,7 +44,7 @@ import { PublicKey } from "@solana/web3.js";
 import { executeFundingBuy } from "../blockchain/pumpfun/buy";
 import { buyCustonConversation } from "./conversation/buyCustom";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
-import { sellIndividualToken } from "./conversation/ sellIndividualToken";
+import { sellIndividualToken } from "./conversation/sellIndividualToken";
 import {
   getCachedPlatform,
   setCachedPlatform,
