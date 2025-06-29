@@ -80,6 +80,7 @@ const tokenSchema = new Schema(
       funderPrivateKey: { type: String, default: null },
       devWallet: { type: Schema.ObjectId, ref: "Wallet" },
       buyWallets: [{ type: Schema.ObjectId, ref: "Wallet" }],
+      buyWalletsOrder: [{ type: String }], // Store wallet private keys in original order for consistency
       buyAmount: { type: Number, default: 0 },
       devBuy: { type: Number, default: 0 },
       buyDistribution: [{ type: Number }],

@@ -624,9 +624,9 @@ export const enqueueTokenLaunchRetry = async (userId: string, chatId: number, to
         tokenMetadataUri: updatedToken.tokenMetadataUrl,
         tokenSymbol: updatedToken.symbol,
         buyAmount: updatedToken.launchData!.buyAmount,
-        buyerWallets: updatedToken.launchData!.buyWallets.map((w) =>
+        buyerWallets: updatedToken.launchData!.buyWalletsOrder || updatedToken.launchData!.buyWallets.map((w) =>
           decryptPrivateKey((w as unknown as { privateKey: string }).privateKey)
-        ),
+        ), // CRITICAL FIX: Use stored wallet order if available, fallback to database order
         devWallet: decryptPrivateKey(
           (
             updatedToken.launchData!.devWallet as unknown as {
@@ -1305,6 +1305,7 @@ export const enqueuePrepareTokenLaunch = async (
             state: TokenState.LAUNCHING, // Will be changed to PREPARING in future
             "launchData.funderPrivateKey": encryptedFunder,
             "launchData.buyWallets": walletIds,
+            "launchData.buyWalletsOrder": buyWallets, // CRITICAL FIX: Store original wallet order
             "launchData.buyAmount": buyAmount,
             "launchData.devBuy": devBuy,
             "launchData.launchStage": 1,
@@ -1378,9 +1379,9 @@ export const enqueueExecuteTokenLaunch = async (userId: string, chatId: number, 
         tokenMetadataUri: updatedToken.tokenMetadataUrl,
         tokenSymbol: updatedToken.symbol,
         buyAmount: updatedToken.launchData!.buyAmount,
-        buyerWallets: updatedToken.launchData!.buyWallets.map((w) =>
+        buyerWallets: updatedToken.launchData!.buyWalletsOrder || updatedToken.launchData!.buyWallets.map((w) =>
           decryptPrivateKey((w as unknown as { privateKey: string }).privateKey)
-        ),
+        ), // CRITICAL FIX: Use stored wallet order if available, fallback to database order
         devWallet: decryptPrivateKey(
           (
             updatedToken.launchData!.devWallet as unknown as {
