@@ -11,7 +11,7 @@ import { CallBackQueries } from "../types";
 export const referralsConversation = async (
   conversation: Conversation<Context>,
   ctx: Context
-) => {
+): Promise<void> => {
   try {
     await ctx.answerCallbackQuery();
     // Get user ID from chat
@@ -60,12 +60,31 @@ export const referralsConversation = async (
     const keyboard = new InlineKeyboard()
       .text("🔄 Refresh Stats", CallBackQueries.VIEW_REFERRALS)
       .row()
-      .text("🏠 Main Menu", CallBackQueries.MENU);
+      .text("🔙 Back", CallBackQueries.BACK);
 
     await sendMessage(ctx, message, {
       parse_mode: "Markdown",
       reply_markup: keyboard,
     });
+
+    // Wait for user interaction
+    const next = await conversation.wait();
+    const data = next.callbackQuery?.data;
+    if (!data) return conversation.halt();
+
+    await next.answerCallbackQuery();
+
+    if (data === CallBackQueries.BACK) {
+      // Import and start main menu conversation
+      const mainMenuConversation = await import("./mainMenu");
+      return await mainMenuConversation.default(conversation, next);
+    }
+
+    if (data === CallBackQueries.VIEW_REFERRALS) {
+      // Restart the referrals conversation to refresh stats
+      return await referralsConversation(conversation, next);
+    }
+
   } catch (error: any) {
     console.error("Error in referrals conversation:", error);
     await sendMessage(
