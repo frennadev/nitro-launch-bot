@@ -44,6 +44,34 @@ import { initializeMixer, initializeMixerWithProgress, initializeFastMixer } fro
 import bs58 from "bs58";
 import { getSolBalance, getTokenBalance } from "../../backend/utils";
 
+/**
+ * Calculate optimal wallet count for a given buy amount
+ * This matches the logic used in the mixer to ensure consistency
+ */
+function calculateOptimalWalletCount(buyAmountSol: number, maxAvailableWallets: number): number {
+  const totalLamports = Math.floor(buyAmountSol * 1e9);
+  
+  // Incremental sequence in SOL: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5...
+  const incrementalSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
+  const incrementalLamports = incrementalSequence.map(sol => Math.floor(sol * 1e9));
+  
+  // Calculate the optimal number of wallets needed for this amount
+  let cumulativeTotal = 0;
+  for (let i = 0; i < incrementalSequence.length; i++) {
+    cumulativeTotal += incrementalLamports[i];
+    if (totalLamports <= cumulativeTotal) {
+      return Math.min(i + 1, maxAvailableWallets); // Return 1-based wallet count, capped by available wallets
+    }
+  }
+  
+  // For amounts larger than our sequence, use more wallets proportionally
+  const baseTotal = incrementalLamports.reduce((sum, amt) => sum + amt, 0);
+  const extraWallets = Math.ceil((totalLamports - baseTotal) / (Math.floor(2.5 * 1e9))); // 2.5 SOL per extra wallet
+  const optimalCount = incrementalSequence.length + extraWallets;
+  
+  return Math.min(optimalCount, maxAvailableWallets);
+}
+
 export const prepareTokenLaunch = async (
   mint: string,
   funderWallet: string,
@@ -92,9 +120,17 @@ export const prepareTokenLaunch = async (
   const fundingStart = performance.now();
 
   const funderPrivateKey = bs58.encode(funderKeypair.secretKey);
-  const destinationAddresses = buyKeypairs.map(w => w.publicKey.toString());
   
-  // Calculate total amount needed: buy amount + fees for each wallet
+  // Calculate optimal number of wallets needed for this buy amount
+  const optimalWalletCount = calculateOptimalWalletCount(buyAmount, buyKeypairs.length);
+  
+  // Only use the wallets that are actually needed based on buy amount
+  const selectedBuyKeypairs = buyKeypairs.slice(0, optimalWalletCount);
+  const destinationAddresses = selectedBuyKeypairs.map(w => w.publicKey.toString());
+  
+  logger.info(`[${logIdentifier}]: Wallet allocation - Buy Amount: ${buyAmount} SOL → Using ${optimalWalletCount}/${buyKeypairs.length} wallets (optimized from potential ${buyKeypairs.length})`);
+  
+  // Calculate total amount needed: buy amount + fees for each selected wallet
   // Each wallet needs 0.005 SOL for transaction fees (increased from 0.003 for safety buffer)
   const feePerWallet = 0.005;
   const totalFeesNeeded = destinationAddresses.length * feePerWallet;
@@ -182,7 +218,14 @@ export const executeTokenLaunch = async (
   });
 
   const mintKeypair = secretKeyToKeypair(mint);
-  const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
+  const allBuyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
+  
+  // Calculate optimal number of wallets needed for this buy amount (same logic as in prepareTokenLaunch)
+  const optimalWalletCount = calculateOptimalWalletCount(buyAmount, allBuyKeypairs.length);
+  
+  // Only use the wallets that are actually needed based on buy amount
+  const buyKeypairs = allBuyKeypairs.slice(0, optimalWalletCount);
+  
   const funderKeypair = funderWallet ? secretKeyToKeypair(funderWallet) : null;
   const devKeypair = secretKeyToKeypair(devWallet);
   const { bondingCurve } = getBondingCurve(mintKeypair.publicKey);
@@ -196,6 +239,8 @@ export const executeTokenLaunch = async (
     token: tokenAddress,
     launchStage,
   });
+  
+  logger.info(`[${logIdentifier}]: Wallet optimization - Buy Amount: ${buyAmount} SOL → Using ${optimalWalletCount}/${allBuyKeypairs.length} wallets for execution`);
 
   // Get current launch attempt from token data
   const { TokenModel } = await import("../../backend/models");
