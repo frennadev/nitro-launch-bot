@@ -1084,8 +1084,16 @@ export const handleTokenLaunchFailure = async (tokenAddress: string, error?: any
   });
 
   if (pumpAddress) {
-    const token = await TokenModel.findOne({ tokenAddress });
+    const token = await TokenModel.findOne({ tokenAddress }).populate(["launchData.devWallet"]);
     const launchAttempt = token?.launchData?.launchAttempt || 0;
+
+    // Check if token was actually created (either successfully or already exists)
+    const devWalletPublicKey = (token?.launchData?.devWallet as any)?.publicKey;
+    const tokenCreationSuccessful = devWalletPublicKey ? await isTransactionAlreadySuccessful(
+      tokenAddress,
+      devWalletPublicKey,
+      "token_creation"
+    ) : false;
 
     // Check for specific errors that indicate the address is permanently unusable
     const shouldReleaseImmediately =
@@ -1098,7 +1106,16 @@ export const handleTokenLaunchFailure = async (tokenAddress: string, error?: any
         // Unable to fetch curve data (indicates token might already exist)
         error.message?.includes("Unable to fetch curve data"));
 
-    if (shouldReleaseImmediately) {
+    // Release pump address if:
+    // 1. Token was successfully created (even if buy phase failed)
+    // 2. Specific permanent errors occurred
+    // 3. Too many launch attempts
+    if (tokenCreationSuccessful) {
+      logger.info(
+        `Releasing pump address ${tokenAddress} because token was successfully created (buy phase may have failed)`
+      );
+      await releasePumpAddress(tokenAddress);
+    } else if (shouldReleaseImmediately) {
       logger.info(
         `Releasing pump address ${tokenAddress} immediately due to permanent error: ${error?.message || "Unknown error"}`
       );

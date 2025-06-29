@@ -621,10 +621,10 @@ prepareLaunchWorker.on("closed", () => {
 });
 
 executeLaunchWorker.on("ready", () => {
-  logger.info("Execute Launch worker ready");
+  logger.info("Execute launch worker ready");
 });
 executeLaunchWorker.on("active", async () => {
-  logger.info("Execute Launch worker active");
+  logger.info("Execute launch worker active");
 });
 executeLaunchWorker.on("error", async (error) => {
   logger.error("Execute Launch Worker Error", error);
@@ -632,7 +632,7 @@ executeLaunchWorker.on("error", async (error) => {
 executeLaunchWorker.on("failed", async (job) => {
   await updateTokenState(job!.data.tokenAddress, TokenState.LISTED, job!.data.userId);
   
-  // Handle pump address release on launch failure with error context
+  // Handle pump address release on execution failure with error context
   await handleTokenLaunchFailure(job!.data.tokenAddress, job?.failedReason);
   
   const token = job!.data;
@@ -644,5 +644,5 @@ executeLaunchWorker.on("failed", async (job) => {
   );
 });
 executeLaunchWorker.on("closed", () => {
-  logger.info("Execute Launch worker closed successfully");
+  logger.info("Execute launch worker closed successfully")
 });
