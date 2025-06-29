@@ -209,7 +209,9 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
       currentIndex++;
       await showToken(currentIndex);
     } else if (data === CallBackQueries.BACK) {
-      return conversation.halt();
+      // Import and start main menu conversation
+      const mainMenuConversation = await import("./mainMenu");
+      return await mainMenuConversation.default(conversation, response);
     } else if (data?.startsWith(`${CallBackQueries.DELETE_TOKEN}_`)) {
       const tokenAddress = data.substring(
         `${CallBackQueries.DELETE_TOKEN}_`.length

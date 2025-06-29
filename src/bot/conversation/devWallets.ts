@@ -85,7 +85,9 @@ You have <b>${wallets.length}/5</b> dev wallets.
 
   try {
     if (data === CallBackQueries.BACK) {
-      return conversation.halt();
+      // Import and start wallet config conversation (since this is accessed from wallet config)
+      const walletConfigConversation = await import("./walletConfig");
+      return await walletConfigConversation.default(conversation, next);
     }
 
     if (data === CallBackQueries.GENERATE_DEV_WALLET) {

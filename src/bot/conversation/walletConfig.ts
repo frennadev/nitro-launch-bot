@@ -87,7 +87,9 @@ ${buyerWallets.length > 0 ? "✅ Ready for launches" : "⚠️ No buyer wallets 
   await next.answerCallbackQuery();
 
   if (data === CallBackQueries.BACK) {
-    return conversation.halt();
+    // Import and start main menu conversation
+    const mainMenuConversation = await import("./mainMenu");
+    return await mainMenuConversation.default(conversation, next);
   }
 
   if (data === CallBackQueries.GENERATE_FUNDING_WALLET) {
