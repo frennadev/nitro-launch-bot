@@ -17,6 +17,7 @@ import {
   sendLaunchSuccessNotification,
   sendNotification,
 } from "../bot/message";
+import bot from "../bot";
 import { executeTokenLaunch, prepareTokenLaunch } from "../blockchain/pumpfun/launch";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { logger } from "./logger";
@@ -203,6 +204,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
   async (job) => {
     const data = job.data;
     const loadingKey = `${data.userChatId}-wallet_sell-${data.tokenAddress}`;
+    const logIdentifier = `jobs-sell-wallet-${data.tokenAddress}`;
     
     try {
       logger.info("[jobs]: Wallet Sell Job starting...");
@@ -229,14 +231,34 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       
       await releaseWalletSellLock(data.tokenAddress);
       
-      // Get transaction stats and financial data for detailed reporting
+      // Calculate immediate sell statistics
+      const successfulSells = results.filter(r => r.success);
+      const failedSells = results.filter(r => !r.success);
+      const immediateSuccessRate = Math.round((successfulSells.length / results.length) * 100);
+      
+      // Send immediate success notification with basic info
+      const initialMessage = `🎉 **Wallet Sells completed successfully\\!**\n\n` +
+        `✅ **Success Rate:** ${successfulSells.length}/${results.length} wallets \\(${immediateSuccessRate}%\\)\n` +
+        `💰 **Total Received:** Calculating\\.\\.\\.\n` +
+        `🪙 **Tokens Sold:** Calculating\\.\\.\\.\n` +
+        `📊 **Overall P&L:** Calculating\\.\\.\\.\n\n` +
+        `${failedSells.length > 0 ? `⚠️ ${failedSells.length} wallet\\(s\\) failed to sell\n\n` : ''}` +
+        `⏳ **Fetching detailed transaction data\\.\\.\\.**`;
+      
+      const initialNotification = await bot.api.sendMessage(data.userChatId, initialMessage, { 
+        parse_mode: "MarkdownV2" 
+      });
+      
+      // Wait for transaction confirmation and parsing (3-5 seconds)
+      logger.info(`[${logIdentifier}] Waiting 4 seconds for transaction parsing to complete...`);
+      await new Promise(resolve => setTimeout(resolve, 4000));
+      
+      // Now get accurate transaction stats and financial data
       const transactionStats = await getTransactionStats(data.tokenAddress);
       const financialStats = await getTransactionFinancialStats(data.tokenAddress);
       
       // Calculate wallet sell-specific statistics
       const walletSellTransactions = transactionStats.byType.wallet_sell.filter((t: any) => t.success);
-      const successfulSells = results.filter(r => r.success);
-      const failedSells = results.filter(r => !r.success);
       
       // Calculate totals from this sell batch
       const totalSolReceived = successfulSells.reduce((sum, r) => sum + (r.expectedSolOut || 0), 0);
@@ -275,16 +297,25 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         `**Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '+' : ''}${sellSummary.netProfitLoss.toFixed(6)} SOL (${sellSummary.profitLossPercentage >= 0 ? '+' : ''}${sellSummary.profitLossPercentage.toFixed(1)}%)`
       );
       
-      await sendNotification(
-        data.userChatId,
-        `🎉 **Wallet Sells completed successfully\\!**\n\n` +
+      // Update the initial notification with accurate data
+      const finalMessage = `🎉 **Wallet Sells completed successfully\\!**\n\n` +
         `✅ **Success Rate:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets \\(${sellSummary.successRate}%\\)\n` +
         `💰 **Total Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\\.')} SOL\n` +
         `🪙 **Tokens Sold:** ${tokensSoldFormatted.replace(/\./g, '\\.')} tokens \\(${data.sellPercent}%\\)\n` +
         `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\\.')}%\\)\n\n` +
         `${sellSummary.failedWallets > 0 ? `⚠️ ${sellSummary.failedWallets} wallet\\(s\\) failed to sell\n\n` : ''}` +
-        `💡 View individual transactions in your token list for more details\\.`,
-      );
+        `💡 View individual transactions in your token list for more details\\.`;
+      
+      try {
+        await bot.api.editMessageText(data.userChatId, initialNotification.message_id, finalMessage, {
+          parse_mode: "MarkdownV2"
+        });
+        logger.info(`[${logIdentifier}] Updated notification with accurate transaction data`);
+      } catch (error) {
+        logger.warn(`[${logIdentifier}] Failed to edit notification, sending new message:`, error);
+        // Fallback: send new message if editing fails
+        await sendNotification(data.userChatId, finalMessage);
+      }
     } catch (error: any) {
       logger.error(
         "[jobs-sell-wallet]: Error Occurred while selling wallet supply",
