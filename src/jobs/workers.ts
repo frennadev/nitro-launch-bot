@@ -61,6 +61,11 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
       
       await updateTokenState(data.tokenAddress, TokenState.LAUNCHED, data.userId);
       
+      // Release pump address on successful launch
+      const { releasePumpAddress } = await import("../backend/functions");
+      await releasePumpAddress(data.tokenAddress);
+      logger.info(`Released pump address ${data.tokenAddress} after successful launch`);
+      
       // Complete loading state
       await completeLoadingState(
         loadingKey,
@@ -481,6 +486,11 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
       await updateLoadingState(loadingKey, 3);
       
       await updateTokenState(data.tokenAddress, TokenState.LAUNCHED, data.userId);
+      
+      // Release pump address on successful launch
+      const { releasePumpAddress } = await import("../backend/functions");
+      await releasePumpAddress(data.tokenAddress);
+      logger.info(`Released pump address ${data.tokenAddress} after successful launch`);
       
       // Complete loading state
       await completeLoadingState(
