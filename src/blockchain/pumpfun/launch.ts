@@ -612,12 +612,11 @@ export const executeTokenLaunch = async (
             // Calculate swap amount dynamically based on current wallet balance
             const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
             
-            // Account for ALL fees: Maestro fee (0.001) + Transaction fee (1% of spend) + Buffer (0.002)
+            // Account for ALL fees: Maestro fee (0.001) + Buffer (0.002)
             const maestroFee = 0.001;
             const buffer = 0.002; // Increased buffer to account for network fees from failed attempts
-            const transactionFeePercentage = 0.01; // 1% transaction fee
             
-            // Calculate usable amount accounting for transaction fee
+            // Calculate usable amount (transaction fee is collected separately after the transaction)
             const availableForSpend = walletSolBalance - maestroFee - buffer;
             
             // Check if wallet has enough balance
@@ -625,7 +624,8 @@ export const executeTokenLaunch = async (
               throw new Error(`Insufficient balance: ${walletSolBalance} SOL, need at least ${maestroFee + buffer} SOL for fees`);
             }
             
-            const swapAmountSOL = availableForSpend / (1 + transactionFeePercentage);
+            // Use the full available amount for the swap (transaction fee collected separately)
+            const swapAmountSOL = availableForSpend;
             const dynamicSwapAmount = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
             
             // Ensure swap amount is positive
