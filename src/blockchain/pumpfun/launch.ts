@@ -81,36 +81,25 @@ function calculateFixedBuyAmounts(
   walletCount: number,
   bondingCurveData: any
 ): { walletAmounts: number[], totalExpected: number } {
-  const { virtualTokenReserves, virtualSolReserves, realTokenReserves } = bondingCurveData;
-  
-  // Calculate the optimal distribution based on bonding curve characteristics
-  const totalLamports = Math.floor(buyAmount * LAMPORTS_PER_SOL);
-  
-  // Use the incremental sequence but adjust based on bonding curve state
+  // Use the incremental sequence that matches the mixer funding
   const incrementalSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
   
-  // Calculate how much each SOL buys in tokens at current curve state
-  const solLamports = BigInt(Math.floor(1 * LAMPORTS_PER_SOL)); // 1 SOL
-  const { tokenOut: tokensPerSol } = quoteBuy(solLamports, virtualTokenReserves, virtualSolReserves, realTokenReserves);
-  
-  // Adjust sequence based on token output efficiency
-  const adjustedSequence = incrementalSequence.map(amount => {
-    const adjustedAmount = amount * (1 + (Number(tokensPerSol) / 1_000_000)); // Adjust based on token efficiency
-    return Math.min(adjustedAmount, 2.5); // Cap at 2.5 SOL per wallet
-  });
-  
+  // Calculate how much each wallet should buy based on the sequence
   const walletAmounts: number[] = [];
   let remainingAmount = buyAmount;
   
-  for (let i = 0; i < Math.min(walletCount, adjustedSequence.length); i++) {
+  for (let i = 0; i < Math.min(walletCount, incrementalSequence.length); i++) {
     if (remainingAmount <= 0) break;
     
-    const walletAmount = Math.min(adjustedSequence[i], remainingAmount);
+    // Use the sequence amount, but cap it to the remaining amount
+    const sequenceAmount = incrementalSequence[i];
+    const walletAmount = Math.min(sequenceAmount, remainingAmount);
+    
     walletAmounts.push(walletAmount);
     remainingAmount -= walletAmount;
   }
   
-  // Distribute any remaining amount across remaining wallets
+  // If we still have remaining amount and more wallets, distribute evenly
   if (remainingAmount > 0 && walletAmounts.length < walletCount) {
     const remainingWallets = walletCount - walletAmounts.length;
     const amountPerWallet = remainingAmount / remainingWallets;
@@ -712,9 +701,14 @@ export const executeTokenLaunch = async (
               logger.info(`[${logIdentifier}]: Dynamic buy calculation for ${keypair.publicKey.toBase58().slice(0, 8)} - Balance: ${walletSolBalance} SOL, Swap: ${swapAmountSOL.toFixed(6)} SOL`);
             }
             
-            // Ensure swap amount is positive
+            // Ensure swap amount is positive and properly converted
             if (swapAmountLamports <= 0) {
               throw new Error(`Calculated swap amount is non-positive: ${swapAmountSOL} SOL`);
+            }
+            
+            // Ensure the amount is a valid integer for the buy instruction
+            if (swapAmountLamports > BigInt(Number.MAX_SAFE_INTEGER)) {
+              throw new Error(`Swap amount too large: ${swapAmountLamports} lamports`);
             }
             
             const ata = getAssociatedTokenAddressSync(
@@ -736,6 +730,17 @@ export const executeTokenLaunch = async (
             );
             
             const tokenOutWithSlippage = applySlippage(tokenOut, currentSlippage);
+            
+            // Validate token amount is a valid integer
+            if (tokenOutWithSlippage <= 0) {
+              throw new Error(`Invalid token amount after slippage: ${tokenOutWithSlippage.toString()}`);
+            }
+            
+            if (tokenOutWithSlippage > BigInt(Number.MAX_SAFE_INTEGER)) {
+              throw new Error(`Token amount too large: ${tokenOutWithSlippage.toString()}`);
+            }
+            
+            logger.info(`[${logIdentifier}]: Token calculation for ${keypair.publicKey.toBase58().slice(0, 8)} - SOL: ${swapAmountSOL.toFixed(6)}, Tokens: ${tokenOut.toString()}, With Slippage: ${tokenOutWithSlippage.toString()}`);
             
             // Use ultra-fast priority fees for maximum speed
             const { getTransactionTypePriorityConfig } = await import("../common/priority-fees");
