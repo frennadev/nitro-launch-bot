@@ -26,6 +26,17 @@ export const DEFAULT_SMART_PRIORITY_CONFIG: SmartPriorityFeeConfig = {
 };
 
 /**
+ * Ultra-fast priority fee configuration for PumpFun launches
+ * Designed for maximum speed and success rate
+ */
+export const ULTRA_FAST_PRIORITY_CONFIG: SmartPriorityFeeConfig = {
+  baseFee: 3_000_000, // 3M microLamports (0.003 SOL) - Higher base for speed
+  retryMultiplier: 2.0, // 100% increase per retry for aggressive speed
+  maxFee: 25_000_000, // 25M microLamports (0.025 SOL) - Very high max
+  minFee: 1_000_000, // 1M microLamports (0.001 SOL) - Higher minimum
+};
+
+/**
  * Calculate smart priority fee based on retry attempt
  * @param retryAttempt Current retry attempt (0-based)
  * @param config Priority fee configuration
@@ -70,12 +81,14 @@ export const createSmartPriorityFeeInstruction = (
 };
 
 /**
- * Get priority fee for different transaction types
+ * Get priority fee for different transaction types with ultra-fast option
  */
 export const getTransactionTypePriorityConfig = (
-  transactionType: "token_creation" | "buy" | "sell" | "transfer"
+  transactionType: "token_creation" | "buy" | "sell" | "transfer" | "ultra_fast_buy"
 ): SmartPriorityFeeConfig => {
   switch (transactionType) {
+    case "ultra_fast_buy":
+      return ULTRA_FAST_PRIORITY_CONFIG;
     case "token_creation":
       return {
         baseFee: 2_000_000, // Higher base for token creation

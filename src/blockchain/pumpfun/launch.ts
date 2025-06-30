@@ -72,6 +72,59 @@ function calculateOptimalWalletCount(buyAmountSol: number, maxAvailableWallets: 
   return Math.min(optimalCount, maxAvailableWallets);
 }
 
+/**
+ * Pre-calculate optimal buy amounts for each wallet based on bonding curve state
+ * This ensures we buy with expected amounts and maximize efficiency
+ */
+function calculateFixedBuyAmounts(
+  buyAmount: number,
+  walletCount: number,
+  bondingCurveData: any
+): { walletAmounts: number[], totalExpected: number } {
+  const { virtualTokenReserves, virtualSolReserves, realTokenReserves } = bondingCurveData;
+  
+  // Calculate the optimal distribution based on bonding curve characteristics
+  const totalLamports = Math.floor(buyAmount * LAMPORTS_PER_SOL);
+  
+  // Use the incremental sequence but adjust based on bonding curve state
+  const incrementalSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
+  
+  // Calculate how much each SOL buys in tokens at current curve state
+  const solLamports = BigInt(Math.floor(1 * LAMPORTS_PER_SOL)); // 1 SOL
+  const { tokenOut: tokensPerSol } = quoteBuy(solLamports, virtualTokenReserves, virtualSolReserves, realTokenReserves);
+  
+  // Adjust sequence based on token output efficiency
+  const adjustedSequence = incrementalSequence.map(amount => {
+    const adjustedAmount = amount * (1 + (Number(tokensPerSol) / 1_000_000)); // Adjust based on token efficiency
+    return Math.min(adjustedAmount, 2.5); // Cap at 2.5 SOL per wallet
+  });
+  
+  const walletAmounts: number[] = [];
+  let remainingAmount = buyAmount;
+  
+  for (let i = 0; i < Math.min(walletCount, adjustedSequence.length); i++) {
+    if (remainingAmount <= 0) break;
+    
+    const walletAmount = Math.min(adjustedSequence[i], remainingAmount);
+    walletAmounts.push(walletAmount);
+    remainingAmount -= walletAmount;
+  }
+  
+  // Distribute any remaining amount across remaining wallets
+  if (remainingAmount > 0 && walletAmounts.length < walletCount) {
+    const remainingWallets = walletCount - walletAmounts.length;
+    const amountPerWallet = remainingAmount / remainingWallets;
+    
+    for (let i = 0; i < remainingWallets; i++) {
+      walletAmounts.push(amountPerWallet);
+    }
+  }
+  
+  const totalExpected = walletAmounts.reduce((sum, amount) => sum + amount, 0);
+  
+  return { walletAmounts, totalExpected };
+}
+
 export const prepareTokenLaunch = async (
   mint: string,
   funderWallet: string,
@@ -593,10 +646,25 @@ export const executeTokenLaunch = async (
       let virtualSolReserve = curveData.virtualSolReserves;
       let realTokenReserve = curveData.realTokenReserves;
       
+      // Calculate fixed buy amounts for each wallet based on bonding curve state
+      const { walletAmounts, totalExpected } = calculateFixedBuyAmounts(
+        buyAmount,
+        walletsToProcess.length,
+        curveData
+      );
+      
+      logger.info(`[${logIdentifier}]: Fixed buy amounts calculated`, {
+        targetAmount: buyAmount,
+        totalExpected: totalExpected.toFixed(6),
+        walletCount: walletsToProcess.length,
+        amounts: walletAmounts.map((amt, i) => `Wallet ${i + 1}: ${amt.toFixed(6)} SOL`),
+        efficiency: `${((totalExpected / buyAmount) * 100).toFixed(1)}%`
+      });
+
       // Enhanced buy transaction with retry logic and higher slippage
       const executeBuyWithRetry = async (
         keypair: any,
-        swapAmount: bigint | null,
+        fixedBuyAmount: number | null, // Use fixed amount instead of dynamic calculation
         currentComputeUnitPrice: number,
         blockHash: any,
         maxRetries: number = 3
@@ -609,31 +677,45 @@ export const executeTokenLaunch = async (
             const currentSlippage = Math.min(baseSlippage + (attempt * 20), maxSlippage); // Increase by 20% each retry, capped at 90%
             logger.info(`[${logIdentifier}]: Attempting buy for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
             
-            // Calculate swap amount dynamically based on current wallet balance
-            const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
+            // Use fixed buy amount if provided, otherwise fall back to dynamic calculation
+            let swapAmountSOL: number;
+            let swapAmountLamports: bigint;
             
-            // Account for ALL fees: Maestro fee (0.001) + Buffer (0.002)
-            const maestroFee = 0.001;
-            const buffer = 0.002; // Increased buffer to account for network fees from failed attempts
-            
-            // Calculate usable amount (transaction fee is collected separately after the transaction)
-            const availableForSpend = walletSolBalance - maestroFee - buffer;
-            
-            // Check if wallet has enough balance
-            if (availableForSpend <= 0) {
-              throw new Error(`Insufficient balance: ${walletSolBalance} SOL, need at least ${maestroFee + buffer} SOL for fees`);
+            if (fixedBuyAmount !== null) {
+              // Use pre-calculated fixed amount
+              swapAmountSOL = fixedBuyAmount;
+              swapAmountLamports = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
+              
+              // Verify wallet has sufficient balance for fixed amount
+              const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
+              const requiredAmount = swapAmountSOL + 0.003; // Fixed amount + fees
+              
+              if (walletSolBalance < requiredAmount) {
+                throw new Error(`Insufficient balance for fixed amount: ${walletSolBalance} SOL, need ${requiredAmount} SOL`);
+              }
+              
+              logger.info(`[${logIdentifier}]: Using fixed buy amount for ${keypair.publicKey.toBase58().slice(0, 8)} - Amount: ${swapAmountSOL.toFixed(6)} SOL`);
+            } else {
+              // Fallback to dynamic calculation (existing logic)
+              const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
+              const maestroFee = 0.001;
+              const buffer = 0.002;
+              const availableForSpend = walletSolBalance - maestroFee - buffer;
+              
+              if (availableForSpend <= 0) {
+                throw new Error(`Insufficient balance: ${walletSolBalance} SOL, need at least ${maestroFee + buffer} SOL for fees`);
+              }
+              
+              swapAmountSOL = availableForSpend;
+              swapAmountLamports = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
+              
+              logger.info(`[${logIdentifier}]: Dynamic buy calculation for ${keypair.publicKey.toBase58().slice(0, 8)} - Balance: ${walletSolBalance} SOL, Swap: ${swapAmountSOL.toFixed(6)} SOL`);
             }
-            
-            // Use the full available amount for the swap (transaction fee collected separately)
-            const swapAmountSOL = availableForSpend;
-            const dynamicSwapAmount = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
             
             // Ensure swap amount is positive
-            if (dynamicSwapAmount <= 0) {
+            if (swapAmountLamports <= 0) {
               throw new Error(`Calculated swap amount is non-positive: ${swapAmountSOL} SOL`);
             }
-            
-            logger.info(`[${logIdentifier}]: Dynamic buy calculation for ${keypair.publicKey.toBase58().slice(0, 8)} - Balance: ${walletSolBalance} SOL, Swap: ${swapAmountSOL.toFixed(6)} SOL (${(swapAmountSOL / walletSolBalance * 100).toFixed(1)}%)`);
             
             const ata = getAssociatedTokenAddressSync(
               mintKeypair.publicKey,
@@ -647,7 +729,7 @@ export const executeTokenLaunch = async (
             );
             
             const { tokenOut } = quoteBuy(
-              dynamicSwapAmount,
+              swapAmountLamports,
               virtualTokenReserve,
               virtualSolReserve,
               realTokenReserve,
@@ -655,18 +737,24 @@ export const executeTokenLaunch = async (
             
             const tokenOutWithSlippage = applySlippage(tokenOut, currentSlippage);
             
+            // Use ultra-fast priority fees for maximum speed
+            const { getTransactionTypePriorityConfig } = await import("../common/priority-fees");
+            const ultraFastConfig = getTransactionTypePriorityConfig("ultra_fast_buy");
+            const ultraFastFee = ultraFastConfig.baseFee * Math.pow(ultraFastConfig.retryMultiplier, attempt);
+            const boundedUltraFastFee = Math.max(ultraFastConfig.minFee, Math.min(ultraFastFee, ultraFastConfig.maxFee));
+            
             // Use Maestro-style buy instructions to mimic Maestro Bot transactions
             const maestroBuyIxs = maestroBuyInstructions(
               mintKeypair.publicKey,
               devKeypair.publicKey,
               keypair.publicKey,
               tokenOutWithSlippage,
-              dynamicSwapAmount,
+              swapAmountLamports,
               BigInt(1000000), // 0.001 SOL Maestro fee
             );
             
             const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-              microLamports: currentComputeUnitPrice,
+              microLamports: boundedUltraFastFee, // Use ultra-fast priority fee
             });
             
             const buyTx = new VersionedTransaction(
@@ -702,7 +790,7 @@ export const executeTokenLaunch = async (
               currentLaunchAttempt,
               {
                 slippageUsed: currentSlippage,
-                amountSol: Number(dynamicSwapAmount) / LAMPORTS_PER_SOL, // Fallback estimated amount
+                amountSol: swapAmountSOL, // Use the actual amount we attempted
                 amountTokens: tokenOut.toString(), // Fallback estimated amount
                 errorMessage: result.success ? undefined : `Buy failed on attempt ${attempt + 1}`,
                 retryAttempt: attempt,
@@ -711,7 +799,7 @@ export const executeTokenLaunch = async (
             );
             
             if (result.success) {
-              logger.info(`[${logIdentifier}]: Buy successful for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage on attempt ${attempt + 1}`);
+              logger.info(`[${logIdentifier}]: Buy successful for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage on attempt ${attempt + 1} (Priority fee: ${boundedUltraFastFee} microLamports)`);
               return result;
             } else {
               logger.warn(`[${logIdentifier}]: Buy attempt ${attempt + 1} failed for ${keypair.publicKey.toBase58()}: ${result.signature || 'No signature'}`);
@@ -735,7 +823,7 @@ export const executeTokenLaunch = async (
               currentLaunchAttempt,
               {
                 slippageUsed: baseSlippage + (attempt * 50),
-                amountSol: swapAmount ? Number(swapAmount) / LAMPORTS_PER_SOL : 0, // Handle case where swapAmount might not be calculated yet
+                amountSol: fixedBuyAmount || 0,
                 errorMessage: error.message,
                 retryAttempt: attempt,
               }
@@ -759,7 +847,7 @@ export const executeTokenLaunch = async (
         // Execute buy transaction with dynamic balance calculation inside retry logic
         const result = await executeBuyWithRetry(
           keypair,
-          null, // Pass null to calculate inside retry function
+          walletAmounts[i],
           currentComputeUnitPrice,
           blockHash,
           3 // Max 3 retries
@@ -837,6 +925,14 @@ export const executeTokenLaunch = async (
           (maxComputeUnitPrice - baseComputeUnitPrice) / walletsForNextRound.length,
         );
         
+        // Calculate fixed amounts for additional rounds (use smaller amounts)
+        const additionalRoundAmounts = walletsForNextRound.map((_, index) => {
+          // Use smaller amounts for additional rounds: 0.3, 0.4, 0.5 SOL etc.
+          return Math.min(0.3 + (index * 0.1), 1.0);
+        });
+        
+        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Fixed amounts: ${additionalRoundAmounts.map(amt => amt.toFixed(3)).join(', ')} SOL`);
+        
         // Execute all wallets sequentially with 100ms delay
         const roundResults = [];
         for (let i = 0; i < walletsForNextRound.length; i++) {
@@ -845,7 +941,7 @@ export const executeTokenLaunch = async (
           
           const result = await executeBuyWithRetry(
             keypair,
-            null,
+            additionalRoundAmounts[i], // Use fixed amount for additional rounds
             walletComputeUnitPrice,
             blockHash,
             2 // Fewer retries for additional rounds
