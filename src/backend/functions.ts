@@ -2391,3 +2391,324 @@ export const getAllTradingWallets = async (userId: string) => {
     createdAt: wallet.createdAt,
   }));
 };
+
+// ========== ACCURATE SPENDING CALCULATION FUNCTIONS ==========
+
+/**
+ * Calculate accurate spending amounts by grouping transactions by wallet
+ * This prevents double-counting when wallets make multiple transactions
+ */
+export const getAccurateSpendingStats = async (tokenAddress: string, launchAttempt?: number) => {
+  const { TransactionRecordModel } = await import("./models");
+
+  const query: any = {
+    tokenAddress,
+    success: true, // Only count successful transactions
+  };
+  if (launchAttempt !== undefined) {
+    query.launchAttempt = launchAttempt;
+  }
+
+  const records = await TransactionRecordModel.find(query).lean();
+
+  // Group buy transactions by wallet to avoid double-counting
+  const walletBuyGroups = new Map<string, any[]>();
+  const walletSellGroups = new Map<string, any[]>();
+
+  // Group transactions by wallet
+  records.forEach(record => {
+    if (record.transactionType === "dev_buy" || record.transactionType === "snipe_buy") {
+      const walletKey = record.walletPublicKey;
+      if (!walletBuyGroups.has(walletKey)) {
+        walletBuyGroups.set(walletKey, []);
+      }
+      walletBuyGroups.get(walletKey)!.push(record);
+    } else if (record.transactionType === "dev_sell" || record.transactionType === "wallet_sell" || record.transactionType === "external_sell") {
+      const walletKey = record.walletPublicKey;
+      if (!walletSellGroups.has(walletKey)) {
+        walletSellGroups.set(walletKey, []);
+      }
+      walletSellGroups.get(walletKey)!.push(record);
+    }
+  });
+
+  // Calculate accurate spending per wallet (use the highest amount or sum if multiple transactions)
+  let totalDevSpent = 0;
+  let totalSnipeSpent = 0;
+  let totalDevTokens = BigInt(0);
+  let totalSnipeTokens = BigInt(0);
+  let successfulBuyWallets = 0;
+
+  for (const [walletKey, transactions] of walletBuyGroups) {
+    const devBuys = transactions.filter(t => t.transactionType === "dev_buy");
+    const snipeBuys = transactions.filter(t => t.transactionType === "snipe_buy");
+
+    // For dev buys, sum all transactions (usually only one)
+    const walletDevSpent = devBuys.reduce((sum, t) => sum + (t.amountSol || 0), 0);
+    const walletDevTokens = devBuys.reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
+
+    // For snipe buys, use the highest amount (most accurate) or sum if multiple transactions
+    let walletSnipeSpent = 0;
+    let walletSnipeTokens = BigInt(0);
+
+    if (snipeBuys.length === 1) {
+      // Single transaction - use the recorded amount
+      walletSnipeSpent = snipeBuys[0].amountSol || 0;
+      walletSnipeTokens = BigInt(snipeBuys[0].amountTokens || "0");
+    } else if (snipeBuys.length > 1) {
+      // Multiple transactions - sum them up (continuous buying loop)
+      walletSnipeSpent = snipeBuys.reduce((sum, t) => sum + (t.amountSol || 0), 0);
+      walletSnipeTokens = snipeBuys.reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
+    }
+
+    totalDevSpent += walletDevSpent;
+    totalSnipeSpent += walletSnipeSpent;
+    totalDevTokens += walletDevTokens;
+    totalSnipeTokens += walletSnipeTokens;
+
+    if (snipeBuys.length > 0) {
+      successfulBuyWallets++;
+    }
+  }
+
+  const totalSpent = totalDevSpent + totalSnipeSpent;
+  const totalTokens = totalDevTokens + totalSnipeTokens;
+
+  // Calculate accurate earnings (sum all sell transactions)
+  let totalDevEarned = 0;
+  let totalWalletEarned = 0;
+  let totalExternalEarned = 0;
+  let totalDevTokensSold = BigInt(0);
+  let totalWalletTokensSold = BigInt(0);
+  let totalExternalTokensSold = BigInt(0);
+
+  for (const [walletKey, transactions] of walletSellGroups) {
+    const devSells = transactions.filter(t => t.transactionType === "dev_sell");
+    const walletSells = transactions.filter(t => t.transactionType === "wallet_sell");
+    const externalSells = transactions.filter(t => t.transactionType === "external_sell");
+
+    totalDevEarned += devSells.reduce((sum, t) => sum + (t.amountSol || 0), 0);
+    totalWalletEarned += walletSells.reduce((sum, t) => sum + (t.amountSol || 0), 0);
+    totalExternalEarned += externalSells.reduce((sum, t) => sum + (t.amountSol || 0), 0);
+
+    totalDevTokensSold += devSells.reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
+    totalWalletTokensSold += walletSells.reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
+    totalExternalTokensSold += externalSells.reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
+  }
+
+  const totalEarned = totalDevEarned + totalWalletEarned + totalExternalEarned;
+  const totalTokensSold = totalDevTokensSold + totalWalletTokensSold + totalExternalTokensSold;
+  const remainingTokens = totalTokens - totalTokensSold;
+
+  // Calculate P&L
+  const netProfitLoss = totalEarned - totalSpent;
+  const profitLossPercentage = totalSpent > 0 ? (netProfitLoss / totalSpent) * 100 : 0;
+
+  return {
+    // Buy data (accurate)
+    totalSpent: Number(totalSpent.toFixed(6)),
+    totalDevSpent: Number(totalDevSpent.toFixed(6)),
+    totalSnipeSpent: Number(totalSnipeSpent.toFixed(6)),
+    totalTokens: totalTokens.toString(),
+    totalDevTokens: totalDevTokens.toString(),
+    totalSnipeTokens: totalSnipeTokens.toString(),
+    successfulBuyWallets, // Number of unique wallets that made successful buys
+    averageSpentPerWallet: successfulBuyWallets > 0 ? Number((totalSnipeSpent / successfulBuyWallets).toFixed(6)) : 0,
+
+    // Sell data
+    totalEarned: Number(totalEarned.toFixed(6)),
+    totalDevEarned: Number(totalDevEarned.toFixed(6)),
+    totalWalletEarned: Number(totalWalletEarned.toFixed(6)),
+    totalExternalEarned: Number(totalExternalEarned.toFixed(6)),
+    totalTokensSold: totalTokensSold.toString(),
+    totalDevTokensSold: totalDevTokensSold.toString(),
+    totalWalletTokensSold: totalWalletTokensSold.toString(),
+    totalExternalTokensSold: totalExternalTokensSold.toString(),
+    remainingTokens: remainingTokens.toString(),
+    successfulSells: walletSellGroups.size, // Number of unique wallets that sold
+
+    // P&L data
+    netProfitLoss: Number(netProfitLoss.toFixed(6)),
+    profitLossPercentage: Number(profitLossPercentage.toFixed(2)),
+    isProfit: netProfitLoss > 0,
+
+    // Additional metadata
+    totalBuyTransactions: records.filter(r => r.transactionType === "dev_buy" || r.transactionType === "snipe_buy").length,
+    totalSellTransactions: records.filter(r => r.transactionType === "dev_sell" || r.transactionType === "wallet_sell" || r.transactionType === "external_sell").length,
+    uniqueBuyWallets: walletBuyGroups.size,
+    uniqueSellWallets: walletSellGroups.size,
+  };
+};
+
+/**
+ * Get detailed spending breakdown by wallet for debugging
+ */
+export const getDetailedSpendingBreakdown = async (tokenAddress: string, launchAttempt?: number) => {
+  const { TransactionRecordModel } = await import("./models");
+
+  const query: any = {
+    tokenAddress,
+    success: true,
+  };
+  if (launchAttempt !== undefined) {
+    query.launchAttempt = launchAttempt;
+  }
+
+  const records = await TransactionRecordModel.find(query).lean();
+
+  // Group by wallet
+  const walletBreakdown = new Map<string, {
+    walletAddress: string;
+    devBuys: any[];
+    snipeBuys: any[];
+    devSells: any[];
+    walletSells: any[];
+    externalSells: any[];
+    totalDevSpent: number;
+    totalSnipeSpent: number;
+    totalDevTokens: bigint;
+    totalSnipeTokens: bigint;
+    totalDevEarned: number;
+    totalWalletEarned: number;
+    totalExternalEarned: number;
+    totalDevTokensSold: bigint;
+    totalWalletTokensSold: bigint;
+    totalExternalTokensSold: bigint;
+  }>();
+
+  // Group transactions by wallet
+  records.forEach(record => {
+    const walletKey = record.walletPublicKey;
+    
+    if (!walletBreakdown.has(walletKey)) {
+      walletBreakdown.set(walletKey, {
+        walletAddress: walletKey,
+        devBuys: [],
+        snipeBuys: [],
+        devSells: [],
+        walletSells: [],
+        externalSells: [],
+        totalDevSpent: 0,
+        totalSnipeSpent: 0,
+        totalDevTokens: BigInt(0),
+        totalSnipeTokens: BigInt(0),
+        totalDevEarned: 0,
+        totalWalletEarned: 0,
+        totalExternalEarned: 0,
+        totalDevTokensSold: BigInt(0),
+        totalWalletTokensSold: BigInt(0),
+        totalExternalTokensSold: BigInt(0),
+      });
+    }
+
+    const wallet = walletBreakdown.get(walletKey)!;
+
+    switch (record.transactionType) {
+      case "dev_buy":
+        wallet.devBuys.push(record);
+        wallet.totalDevSpent += record.amountSol || 0;
+        wallet.totalDevTokens += BigInt(record.amountTokens || "0");
+        break;
+      case "snipe_buy":
+        wallet.snipeBuys.push(record);
+        wallet.totalSnipeSpent += record.amountSol || 0;
+        wallet.totalSnipeTokens += BigInt(record.amountTokens || "0");
+        break;
+      case "dev_sell":
+        wallet.devSells.push(record);
+        wallet.totalDevEarned += record.amountSol || 0;
+        wallet.totalDevTokensSold += BigInt(record.amountTokens || "0");
+        break;
+      case "wallet_sell":
+        wallet.walletSells.push(record);
+        wallet.totalWalletEarned += record.amountSol || 0;
+        wallet.totalWalletTokensSold += BigInt(record.amountTokens || "0");
+        break;
+      case "external_sell":
+        wallet.externalSells.push(record);
+        wallet.totalExternalEarned += record.amountSol || 0;
+        wallet.totalExternalTokensSold += BigInt(record.amountTokens || "0");
+        break;
+    }
+  });
+
+  // Convert to array and add summary stats
+  const breakdown = Array.from(walletBreakdown.values()).map(wallet => ({
+    ...wallet,
+    totalSpent: wallet.totalDevSpent + wallet.totalSnipeSpent,
+    totalEarned: wallet.totalDevEarned + wallet.totalWalletEarned + wallet.totalExternalEarned,
+    netProfitLoss: (wallet.totalDevEarned + wallet.totalWalletEarned + wallet.totalExternalEarned) - (wallet.totalDevSpent + wallet.totalSnipeSpent),
+    totalTokens: wallet.totalDevTokens + wallet.totalSnipeTokens,
+    totalTokensSold: wallet.totalDevTokensSold + wallet.totalWalletTokensSold + wallet.totalExternalTokensSold,
+    remainingTokens: (wallet.totalDevTokens + wallet.totalSnipeTokens) - (wallet.totalDevTokensSold + wallet.totalWalletTokensSold + wallet.totalExternalTokensSold),
+    buyTransactionCount: wallet.devBuys.length + wallet.snipeBuys.length,
+    sellTransactionCount: wallet.devSells.length + wallet.walletSells.length + wallet.externalSells.length,
+  }));
+
+  // Sort by total spent (highest first)
+  breakdown.sort((a, b) => b.totalSpent - a.totalSpent);
+
+  return {
+    walletBreakdown: breakdown,
+    summary: {
+      totalWallets: breakdown.length,
+      walletsWithBuys: breakdown.filter(w => w.totalSpent > 0).length,
+      walletsWithSells: breakdown.filter(w => w.totalEarned > 0).length,
+      totalSpent: breakdown.reduce((sum, w) => sum + w.totalSpent, 0),
+      totalEarned: breakdown.reduce((sum, w) => sum + w.totalEarned, 0),
+      totalNetProfitLoss: breakdown.reduce((sum, w) => sum + w.netProfitLoss, 0),
+      totalBuyTransactions: breakdown.reduce((sum, w) => sum + w.buyTransactionCount, 0),
+      totalSellTransactions: breakdown.reduce((sum, w) => sum + w.sellTransactionCount, 0),
+    }
+  };
+};
+
+/**
+ * Compare old vs new spending calculation methods
+ */
+export const compareSpendingCalculations = async (tokenAddress: string, launchAttempt?: number) => {
+  // Get both calculation methods
+  const oldStats = await getTransactionFinancialStats(tokenAddress, launchAttempt);
+  const newStats = await getAccurateSpendingStats(tokenAddress, launchAttempt);
+  const detailedBreakdown = await getDetailedSpendingBreakdown(tokenAddress, launchAttempt);
+
+  return {
+    comparison: {
+      oldMethod: {
+        totalSpent: oldStats.totalSpent,
+        totalDevSpent: oldStats.totalDevSpent,
+        totalSnipeSpent: oldStats.totalSnipeSpent,
+        successfulBuys: oldStats.successfulBuys,
+        averageSpentPerWallet: oldStats.averageSpentPerWallet,
+      },
+      newMethod: {
+        totalSpent: newStats.totalSpent,
+        totalDevSpent: newStats.totalDevSpent,
+        totalSnipeSpent: newStats.totalSnipeSpent,
+        successfulBuyWallets: newStats.successfulBuyWallets,
+        averageSpentPerWallet: newStats.averageSpentPerWallet,
+      },
+      differences: {
+        totalSpentDifference: oldStats.totalSpent - newStats.totalSpent,
+        totalSpentDifferencePercentage: oldStats.totalSpent > 0 ? ((oldStats.totalSpent - newStats.totalSpent) / oldStats.totalSpent) * 100 : 0,
+        transactionCountDifference: oldStats.successfulBuys - newStats.totalBuyTransactions,
+        walletCountDifference: oldStats.successfulBuys - newStats.uniqueBuyWallets,
+      }
+    },
+    detailedBreakdown: detailedBreakdown.summary,
+    explanation: {
+      oldMethodIssues: [
+        "Counts each transaction separately, leading to inflated totals when wallets make multiple buys",
+        "Doesn't account for continuous buying loops where wallets make multiple transactions",
+        "May include failed transaction amounts or estimates",
+        "Simple sum of all amountSol values in database"
+      ],
+      newMethodImprovements: [
+        "Groups transactions by wallet to avoid double-counting",
+        "Handles multiple transactions per wallet correctly",
+        "Provides both transaction count and unique wallet count",
+        "More accurate for continuous buying scenarios"
+      ]
+    }
+  };
+};

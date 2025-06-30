@@ -2,7 +2,7 @@ import bot from ".";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import { getTokenInfo } from "../backend/utils";
-import { getTransactionFinancialStats } from "../backend/functions-main";
+import { getAccurateSpendingStats } from "../backend/functions-main";
 
 export const sendLaunchSuccessNotification = async (
   chatId: number,
@@ -13,8 +13,8 @@ export const sendLaunchSuccessNotification = async (
   // Get token info for market cap and price
   const tokenInfo = await getTokenInfo(tokenAddress);
 
-  // Get financial statistics
-  const financialStats = await getTransactionFinancialStats(tokenAddress);
+  // Get accurate financial statistics
+  const financialStats = await getAccurateSpendingStats(tokenAddress);
 
   // Calculate token value if we have price and token amounts
   let totalTokenValue = 0;
@@ -38,6 +38,7 @@ export const sendLaunchSuccessNotification = async (
     `➡️ Total Spent: ${escape(financialStats.totalSpent.toString())} SOL`,
     `➡️ Dev Allocation: ${escape(financialStats.totalDevSpent.toString())} SOL`,
     `➡️ Snipe Buys: ${escape(financialStats.totalSnipeSpent.toString())} SOL`,
+    `➡️ Unique Buy Wallets: ${escape(financialStats.successfulBuyWallets.toString())}`,
     tokenInfo ? `➡️ Market Cap: ${escape(`$${tokenInfo.marketCap.toLocaleString()}`)}` : "",
     tokenInfo && tokenInfo.price !== undefined ? `➡️ Price: ${escape(`$${tokenInfo.price}`)}` : "",
     totalTokenValue > 0 ? `➡️ Current Value: ${escape(`$${totalTokenValue.toFixed(2)}`)}` : "",

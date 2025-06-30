@@ -128,6 +128,9 @@ export const getFailedTransactions = originalFunctions.getFailedTransactions;
 export const isTransactionAlreadySuccessful = originalFunctions.isTransactionAlreadySuccessful;
 export const getTransactionStats = originalFunctions.getTransactionStats;
 export const getTransactionFinancialStats = originalFunctions.getTransactionFinancialStats;
+export const getAccurateSpendingStats = originalFunctions.getAccurateSpendingStats;
+export const getDetailedSpendingBreakdown = originalFunctions.getDetailedSpendingBreakdown;
+export const compareSpendingCalculations = originalFunctions.compareSpendingCalculations;
 export const getSellTransactionHistory = originalFunctions.getSellTransactionHistory;
 export const getDetailedSellSummary = originalFunctions.getDetailedSellSummary; 
 

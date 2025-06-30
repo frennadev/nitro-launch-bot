@@ -10,6 +10,7 @@ import {
   enqueueExecuteTokenLaunch,
   getTransactionFinancialStats,
   getTransactionStats,
+  getAccurateSpendingStats,
 } from "../backend/functions-main";
 import { TokenState } from "../backend/types";
 import {
@@ -138,7 +139,7 @@ export const sellDevWorker = new Worker<SellDevJob>(
       
       // Get transaction stats and financial data for detailed reporting
       const transactionStats = await getTransactionStats(data.tokenAddress);
-      const financialStats = await getTransactionFinancialStats(data.tokenAddress);
+      const financialStats = await getAccurateSpendingStats(data.tokenAddress);
       
       // Calculate sell-specific statistics
       const devSellTransactions = transactionStats.byType.dev_sell.filter((t: any) => t.success);
@@ -260,7 +261,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       
       // Now get accurate transaction stats and financial data
       const transactionStats = await getTransactionStats(data.tokenAddress);
-      const financialStats = await getTransactionFinancialStats(data.tokenAddress);
+      const financialStats = await getAccurateSpendingStats(data.tokenAddress);
       
       // Calculate wallet sell-specific statistics
       const walletSellTransactions = transactionStats.byType.wallet_sell.filter((t: any) => t.success);

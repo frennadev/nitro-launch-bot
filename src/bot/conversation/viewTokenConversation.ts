@@ -7,7 +7,7 @@ import { CallBackQueries } from "../types";
 import { sendMessage } from "../../backend/sender";
 import { TokenState } from "../../backend/types";
 import { getTokenInfo } from "../../backend/utils";
-import { getTransactionFinancialStats } from "../../backend/functions-main";
+import { getAccurateSpendingStats } from "../../backend/functions-main";
 // import {  } from "../utils";
 
 const viewTokensConversation = async (
@@ -54,7 +54,7 @@ const viewTokensConversation = async (
     let financialStats;
     if (state === TokenState.LAUNCHED) {
       tokenInfo = await getTokenInfo(tokenAddress);
-      financialStats = await getTransactionFinancialStats(tokenAddress);
+      financialStats = await getAccurateSpendingStats(tokenAddress);
     }
 
     // Calculate token value and P&L if we have the data
@@ -91,7 +91,7 @@ const viewTokensConversation = async (
         ? `📊 Market Cap: ${`$${tokenInfo.marketCap.toLocaleString()}`} \n💸 Price: ${`$${tokenInfo.priceUsd}`} \n`
         : "",
       state === TokenState.LAUNCHED && financialStats
-        ? `💰 **Financial Summary:**\n• Total Spent: ${financialStats.totalSpent.toString()} SOL\n• Successful Buys: ${financialStats.successfulBuys}\n${totalTokenValue > 0 ? `• Token Value: ${`$${totalTokenValue.toFixed(2)}`}\n` : ""}${profitLoss !== 0 ? `• P&L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${`$${profitLoss.toFixed(2)}`} \\(${`${profitLossPercentage >= 0 ? "+" : ""}${profitLossPercentage.toFixed(1)}%`}\\)\n` : ""}`
+        ? `💰 **Financial Summary:**\n• Total Spent: ${financialStats.totalSpent.toString()} SOL\n• Unique Buy Wallets: ${financialStats.successfulBuyWallets}\n${totalTokenValue > 0 ? `• Token Value: ${`$${totalTokenValue.toFixed(2)}`}\n` : ""}${profitLoss !== 0 ? `• P&L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${`$${profitLoss.toFixed(2)}`} \\(${`${profitLossPercentage >= 0 ? "+" : ""}${profitLossPercentage.toFixed(1)}%`}\\)\n` : ""}`
         : "",
       `📊 Status: ${state === TokenState.LAUNCHED ? "✅ Launched" : "⌛ Pending"}`,
       "",
