@@ -114,6 +114,9 @@ const viewTokensConversation = async (
         .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
         .text("📊 Sell Individual Wallet", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`)
         .row();
+      
+      // Debug: Log the callback data being generated
+      console.log("Generated sell individual callback data:", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`);
     } else {
       keyboard
         .text(

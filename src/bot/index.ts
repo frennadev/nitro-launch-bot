@@ -658,6 +658,8 @@ bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
   console.log("Found hereee");
+  console.log("Sell individual button clicked for token:", tokenAddress);
+  console.log("Full callback data:", ctx.callbackQuery?.data);
   await ctx.conversation.enter("sellIndividualToken", tokenAddress);
 });
 
