@@ -73,40 +73,22 @@ function calculateOptimalWalletCount(buyAmountSol: number, maxAvailableWallets: 
 }
 
 /**
- * Pre-calculate optimal buy amounts for each wallet based on bonding curve state
- * This ensures we buy with expected amounts and maximize efficiency
+ * Calculate buy amounts dynamically - wallets will buy until balance drops below 0.05 SOL
+ * This ensures maximum token acquisition with all available funds
  */
-function calculateFixedBuyAmounts(
-  buyAmount: number,
-  walletCount: number,
-  bondingCurveData: any
+function calculateDynamicBuyAmounts(
+  walletCount: number
 ): { walletAmounts: number[], totalExpected: number } {
-  // Use the incremental sequence that matches the mixer funding
-  const incrementalSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
-  
-  // Calculate how much each wallet should buy based on the sequence
+  // Each wallet will use their full balance minus 0.05 SOL buffer
+  // We can't know exact amounts until we check balances, so we'll calculate dynamically
   const walletAmounts: number[] = [];
-  let remainingAmount = buyAmount;
   
-  for (let i = 0; i < Math.min(walletCount, incrementalSequence.length); i++) {
-    if (remainingAmount <= 0) break;
-    
-    // Use the sequence amount, but cap it to the remaining amount
-    const sequenceAmount = incrementalSequence[i];
-    const walletAmount = Math.min(sequenceAmount, remainingAmount);
-    
-    walletAmounts.push(walletAmount);
-    remainingAmount -= walletAmount;
-  }
+  // For now, we'll use a conservative estimate based on typical mixer funding
+  // The actual amounts will be calculated dynamically during execution
+  const estimatedAmounts = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
   
-  // If we still have remaining amount and more wallets, distribute evenly
-  if (remainingAmount > 0 && walletAmounts.length < walletCount) {
-    const remainingWallets = walletCount - walletAmounts.length;
-    const amountPerWallet = remainingAmount / remainingWallets;
-    
-    for (let i = 0; i < remainingWallets; i++) {
-      walletAmounts.push(amountPerWallet);
-    }
+  for (let i = 0; i < Math.min(walletCount, estimatedAmounts.length); i++) {
+    walletAmounts.push(estimatedAmounts[i]);
   }
   
   const totalExpected = walletAmounts.reduce((sum, amount) => sum + amount, 0);
@@ -636,13 +618,11 @@ export const executeTokenLaunch = async (
       let realTokenReserve = curveData.realTokenReserves;
       
       // Calculate fixed buy amounts for each wallet based on bonding curve state
-      const { walletAmounts, totalExpected } = calculateFixedBuyAmounts(
-        buyAmount,
-        walletsToProcess.length,
-        curveData
+      const { walletAmounts, totalExpected } = calculateDynamicBuyAmounts(
+        walletsToProcess.length
       );
       
-      logger.info(`[${logIdentifier}]: Fixed buy amounts calculated`, {
+      logger.info(`[${logIdentifier}]: Dynamic buy amounts calculated`, {
         targetAmount: buyAmount,
         totalExpected: totalExpected.toFixed(6),
         walletCount: walletsToProcess.length,
@@ -653,7 +633,7 @@ export const executeTokenLaunch = async (
       // Enhanced buy transaction with retry logic and higher slippage
       const executeBuyWithRetry = async (
         keypair: any,
-        fixedBuyAmount: number | null, // Use fixed amount instead of dynamic calculation
+        fixedBuyAmount: number | null, // This will be ignored in favor of dynamic calculation
         currentComputeUnitPrice: number,
         blockHash: any,
         maxRetries: number = 3
@@ -666,40 +646,24 @@ export const executeTokenLaunch = async (
             const currentSlippage = Math.min(baseSlippage + (attempt * 20), maxSlippage); // Increase by 20% each retry, capped at 90%
             logger.info(`[${logIdentifier}]: Attempting buy for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
             
-            // Use fixed buy amount if provided, otherwise fall back to dynamic calculation
-            let swapAmountSOL: number;
-            let swapAmountLamports: bigint;
+            // Always use dynamic calculation based on current wallet balance
+            const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
             
-            if (fixedBuyAmount !== null) {
-              // Use pre-calculated fixed amount
-              swapAmountSOL = fixedBuyAmount;
-              swapAmountLamports = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
-              
-              // Verify wallet has sufficient balance for fixed amount
-              const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
-              const requiredAmount = swapAmountSOL + 0.003; // Fixed amount + fees
-              
-              if (walletSolBalance < requiredAmount) {
-                throw new Error(`Insufficient balance for fixed amount: ${walletSolBalance} SOL, need ${requiredAmount} SOL`);
-              }
-              
-              logger.info(`[${logIdentifier}]: Using fixed buy amount for ${keypair.publicKey.toBase58().slice(0, 8)} - Amount: ${swapAmountSOL.toFixed(6)} SOL`);
-            } else {
-              // Fallback to dynamic calculation (existing logic)
-              const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
-              const maestroFee = 0.001;
-              const buffer = 0.002;
-              const availableForSpend = walletSolBalance - maestroFee - buffer;
-              
-              if (availableForSpend <= 0) {
-                throw new Error(`Insufficient balance: ${walletSolBalance} SOL, need at least ${maestroFee + buffer} SOL for fees`);
-              }
-              
-              swapAmountSOL = availableForSpend;
-              swapAmountLamports = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
-              
-              logger.info(`[${logIdentifier}]: Dynamic buy calculation for ${keypair.publicKey.toBase58().slice(0, 8)} - Balance: ${walletSolBalance} SOL, Swap: ${swapAmountSOL.toFixed(6)} SOL`);
+            // Keep buying until balance drops below 0.05 SOL
+            const minBalanceThreshold = 0.05;
+            const availableForSpend = walletSolBalance - minBalanceThreshold;
+            
+            // Check if wallet has enough balance to buy
+            if (availableForSpend <= 0.01) { // Need at least 0.01 SOL to attempt a buy
+              logger.info(`[${logIdentifier}]: Wallet ${keypair.publicKey.toBase58().slice(0, 8)} has insufficient balance: ${walletSolBalance.toFixed(6)} SOL (need > ${minBalanceThreshold + 0.01} SOL)`);
+              return { success: true, message: "Insufficient balance for further buys" }; // Mark as success to avoid retries
             }
+            
+            // Use the full available amount for the swap
+            const swapAmountSOL = availableForSpend;
+            const swapAmountLamports = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
+            
+            logger.info(`[${logIdentifier}]: Dynamic buy calculation for ${keypair.publicKey.toBase58().slice(0, 8)} - Balance: ${walletSolBalance.toFixed(6)} SOL, Available: ${swapAmountSOL.toFixed(6)} SOL, Target: ${minBalanceThreshold} SOL remaining`);
             
             // Ensure swap amount is positive and properly converted
             if (swapAmountLamports <= 0) {
@@ -828,7 +792,7 @@ export const executeTokenLaunch = async (
               currentLaunchAttempt,
               {
                 slippageUsed: baseSlippage + (attempt * 50),
-                amountSol: fixedBuyAmount || 0,
+                amountSol: 0, // We don't know the amount for failed attempts
                 errorMessage: error.message,
                 retryAttempt: attempt,
               }
@@ -844,36 +808,83 @@ export const executeTokenLaunch = async (
         return { success: false, error: "Max retries exceeded" };
       };
       
-      // Execute buy transactions sequentially with 220ms delay to avoid bundler detection
+      // Execute buy transactions continuously until wallets are depleted
       const results = [];
-      for (let i = 0; i < walletsToProcess.length; i++) {
-        const keypair = walletsToProcess[i];
+      let roundNumber = 1;
+      const maxRounds = 10; // Safety limit to prevent infinite loops
+      
+      while (roundNumber <= maxRounds) {
+        logger.info(`[${logIdentifier}]: Starting buy round ${roundNumber}`);
         
-        // Execute buy transaction with dynamic balance calculation inside retry logic
-        const result = await executeBuyWithRetry(
-          keypair,
-          walletAmounts[i],
-          currentComputeUnitPrice,
-          blockHash,
-          3 // Max 3 retries
-        );
-        
-        results.push(result);
-        currentComputeUnitPrice -= computeUnitPriceDecrement;
-        
-        // Add 100ms delay between transactions to avoid bundler detection
-        // Skip delay for the last transaction
-        if (i < walletsToProcess.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+        // Check which wallets still have sufficient balance
+        const walletsWithBalance = [];
+        for (const keypair of walletsToProcess) {
+          const balance = await getSolBalance(keypair.publicKey.toBase58());
+          if (balance > 0.06) { // Need more than 0.05 SOL + 0.01 SOL buffer
+            walletsWithBalance.push(keypair);
+          }
         }
+        
+        if (walletsWithBalance.length === 0) {
+          logger.info(`[${logIdentifier}]: All wallets depleted, stopping buy rounds`);
+          break;
+        }
+        
+        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Processing ${walletsWithBalance.length} wallets with sufficient balance`);
+        
+        // Execute buy transactions for this round sequentially
+        const roundResults = [];
+        for (let i = 0; i < walletsWithBalance.length; i++) {
+          const keypair = walletsWithBalance[i];
+          const walletComputeUnitPrice = maxComputeUnitPrice - (computeUnitPriceDecrement * i);
+          
+          const result = await executeBuyWithRetry(
+            keypair,
+            null, // Use dynamic calculation
+            walletComputeUnitPrice,
+            blockHash,
+            3 // Max 3 retries
+          );
+          
+          roundResults.push(result);
+          
+          // Add 100ms delay between transactions (skip delay for the last transaction)
+          if (i < walletsWithBalance.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+        
+        const roundSuccess = roundResults.filter((res) => res.success);
+        const roundFailed = roundResults.filter((res) => !res.success);
+        
+        results.push(...roundResults);
+        
+        logger.info(`[${logIdentifier}]: Round ${roundNumber} Results`, {
+          success: roundSuccess.length,
+          failed: roundFailed.length,
+          totalWallets: walletsWithBalance.length,
+        });
+        
+        // If no successful transactions this round, stop
+        if (roundSuccess.length === 0) {
+          logger.info(`[${logIdentifier}]: No successful transactions in round ${roundNumber}, stopping`);
+          break;
+        }
+        
+        roundNumber++;
+        
+        // Small delay between rounds
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
+      
       const success = results.filter((res) => res.success);
       const failed = results.filter((res) => !res.success);
       
       // Get updated transaction stats
       const transactionStats = await getTransactionStats(tokenAddress, currentLaunchAttempt);
       
-      logger.info(`[${logIdentifier}]: Round 1 Snipe Results`, {
+      logger.info(`[${logIdentifier}]: Continuous Buy Results`, {
+        totalRounds: roundNumber - 1,
         currentAttempt: {
           success: success.length,
           failed: failed.length,
@@ -885,200 +896,87 @@ export const executeTokenLaunch = async (
         throw new Error("Snipe Failed - No successful transactions");
       }
 
-      // ------- MULTI-ROUND BUYING LOGIC -------
-      // Check if we need additional rounds to reach the target buy amount
-      const { getTransactionFinancialStats } = await import("../../backend/functions");
-      const financialStats = await getTransactionFinancialStats(tokenAddress, currentLaunchAttempt);
-      let totalSpentSoFar = financialStats.totalSnipeSpent;
-      const targetBuyAmount = buyAmount;
-      const spendingProgress = (totalSpentSoFar / targetBuyAmount) * 100;
-      
-      logger.info(`[${logIdentifier}]: Multi-round buying analysis`, {
-        targetAmount: targetBuyAmount,
-        spentSoFar: totalSpentSoFar,
-        remaining: targetBuyAmount - totalSpentSoFar,
-        progress: `${spendingProgress.toFixed(1)}%`
-      });
+      // ------- COLLECT TRANSACTION FEES FROM SUCCESSFUL BUYS -------
+      logger.info(`[${logIdentifier}]: Collecting transaction fees from successful buys`);
+      try {
+        // Get all successful snipe transactions (not just wallets) for this launch attempt
+        const { TransactionRecordModel } = await import("../../backend/models");
+        const allSuccessfulTransactions = await TransactionRecordModel.find({
+          tokenAddress,
+          transactionType: "snipe_buy",
+          success: true,
+          launchAttempt: currentLaunchAttempt
+        }).sort({ createdAt: 1 }); // Sort by creation time to process in order
+        
+        // Collect transaction fees from each successful transaction
+        const feeCollectionPromises = [];
+        const processedWallets = new Set(); // Track wallets we've already processed fees for
+        
+        for (const record of allSuccessfulTransactions) {
+          const walletPublicKey = record.walletPublicKey;
+          
+          // Find the corresponding private key
+          const walletIndex = buyKeypairs.findIndex(kp => kp.publicKey.toBase58() === walletPublicKey);
+          if (walletIndex !== -1) {
+            const walletPrivateKey = buyWallets[walletIndex];
+            const transactionAmount = record.amountSol || 0;
+            
+            // Create a unique key for this specific transaction
+            const transactionKey = `${walletPublicKey}-${record.signature}`;
+            
+            if (transactionAmount > 0 && !processedWallets.has(transactionKey)) {
+              processedWallets.add(transactionKey);
+              feeCollectionPromises.push(
+                collectTransactionFee(walletPrivateKey, transactionAmount, "buy")
+              );
+            }
+          }
+        }
 
-      // Execute additional rounds if we haven't reached 80% of target and have wallets with sufficient balance
-      let roundNumber = 2;
-      const maxRounds = 4; // Limit to prevent infinite loops
-      
-      while (totalSpentSoFar < targetBuyAmount * 0.8 && roundNumber <= maxRounds) {
-        logger.info(`[${logIdentifier}]: Starting round ${roundNumber} - Need ${(targetBuyAmount - totalSpentSoFar).toFixed(3)} more SOL`);
-        
-        // Find wallets with sufficient balance for another round (at least 0.01 SOL)
-        const walletsForNextRound = [];
-        for (const keypair of buyKeypairs) {
-          const balance = await getSolBalance(keypair.publicKey.toBase58());
-          if (balance >= 0.01) { // Minimum 0.01 SOL to attempt another buy
-            walletsForNextRound.push(keypair);
+        logger.info(`[${logIdentifier}]: Prepared ${feeCollectionPromises.length} fee collection transactions from ${allSuccessfulTransactions.length} successful buy transactions`);
+
+        if (feeCollectionPromises.length > 0) {
+          const feeResults = await Promise.all(feeCollectionPromises);
+          const successfulFees = feeResults.filter((result: any) => result.success);
+          const failedFees = feeResults.filter((result: any) => !result.success);
+          
+          const totalFeesCollected = successfulFees.reduce((sum: number, result: any) => {
+            return sum + (result.feeAmount || 0);
+          }, 0);
+          
+          logger.info(`[${logIdentifier}]: Transaction fee collection results`, {
+            successful: successfulFees.length,
+            failed: failedFees.length,
+            totalFeesCollected
+          });
+
+          if (failedFees.length > 0) {
+            logger.warn(`[${logIdentifier}]: Some transaction fees failed to collect`, failedFees.map((result: any, index: number) => ({
+              index,
+              success: result.success,
+              error: result.error,
+              feeAmount: result.feeAmount
+            })));
           }
+        } else {
+          logger.info(`[${logIdentifier}]: No transaction fees to collect`);
         }
-        
-        if (walletsForNextRound.length === 0) {
-          logger.info(`[${logIdentifier}]: No wallets with sufficient balance for round ${roundNumber}, stopping multi-round buying`);
-          break;
-        }
-        
-        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Processing ${walletsForNextRound.length} wallets with sufficient balance`);
-        
-        // Execute buy transactions for this round sequentially with 100ms delay
-        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Executing ${walletsForNextRound.length} transactions sequentially with 100ms delay`);
-        
-        const roundComputeDecrement = Math.round(
-          (maxComputeUnitPrice - baseComputeUnitPrice) / walletsForNextRound.length,
-        );
-        
-        // Calculate fixed amounts for additional rounds (use smaller amounts)
-        const additionalRoundAmounts = walletsForNextRound.map((_, index) => {
-          // Use smaller amounts for additional rounds: 0.3, 0.4, 0.5 SOL etc.
-          return Math.min(0.3 + (index * 0.1), 1.0);
-        });
-        
-        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Fixed amounts: ${additionalRoundAmounts.map(amt => amt.toFixed(3)).join(', ')} SOL`);
-        
-        // Execute all wallets sequentially with 100ms delay
-        const roundResults = [];
-        for (let i = 0; i < walletsForNextRound.length; i++) {
-          const keypair = walletsForNextRound[i];
-          const walletComputeUnitPrice = maxComputeUnitPrice - (roundComputeDecrement * i);
-          
-          const result = await executeBuyWithRetry(
-            keypair,
-            additionalRoundAmounts[i], // Use fixed amount for additional rounds
-            walletComputeUnitPrice,
-            blockHash,
-            2 // Fewer retries for additional rounds
-          );
-          
-          roundResults.push(result);
-          
-          // Add 100ms delay between transactions (skip delay for the last transaction)
-          if (i < walletsForNextRound.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-        }
-        
-        const roundSuccess = roundResults.filter((res) => res.success);
-        const roundFailed = roundResults.filter((res) => !res.success);
-        
-        // Update financial stats
-        const updatedStats = await getTransactionFinancialStats(tokenAddress, currentLaunchAttempt);
-        const newTotalSpent = updatedStats.totalSnipeSpent;
-        const roundSpent = newTotalSpent - totalSpentSoFar;
-        
-        logger.info(`[${logIdentifier}]: Round ${roundNumber} Results`, {
-          success: roundSuccess.length,
-          failed: roundFailed.length,
-          roundSpent: roundSpent.toFixed(6),
-          totalSpent: newTotalSpent.toFixed(6),
-          progress: `${((newTotalSpent / targetBuyAmount) * 100).toFixed(1)}%`
-        });
-        
-        // Update totals for next iteration
-        totalSpentSoFar = newTotalSpent;
-        
-        // Stop if we made no progress this round
-        if (roundSpent < 0.001) {
-          logger.info(`[${logIdentifier}]: Round ${roundNumber} made minimal progress (${roundSpent.toFixed(6)} SOL), stopping multi-round buying`);
-          break;
-        }
-        
-        roundNumber++;
+      } catch (error: any) {
+        logger.error(`[${logIdentifier}]: Error collecting transaction fees:`, error);
+        // Don't throw error here - transaction fees are secondary to main launch success
       }
-      
-      // Final summary
-      const finalStats = await getTransactionFinancialStats(tokenAddress, currentLaunchAttempt);
-      logger.info(`[${logIdentifier}]: Multi-round buying completed`, {
-        totalRounds: roundNumber - 1,
-        finalSpent: finalStats.totalSnipeSpent.toFixed(6),
-        targetAmount: targetBuyAmount,
-        finalProgress: `${((finalStats.totalSnipeSpent / targetBuyAmount) * 100).toFixed(1)}%`,
-        efficiency: `${((finalStats.totalSnipeSpent / targetBuyAmount) * 100).toFixed(1)}%`
-      });
+
+      await updateLaunchStage(
+        mintKeypair.publicKey.toBase58(),
+        PumpLaunchStage.COMPLETE,
+      );
+      logger.info(
+        `[${logIdentifier}]: Snipe completed in ${formatMilliseconds(performance.now() - snipeStart)}`,
+      );
     }
 
-    // ------- COLLECT TRANSACTION FEES FROM SUCCESSFUL BUYS -------
-    logger.info(`[${logIdentifier}]: Collecting transaction fees from successful buys`);
-    try {
-      // Get all successful snipe transactions (not just wallets) for this launch attempt
-      const { TransactionRecordModel } = await import("../../backend/models");
-      const allSuccessfulTransactions = await TransactionRecordModel.find({
-        tokenAddress,
-        transactionType: "snipe_buy",
-        success: true,
-        launchAttempt: currentLaunchAttempt
-      }).sort({ createdAt: 1 }); // Sort by creation time to process in order
-      
-      // Collect transaction fees from each successful transaction
-      const feeCollectionPromises = [];
-      const processedWallets = new Set(); // Track wallets we've already processed fees for
-      
-      for (const record of allSuccessfulTransactions) {
-        const walletPublicKey = record.walletPublicKey;
-        
-        // Find the corresponding private key
-        const walletIndex = buyKeypairs.findIndex(kp => kp.publicKey.toBase58() === walletPublicKey);
-        if (walletIndex !== -1) {
-          const walletPrivateKey = buyWallets[walletIndex];
-          const transactionAmount = record.amountSol || 0;
-          
-          // Create a unique key for this specific transaction
-          const transactionKey = `${walletPublicKey}-${record.signature}`;
-          
-          if (transactionAmount > 0 && !processedWallets.has(transactionKey)) {
-            processedWallets.add(transactionKey);
-            feeCollectionPromises.push(
-              collectTransactionFee(walletPrivateKey, transactionAmount, "buy")
-            );
-          }
-        }
-      }
-
-      logger.info(`[${logIdentifier}]: Prepared ${feeCollectionPromises.length} fee collection transactions from ${allSuccessfulTransactions.length} successful buy transactions`);
-
-      if (feeCollectionPromises.length > 0) {
-        const feeResults = await Promise.all(feeCollectionPromises);
-        const successfulFees = feeResults.filter((result: any) => result.success);
-        const failedFees = feeResults.filter((result: any) => !result.success);
-        
-        const totalFeesCollected = successfulFees.reduce((sum: number, result: any) => {
-          return sum + (result.feeAmount || 0);
-        }, 0);
-        
-        logger.info(`[${logIdentifier}]: Transaction fee collection results`, {
-          successful: successfulFees.length,
-          failed: failedFees.length,
-          totalFeesCollected
-        });
-
-        if (failedFees.length > 0) {
-          logger.warn(`[${logIdentifier}]: Some transaction fees failed to collect`, failedFees.map((result: any, index: number) => ({
-            index,
-            success: result.success,
-            error: result.error,
-            feeAmount: result.feeAmount
-          })));
-        }
-      } else {
-        logger.info(`[${logIdentifier}]: No transaction fees to collect`);
-      }
-    } catch (error: any) {
-      logger.error(`[${logIdentifier}]: Error collecting transaction fees:`, error);
-      // Don't throw error here - transaction fees are secondary to main launch success
-    }
-
-    await updateLaunchStage(
-      mintKeypair.publicKey.toBase58(),
-      PumpLaunchStage.COMPLETE,
-    );
     logger.info(
-      `[${logIdentifier}]: Snipe completed in ${formatMilliseconds(performance.now() - snipeStart)}`,
+      `[${logIdentifier}]: Token Launch completed in ${formatMilliseconds(performance.now() - start)}`,
     );
   }
-
-  logger.info(
-    `[${logIdentifier}]: Token Launch completed in ${formatMilliseconds(performance.now() - start)}`,
-  );
 };
