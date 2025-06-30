@@ -116,32 +116,36 @@ ${walletDetails}
       maximumFractionDigits: 2,
     });
     
+    // Shorten addresses for callback data to stay within 64-byte limit
+    const shortWalletAddr = wallet.pubkey.slice(0, 8) + wallet.pubkey.slice(-8);
+    const shortTokenAddr = address.slice(0, 8) + address.slice(-8);
+    
     kb.row(
       { 
         text: `🏦 ${wallet.shortAddress}`, 
-        callback_data: `wallet_details_${wallet.pubkey}_${address}` 
+        callback_data: `wdet_${shortWalletAddr}_${shortTokenAddr}` 
       }
     );
     
     kb.row(
       { 
         text: `📈 Sell 25% (${(wallet.balance * 0.25 / 1e6).toFixed(2)} tokens)`, 
-        callback_data: `sell_25_${wallet.pubkey}_${address}` 
+        callback_data: `s25_${shortWalletAddr}_${shortTokenAddr}` 
       },
       { 
         text: `📈 Sell 50% (${(wallet.balance * 0.5 / 1e6).toFixed(2)} tokens)`, 
-        callback_data: `sell_50_${wallet.pubkey}_${address}` 
+        callback_data: `s50_${shortWalletAddr}_${shortTokenAddr}` 
       }
     );
     
     kb.row(
       { 
         text: `📈 Sell 75% (${(wallet.balance * 0.75 / 1e6).toFixed(2)} tokens)`, 
-        callback_data: `sell_75_${wallet.pubkey}_${address}` 
+        callback_data: `s75_${shortWalletAddr}_${shortTokenAddr}` 
       },
       { 
         text: `💸 Sell All (${walletTokensFormatted} tokens)`, 
-        callback_data: `sell_all_${wallet.pubkey}_${address}` 
+        callback_data: `sall_${shortWalletAddr}_${shortTokenAddr}` 
       }
     );
     
@@ -185,43 +189,52 @@ async function handleWalletSellAction(
   const parts = data.split('_');
   const action = parts[0];
   const percentage = parts[1];
-  const walletAddress = parts[2];
-  const tokenAddr = parts[3];
+  const shortWalletAddr = parts[2];
+  const shortTokenAddr = parts[3];
 
-  if (action === 'sell' && percentage && walletAddress && tokenAddr) {
+  // Reconstruct full addresses from shortened versions
+  const fullTokenAddress = tokenAddress; // We already have the full token address
+  let fullWalletAddress = '';
+
+  // Find the wallet with matching shortened address
+  const user = await getUser(ctx.chat!.id.toString());
+  if (!user) {
+    await sendMessage(ctx, "❌ User not found");
+    return;
+  }
+
+  const buyerWallets = await getAllBuyerWallets(String(user._id));
+  const targetWallet = buyerWallets.find(w => {
+    const walletShort = w.publicKey.slice(0, 8) + w.publicKey.slice(-8);
+    return walletShort === shortWalletAddr;
+  });
+  
+  if (!targetWallet) {
+    await sendMessage(ctx, "❌ Wallet not found");
+    return;
+  }
+
+  fullWalletAddress = targetWallet.publicKey;
+
+  if (action === 's25' || action === 's50' || action === 's75' || action === 'sall') {
     let sellPercent = 0;
     
-    switch (percentage) {
-      case '25':
+    switch (action) {
+      case 's25':
         sellPercent = 25;
         break;
-      case '50':
+      case 's50':
         sellPercent = 50;
         break;
-      case '75':
+      case 's75':
         sellPercent = 75;
         break;
-      case 'all':
+      case 'sall':
         sellPercent = 100;
         break;
       default:
         await sendMessage(ctx, "❌ Invalid sell percentage");
         return;
-    }
-
-    // Get wallet private key
-    const user = await getUser(ctx.chat!.id.toString());
-    if (!user) {
-      await sendMessage(ctx, "❌ User not found");
-      return;
-    }
-
-    const buyerWallets = await getAllBuyerWallets(String(user._id));
-    const targetWallet = buyerWallets.find(w => w.publicKey === walletAddress);
-    
-    if (!targetWallet) {
-      await sendMessage(ctx, "❌ Wallet not found");
-      return;
     }
 
     try {
@@ -230,7 +243,7 @@ async function handleWalletSellAction(
       const privateKey = await getBuyerWalletPrivateKey(String(user._id), targetWallet.id);
       
       // Get token balance
-      const tokenBalance = await getTokenBalance(tokenAddress, walletAddress);
+      const tokenBalance = await getTokenBalance(fullTokenAddress, fullWalletAddress);
       const tokensToSell = sellPercent === 100 ? tokenBalance : Math.floor(tokenBalance * (sellPercent / 100));
       
       if (tokensToSell <= 0) {
@@ -245,7 +258,7 @@ async function handleWalletSellAction(
       const { secretKeyToKeypair } = await import("../../blockchain/common/utils");
       
       const walletKeypair = secretKeyToKeypair(privateKey);
-      const result = await executeExternalSell(tokenAddress, walletKeypair, tokensToSell);
+      const result = await executeExternalSell(fullTokenAddress, walletKeypair, tokensToSell);
       
       if (result.success) {
         await sendMessage(ctx, `✅ Successfully sold ${sellPercent}% of tokens!\n\nTransaction: ${result.signature}\nPlatform: ${result.platform}`);
@@ -256,28 +269,11 @@ async function handleWalletSellAction(
     } catch (error: any) {
       await sendMessage(ctx, `❌ Error: ${error.message}`);
     }
-  } else if (action === 'wallet_details') {
+  } else if (action === 'wdet') {
     // Show detailed wallet information
-    const walletAddress = parts[1];
-    const tokenAddr = parts[2];
-    
-    const user = await getUser(ctx.chat!.id.toString());
-    if (!user) {
-      await sendMessage(ctx, "❌ User not found");
-      return;
-    }
-
-    const buyerWallets = await getAllBuyerWallets(String(user._id));
-    const targetWallet = buyerWallets.find(w => w.publicKey === walletAddress);
-    
-    if (!targetWallet) {
-      await sendMessage(ctx, "❌ Wallet not found");
-      return;
-    }
-
-    const tokenBalance = await getTokenBalance(tokenAddress, walletAddress);
-    const solBalance = await getWalletBalance(walletAddress);
-    const tokenInfo = await getTokenInfo(tokenAddress);
+    const tokenBalance = await getTokenBalance(fullTokenAddress, fullWalletAddress);
+    const solBalance = await getWalletBalance(fullWalletAddress);
+    const tokenInfo = await getTokenInfo(fullTokenAddress);
     const tokenPrice = tokenInfo?.price || 0;
     const tokenValue = (tokenBalance / 1e6) * tokenPrice;
 
@@ -287,7 +283,7 @@ async function handleWalletSellAction(
 
     const detailsMessage = `
 🏦 *Wallet Details*
-Address: \`${walletAddress}\`
+Address: \`${fullWalletAddress}\`
 
 💰 *Token Holdings:*
 ${walletTokensFormatted} ${tokenInfo?.baseToken?.symbol || 'tokens'}
@@ -301,14 +297,14 @@ ${tokenPrice > 0 ? `💵 Token Price: $${tokenPrice.toFixed(8)}` : ''}
 
     const detailsKb = new InlineKeyboard()
       .row(
-        { text: "📈 Sell 25%", callback_data: `sell_25_${walletAddress}_${tokenAddr}` },
-        { text: "📈 Sell 50%", callback_data: `sell_50_${walletAddress}_${tokenAddr}` }
+        { text: "📈 Sell 25%", callback_data: `s25_${shortWalletAddr}_${shortTokenAddr}` },
+        { text: "📈 Sell 50%", callback_data: `s50_${shortWalletAddr}_${shortTokenAddr}` }
       )
       .row(
-        { text: "📈 Sell 75%", callback_data: `sell_75_${walletAddress}_${tokenAddr}` },
-        { text: "💸 Sell All", callback_data: `sell_all_${walletAddress}_${tokenAddr}` }
+        { text: "📈 Sell 75%", callback_data: `s75_${shortWalletAddr}_${shortTokenAddr}` },
+        { text: "💸 Sell All", callback_data: `sall_${shortWalletAddr}_${shortTokenAddr}` }
       )
-      .row({ text: "🔙 Back to All Wallets", callback_data: `back_to_wallets_${tokenAddr}` });
+      .row({ text: "🔙 Back to All Wallets", callback_data: `back_to_wallets_${shortTokenAddr}` });
 
     await sendMessage(ctx, detailsMessage, {
       parse_mode: "Markdown",
@@ -316,7 +312,6 @@ ${tokenPrice > 0 ? `💵 Token Price: $${tokenPrice.toFixed(8)}` : ''}
     });
   } else if (action === 'back_to_wallets') {
     // Return to wallet list
-    const tokenAddr = parts[1];
-    await sellIndividualToken(conversation, ctx, tokenAddr);
+    await sellIndividualToken(conversation, ctx, fullTokenAddress);
   }
 } 
