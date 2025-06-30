@@ -173,6 +173,8 @@ ${walletDetails}
   // Wait for user selection
   const response = await conversation.wait();
   
+  console.log("Received callback response:", response.callbackQuery?.data);
+  
   if (response.callbackQuery?.data === CallBackQueries.BACK) {
     // Return to previous menu
     return conversation.halt();
@@ -193,11 +195,14 @@ async function handleWalletSellAction(
   data: string, 
   tokenAddress: string
 ) {
+  console.log("handleWalletSellAction called with data:", data);
+  
   const parts = data.split('_');
-  const action = parts[0];
-  const percentage = parts[1];
-  const shortWalletAddr = parts[2];
-  const shortTokenAddr = parts[3];
+  const action = parts[0]; // s25, s50, s75, sall, wdet, back_to_wallets
+  const shortWalletAddr = parts[1];
+  const shortTokenAddr = parts[2];
+
+  console.log("Parsed action:", action, "wallet:", shortWalletAddr, "token:", shortTokenAddr);
 
   // Reconstruct full addresses from shortened versions
   const fullTokenAddress = tokenAddress; // We already have the full token address
@@ -243,6 +248,8 @@ async function handleWalletSellAction(
         await sendMessage(ctx, "❌ Invalid sell percentage");
         return;
     }
+
+    console.log("Executing sell for", sellPercent, "% from wallet", fullWalletAddress);
 
     try {
       // Get wallet private key
