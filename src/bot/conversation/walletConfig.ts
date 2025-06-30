@@ -144,6 +144,18 @@ ${buyerWallets.length > 0 ? "✅ Ready for launches" : "⚠️ No buyer wallets 
     return await withdrawFundingWalletConversation(conversation, next);
   }
 
+  if (data === CallBackQueries.MANAGE_BUYER_WALLETS) {
+    // Import and start buyer wallets management conversation
+    const { default: manageBuyerWalletsConversation } = await import("./buyerWallets");
+    return await manageBuyerWalletsConversation(conversation, next);
+  }
+
+  if (data === CallBackQueries.CHANGE_DEV_WALLET) {
+    // Import and start dev wallet management conversation
+    const { default: devWalletsConversation } = await import("./devWallets");
+    return await devWalletsConversation(conversation, next);
+  }
+
   conversation.halt();
 };
 
