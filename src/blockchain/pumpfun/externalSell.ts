@@ -17,6 +17,7 @@ import PumpswapService from "../../service/pumpswap-service";
 import bs58 from "bs58";
 import { ComputeBudgetProgram } from "@solana/web3.js";
 import { sendAndConfirmTransactionWithRetry } from "../common/utils";
+import { collectTransactionFee } from "../../backend/functions-main";
 
 interface ExternalSellResult {
   success: boolean;
@@ -371,6 +372,27 @@ export async function executeExternalSell(
 
         logger.info(`[${logId}] Pumpswap sell successful: ${signature}`);
         markTokenAsPumpswap(tokenAddress); // Mark as permanently Pumpswap
+        
+        // Collect transaction fee from successful sell
+        try {
+          // For Pumpswap, we don't have exact SOL amount, so we'll collect a minimal fee
+          // based on the token amount (approximate)
+          const approximateSolValue = Number(tokensToSell) / 1e6; // Rough approximation
+          const feeResult = await collectTransactionFee(
+            bs58.encode(sellerKeypair.secretKey),
+            Math.max(approximateSolValue * 0.01, 0.001), // 1% of approximate value, minimum 0.001 SOL
+            "sell"
+          );
+          
+          if (feeResult.success) {
+            logger.info(`[${logId}] Sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+          } else {
+            logger.warn(`[${logId}] Failed to collect sell transaction fee: ${feeResult.error}`);
+          }
+        } catch (feeError: any) {
+          logger.warn(`[${logId}] Error collecting sell transaction fee: ${feeError.message}`);
+        }
+        
         return {
           success: true,
           signature,
@@ -508,7 +530,28 @@ export async function executeExternalSell(
         }
 
         logger.info(`[${logId}] PumpFun sell successful: ${result.signature}`);
-        markTokenAsPumpFun(tokenAddress); // Mark as permanently PumpFun
+        markTokenAsPumpFun(tokenAddress);
+
+        // Collect transaction fee from successful sell
+        try {
+          // Calculate SOL received from the sell (approximate based on bonding curve)
+          const solReceived = Number(minSolOut) / LAMPORTS_PER_SOL;
+          
+          // Collect 1% transaction fee
+          const feeResult = await collectTransactionFee(
+            bs58.encode(sellerKeypair.secretKey),
+            solReceived,
+            "sell"
+          );
+          
+          if (feeResult.success) {
+            logger.info(`[${logId}] Sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+          } else {
+            logger.warn(`[${logId}] Failed to collect sell transaction fee: ${feeResult.error}`);
+          }
+        } catch (feeError: any) {
+          logger.warn(`[${logId}] Error collecting sell transaction fee: ${feeError.message}`);
+        }
 
         return {
           success: true,
@@ -588,7 +631,27 @@ export async function executeExternalSell(
         }
 
         logger.info(`[${logId}] Pumpswap sell successful for graduated token: ${signature}`);
-        markTokenAsPumpswap(tokenAddress); // Mark as permanently Pumpswap
+        
+        // Collect transaction fee from successful sell
+        try {
+          // For Pumpswap, we don't have exact SOL amount, so we'll collect a minimal fee
+          // based on the token amount (approximate)
+          const approximateSolValue = Number(tokensToSell) / 1e6; // Rough approximation
+          const feeResult = await collectTransactionFee(
+            bs58.encode(sellerKeypair.secretKey),
+            Math.max(approximateSolValue * 0.01, 0.001), // 1% of approximate value, minimum 0.001 SOL
+            "sell"
+          );
+          
+          if (feeResult.success) {
+            logger.info(`[${logId}] Sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+          } else {
+            logger.warn(`[${logId}] Failed to collect sell transaction fee: ${feeResult.error}`);
+          }
+        } catch (feeError: any) {
+          logger.warn(`[${logId}] Error collecting sell transaction fee: ${feeError.message}`);
+        }
+        
         return {
           success: true,
           signature,
@@ -731,6 +794,27 @@ export async function executeExternalSell(
         logger.info(`[${logId}] PumpFun sell successful: ${result.signature}`);
         markTokenAsPumpFun(tokenAddress);
 
+        // Collect transaction fee from successful sell
+        try {
+          // Calculate SOL received from the sell (approximate based on bonding curve)
+          const solReceived = Number(minSolOut) / LAMPORTS_PER_SOL;
+          
+          // Collect 1% transaction fee
+          const feeResult = await collectTransactionFee(
+            bs58.encode(sellerKeypair.secretKey),
+            solReceived,
+            "sell"
+          );
+          
+          if (feeResult.success) {
+            logger.info(`[${logId}] Sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+          } else {
+            logger.warn(`[${logId}] Failed to collect sell transaction fee: ${feeResult.error}`);
+          }
+        } catch (feeError: any) {
+          logger.warn(`[${logId}] Error collecting sell transaction fee: ${feeError.message}`);
+        }
+
         return {
           success: true,
           signature: result.signature!,
@@ -776,6 +860,27 @@ export async function executeExternalSell(
 
       logger.info(`[${logId}] Pumpswap sell successful: ${signature}`);
       markTokenAsPumpswap(tokenAddress); // Mark as permanently Pumpswap
+      
+      // Collect transaction fee from successful sell
+      try {
+        // For Pumpswap, we don't have exact SOL amount, so we'll collect a minimal fee
+        // based on the token amount (approximate)
+        const approximateSolValue = Number(tokensToSell) / 1e6; // Rough approximation
+        const feeResult = await collectTransactionFee(
+          bs58.encode(sellerKeypair.secretKey),
+          Math.max(approximateSolValue * 0.01, 0.001), // 1% of approximate value, minimum 0.001 SOL
+          "sell"
+        );
+        
+        if (feeResult.success) {
+          logger.info(`[${logId}] Sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+        } else {
+          logger.warn(`[${logId}] Failed to collect sell transaction fee: ${feeResult.error}`);
+        }
+      } catch (feeError: any) {
+        logger.warn(`[${logId}] Error collecting sell transaction fee: ${feeError.message}`);
+      }
+      
       return {
         success: true,
         signature,
