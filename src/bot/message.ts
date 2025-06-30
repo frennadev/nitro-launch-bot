@@ -70,6 +70,10 @@ export const sendLaunchSuccessNotification = async (
             text: "🧨 Sell All",
             callback_data: `${CallBackQueries.SELL_ALL}_${tokenAddress}`,
           },
+          {
+            text: "👥 Individual Wallet Sells",
+            callback_data: `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`,
+          },
         ],
       ],
     },
