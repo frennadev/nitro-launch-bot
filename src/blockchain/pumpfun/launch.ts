@@ -848,9 +848,9 @@ export const executeTokenLaunch = async (
           
           roundResults.push(result);
           
-          // Add 100ms delay between transactions (skip delay for the last transaction)
+          // Add 50ms delay between transactions (skip delay for the last transaction)
           if (i < walletsWithBalance.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 50));
           }
         }
         
@@ -874,7 +874,7 @@ export const executeTokenLaunch = async (
         roundNumber++;
         
         // Small delay between rounds
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 40));
       }
       
       const success = results.filter((res) => res.success);
