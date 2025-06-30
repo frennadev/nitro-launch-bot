@@ -112,6 +112,7 @@ const viewTokensConversation = async (
         )
         .row()
         .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
+        .text("📊 Sell Individual Wallet", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`)
         .row();
     } else {
       keyboard
@@ -188,7 +189,8 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
     // Check if this is a sell/launch button that should be handled by global handlers
     const isSellButton = data?.startsWith(`${CallBackQueries.SELL_DEV}_`) ||
                         data?.startsWith(`${CallBackQueries.SELL_ALL}_`) ||
-                        data?.startsWith(`${CallBackQueries.SELL_PERCENT}_`);
+                        data?.startsWith(`${CallBackQueries.SELL_PERCENT}_`) ||
+                        data?.startsWith(`${CallBackQueries.SELL_INDIVIDUAL}_`);
     
     const isLaunchButton = data?.startsWith(`${CallBackQueries.LAUNCH_TOKEN}_`);
 
