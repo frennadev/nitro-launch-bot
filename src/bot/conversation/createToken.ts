@@ -104,7 +104,7 @@ const createTokenConversation = async (
   const token = await createToken(user.id, name, symbol, description, fileData);
 
   await update(
-    "🎉 **Token created successfully!**\n\n✅ Your token is ready to launch!"
+    `🎉 **Token created successfully!**\n\n✅ Your token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
   );
 
   const launchKb = new InlineKeyboard().text(
@@ -118,6 +118,7 @@ const createTokenConversation = async (
 <b>Name:</b> <code>${token.name}</code>
 <b>Symbol:</b> <code>${token.symbol}</code>
 <b>Description:</b> ${token.description}
+<b>Token Address:</b> <code>${token.tokenAddress}</code>
 `,
     { parse_mode: "HTML", reply_markup: launchKb }
   );
