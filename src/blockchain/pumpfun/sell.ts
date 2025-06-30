@@ -43,6 +43,29 @@ export const executeDevSell = async (tokenAddress: string, devWallet: string, se
       throw new Error(`External sell failed: ${result.error}`);
     }
     
+    // Record the transaction with actual amounts from blockchain
+    try {
+      const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+      await recordTransactionWithActualAmounts(
+        tokenAddress,
+        devKeypair.publicKey.toBase58(),
+        "dev_sell",
+        result.signature || "",
+        result.success,
+        0, // Sells don't have launch attempts
+        {
+          sellPercent: sellPercent,
+          amountSol: 0, // Will be parsed from blockchain
+          amountTokens: tokensToSell.toString(), // Estimated amount
+          errorMessage: result.success ? undefined : "Sell failed",
+        },
+        true // Enable actual amount parsing
+      );
+      logger.info(`[${logIdentifier}] Dev sell transaction recorded`);
+    } catch (err: any) {
+      logger.error(`[${logIdentifier}] Error recording dev sell transaction`, err);
+    }
+    
     logger.info(`[${logIdentifier}] Enhanced dev sell completed in ${formatMilliseconds(performance.now() - start)} via ${result.platform}`);
     
     return {
@@ -162,6 +185,30 @@ export const executeWalletSell = async (
         
         if (result.success) {
           logger.info(`[${logIdentifier}] Wallet ${index + 1} sell successful via ${result.platform}: ${result.signature}`);
+          
+          // Record the transaction with actual amounts from blockchain
+          try {
+            const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+            await recordTransactionWithActualAmounts(
+              tokenAddress,
+              wallet.publicKey.toBase58(),
+              "wallet_sell",
+              result.signature || "",
+              result.success,
+              0, // Sells don't have launch attempts
+              {
+                sellPercent: sellPercent,
+                amountSol: 0, // Will be parsed from blockchain
+                amountTokens: amount.toString(), // Estimated amount
+                errorMessage: result.success ? undefined : "Sell failed",
+              },
+              true // Enable actual amount parsing
+            );
+            logger.info(`[${logIdentifier}] Wallet ${index + 1} sell transaction recorded`);
+          } catch (err: any) {
+            logger.error(`[${logIdentifier}] Error recording wallet ${index + 1} sell transaction`, err);
+          }
+          
           return {
             success: true,
             signature: result.signature,

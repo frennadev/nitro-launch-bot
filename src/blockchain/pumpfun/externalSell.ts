@@ -373,6 +373,28 @@ export async function executeExternalSell(
         logger.info(`[${logId}] Pumpswap sell successful: ${signature}`);
         markTokenAsPumpswap(tokenAddress); // Mark as permanently Pumpswap
         
+        // Record the transaction with actual amounts from blockchain
+        try {
+          const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+          await recordTransactionWithActualAmounts(
+            tokenAddress,
+            sellerKeypair.publicKey.toBase58(),
+            "external_sell",
+            signature || "",
+            true, // Success
+            0, // Sells don't have launch attempts
+            {
+              amountSol: 0, // Will be parsed from blockchain
+              amountTokens: tokensToSell.toString(), // Estimated amount
+              errorMessage: undefined,
+            },
+            true // Enable actual amount parsing
+          );
+          logger.info(`[${logId}] Pumpswap sell transaction recorded`);
+        } catch (err: any) {
+          logger.error(`[${logId}] Error recording Pumpswap sell transaction`, err);
+        }
+        
         // Collect transaction fee from successful sell
         try {
           // For Pumpswap, we don't have exact SOL amount, so we'll collect a minimal fee
@@ -444,6 +466,29 @@ export async function executeExternalSell(
           }
 
           logger.info(`[${logId}] Pumpswap sell successful for graduated token: ${signature}`);
+          
+          // Record the transaction with actual amounts from blockchain
+          try {
+            const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+            await recordTransactionWithActualAmounts(
+              tokenAddress,
+              sellerKeypair.publicKey.toBase58(),
+              "external_sell",
+              signature || "",
+              true, // Success
+              0, // Sells don't have launch attempts
+              {
+                amountSol: 0, // Will be parsed from blockchain
+                amountTokens: tokensToSell.toString(), // Estimated amount
+                errorMessage: undefined,
+              },
+              true // Enable actual amount parsing
+            );
+            logger.info(`[${logId}] Graduated token Pumpswap sell transaction recorded`);
+          } catch (err: any) {
+            logger.error(`[${logId}] Error recording graduated token Pumpswap sell transaction`, err);
+          }
+          
           return {
             success: true,
             signature,
@@ -531,6 +576,28 @@ export async function executeExternalSell(
 
         logger.info(`[${logId}] PumpFun sell successful: ${result.signature}`);
         markTokenAsPumpFun(tokenAddress);
+
+        // Record the transaction with actual amounts from blockchain
+        try {
+          const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+          await recordTransactionWithActualAmounts(
+            tokenAddress,
+            sellerKeypair.publicKey.toBase58(),
+            "external_sell",
+            result.signature || "",
+            result.success,
+            0, // Sells don't have launch attempts
+            {
+              amountSol: 0, // Will be parsed from blockchain
+              amountTokens: tokensToSell.toString(), // Estimated amount
+              errorMessage: result.success ? undefined : "PumpFun sell failed",
+            },
+            true // Enable actual amount parsing
+          );
+          logger.info(`[${logId}] PumpFun sell transaction recorded`);
+        } catch (err: any) {
+          logger.error(`[${logId}] Error recording PumpFun sell transaction`, err);
+        }
 
         // Collect transaction fee from successful sell
         try {
@@ -631,6 +698,28 @@ export async function executeExternalSell(
         }
 
         logger.info(`[${logId}] Pumpswap sell successful for graduated token: ${signature}`);
+        
+        // Record the transaction with actual amounts from blockchain
+        try {
+          const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+          await recordTransactionWithActualAmounts(
+            tokenAddress,
+            sellerKeypair.publicKey.toBase58(),
+            "external_sell",
+            signature || "",
+            true, // Success
+            0, // Sells don't have launch attempts
+            {
+              amountSol: 0, // Will be parsed from blockchain
+              amountTokens: tokensToSell.toString(), // Estimated amount
+              errorMessage: undefined,
+            },
+            true // Enable actual amount parsing
+          );
+          logger.info(`[${logId}] Graduated token Pumpswap sell transaction recorded`);
+        } catch (err: any) {
+          logger.error(`[${logId}] Error recording graduated token Pumpswap sell transaction`, err);
+        }
         
         // Collect transaction fee from successful sell
         try {
@@ -794,6 +883,28 @@ export async function executeExternalSell(
         logger.info(`[${logId}] PumpFun sell successful: ${result.signature}`);
         markTokenAsPumpFun(tokenAddress);
 
+        // Record the transaction with actual amounts from blockchain
+        try {
+          const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+          await recordTransactionWithActualAmounts(
+            tokenAddress,
+            sellerKeypair.publicKey.toBase58(),
+            "external_sell",
+            result.signature || "",
+            result.success,
+            0, // Sells don't have launch attempts
+            {
+              amountSol: 0, // Will be parsed from blockchain
+              amountTokens: tokensToSell.toString(), // Estimated amount
+              errorMessage: result.success ? undefined : "PumpFun sell failed",
+            },
+            true // Enable actual amount parsing
+          );
+          logger.info(`[${logId}] PumpFun sell transaction recorded`);
+        } catch (err: any) {
+          logger.error(`[${logId}] Error recording PumpFun sell transaction`, err);
+        }
+
         // Collect transaction fee from successful sell
         try {
           // Calculate SOL received from the sell (approximate based on bonding curve)
@@ -860,6 +971,28 @@ export async function executeExternalSell(
 
       logger.info(`[${logId}] Pumpswap sell successful: ${signature}`);
       markTokenAsPumpswap(tokenAddress); // Mark as permanently Pumpswap
+      
+      // Record the transaction with actual amounts from blockchain
+      try {
+        const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+        await recordTransactionWithActualAmounts(
+          tokenAddress,
+          sellerKeypair.publicKey.toBase58(),
+          "external_sell",
+          signature || "",
+          true, // Success
+          0, // Sells don't have launch attempts
+          {
+            amountSol: 0, // Will be parsed from blockchain
+            amountTokens: tokensToSell.toString(), // Estimated amount
+            errorMessage: undefined,
+          },
+          true // Enable actual amount parsing
+        );
+        logger.info(`[${logId}] Pumpswap sell transaction recorded`);
+      } catch (err: any) {
+        logger.error(`[${logId}] Error recording Pumpswap sell transaction`, err);
+      }
       
       // Collect transaction fee from successful sell
       try {
