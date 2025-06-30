@@ -21,6 +21,8 @@ type WalletHolder = {
 };
 
 export const sellIndividualToken = async (conversation: Conversation<Context>, ctx: Context, address: string) => {
+  console.log("sellIndividualToken conversation started for token:", address);
+  
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
     await sendMessage(ctx, "Unrecognized user ❌");
@@ -158,10 +160,15 @@ ${walletDetails}
   // Add back button
   kb.row({ text: "🔙 Back", callback_data: CallBackQueries.BACK });
 
+  console.log("About to send wallet breakdown message with", walletHolders.length, "wallets");
+  console.log("Message content:", message.substring(0, 200) + "...");
+
   await sendMessage(ctx, message, {
     parse_mode: "Markdown",
     reply_markup: kb,
   });
+
+  console.log("Wallet breakdown message sent successfully");
 
   // Wait for user selection
   const response = await conversation.wait();
