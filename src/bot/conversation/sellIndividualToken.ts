@@ -41,10 +41,7 @@ export const sellIndividualToken = async (conversation: Conversation<Context>, c
 
   // Get token info for price calculation
   const tokenInfo = await getTokenInfo(address);
-  const tokenPrice = tokenInfo?.priceUsd ? parseFloat(tokenInfo.priceUsd) : 0;
-
-  console.log("Token info received:", tokenInfo);
-  console.log("Token price calculated:", tokenPrice);
+  const tokenPrice = tokenInfo?.price || 0;
 
   // Check each wallet for token balance
   for (const wallet of buyerWallets) {
@@ -291,7 +288,7 @@ async function handleWalletSellAction(
     const tokenBalance = await getTokenBalance(fullTokenAddress, fullWalletAddress);
     const solBalance = await getWalletBalance(fullWalletAddress);
     const tokenInfo = await getTokenInfo(fullTokenAddress);
-    const tokenPrice = tokenInfo?.priceUsd ? parseFloat(tokenInfo.priceUsd) : 0;
+    const tokenPrice = tokenInfo?.price || 0;
     const tokenValue = (tokenBalance / 1e6) * tokenPrice;
 
     const walletTokensFormatted = (tokenBalance / 1e6).toLocaleString(undefined, {
