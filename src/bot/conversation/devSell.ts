@@ -8,6 +8,7 @@ import {
 import { TokenState } from "../../backend/types";
 import { startLoadingState, sendLoadingMessage } from "../loading";
 import { decryptPrivateKey } from "../../backend/utils";
+import { sendErrorWithAutoDelete } from "../utils";
 
 const devSellConversation = async (
   conversation: Conversation,
@@ -18,7 +19,7 @@ const devSellConversation = async (
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("Unrecognized user ❌");
+    await sendErrorWithAutoDelete(ctx, "Unrecognized user ❌");
     await conversation.halt();
     return;
   }
@@ -26,7 +27,7 @@ const devSellConversation = async (
   // -------- VALIDATE TOKEN ----------
   const token = await getUserToken(user.id, tokenAddress);
   if (!token) {
-    await ctx.reply("Token not found ❌");
+    await sendErrorWithAutoDelete(ctx, "Token not found ❌");
     await conversation.halt();
     return;
   }
@@ -104,7 +105,7 @@ const devSellConversation = async (
     await submitLoading.update(
       "❌ **Failed to decrypt dev wallet**\n\nThere was an issue accessing your dev wallet data. Please try again."
     );
-    await ctx.reply(`Dev wallet decryption error: ${error.message} ❌`);
+    await sendErrorWithAutoDelete(ctx, `Dev wallet decryption error: ${error.message} ❌`);
   }
 };
 

@@ -10,6 +10,7 @@ import {
 } from "../../backend/functions";
 import { getTokenInfo, getTokenBalance } from "../../backend/utils";
 import { sendMessage } from "../../backend/sender";
+import { sendErrorWithAutoDelete } from "../utils";
 import { CallBackQueries } from "../types";
 
 type WalletHolder = {
@@ -277,11 +278,11 @@ async function handleWalletSellAction(
       if (result.success) {
         await sendMessage(ctx, `✅ Successfully sold ${sellPercent}% of tokens!\n\nTransaction: ${result.signature}\nPlatform: ${result.platform}`);
       } else {
-        await sendMessage(ctx, `❌ Sell failed: ${result.error}`);
+        await sendErrorWithAutoDelete(ctx, `❌ Sell failed: ${result.error}`);
       }
       
     } catch (error: any) {
-      await sendMessage(ctx, `❌ Error: ${error.message}`);
+      await sendErrorWithAutoDelete(ctx, `❌ Error: ${error.message}`);
     }
   } else if (action === 'wdet') {
     // Show detailed wallet information

@@ -11,6 +11,7 @@ import axios from "axios";
 import { CallBackQueries } from "../types";
 import { env } from "../../config";
 import { sendLoadingMessage } from "../loading";
+import { sendErrorWithAutoDelete } from "../utils";
 
 const cancelKeyboard = new InlineKeyboard().text(
   "❌ Cancel",
@@ -24,7 +25,7 @@ const createTokenConversation = async (
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await ctx.reply("Unrecognized user ❌");
+    await sendErrorWithAutoDelete(ctx, "Unrecognized user ❌");
     return conversation.halt();
   }
 

@@ -7,7 +7,7 @@ import { sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
 import { executeExternalTokenSell } from "../../blockchain/pumpfun/externalSell";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
-import { escape, safeEditMessageText } from "../utils";
+import { escape, safeEditMessageText, sendErrorWithAutoDelete } from "../utils";
 
 const externalTokenSellConversation = async (
   conversation: Conversation,
@@ -186,15 +186,12 @@ const externalTokenSellConversation = async (
         }
       } catch (error: any) {
         logger.error("Error executing external token sell:", error);
-        await sendMessage(
-          response,
-          `❌ **Error during external token sell**\n\n${error.message}`
-        );
+        await sendErrorWithAutoDelete(ctx, `❌ **Error during external token sell**\n\n${error.message}`);
       }
     }
   } catch (error: any) {
     logger.error("Error in external token sell conversation:", error);
-    await ctx.reply(`❌ Error: ${error.message}`);
+    await sendErrorWithAutoDelete(ctx, `❌ Error: ${error.message}`);
   }
 
   await conversation.halt();

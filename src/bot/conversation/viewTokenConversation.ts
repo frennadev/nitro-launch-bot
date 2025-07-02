@@ -8,6 +8,7 @@ import { sendMessage } from "../../backend/sender";
 import { TokenState } from "../../backend/types";
 import { getTokenInfo } from "../../backend/utils";
 import { getAccurateSpendingStats } from "../../backend/functions-main";
+import { sendErrorWithAutoDelete } from "../utils";
 // import {  } from "../utils";
 
 const viewTokensConversation = async (
@@ -250,9 +251,7 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
           );
         }
       } catch (error: any) {
-        await ctx.reply(`❌ **Error deleting token**\n\n${error.message}`, {
-          parse_mode: "Markdown",
-        });
+        await sendErrorWithAutoDelete(ctx, `❌ **Error deleting token**\n\n${error.message}`);
       }
     } else if (data === "cancel_delete") {
       await showToken(currentIndex);

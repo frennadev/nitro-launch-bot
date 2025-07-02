@@ -8,7 +8,7 @@ import {
 } from "../../backend/functions-main";
 import { CallBackQueries } from "../types";
 import { InlineKeyboard } from "grammy";
-import { safeAnswerCallbackQuery } from "../utils";
+import { safeAnswerCallbackQuery, sendErrorWithAutoDelete } from "../utils";
 
 export default async function mainMenuConversation(
   conversation: Conversation<Context>,
@@ -17,7 +17,7 @@ export default async function mainMenuConversation(
   await safeAnswerCallbackQuery(ctx);
   let user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await ctx.reply("Unrecognized user ❌");
+    await sendErrorWithAutoDelete(ctx, "Unrecognized user ❌");
     return conversation.halt();
   }
 
