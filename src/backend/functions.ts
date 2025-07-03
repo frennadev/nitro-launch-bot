@@ -366,24 +366,67 @@ export const releasePumpAddress = async (publicKey: string) => {
 };
 
 export const markPumpAddressAsUsed = async (publicKey: string, userId?: string) => {
-  const result = await PumpAddressModel.findOneAndUpdate(
-    { publicKey },
-    {
-      $set: {
+  try {
+    const result = await PumpAddressModel.findOneAndUpdate(
+      { publicKey },
+      { 
         isUsed: true,
         usedBy: userId || null,
-        usedAt: new Date(),
+        usedAt: new Date()
       },
-    },
-    { new: true }
-  );
-
-  if (!result) {
-    throw new Error(`Pump address ${publicKey} not found in database`);
+      { new: true }
+    );
+    
+    if (!result) {
+      throw new Error(`Pump address ${publicKey} not found`);
+    }
+    
+    logger.info(`Pump address ${publicKey} marked as used by user ${userId}`);
+    return result;
+  } catch (error) {
+    logger.error(`Error marking pump address ${publicKey} as used:`, error);
+    throw error;
   }
+};
 
-  logger.info(`Marked pump address ${publicKey} as used${userId ? ` by user ${userId}` : ""}`);
-  return result;
+/**
+ * Tag a token address as used with additional metadata
+ * @param tokenAddress - The token address to tag
+ * @param userId - The user ID who is using this address
+ * @param metadata - Additional metadata about the usage
+ */
+export const tagTokenAddressAsUsed = async (
+  tokenAddress: string, 
+  userId: string, 
+  metadata?: {
+    tokenName?: string;
+    tokenSymbol?: string;
+    reason?: string;
+    originalAddress?: string; // If this was a replacement for another address
+  }
+) => {
+  try {
+    // Check if this is a pump address and mark it as used
+    const pumpAddress = await PumpAddressModel.findOne({ publicKey: tokenAddress });
+    
+    if (pumpAddress) {
+      await markPumpAddressAsUsed(tokenAddress, userId);
+      logger.info(`Tagged pump address ${tokenAddress} as used by user ${userId}`, metadata);
+    }
+    
+    // Log the usage for tracking purposes
+    logger.info(`Token address ${tokenAddress} tagged as used`, {
+      userId,
+      tokenAddress,
+      isPumpAddress: !!pumpAddress,
+      ...metadata
+    });
+    
+    return { success: true, isPumpAddress: !!pumpAddress };
+  } catch (error) {
+    logger.error(`Error tagging token address ${tokenAddress} as used:`, error);
+    throw error;
+  }
 };
 
 export const getPumpAddressStats = async () => {
@@ -432,6 +475,68 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     tokenKey = randomKey;
   }
 
+  // Validate that the token address is not already used
+  let finalTokenKey = tokenKey;
+  let finalIsPumpAddress = isPumpAddress;
+  
+  const availability = await validateTokenAddressAvailability(tokenKey.publicKey, userId);
+  if (!availability.isAvailable) {
+    logger.warn(`Token address ${tokenKey.publicKey} already in use for user ${userId}. Generating new address...`);
+    
+    // If pump address was allocated, release it back to the pool
+    if (isPumpAddress) {
+      await releasePumpAddress(tokenKey.publicKey);
+    }
+    
+    // Generate a new address automatically
+    try {
+      // Try to get another pump address first
+      finalTokenKey = await getAvailablePumpAddress(userId);
+      finalIsPumpAddress = true;
+      logger.info(`Generated new pump address: ${finalTokenKey.publicKey} for user ${userId}`);
+    } catch (error: any) {
+      // Fallback to random generation if no pump addresses available
+      logger.warn(`No pump addresses available for user ${userId}, generating random address: ${error.message}`);
+      const [randomKey] = generateKeypairs(1);
+      finalTokenKey = randomKey;
+      finalIsPumpAddress = false;
+    }
+    
+    // Validate the new address (recursive check with max attempts)
+    let attempts = 0;
+    const maxAttempts = 5;
+    
+    while (attempts < maxAttempts) {
+      const newAvailability = await validateTokenAddressAvailability(finalTokenKey.publicKey, userId);
+      if (newAvailability.isAvailable) {
+        logger.info(`Successfully generated available token address: ${finalTokenKey.publicKey} for user ${userId}`);
+        break;
+      }
+      
+      attempts++;
+      logger.warn(`Generated address ${finalTokenKey.publicKey} also in use. Attempt ${attempts}/${maxAttempts}`);
+      
+      // Release the current address if it's a pump address
+      if (finalIsPumpAddress) {
+        await releasePumpAddress(finalTokenKey.publicKey);
+      }
+      
+      if (attempts >= maxAttempts) {
+        throw new Error(`Failed to generate available token address after ${maxAttempts} attempts`);
+      }
+      
+      // Generate another address
+      try {
+        finalTokenKey = await getAvailablePumpAddress(userId);
+        finalIsPumpAddress = true;
+      } catch (error: any) {
+        const [randomKey] = generateKeypairs(1);
+        finalTokenKey = randomKey;
+        finalIsPumpAddress = false;
+      }
+    }
+  }
+
   try {
     const token = await TokenModel.create({
       user: userId,
@@ -441,15 +546,24 @@ export const createToken = async (userId: string, name: string, symbol: string, 
       launchData: {
         devWallet: devWallet?.id,
       },
-      tokenAddress: tokenKey.publicKey,
-      tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
+      tokenAddress: finalTokenKey.publicKey,
+      tokenPrivateKey: encryptPrivateKey(finalTokenKey.secretKey),
       tokenMetadataUrl: metadataUri,
     });
+    
+    // Tag the token address as used with metadata
+    await tagTokenAddressAsUsed(finalTokenKey.publicKey, userId, {
+      tokenName: name,
+      tokenSymbol: symbol,
+      reason: 'token_creation',
+      originalAddress: tokenKey.publicKey !== finalTokenKey.publicKey ? tokenKey.publicKey : undefined
+    });
+    
     return token;
   } catch (error) {
     // If token creation fails and we used a pump address, release it
-    if (isPumpAddress) {
-      await releasePumpAddress(tokenKey.publicKey);
+    if (finalIsPumpAddress) {
+      await releasePumpAddress(finalTokenKey.publicKey);
     }
     throw error;
   }
@@ -1291,6 +1405,25 @@ export const enqueuePrepareTokenLaunch = async (
   const session = await mongoose.startSession();
 
   try {
+    // Validate that the token address is not already used by another user
+    const availability = await validateTokenAddressAvailability(tokenAddress, userId);
+    if (!availability.isAvailable) {
+      logger.warn(`Token address ${tokenAddress} conflict detected for user ${userId}. Checking if this is the user's own token...`);
+      
+      // Check if this is the user's own token that they're trying to launch
+      const usage = await checkTokenAddressUsage(tokenAddress);
+      if (usage.isUsed && usage.usedBy === userId) {
+        logger.info(`User ${userId} is launching their own token ${tokenAddress}. Proceeding with launch...`);
+        // This is their own token, proceed with launch
+      } else {
+        // This is genuinely a conflict with another user's token
+        return {
+          success: false,
+          message: `Cannot launch token: ${availability.message}`,
+        };
+      }
+    }
+
     await session.withTransaction(async () => {
       const walletIds = [];
       for (const key of buyWallets) {
@@ -2711,4 +2844,87 @@ export const compareSpendingCalculations = async (tokenAddress: string, launchAt
       ]
     }
   };
+};
+
+/**
+ * Check if a token contract address has already been used
+ * @param tokenAddress - The token contract address to check
+ * @returns Object with isUsed boolean and details if used
+ */
+export const checkTokenAddressUsage = async (tokenAddress: string): Promise<{
+  isUsed: boolean;
+  usedBy?: string;
+  tokenName?: string;
+  createdAt?: Date;
+  state?: string;
+}> => {
+  try {
+    // Check if token exists in our database
+    const existingToken = await TokenModel.findOne({ tokenAddress }).lean();
+    
+    if (existingToken) {
+      return {
+        isUsed: true,
+        usedBy: existingToken.user.toString(),
+        tokenName: existingToken.name,
+        createdAt: existingToken.createdAt,
+        state: existingToken.state
+      };
+    }
+    
+    // Check if this is a pump address that's already been used
+    const pumpAddress = await PumpAddressModel.findOne({ publicKey: tokenAddress }).lean();
+    
+    if (pumpAddress && pumpAddress.isUsed) {
+      return {
+        isUsed: true,
+        usedBy: pumpAddress.usedBy?.toString(),
+        createdAt: pumpAddress.usedAt || undefined
+      };
+    }
+    
+    return { isUsed: false };
+  } catch (error) {
+    logger.error(`Error checking token address usage for ${tokenAddress}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Validate that a token address is available for use
+ * @param tokenAddress - The token contract address to validate
+ * @param userId - The user ID requesting to use this address
+ * @returns Object with validation result and message
+ */
+export const validateTokenAddressAvailability = async (
+  tokenAddress: string, 
+  userId: string
+): Promise<{ isAvailable: boolean; message: string }> => {
+  try {
+    const usage = await checkTokenAddressUsage(tokenAddress);
+    
+    if (!usage.isUsed) {
+      return { isAvailable: true, message: "Token address is available" };
+    }
+    
+    // Check if it's used by the same user
+    if (usage.usedBy === userId) {
+      return { 
+        isAvailable: false, 
+        message: `You have already created a token with this address: ${usage.tokenName || 'Unknown'}`
+      };
+    }
+    
+    // Used by different user
+    return { 
+      isAvailable: false, 
+      message: `This token address is already in use by another user${usage.tokenName ? ` (${usage.tokenName})` : ''}`
+    };
+  } catch (error) {
+    logger.error(`Error validating token address availability:`, error);
+    return { 
+      isAvailable: false, 
+      message: "Error validating token address. Please try again." 
+    };
+  }
 };

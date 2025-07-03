@@ -131,6 +131,11 @@ export const getTransactionFinancialStats = originalFunctions.getTransactionFina
 export const getAccurateSpendingStats = originalFunctions.getAccurateSpendingStats;
 export const getDetailedSpendingBreakdown = originalFunctions.getDetailedSpendingBreakdown;
 export const compareSpendingCalculations = originalFunctions.compareSpendingCalculations;
+
+// Token address validation functions
+export const checkTokenAddressUsage = originalFunctions.checkTokenAddressUsage;
+export const validateTokenAddressAvailability = originalFunctions.validateTokenAddressAvailability;
+export const tagTokenAddressAsUsed = originalFunctions.tagTokenAddressAsUsed;
 export const getSellTransactionHistory = originalFunctions.getSellTransactionHistory;
 export const getDetailedSellSummary = originalFunctions.getDetailedSellSummary; 
 

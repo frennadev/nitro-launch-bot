@@ -42,6 +42,18 @@ export const buyExternalTokenConversation = async (conversation: Conversation<Co
     return conversation.halt();
   }
 
+  // Check if this token is already being launched by someone
+  const { checkTokenAddressUsage } = await import("../../backend/functions");
+  const usage = await checkTokenAddressUsage(tokenAddress);
+  
+  if (usage.isUsed && usage.state && usage.state !== "LAUNCHED") {
+    await sendMessage(tokenInput, 
+      `⚠️ <b>Token Launch in Progress</b>\n\nThis token is currently being launched${usage.tokenName ? ` (${usage.tokenName})` : ''}. Please wait for the launch to complete before attempting to buy.\n\n<i>You can only buy tokens that are already launched or available on the market.</i>`,
+      { parse_mode: "HTML" }
+    );
+    return conversation.halt();
+  }
+
   // Get funding wallet for external token purchases
   const fundingWallet = await getFundingWallet(user.id);
 
