@@ -137,3 +137,53 @@ export async function safeAnswerCallbackQuery(ctx: Context, text?: string): Prom
     throw error;
   }
 }
+
+/**
+ * Send an error message that automatically deletes after 2.5 seconds
+ */
+export async function sendErrorWithAutoDelete(
+  ctx: Context, 
+  errorMessage: string, 
+  timeout: number = 2500
+): Promise<void> {
+  try {
+    const sent = await ctx.reply(errorMessage);
+    
+    // Auto-delete after specified timeout
+    setTimeout(async () => {
+      try {
+        await ctx.api.deleteMessage(ctx.chat!.id, sent.message_id);
+      } catch (deleteError) {
+        // Ignore deletion errors (message might already be deleted)
+        console.debug("Failed to auto-delete error message:", deleteError);
+      }
+    }, timeout);
+  } catch (error) {
+    console.error("Failed to send error message:", error);
+  }
+}
+
+/**
+ * Send a temporary message that auto-deletes after specified timeout
+ */
+export async function sendTemporaryMessage(
+  ctx: Context, 
+  message: string, 
+  timeout: number = 2500
+): Promise<void> {
+  try {
+    const sent = await ctx.reply(message);
+    
+    // Auto-delete after specified timeout
+    setTimeout(async () => {
+      try {
+        await ctx.api.deleteMessage(ctx.chat!.id, sent.message_id);
+      } catch (deleteError) {
+        // Ignore deletion errors (message might already be deleted)
+        console.debug("Failed to auto-delete temporary message:", deleteError);
+      }
+    }, timeout);
+  } catch (error) {
+    console.error("Failed to send temporary message:", error);
+  }
+}

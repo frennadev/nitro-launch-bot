@@ -5,6 +5,9 @@ import {
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
+  Connection,
+  PublicKey,
+  Keypair,
 } from "@solana/web3.js";
 import { connection } from "../common/connection";
 import {
@@ -43,6 +46,7 @@ import { logger } from "../common/logger";
 import { initializeMixer, initializeMixerWithProgress, initializeFastMixer } from "../mixer/init-mixer";
 import bs58 from "bs58";
 import { getSolBalance, getTokenBalance } from "../../backend/utils";
+import { BondingCurveTracker, globalLaunchManager } from "./real-time-curve-tracker";
 
 /**
  * Calculate optimal wallet count for a given buy amount
@@ -616,6 +620,16 @@ export const executeTokenLaunch = async (
       let virtualTokenReserve = curveData.virtualTokenReserves;
       let virtualSolReserve = curveData.virtualSolReserves;
       let realTokenReserve = curveData.realTokenReserves;
+
+      // NEW: Initialize real-time curve tracker (optional enhancement)
+      let curveTracker: BondingCurveTracker | undefined;
+      try {
+        curveTracker = await globalLaunchManager.initializeLaunch(tokenAddress, bondingCurve);
+        logger.info(`[${logIdentifier}]: Real-time curve tracking enabled`);
+      } catch (error: any) {
+        logger.warn(`[${logIdentifier}]: Could not initialize curve tracker, using fallback: ${error.message}`);
+        // Continue with existing logic - curve tracker is optional
+      }
       
       // Calculate fixed buy amounts for each wallet based on bonding curve state
       const { walletAmounts, totalExpected } = calculateDynamicBuyAmounts(
@@ -630,21 +644,22 @@ export const executeTokenLaunch = async (
         efficiency: `${((totalExpected / buyAmount) * 100).toFixed(1)}%`
       });
 
-      // Enhanced buy transaction with retry logic and higher slippage
+      // Enhanced buy transaction with retry logic and optional real-time curve tracking
       const executeBuyWithRetry = async (
         keypair: any,
         fixedBuyAmount: number | null, // This will be ignored in favor of dynamic calculation
         currentComputeUnitPrice: number,
         blockHash: any,
-        maxRetries: number = 3
+        maxRetries: number = 3,
+        curveTracker?: BondingCurveTracker // Optional real-time curve tracker
       ) => {
-        let baseSlippage = 50; // Start with 50% slippage
+        let baseSlippage = 50; // Start with 50% slippage (fallback)
         const maxSlippage = 90; // Maximum slippage cap
         
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           try {
-            const currentSlippage = Math.min(baseSlippage + (attempt * 20), maxSlippage); // Increase by 20% each retry, capped at 90%
-            logger.info(`[${logIdentifier}]: Attempting buy for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
+            // NEW: Enhanced slippage and quote calculation logic
+            let currentSlippage, tokenOut, swapAmountLamports;
             
             // Always use dynamic calculation based on current wallet balance
             const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
@@ -661,9 +676,7 @@ export const executeTokenLaunch = async (
             
             // Use the full available amount for the swap
             const swapAmountSOL = availableForSpend;
-            const swapAmountLamports = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
-            
-            logger.info(`[${logIdentifier}]: Dynamic buy calculation for ${keypair.publicKey.toBase58().slice(0, 8)} - Balance: ${walletSolBalance.toFixed(6)} SOL, Available: ${swapAmountSOL.toFixed(6)} SOL, Target: ${minBalanceThreshold} SOL remaining`);
+            swapAmountLamports = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
             
             // Ensure swap amount is positive and properly converted
             if (swapAmountLamports <= 0) {
@@ -673,6 +686,29 @@ export const executeTokenLaunch = async (
             // Ensure the amount is a valid integer for the buy instruction
             if (swapAmountLamports > BigInt(Number.MAX_SAFE_INTEGER)) {
               throw new Error(`Swap amount too large: ${swapAmountLamports} lamports`);
+            }
+
+            if (curveTracker) {
+              // NEW: Enhanced path with real-time curve tracking
+              currentSlippage = 20; // Fixed 20% slippage with accurate data
+              const currentQuote = curveTracker.quoteCurrentBuy(swapAmountLamports);
+              tokenOut = currentQuote.tokenOut;
+              
+              logger.info(`[${logIdentifier}]: Real-time curve buy for ${keypair.publicKey.toBase58().slice(0, 8)} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
+              logger.info(`[${logIdentifier}]: Real-time calculation - SOL: ${swapAmountSOL.toFixed(6)}, Tokens: ${tokenOut.toString()}, Balance: ${walletSolBalance.toFixed(6)} SOL`);
+            } else {
+              // FALLBACK: Existing logic with escalating slippage
+              currentSlippage = Math.min(baseSlippage + (attempt * 20), maxSlippage); // Increase by 20% each retry, capped at 90%
+              const fallbackQuote = quoteBuy(
+                swapAmountLamports,
+                virtualTokenReserve,
+                virtualSolReserve,
+                realTokenReserve,
+              );
+              tokenOut = fallbackQuote.tokenOut;
+              
+              logger.info(`[${logIdentifier}]: Fallback buy for ${keypair.publicKey.toBase58().slice(0, 8)} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
+              logger.info(`[${logIdentifier}]: Fallback calculation - SOL: ${swapAmountSOL.toFixed(6)}, Tokens: ${tokenOut.toString()}, Balance: ${walletSolBalance.toFixed(6)} SOL`);
             }
             
             const ata = getAssociatedTokenAddressSync(
@@ -684,13 +720,6 @@ export const executeTokenLaunch = async (
               ata,
               keypair.publicKey,
               mintKeypair.publicKey,
-            );
-            
-            const { tokenOut } = quoteBuy(
-              swapAmountLamports,
-              virtualTokenReserve,
-              virtualSolReserve,
-              realTokenReserve,
             );
             
             const tokenOutWithSlippage = applySlippage(tokenOut, currentSlippage);
@@ -768,6 +797,12 @@ export const executeTokenLaunch = async (
             );
             
             if (result.success) {
+              // NEW: Update curve tracker after successful buy
+              if (curveTracker) {
+                curveTracker.updateAfterSuccessfulBuy(swapAmountLamports, tokenOut);
+                logger.info(`[${logIdentifier}]: Curve tracker updated after successful buy`);
+              }
+              
               logger.info(`[${logIdentifier}]: Buy successful for ${keypair.publicKey.toBase58()} with ${currentSlippage}% slippage on attempt ${attempt + 1} (Priority fee: ${boundedUltraFastFee} microLamports)`);
               return result;
             } else {
@@ -777,7 +812,7 @@ export const executeTokenLaunch = async (
                 return result;
               }
               // Wait before retry
-              await randomizedSleep(500, 1000);
+              await randomizedSleep(50, 50);
             }
           } catch (error: any) {
             logger.error(`[${logIdentifier}]: Buy attempt ${attempt + 1} error for ${keypair.publicKey.toBase58()}: ${error.message}`);
@@ -801,7 +836,7 @@ export const executeTokenLaunch = async (
             if (attempt === maxRetries) {
               return { success: false, error: error.message };
             }
-            await randomizedSleep(500, 1000);
+            await randomizedSleep(50, 50);
           }
         }
         
@@ -843,14 +878,15 @@ export const executeTokenLaunch = async (
             null, // Use dynamic calculation
             walletComputeUnitPrice,
             blockHash,
-            3 // Max 3 retries
+            3, // Max 3 retries
+            curveTracker // Pass curve tracker for real-time updates
           );
           
           roundResults.push(result);
           
-          // Add 50ms delay between transactions (skip delay for the last transaction)
+          // Add 25ms delay between transactions (skip delay for the last transaction)
           if (i < walletsWithBalance.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 25));
           }
         }
         
@@ -874,7 +910,7 @@ export const executeTokenLaunch = async (
         roundNumber++;
         
         // Small delay between rounds
-        await new Promise(resolve => setTimeout(resolve, 40));
+        await new Promise(resolve => setTimeout(resolve, 20));
       }
       
       const success = results.filter((res) => res.success);
@@ -964,6 +1000,12 @@ export const executeTokenLaunch = async (
       } catch (error: any) {
         logger.error(`[${logIdentifier}]: Error collecting transaction fees:`, error);
         // Don't throw error here - transaction fees are secondary to main launch success
+      }
+
+      // NEW: Clean up curve tracker
+      if (curveTracker) {
+        globalLaunchManager.completeLaunch(tokenAddress);
+        logger.info(`[${logIdentifier}]: Curve tracker cleaned up`);
       }
 
       await updateLaunchStage(

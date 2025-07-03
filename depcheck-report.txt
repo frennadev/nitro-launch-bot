@@ -1,0 +1,13 @@
+Unused dependencies
+* @grammyjs/menu
+* @grammyjs/storage-free
+* canvas
+* ws
+Unused devDependencies
+* @types/bun
+* @typescript-eslint/eslint-plugin
+* @typescript-eslint/parser
+* depcheck
+* ts-prune
+Missing dependencies
+* mongodb: ./src/blockchain/mixer/index.ts

@@ -364,11 +364,15 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
     // Calculate liquidity (total SOL in the curve)
     const liquidityUsd = virtualSolReserves * estimatedSolPrice;
     
+    // Calculate bonding curve progress (percentage of tokens sold)
+    const bondingCurveProgress = ((tokenTotalSupply - realTokenReserves) / tokenTotalSupply) * 100;
+    
     console.log(`[getPumpFunTokenInfo] Calculated metrics:`, {
       priceUsd: priceUsd.toFixed(8),
       marketCap: marketCap.toFixed(2),
       liquidityUsd: liquidityUsd.toFixed(2),
-      circulatingSupply: circulatingSupply.toFixed(0)
+      circulatingSupply: circulatingSupply.toFixed(0),
+      bondingCurveProgress: bondingCurveProgress.toFixed(2)
     });
     
     // Return data in DexScreener-compatible format
@@ -399,6 +403,7 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
       },
       fdv: tokenTotalSupply * priceUsd, // Fully diluted valuation
       pairCreatedAt: Date.now() - 86400000, // Estimate 1 day ago
+      bondingCurveProgress: bondingCurveProgress,
       info: {
         imageUrl: null,
         websites: [`https://pump.fun/${tokenAddress}`],
@@ -407,8 +412,60 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
     };
     
   } catch (error: any) {
-    console.error(`[getPumpFunTokenInfo] Error fetching PumpFun data for ${tokenAddress}:`, error.message);
+    console.error(`[getPumpFunTokenInfo] Error calculating token info:`, error);
     return null;
+  }
+};
+
+/**
+ * Calculate token holdings worth based on current bonding curve price
+ */
+export const calculateTokenHoldingsWorth = async (tokenAddress: string, totalTokens: string): Promise<{
+  worthInSol: number;
+  worthInUsd: number;
+  pricePerToken: number;
+  marketCap: number;
+  bondingCurveProgress: number;
+}> => {
+  try {
+    const tokenInfo = await getPumpFunTokenInfo(tokenAddress);
+    
+    if (!tokenInfo) {
+      return {
+        worthInSol: 0,
+        worthInUsd: 0,
+        pricePerToken: 0,
+        marketCap: 0,
+        bondingCurveProgress: 0
+      };
+    }
+    
+    // Convert token amount to human readable format (assuming 6 decimals)
+    const tokenAmount = Number(totalTokens) / 1e6;
+    const pricePerToken = Number(tokenInfo.priceUsd);
+    const pricePerTokenInSol = Number(tokenInfo.priceNative);
+    
+    // Calculate worth
+    const worthInUsd = tokenAmount * pricePerToken;
+    const worthInSol = tokenAmount * pricePerTokenInSol;
+    
+    return {
+      worthInSol,
+      worthInUsd,
+      pricePerToken,
+      marketCap: tokenInfo.marketCap,
+      bondingCurveProgress: tokenInfo.bondingCurveProgress || 0
+    };
+    
+  } catch (error: any) {
+    console.error(`[calculateTokenHoldingsWorth] Error calculating holdings worth:`, error);
+    return {
+      worthInSol: 0,
+      worthInUsd: 0,
+      pricePerToken: 0,
+      marketCap: 0,
+      bondingCurveProgress: 0
+    };
   }
 };
 

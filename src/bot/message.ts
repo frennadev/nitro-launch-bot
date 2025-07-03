@@ -1,7 +1,7 @@
-import bot from ".";
+import { bot } from ".";
 import { CallBackQueries } from "./types";
 import { escape } from "./utils";
-import { getTokenInfo } from "../backend/utils";
+import { getTokenInfo, calculateTokenHoldingsWorth } from "../backend/utils";
 import { getAccurateSpendingStats } from "../backend/functions-main";
 
 export const sendLaunchSuccessNotification = async (
@@ -10,23 +10,29 @@ export const sendLaunchSuccessNotification = async (
   tokenName: string,
   symbol: string
 ) => {
-  // Get token info for market cap and price
-  const tokenInfo = await getTokenInfo(tokenAddress);
-
   // Get accurate financial statistics
   const financialStats = await getAccurateSpendingStats(tokenAddress);
 
-  // Calculate token value if we have price and token amounts
-  let totalTokenValue = 0;
+  // Get enhanced token worth calculation from bonding curve
+  const tokenWorth = await calculateTokenHoldingsWorth(tokenAddress, financialStats.totalTokens);
+
+  // Calculate P&L using bonding curve pricing
   let profitLoss = 0;
   let profitLossPercentage = 0;
-
-  if (tokenInfo && tokenInfo.price && financialStats.totalTokens !== "0") {
-    const totalTokensNumber = Number(financialStats.totalTokens) / 1e6; // Convert from raw token amount to human readable
-    totalTokenValue = totalTokensNumber * tokenInfo.price;
-    profitLoss = totalTokenValue - financialStats.totalSpent;
-    profitLossPercentage = financialStats.totalSpent > 0 ? (profitLoss / financialStats.totalSpent) * 100 : 0;
+  
+  if (tokenWorth.worthInUsd > 0 && financialStats.totalSpent > 0) {
+    // Convert SOL spent to USD for comparison (using estimated SOL price from bonding curve calculation)
+    const estimatedSolPrice = 240; // This should match the one in getPumpFunTokenInfo
+    const totalSpentUsd = financialStats.totalSpent * estimatedSolPrice;
+    
+    profitLoss = tokenWorth.worthInUsd - totalSpentUsd;
+    profitLossPercentage = (profitLoss / totalSpentUsd) * 100;
   }
+
+  // Format numbers for display
+  const formatUSD = (amount: number) => `$${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const formatSOL = (amount: number) => `${amount.toFixed(6)} SOL`;
+  const formatPercentage = (percentage: number) => `${percentage.toFixed(1)}%`;
 
   const msg = [
     `🎉 *Token Launched Successfully\\!*`,
@@ -35,15 +41,21 @@ export const sendLaunchSuccessNotification = async (
     `*Address:* \`${tokenAddress}\``,
     ``,
     `💰 *Financial Overview:*`,
-    `➡️ Total Spent: ${escape(financialStats.totalSpent.toString())} SOL`,
-    `➡️ Dev Allocation: ${escape(financialStats.totalDevSpent.toString())} SOL`,
-    `➡️ Snipe Buys: ${escape(financialStats.totalSnipeSpent.toString())} SOL`,
-    `➡️ Unique Buy Wallets: ${escape(financialStats.successfulBuyWallets.toString())}`,
-    tokenInfo ? `➡️ Market Cap: ${escape(`$${tokenInfo.marketCap.toLocaleString()}`)}` : "",
-    tokenInfo && tokenInfo.price !== undefined ? `➡️ Price: ${escape(`$${tokenInfo.price}`)}` : "",
-    totalTokenValue > 0 ? `➡️ Current Value: ${escape(`$${totalTokenValue.toFixed(2)}`)}` : "",
+    `➡️ Total Spent: ${formatSOL(financialStats.totalSpent)}`,
+    `➡️ Dev Allocation: ${formatSOL(financialStats.totalDevSpent)}`,
+    `➡️ Snipe Buys: ${formatSOL(financialStats.totalSnipeSpent)}`,
+    `➡️ Unique Buy Wallets: ${financialStats.successfulBuyWallets}`,
+    ``,
+    `📊 *Current Market Data:*`,
+    tokenWorth.marketCap > 0 ? `➡️ Market Cap: ${escape(formatUSD(tokenWorth.marketCap))}` : "",
+    tokenWorth.pricePerToken > 0 ? `➡️ Price: ${escape(`$${tokenWorth.pricePerToken.toFixed(8)}`)}` : "",
+    tokenWorth.bondingCurveProgress > 0 ? `➡️ Bonding Curve: ${escape(formatPercentage(tokenWorth.bondingCurveProgress))}` : "",
+    ``,
+    `💎 *Your Holdings:*`,
+    tokenWorth.worthInUsd > 0 ? `➡️ Current Value: ${escape(formatUSD(tokenWorth.worthInUsd))}` : "",
+    tokenWorth.worthInSol > 0 ? `➡️ Worth in SOL: ${escape(formatSOL(tokenWorth.worthInSol))}` : "",
     profitLoss !== 0
-      ? `➡️ P/L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${escape(`$${profitLoss.toFixed(2)}`)} (${profitLossPercentage >= 0 ? "+" : ""}${profitLossPercentage.toFixed(1)}%)`
+      ? `➡️ P/L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${escape(formatUSD(profitLoss))} (${profitLossPercentage >= 0 ? "+" : ""}${formatPercentage(profitLossPercentage)})`
       : "",
     ``,
     `Use the buttons below for next steps ⬇️`,
