@@ -3,9 +3,28 @@ FROM oven/bun:alpine AS base
 # Dependencies
 FROM base AS deps
 WORKDIR /app
+
+# Install Python and build dependencies for native packages like canvas
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    make \
+    g++ \
+    cairo-dev \
+    jpeg-dev \
+    pango-dev \
+    musl-dev \
+    giflib-dev \
+    pixman-dev \
+    pangomm-dev \
+    libjpeg-turbo-dev \
+    freetype-dev
+
+# Set Python environment variable for node-gyp
+ENV PYTHON=/usr/bin/python3
+
 COPY bun.lock package.json ./
 RUN bun install --frozen-lockfile
-
 
 # Build
 FROM deps AS build
@@ -17,5 +36,18 @@ RUN bun run build:job
 # Runtime
 FROM base AS runtime
 WORKDIR /app
+
+# Install runtime dependencies for canvas if needed
+RUN apk add --no-cache \
+    cairo \
+    jpeg \
+    pango \
+    musl \
+    giflib \
+    pixman \
+    pangomm \
+    libjpeg-turbo \
+    freetype
+
 COPY --from=build /app/build ./build
 CMD ["bun", "build/jobs/index.js"]
