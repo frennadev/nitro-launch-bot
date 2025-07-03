@@ -200,6 +200,11 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
+# Generated report files
+depcheck-report.txt
+ts-prune-report.txt
+*-report.txt
+
 # IntelliJ based IDEs
 .idea
 
