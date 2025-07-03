@@ -316,14 +316,20 @@ const createTokenMetadata = async (name: string, symbol: string, description: st
   return null;
 };
 
-export const getAvailablePumpAddress = async (userId: string) => {
+export const getAvailablePumpAddress = async (userId: string, excludeAddresses: string[] = []) => {
   const session = await mongoose.startSession();
 
   try {
     return await session.withTransaction(async () => {
+      // Build query to exclude specific addresses
+      const query: any = { isUsed: false };
+      if (excludeAddresses.length > 0) {
+        query.publicKey = { $nin: excludeAddresses };
+      }
+      
       // Find an unused pump address
       const pumpAddress = await PumpAddressModel.findOneAndUpdate(
-        { isUsed: false },
+        query,
         {
           $set: {
             isUsed: true,
@@ -490,8 +496,8 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     
     // Generate a new address automatically
     try {
-      // Try to get another pump address first
-      finalTokenKey = await getAvailablePumpAddress(userId);
+      // Try to get another pump address first, excluding the original conflicted address
+      finalTokenKey = await getAvailablePumpAddress(userId, [tokenKey.publicKey]);
       finalIsPumpAddress = true;
       logger.info(`Generated new pump address: ${finalTokenKey.publicKey} for user ${userId}`);
     } catch (error: any) {
@@ -502,9 +508,10 @@ export const createToken = async (userId: string, name: string, symbol: string, 
       finalIsPumpAddress = false;
     }
     
-    // Validate the new address (recursive check with max attempts)
+        // Validate the new address (recursive check with max attempts)
     let attempts = 0;
     const maxAttempts = 5;
+    const usedAddresses = new Set([tokenKey.publicKey]); // Track used addresses to avoid duplicates
     
     while (attempts < maxAttempts) {
       const newAvailability = await validateTokenAddressAvailability(finalTokenKey.publicKey, userId);
@@ -516,24 +523,58 @@ export const createToken = async (userId: string, name: string, symbol: string, 
       attempts++;
       logger.warn(`Generated address ${finalTokenKey.publicKey} also in use. Attempt ${attempts}/${maxAttempts}`);
       
+      // Track this address as used
+      usedAddresses.add(finalTokenKey.publicKey);
+      
       // Release the current address if it's a pump address
       if (finalIsPumpAddress) {
         await releasePumpAddress(finalTokenKey.publicKey);
       }
       
       if (attempts >= maxAttempts) {
-        throw new Error(`Failed to generate available token address after ${maxAttempts} attempts`);
+        throw new Error(`Failed to generate available token address after ${maxAttempts} attempts. Please try again later.`);
       }
       
-      // Generate another address
-      try {
-        finalTokenKey = await getAvailablePumpAddress(userId);
-        finalIsPumpAddress = true;
-      } catch (error: any) {
-        const [randomKey] = generateKeypairs(1);
-        finalTokenKey = randomKey;
-        finalIsPumpAddress = false;
-      }
+      // Generate another address, ensuring it's different from previously tried ones
+      let newAddress;
+      let isNewPumpAddress = false;
+      let retryCount = 0;
+      const maxRetries = 3; // Reduced from 10 to prevent long loops
+      
+      do {
+        try {
+          // Pass the list of already tried addresses to exclude them
+          newAddress = await getAvailablePumpAddress(userId, Array.from(usedAddresses));
+          isNewPumpAddress = true;
+          logger.info(`Got pump address: ${newAddress.publicKey}`);
+        } catch (error: any) {
+          logger.warn(`No pump addresses available, using random generation: ${error.message}`);
+          const [randomKey] = generateKeypairs(1);
+          newAddress = randomKey;
+          isNewPumpAddress = false;
+        }
+        retryCount++;
+        
+        // If we keep getting the same address, force random generation
+        if (retryCount >= maxRetries) {
+          logger.warn(`Pump address pool may be exhausted or returning duplicates. Forcing random generation.`);
+          const [randomKey] = generateKeypairs(1);
+          newAddress = randomKey;
+          isNewPumpAddress = false;
+          break;
+        }
+        
+        // If we got a duplicate, release it immediately
+        if (usedAddresses.has(newAddress.publicKey) && isNewPumpAddress) {
+          logger.warn(`Got duplicate pump address ${newAddress.publicKey}, releasing it`);
+          await releasePumpAddress(newAddress.publicKey);
+        }
+      } while (usedAddresses.has(newAddress.publicKey));
+      
+      finalTokenKey = newAddress;
+      finalIsPumpAddress = isNewPumpAddress;
+      
+      logger.info(`Generated new candidate address: ${finalTokenKey.publicKey} (${finalIsPumpAddress ? 'pump' : 'random'})`);
     }
   }
 
