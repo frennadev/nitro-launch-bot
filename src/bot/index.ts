@@ -198,6 +198,29 @@ async function safeAnswerCallbackQuery(ctx: Context, text?: string): Promise<voi
   }
 }
 
+// Clear conversation state helper function
+async function clearConversationState(ctx: any): Promise<boolean> {
+  try {
+    if (ctx.conversation) {
+      await ctx.conversation.exit();
+    }
+    return true;
+  } catch (error: any) {
+    logger.error("Error clearing conversation state:", error);
+    return false;
+  }
+}
+
+// Handle token address message helper
+async function handleTokenAddressMessage(ctx: any, tokenAddress: string) {
+  try {
+    await ctx.conversation.enter("externalTokenBuyConversation", { tokenAddress });
+  } catch (error: any) {
+    logger.error("Error handling token address message:", error);
+    await ctx.reply("❌ Error processing token address. Please try again.");
+  }
+}
+
 // ----- Conversations -----
 // Configure conversations with proper error handling
 bot.use(
@@ -1201,7 +1224,7 @@ ${initialHoldingsText}`,
           !cachedPlatform ? (async () => {
             try {
               // Use fast detection that respects recent cache
-              const { detectTokenPlatformFast } = await import('../../service/token-detection-service');
+              const { detectTokenPlatformFast } = await import('../service/token-detection-service');
               const platform = await detectTokenPlatformFast(text);
               
               let platformText = "❓ Unknown platform";
@@ -1570,4 +1593,14 @@ bot.on("callback_query:data", async (ctx) => {
           .text("75%", `sell_ca_75_${address}`)
           .text("100%", `sell_ca_100_${address}`)
           .row()
-          .text("Custom % ✏️", `
+          .text("Custom % ✏️", `sell_custom_${address}`)
+          .row()
+          .text("Menu", CallBackQueries.BACK);
+
+        await safeEditMessageReplyMarkup(ctx, sellKb);
+        break;
+    }
+  }
+});
+
+export default bot;
