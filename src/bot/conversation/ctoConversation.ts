@@ -143,6 +143,7 @@ export const ctoConversation = async (
       const result = await executeCTOOperation(tokenAddress, user.id, buyAmount);
 
       if (result.success) {
+        // Success message with detailed results
         await sendMessage(
           confirmation,
           `✅ **CTO Operation Completed Successfully!**\n\n` +
@@ -163,13 +164,40 @@ export const ctoConversation = async (
         const { ctoMonitorConversation } = await import("./ctoMonitor");
         await ctoMonitorConversation(conversation, confirmation, tokenAddress);
       } else {
-        await sendMessage(
-          confirmation,
-          `❌ **CTO Operation Failed**\n\n` +
-          `**Error:** ${result.error || "Unknown error occurred"}\n\n` +
-          `Please try again or contact support if the issue persists.`,
-          { parse_mode: "Markdown" }
-        );
+        // Check if this was a partial success that we should handle differently
+        if (result.successfulBuys && result.successfulBuys > 0) {
+          // Partial success - some buys worked
+          await sendMessage(
+            confirmation,
+            `⚠️ **CTO Operation Partially Completed**\n\n` +
+            `**Token:** \`${tokenAddress}\`\n` +
+            `**Successful Buys:** ${result.successfulBuys || 0}\n` +
+            `**Failed Buys:** ${result.failedBuys || 0}\n` +
+            `**Mixer Success Rate:** ${result.mixerSuccessRate || 0}%\n\n` +
+            `✅ **Some buying pressure was applied!**\n\n` +
+            `⚠️ **Note:** Not all transactions succeeded due to:\n${result.error || "Unknown mixer issues"}\n\n` +
+            `📊 **Opening monitor page to track your position...**`,
+            { parse_mode: "Markdown" }
+          );
+
+          // Still open monitor page for partial success
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const { ctoMonitorConversation } = await import("./ctoMonitor");
+          await ctoMonitorConversation(conversation, confirmation, tokenAddress);
+        } else {
+          // Complete failure
+          await sendMessage(
+            confirmation,
+            `❌ **CTO Operation Failed**\n\n` +
+            `**Error:** ${result.error || "Unknown error occurred"}\n\n` +
+            `**Details:**\n` +
+            `• Successful Buys: ${result.successfulBuys || 0}\n` +
+            `• Failed Buys: ${result.failedBuys || 0}\n` +
+            `• Mixer Success Rate: ${result.mixerSuccessRate || 0}%\n\n` +
+            `Please try again or contact support if the issue persists.`,
+            { parse_mode: "Markdown" }
+          );
+        }
       }
     } catch (error: any) {
       logger.error("Error executing CTO operation:", error);

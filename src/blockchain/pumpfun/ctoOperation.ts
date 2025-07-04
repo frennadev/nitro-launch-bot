@@ -52,29 +52,34 @@ export const executeCTOOperation = async (
       destinationAddresses
     );
 
-    if (!mixerResult.success) {
-      logger.error(`[CTO] Mixer failed:`, mixerResult);
+    // CRITICAL FIX: Don't fail completely if mixer has partial success
+    // Check if we have any successful routes to work with
+    const successfulRoutes = mixerResult.results?.filter(result => result.success) || [];
+    
+    if (successfulRoutes.length === 0) {
+      logger.error(`[CTO] Mixer failed completely - no successful routes:`, mixerResult);
       return {
         success: false,
-        error: `Mixer failed: ${mixerResult.results?.[0]?.error || "Unknown mixer error"}`
+        error: `Mixer failed completely: ${mixerResult.results?.[0]?.error || "Unknown mixer error"}`
       };
     }
 
-    logger.info(`[CTO] Mixer completed with ${mixerResult.successCount}/${mixerResult.totalRoutes} successful routes`);
+    logger.info(`[CTO] Mixer completed with ${mixerResult.successCount || successfulRoutes.length}/${mixerResult.totalRoutes || mixerResult.results?.length} successful routes`);
+    
+    // Log partial success details
+    if (mixerResult.successCount < mixerResult.totalRoutes) {
+      logger.info(`[CTO] Proceeding with partial mixer success: ${successfulRoutes.length} funded wallets available`);
+    }
 
     // Wait a moment for funds to propagate
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // CRITICAL FIX: Use the mixer's actual amount distribution instead of manual calculation
-    // The mixer already calculated optimal amounts in lamports, so we use those
-    const actualAmountsFromMixer = mixerResult.results
-      .filter(result => result.success)
-      .map(result => result.route.amount); // These are already in lamports from the mixer
+    // Use the mixer's actual amount distribution from successful routes only
+    const actualAmountsFromMixer = successfulRoutes.map(result => result.route.amount);
 
     logger.info(`[CTO] Using mixer's actual amount distribution: ${actualAmountsFromMixer.map(amt => (amt / 1e9).toFixed(6)).join(', ')} SOL`);
 
     // Use only the wallets that were actually funded by the mixer
-    const successfulRoutes = mixerResult.results.filter(result => result.success);
     const walletsToUse = successfulRoutes.length;
     const selectedWallets = buyerWallets.slice(0, walletsToUse);
 
@@ -183,7 +188,7 @@ export const executeCTOOperation = async (
       success: successfulBuys > 0, // Consider success if at least one buy succeeded
       successfulBuys,
       failedBuys,
-      mixerSuccessRate: Math.round((mixerResult.successCount / mixerResult.totalRoutes) * 100)
+      mixerSuccessRate: Math.round(((mixerResult.successCount || successfulRoutes.length) / (mixerResult.totalRoutes || mixerResult.results?.length || 1)) * 100)
     };
 
   } catch (error: any) {
