@@ -78,14 +78,82 @@ export const executeCTOOperation = async (
         
         if (result.success) {
           logger.info(`[CTO] Buy ${index + 1}/${buyerWallets.length} successful: ${result.signature}`);
-          return { success: true, signature: result.signature };
+          
+          // Record the successful CTO buy transaction
+          try {
+            const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+            await recordTransactionWithActualAmounts(
+              tokenAddress,
+              wallet.publicKey,
+              "external_buy", // New transaction type for CTO buys
+              result.signature,
+              true,
+              0, // CTO operations don't have launch attempts
+              {
+                amountSol: buyAmountPerWallet,
+                amountTokens: "0", // Will be parsed from blockchain
+                errorMessage: undefined,
+                retryAttempt: 0,
+              },
+              true // Parse actual amounts from blockchain
+            );
+            logger.info(`[CTO] Transaction recorded for wallet ${wallet.publicKey}`);
+          } catch (recordError: any) {
+            logger.warn(`[CTO] Failed to record transaction for wallet ${wallet.publicKey}:`, recordError);
+          }
+          
+          return { success: true, signature: result.signature, walletAddress: wallet.publicKey };
         } else {
           logger.warn(`[CTO] Buy ${index + 1}/${buyerWallets.length} failed: ${result.error}`);
-          return { success: false, error: result.error };
+          
+          // Record the failed CTO buy transaction
+          try {
+            const { recordTransaction } = await import("../../backend/functions");
+            await recordTransaction(
+              tokenAddress,
+              wallet.publicKey,
+              "external_buy",
+              "", // No signature for failed transactions
+              false,
+              0,
+              {
+                amountSol: buyAmountPerWallet,
+                amountTokens: "0",
+                errorMessage: result.error,
+                retryAttempt: 0,
+              }
+            );
+          } catch (recordError: any) {
+            logger.warn(`[CTO] Failed to record failed transaction for wallet ${wallet.publicKey}:`, recordError);
+          }
+          
+          return { success: false, error: result.error, walletAddress: wallet.publicKey };
         }
       } catch (error: any) {
         logger.error(`[CTO] Buy ${index + 1}/${buyerWallets.length} error:`, error);
-        return { success: false, error: error.message };
+        
+        // Record the error transaction
+        try {
+          const { recordTransaction } = await import("../../backend/functions");
+          await recordTransaction(
+            tokenAddress,
+            wallet.publicKey,
+            "external_buy",
+            "",
+            false,
+            0,
+            {
+              amountSol: buyAmountPerWallet,
+              amountTokens: "0",
+              errorMessage: error.message,
+              retryAttempt: 0,
+            }
+          );
+        } catch (recordError: any) {
+          logger.warn(`[CTO] Failed to record error transaction for wallet ${wallet.publicKey}:`, recordError);
+        }
+        
+        return { success: false, error: error.message, walletAddress: wallet.publicKey };
       }
     });
 

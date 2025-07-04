@@ -1654,7 +1654,7 @@ export const removeFailedToken = async (tokenAddress: string) => {
 export const recordTransaction = async (
   tokenAddress: string,
   walletPublicKey: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell",
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell" | "external_buy",
   signature: string,
   success: boolean,
   launchAttempt: number,
@@ -1722,7 +1722,7 @@ export const recordSellTransaction = async (
 
 export const getSuccessfulTransactions = async (
   tokenAddress: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell",
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell" | "external_buy",
   launchAttempt?: number
 ) => {
   const { TransactionRecordModel } = await import("./models");
@@ -1743,7 +1743,7 @@ export const getSuccessfulTransactions = async (
 
 export const getFailedTransactions = async (
   tokenAddress: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell",
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell" | "external_buy",
   launchAttempt?: number
 ) => {
   const { TransactionRecordModel } = await import("./models");
@@ -1765,7 +1765,7 @@ export const getFailedTransactions = async (
 export const isTransactionAlreadySuccessful = async (
   tokenAddress: string,
   walletPublicKey: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell"
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell" | "external_buy"
 ) => {
   const { TransactionRecordModel } = await import("./models");
 
@@ -1800,6 +1800,7 @@ export const getTransactionStats = async (tokenAddress: string, launchAttempt?: 
       dev_sell: records.filter((r) => r.transactionType === "dev_sell"),
       wallet_sell: records.filter((r) => r.transactionType === "wallet_sell"),
       external_sell: records.filter((r) => r.transactionType === "external_sell"),
+      external_buy: records.filter((r) => r.transactionType === "external_buy"),
     },
   };
 
@@ -1824,6 +1825,7 @@ export const getTransactionFinancialStats = async (tokenAddress: string, launchA
   // Calculate totals by transaction type
   const devBuyRecords = records.filter((r) => r.transactionType === "dev_buy");
   const snipeBuyRecords = records.filter((r) => r.transactionType === "snipe_buy");
+  const externalBuyRecords = records.filter((r) => r.transactionType === "external_buy");
   const devSellRecords = records.filter((r) => r.transactionType === "dev_sell");
   const walletSellRecords = records.filter((r) => r.transactionType === "wallet_sell");
   const externalSellRecords = records.filter((r) => r.transactionType === "external_sell");
@@ -1837,7 +1839,11 @@ export const getTransactionFinancialStats = async (tokenAddress: string, launchA
     return sum + (record.amountSol || 0);
   }, 0);
 
-  const totalSpent = totalDevSpent + totalSnipeSpent;
+  const totalExternalSpent = externalBuyRecords.reduce((sum, record) => {
+    return sum + (record.amountSol || 0);
+  }, 0);
+
+  const totalSpent = totalDevSpent + totalSnipeSpent + totalExternalSpent;
 
   // Calculate earnings (sells)
   const totalDevEarned = devSellRecords.reduce((sum, record) => {
@@ -1867,7 +1873,11 @@ export const getTransactionFinancialStats = async (tokenAddress: string, launchA
     return sum + BigInt(record.amountTokens || "0");
   }, BigInt(0));
 
-  const totalTokens = totalDevTokens + totalSnipeTokens;
+  const totalExternalTokens = externalBuyRecords.reduce((sum, record) => {
+    return sum + BigInt(record.amountTokens || "0");
+  }, BigInt(0));
+
+  const totalTokens = totalDevTokens + totalSnipeTokens + totalExternalTokens;
 
   // Calculate total tokens sold
   const totalDevTokensSold = devSellRecords.reduce((sum, record) => {
@@ -1890,10 +1900,13 @@ export const getTransactionFinancialStats = async (tokenAddress: string, launchA
     totalSpent: Number(totalSpent.toFixed(6)),
     totalDevSpent: Number(totalDevSpent.toFixed(6)),
     totalSnipeSpent: Number(totalSnipeSpent.toFixed(6)),
+    totalExternalSpent: Number(totalExternalSpent.toFixed(6)),
     totalTokens: totalTokens.toString(),
     totalDevTokens: totalDevTokens.toString(),
     totalSnipeTokens: totalSnipeTokens.toString(),
+    totalExternalTokens: totalExternalTokens.toString(),
     successfulBuys: snipeBuyRecords.length,
+    successfulExternalBuys: externalBuyRecords.length,
     averageSpentPerWallet:
       snipeBuyRecords.length > 0 ? Number((totalSnipeSpent / snipeBuyRecords.length).toFixed(6)) : 0,
 
@@ -2601,7 +2614,7 @@ export const getAccurateSpendingStats = async (tokenAddress: string, launchAttem
 
   // Group transactions by wallet
   records.forEach(record => {
-    if (record.transactionType === "dev_buy" || record.transactionType === "snipe_buy") {
+    if (record.transactionType === "dev_buy" || record.transactionType === "snipe_buy" || record.transactionType === "external_buy") {
       const walletKey = record.walletPublicKey;
       if (!walletBuyGroups.has(walletKey)) {
         walletBuyGroups.set(walletKey, []);
@@ -2626,6 +2639,7 @@ export const getAccurateSpendingStats = async (tokenAddress: string, launchAttem
   for (const [walletKey, transactions] of walletBuyGroups) {
     const devBuys = transactions.filter(t => t.transactionType === "dev_buy");
     const snipeBuys = transactions.filter(t => t.transactionType === "snipe_buy");
+    const externalBuys = transactions.filter(t => t.transactionType === "external_buy");
 
     // For dev buys, sum all transactions (usually only one)
     const walletDevSpent = devBuys.reduce((sum, t) => sum + (t.amountSol || 0), 0);
@@ -2645,12 +2659,25 @@ export const getAccurateSpendingStats = async (tokenAddress: string, launchAttem
       walletSnipeTokens = snipeBuys.reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
     }
 
+    // For external buys (CTO), sum all transactions
+    let walletExternalSpent = 0;
+    let walletExternalTokens = BigInt(0);
+
+    if (externalBuys.length > 0) {
+      walletExternalSpent = externalBuys.reduce((sum, t) => sum + (t.amountSol || 0), 0);
+      walletExternalTokens = externalBuys.reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
+    }
+
     totalDevSpent += walletDevSpent;
     totalSnipeSpent += walletSnipeSpent;
     totalDevTokens += walletDevTokens;
     totalSnipeTokens += walletSnipeTokens;
 
-    if (snipeBuys.length > 0) {
+    // Add external buy totals
+    const totalExternalSpent = externalBuys.reduce((sum, t) => sum + (t.amountSol || 0), 0);
+    const totalExternalTokens = externalBuys.reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
+
+    if (snipeBuys.length > 0 || externalBuys.length > 0) {
       successfulBuyWallets++;
     }
   }
@@ -2769,13 +2796,16 @@ export const getDetailedSpendingBreakdown = async (tokenAddress: string, launchA
         walletAddress: walletKey,
         devBuys: [],
         snipeBuys: [],
+        externalBuys: [],
         devSells: [],
         walletSells: [],
         externalSells: [],
         totalDevSpent: 0,
         totalSnipeSpent: 0,
+        totalExternalSpent: 0,
         totalDevTokens: BigInt(0),
         totalSnipeTokens: BigInt(0),
+        totalExternalTokens: BigInt(0),
         totalDevEarned: 0,
         totalWalletEarned: 0,
         totalExternalEarned: 0,
@@ -2798,6 +2828,11 @@ export const getDetailedSpendingBreakdown = async (tokenAddress: string, launchA
         wallet.totalSnipeSpent += record.amountSol || 0;
         wallet.totalSnipeTokens += BigInt(record.amountTokens || "0");
         break;
+      case "external_buy":
+        wallet.externalBuys.push(record);
+        wallet.totalExternalSpent += record.amountSol || 0;
+        wallet.totalExternalTokens += BigInt(record.amountTokens || "0");
+        break;
       case "dev_sell":
         wallet.devSells.push(record);
         wallet.totalDevEarned += record.amountSol || 0;
@@ -2819,13 +2854,13 @@ export const getDetailedSpendingBreakdown = async (tokenAddress: string, launchA
   // Convert to array and add summary stats
   const breakdown = Array.from(walletBreakdown.values()).map(wallet => ({
     ...wallet,
-    totalSpent: wallet.totalDevSpent + wallet.totalSnipeSpent,
+    totalSpent: wallet.totalDevSpent + wallet.totalSnipeSpent + (wallet.totalExternalSpent || 0),
     totalEarned: wallet.totalDevEarned + wallet.totalWalletEarned + wallet.totalExternalEarned,
-    netProfitLoss: (wallet.totalDevEarned + wallet.totalWalletEarned + wallet.totalExternalEarned) - (wallet.totalDevSpent + wallet.totalSnipeSpent),
-    totalTokens: wallet.totalDevTokens + wallet.totalSnipeTokens,
+    netProfitLoss: (wallet.totalDevEarned + wallet.totalWalletEarned + wallet.totalExternalEarned) - (wallet.totalDevSpent + wallet.totalSnipeSpent + (wallet.totalExternalSpent || 0)),
+    totalTokens: wallet.totalDevTokens + wallet.totalSnipeTokens + (wallet.totalExternalTokens || BigInt(0)),
     totalTokensSold: wallet.totalDevTokensSold + wallet.totalWalletTokensSold + wallet.totalExternalTokensSold,
-    remainingTokens: (wallet.totalDevTokens + wallet.totalSnipeTokens) - (wallet.totalDevTokensSold + wallet.totalWalletTokensSold + wallet.totalExternalTokensSold),
-    buyTransactionCount: wallet.devBuys.length + wallet.snipeBuys.length,
+    remainingTokens: (wallet.totalDevTokens + wallet.totalSnipeTokens + (wallet.totalExternalTokens || BigInt(0))) - (wallet.totalDevTokensSold + wallet.totalWalletTokensSold + wallet.totalExternalTokensSold),
+    buyTransactionCount: wallet.devBuys.length + wallet.snipeBuys.length + (wallet.externalBuys?.length || 0),
     sellTransactionCount: wallet.devSells.length + wallet.walletSells.length + wallet.externalSells.length,
   }));
 

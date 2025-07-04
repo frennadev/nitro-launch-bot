@@ -131,7 +131,7 @@ const transactionRecordSchema = new Schema(
   {
     tokenAddress: { type: String, required: true },
     walletPublicKey: { type: String, required: true },
-    transactionType: { type: String, enum: ["token_creation", "dev_buy", "snipe_buy", "dev_sell", "wallet_sell", "external_sell"], required: true },
+    transactionType: { type: String, enum: ["token_creation", "dev_buy", "snipe_buy", "dev_sell", "wallet_sell", "external_sell", "external_buy"], required: true },
     signature: { type: String, required: true },
     success: { type: Boolean, required: true },
     launchAttempt: { type: Number, required: true },

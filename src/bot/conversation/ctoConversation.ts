@@ -151,9 +151,17 @@ export const ctoConversation = async (
           `**Successful Buys:** ${result.successfulBuys || 0}\n` +
           `**Failed Buys:** ${result.failedBuys || 0}\n` +
           `**Mixer Success Rate:** ${result.mixerSuccessRate || 0}%\n\n` +
-          `🎉 **Buying pressure has been applied to the token!**`,
+          `🎉 **Buying pressure has been applied to the token!**\n\n` +
+          `📊 **Opening monitor page to track your position...**`,
           { parse_mode: "Markdown" }
         );
+
+        // Wait a moment then open the monitor page
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Start the CTO monitor conversation
+        const { ctoMonitorConversation } = await import("./ctoMonitor");
+        await ctoMonitorConversation(conversation, confirmation, tokenAddress);
       } else {
         await sendMessage(
           confirmation,

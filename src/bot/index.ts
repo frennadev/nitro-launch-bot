@@ -42,6 +42,7 @@ import { getTransactionFinancialStats } from "../backend/functions-main";
 import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
 import { referralsConversation } from "./conversation/referrals";
 import { ctoConversation } from "./conversation/ctoConversation";
+import { ctoMonitorConversation } from "./conversation/ctoMonitor";
 import { PublicKey } from "@solana/web3.js";
 import { executeFundingBuy } from "../blockchain/pumpfun/buy";
 import { buyCustonConversation } from "./conversation/buyCustom";
@@ -285,6 +286,7 @@ bot.use(createConversation(externalTokenSellConversation));
 bot.use(createConversation(buyExternalTokenConversation));
 bot.use(createConversation(referralsConversation));
 bot.use(createConversation(ctoConversation));
+bot.use(createConversation(ctoMonitorConversation));
 bot.use(createConversation(buyCustonConversation));
 bot.use(createConversation(sellIndividualToken));
 bot.use(createConversation(sellPercentageMessage));
@@ -963,6 +965,28 @@ bot.callbackQuery(/^cto_(.+)$/, async (ctx) => {
   
   // Start the CTO conversation
   await ctx.conversation.enter("ctoConversation", tokenAddress);
+});
+
+// Callback handler for CTO monitor refresh
+bot.callbackQuery(/^refresh_cto_monitor_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔄 Refreshing monitor...");
+  const tokenAddress = ctx.match![1];
+  
+  logger.info(`[CTO Monitor] Refresh clicked for token: ${tokenAddress}`);
+  
+  // Start the CTO monitor conversation
+  await ctx.conversation.enter("ctoMonitorConversation", tokenAddress);
+});
+
+// Callback handler for CTO sell buttons
+bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
+  const [, sellPercent, tokenAddress] = ctx.match!;
+  await safeAnswerCallbackQuery(ctx, `💸 Selling ${sellPercent}%...`);
+  
+  logger.info(`[CTO Monitor] Sell ${sellPercent}% clicked for token: ${tokenAddress}`);
+  
+  // Start external token sell conversation
+  await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, parseInt(sellPercent));
 });
 
 // Retry callback handlers

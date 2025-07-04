@@ -583,7 +583,7 @@ export const parseTransactionAmounts = async (
 export const recordTransactionWithActualAmounts = async (
   tokenAddress: string,
   walletPublicKey: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell",
+  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell" | "external_buy",
   signature: string,
   success: boolean,
   launchAttempt: number,
