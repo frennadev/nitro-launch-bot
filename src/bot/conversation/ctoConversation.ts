@@ -11,7 +11,7 @@ export const ctoConversation = async (
   conversation: Conversation<Context>,
   ctx: Context,
   tokenAddress: string
-) => {
+): Promise<void> => {
   await ctx.answerCallbackQuery();
   
   // Validate user
@@ -195,8 +195,38 @@ export const ctoConversation = async (
             `• Failed Buys: ${result.failedBuys || 0}\n` +
             `• Mixer Success Rate: ${result.mixerSuccessRate || 0}%\n\n` +
             `Please try again or contact support if the issue persists.`,
-            { parse_mode: "Markdown" }
+            { 
+              parse_mode: "Markdown",
+              reply_markup: new InlineKeyboard()
+                .text("💳 Withdraw to Funding Wallet", CallBackQueries.WITHDRAW_TO_FUNDING)
+                .text("🌐 Withdraw to External Wallet", CallBackQueries.WITHDRAW_TO_EXTERNAL)
+                .row()
+                .text("🔄 Try Again", `cto_${tokenAddress}`)
+                .text("❌ Close", CallBackQueries.CANCEL)
+            }
           );
+
+          // Wait for user action on the failure message
+          const failureAction = await conversation.waitFor("callback_query:data");
+          await failureAction.answerCallbackQuery();
+
+          const actionData = failureAction.callbackQuery?.data;
+          
+          if (actionData === CallBackQueries.WITHDRAW_TO_FUNDING) {
+            // Start funding wallet withdrawal conversation
+            const { withdrawFundingWalletConversation } = await import("./withdrawal");
+            return await withdrawFundingWalletConversation(conversation, failureAction);
+          } else if (actionData === CallBackQueries.WITHDRAW_TO_EXTERNAL) {
+            // Start buyer wallets withdrawal conversation (most likely to have funds after CTO failure)
+            const { withdrawBuyerWalletsConversation } = await import("./withdrawal");
+            return await withdrawBuyerWalletsConversation(conversation, failureAction);
+          } else if (actionData === `cto_${tokenAddress}`) {
+            // Restart CTO conversation
+            return await ctoConversation(conversation, failureAction, tokenAddress);
+          } else if (actionData === CallBackQueries.CANCEL) {
+            await sendMessage(failureAction, "❌ CTO operation cancelled.");
+            return conversation.halt();
+          }
         }
       }
     } catch (error: any) {
