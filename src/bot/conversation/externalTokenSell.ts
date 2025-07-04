@@ -5,9 +5,9 @@ import { getUser, getFundingWallet, getAllTradingWallets } from "../../backend/f
 import { getTokenBalance, getTokenInfo } from "../../backend/utils";
 import { sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
-import { executeExternalTokenSell } from "../../blockchain/pumpfun/externalSell";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 import { escape, safeEditMessageText, sendErrorWithAutoDelete } from "../utils";
+import JupiterPumpswapService from "../../service/jupiter-pumpswap-service";
 
 const externalTokenSellConversation = async (
   conversation: Conversation,
@@ -168,13 +168,35 @@ const externalTokenSellConversation = async (
       try {
         // Execute the external token sell using buyer wallets
         const buyerWalletPrivateKeys = walletsWithBalance.map(w => w.privateKey);
-        const result = await executeExternalTokenSell(tokenAddress, buyerWalletPrivateKeys, sellPercent);
+        const result = await executeExternalTokenSellWithJupiter(tokenAddress, buyerWalletPrivateKeys, sellPercent);
 
         if (result.success) {
           const solReceivedText = result.totalSolReceived?.toFixed(6) || "Unknown";
+          
+          // Determine platforms used from results
+          const platformsUsed = new Set();
+          if (result.results) {
+            result.results.forEach((r: any) => {
+              if (r.success && r.platform) {
+                platformsUsed.add(r.platform);
+              }
+            });
+          }
+          
+          const platformText = platformsUsed.size > 0 
+            ? Array.from(platformsUsed).map(p => {
+                switch(p) {
+                  case 'jupiter': return '🔄 Jupiter';
+                  case 'pumpswap': return '💫 Pumpswap';
+                  case 'pumpfun': return '🚀 PumpFun';
+                  default: return `📈 ${p}`;
+                }
+              }).join(', ')
+            : '📈 Smart Routing';
+          
           await sendMessage(
             response,
-            `✅ **External token sell completed successfully!**\n\n📊 **Results:**\n• Successful Sells: ${result.successfulSells}\n• Failed Sells: ${result.failedSells}\n• Total SOL Received: ${solReceivedText} SOL\n• Platform: 🚀 PumpFun`,
+            `✅ **External token sell completed successfully!**\n\n📊 **Results:**\n• Successful Sells: ${result.successfulSells}\n• Failed Sells: ${result.failedSells}\n• Total SOL Received: ${solReceivedText} SOL\n• Platform: ${platformText}`,
             { parse_mode: "Markdown" }
           );
         } else {
@@ -195,6 +217,108 @@ const externalTokenSellConversation = async (
   }
 
   await conversation.halt();
+};
+
+// Enhanced external token sell using Jupiter-Pumpswap service
+const executeExternalTokenSellWithJupiter = async (
+  tokenAddress: string,
+  buyerWalletPrivateKeys: string[],
+  sellPercent: number
+) => {
+  const logIdentifier = `external-sell-${tokenAddress.substring(0, 8)}`;
+  logger.info(`[${logIdentifier}]: Starting external token sell using Jupiter-Pumpswap service`);
+
+  try {
+    const jupiterPumpswapService = new JupiterPumpswapService();
+    const results = [];
+    let successfulSells = 0;
+    let failedSells = 0;
+    let totalSolReceived = 0;
+
+    // Process each wallet that has tokens
+    for (let i = 0; i < buyerWalletPrivateKeys.length; i++) {
+      try {
+        const walletKeypair = secretKeyToKeypair(buyerWalletPrivateKeys[i]);
+        
+        // Check wallet's token balance
+        const walletBalance = await getTokenBalance(tokenAddress, walletKeypair.publicKey.toBase58());
+        if (walletBalance <= 0) {
+          logger.info(`[${logIdentifier}]: Wallet ${i + 1} has no tokens, skipping`);
+          continue;
+        }
+
+        // Calculate tokens to sell from this wallet
+        const tokensToSell = Math.floor((walletBalance * sellPercent) / 100);
+        if (tokensToSell <= 0) {
+          logger.info(`[${logIdentifier}]: Wallet ${i + 1} has insufficient tokens to sell, skipping`);
+          continue;
+        }
+
+        logger.info(`[${logIdentifier}]: Wallet ${i + 1} selling ${tokensToSell} tokens (${sellPercent}% of ${walletBalance})`);
+
+        // Execute sell using Jupiter-Pumpswap service
+        const result = await jupiterPumpswapService.executeSell(
+          tokenAddress,
+          walletKeypair,
+          tokensToSell
+        );
+
+        if (result.success) {
+          successfulSells++;
+          const solReceived = parseFloat(result.solReceived || "0");
+          totalSolReceived += solReceived;
+          
+          logger.info(`[${logIdentifier}]: Wallet ${i + 1} sell successful via ${result.platform}: ${result.signature}`);
+          logger.info(`[${logIdentifier}]: Wallet ${i + 1} received ${solReceived} SOL`);
+          
+          results.push({
+            success: true,
+            wallet: walletKeypair.publicKey.toBase58(),
+            signature: result.signature,
+            platform: result.platform,
+            solReceived
+          });
+        } else {
+          failedSells++;
+          logger.warn(`[${logIdentifier}]: Wallet ${i + 1} sell failed: ${result.error}`);
+          
+          results.push({
+            success: false,
+            wallet: walletKeypair.publicKey.toBase58(),
+            error: result.error
+          });
+        }
+      } catch (error: any) {
+        failedSells++;
+        logger.error(`[${logIdentifier}]: Wallet ${i + 1} error: ${error.message}`);
+        
+        results.push({
+          success: false,
+          wallet: "unknown",
+          error: error.message
+        });
+      }
+    }
+
+    logger.info(`[${logIdentifier}]: External sell completed - ${successfulSells} successful, ${failedSells} failed, ${totalSolReceived.toFixed(6)} SOL received`);
+
+    return {
+      success: successfulSells > 0,
+      successfulSells,
+      failedSells,
+      totalSolReceived,
+      results
+    };
+
+  } catch (error: any) {
+    logger.error(`[${logIdentifier}]: External sell failed:`, error);
+    return {
+      success: false,
+      successfulSells: 0,
+      failedSells: buyerWalletPrivateKeys.length,
+      error: error.message
+    };
+  }
 };
 
 export default externalTokenSellConversation;
