@@ -82,6 +82,12 @@ const buildLaunchSuccessMessage = async (tokenAddress: string, tokenName: string
       ],
       [
         {
+          text: "💯 Sell 100% Dev Supply",
+          callback_data: `${CallBackQueries.SELL_DEV_SUPPLY}_${tokenAddress}`,
+        },
+      ],
+      [
+        {
           text: "👨‍💻 Sell Dev Supply",
           callback_data: `${CallBackQueries.SELL_DEV}_${tokenAddress}`,
         },

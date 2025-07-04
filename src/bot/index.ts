@@ -592,6 +592,63 @@ bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
   const tokenAddress = ctx.match![1];
   await ctx.conversation.enter("devSellConversation", tokenAddress);
 });
+
+bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔄 Selling 100% dev supply...");
+  const tokenAddress = ctx.match![1];
+  
+  try {
+    // Get user and token info
+    const user = await getUser(ctx.chat!.id!.toString());
+    if (!user) {
+      await ctx.reply("❌ User not found");
+      return;
+    }
+    
+    const token = await getUserTokenWithBuyWallets(user.id, tokenAddress);
+    if (!token) {
+      await ctx.reply("❌ Token not found");
+      return;
+    }
+    
+    // Get dev wallet
+    const devWallet = await getDevWallet(user.id);
+    if (!devWallet || !devWallet.wallet) {
+      await ctx.reply("❌ Dev wallet not found");
+      return;
+    }
+    
+    // Send loading message
+    const loadingMsg = await ctx.reply("🔄 **Selling 100% Dev Supply...**\n\n⏳ Processing transaction...", {
+      parse_mode: "Markdown"
+    });
+    
+    // Execute 100% dev sell
+    const { executeDevSell } = await import("../blockchain/pumpfun/sell");
+    const result = await executeDevSell(tokenAddress, devWallet.wallet, 100);
+    
+    if (result.success) {
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        loadingMsg.message_id,
+        `✅ **100% Dev Supply Sold Successfully!**\n\n💰 **SOL Received:** ${result.solReceived || 'Processing...'}\n🔗 **Signature:** \`${result.signature}\`\n🏢 **Platform:** ${result.platform || 'PumpFun'}`,
+        { parse_mode: "Markdown" }
+      );
+    } else {
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        loadingMsg.message_id,
+        `❌ **Dev Supply Sell Failed**\n\n🔍 **Error:** Transaction failed\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`,
+        { parse_mode: "Markdown" }
+      );
+    }
+  } catch (error: any) {
+    logger.error("Error in sell dev supply 100%:", error);
+    await ctx.reply(`❌ **Sell Failed**\n\n🔍 **Error:** ${error.message}\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`, {
+      parse_mode: "Markdown"
+    });
+  }
+});
 bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
