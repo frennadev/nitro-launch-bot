@@ -371,6 +371,44 @@ export const executeTokenLaunch = async (
     
     logger.info(`[${logIdentifier}]: Dev wallet balance verified - Available: ${devWalletBalance} SOL, Required: ${requiredDevBalance} SOL`);
     
+    // CRITICAL FIX: Verify snipe wallet balances are updated BEFORE token creation
+    logger.info(`[${logIdentifier}]: Verifying snipe wallet balances are updated before token creation...`);
+    const snipeWalletCheckPromises = buyKeypairs.map(async (keypair, index) => {
+      const walletAddress = keypair.publicKey.toBase58();
+      const balance = await getSolBalance(walletAddress, 'confirmed');
+      return {
+        index,
+        address: walletAddress.slice(0, 8),
+        fullAddress: walletAddress,
+        balance,
+        hasEnoughFunds: balance >= 0.06 // Need at least 0.06 SOL (0.05 threshold + 0.01 minimum)
+      };
+    });
+    
+    const snipeBalanceResults = await Promise.all(snipeWalletCheckPromises);
+    const snipeWalletsWithSufficientFunds = snipeBalanceResults.filter(result => result.hasEnoughFunds);
+    const snipeWalletsWithInsufficientFunds = snipeBalanceResults.filter(result => !result.hasEnoughFunds);
+    
+    logger.info(`[${logIdentifier}]: Snipe wallet balance verification before token creation`, {
+      totalSnipeWallets: buyKeypairs.length,
+      sufficientFunds: snipeWalletsWithSufficientFunds.length,
+      insufficientFunds: snipeWalletsWithInsufficientFunds.length,
+      balanceDetails: snipeBalanceResults.map(r => `${r.address}: ${r.balance.toFixed(6)} SOL ${r.hasEnoughFunds ? '✓' : '✗'}`).join(', ')
+    });
+    
+    // Require minimum number of funded snipe wallets before token creation
+    const minRequiredSnipeWallets = Math.min(3, Math.ceil(buyKeypairs.length * 0.5)); // At least 3 wallets or 50% of total
+    
+    if (snipeWalletsWithSufficientFunds.length < minRequiredSnipeWallets) {
+      logger.error(`[${logIdentifier}]: Insufficient snipe wallets funded - Required: ${minRequiredSnipeWallets}, Available: ${snipeWalletsWithSufficientFunds.length}`);
+      logger.error(`[${logIdentifier}]: Unfunded snipe wallets:`, 
+        snipeWalletsWithInsufficientFunds.map(w => `${w.address}: ${w.balance.toFixed(6)} SOL`).join(', ')
+      );
+      throw new Error(`Snipe wallets not ready - only ${snipeWalletsWithSufficientFunds.length}/${buyKeypairs.length} wallets funded (need ${minRequiredSnipeWallets})`);
+    }
+    
+    logger.info(`[${logIdentifier}]: Snipe wallet funding verified - ${snipeWalletsWithSufficientFunds.length}/${buyKeypairs.length} wallets ready for immediate sniping`);
+    
     const launchInstructions: TransactionInstruction[] = [];
     let devBuyTokenAmount: string | undefined;
     
