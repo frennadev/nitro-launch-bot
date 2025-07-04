@@ -158,8 +158,7 @@ export const ctoConversation = async (
           `**Token:** \`${tokenAddress}\`\n` +
           `**Total Spent:** ${buyAmount.toFixed(6)} SOL\n` +
           `**Successful Buys:** ${result.successfulBuys || 0}\n` +
-          `**Failed Buys:** ${result.failedBuys || 0}\n` +
-          `**Mixer Success Rate:** ${result.mixerSuccessRate || 0}%\n\n` +
+          `**Failed Buys:** ${result.failedBuys || 0}\n\n` +
           `🎉 **Buying pressure has been applied to the token!**\n\n` +
           `📊 **Opening monitor page to track your position...**`,
           { parse_mode: "Markdown" }
@@ -180,8 +179,7 @@ export const ctoConversation = async (
             `⚠️ **CTO Operation Partially Completed**\n\n` +
             `**Token:** \`${tokenAddress}\`\n` +
             `**Successful Buys:** ${result.successfulBuys || 0}\n` +
-            `**Failed Buys:** ${result.failedBuys || 0}\n` +
-            `**Mixer Success Rate:** ${result.mixerSuccessRate || 0}%\n\n` +
+            `**Failed Buys:** ${result.failedBuys || 0}\n\n` +
             `✅ **Some buying pressure was applied!**\n\n` +
             `⚠️ **Note:** Not all transactions succeeded due to:\n${result.error || "Unknown mixer issues"}\n\n` +
             `📊 **Opening monitor page to track your position...**`,
@@ -200,8 +198,7 @@ export const ctoConversation = async (
             `**Error:** ${result.error || "Unknown error occurred"}\n\n` +
             `**Details:**\n` +
             `• Successful Buys: ${result.successfulBuys || 0}\n` +
-            `• Failed Buys: ${result.failedBuys || 0}\n` +
-            `• Mixer Success Rate: ${result.mixerSuccessRate || 0}%\n\n` +
+            `• Failed Buys: ${result.failedBuys || 0}\n\n` +
             `Please try again or contact support if the issue persists.`,
             { 
               parse_mode: "Markdown",
