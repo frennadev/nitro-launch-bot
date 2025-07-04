@@ -65,19 +65,33 @@ export const executeCTOOperation = async (
     // Wait a moment for funds to propagate
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Calculate buy amount per wallet
-    const buyAmountPerWallet = totalAmount / buyerWallets.length;
+    // CRITICAL FIX: Use the same dynamic amount distribution as the mixer
+    // Instead of fixed amount per wallet, use incremental sequence
+    const incrementalSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
     
-    logger.info(`[CTO] Executing buy transactions: ${buyAmountPerWallet.toFixed(6)} SOL per wallet`);
+    // Calculate how many wallets we actually need based on the total amount
+    let cumulativeTotal = 0;
+    let walletsNeeded = 0;
+    for (let i = 0; i < incrementalSequence.length && cumulativeTotal < totalAmount; i++) {
+      cumulativeTotal += incrementalSequence[i];
+      walletsNeeded++;
+    }
+    
+    // Use only the wallets that were actually funded by the mixer
+    const walletsToUse = Math.min(walletsNeeded, buyerWallets.length, mixerResult.successCount);
+    const selectedWallets = buyerWallets.slice(0, walletsToUse);
+    
+    logger.info(`[CTO] Using dynamic amount distribution: ${walletsToUse} wallets from ${incrementalSequence.slice(0, walletsToUse).join(', ')} SOL sequence`);
 
     // Execute buy transactions in parallel
-    const buyPromises = buyerWallets.map(async (wallet, index) => {
+    const buyPromises = selectedWallets.map(async (wallet, index) => {
+      const buyAmount = incrementalSequence[index]; // Use the corresponding amount from the sequence
       try {
         const keypair = secretKeyToKeypair(wallet.privateKey);
-        const result = await executeExternalBuy(tokenAddress, keypair, buyAmountPerWallet);
+        const result = await executeExternalBuy(tokenAddress, keypair, buyAmount);
         
         if (result.success) {
-          logger.info(`[CTO] Buy ${index + 1}/${buyerWallets.length} successful: ${result.signature}`);
+          logger.info(`[CTO] Buy ${index + 1}/${selectedWallets.length} successful: ${result.signature}`);
           
           // Record the successful CTO buy transaction
           try {
@@ -90,7 +104,7 @@ export const executeCTOOperation = async (
               true,
               0, // CTO operations don't have launch attempts
               {
-                amountSol: buyAmountPerWallet,
+                amountSol: buyAmount,
                 amountTokens: "0", // Will be parsed from blockchain
                 errorMessage: undefined,
                 retryAttempt: 0,
@@ -104,7 +118,7 @@ export const executeCTOOperation = async (
           
           return { success: true, signature: result.signature, walletAddress: wallet.publicKey };
         } else {
-          logger.warn(`[CTO] Buy ${index + 1}/${buyerWallets.length} failed: ${result.error}`);
+          logger.warn(`[CTO] Buy ${index + 1}/${selectedWallets.length} failed: ${result.error}`);
           
           // Record the failed CTO buy transaction
           try {
@@ -117,7 +131,7 @@ export const executeCTOOperation = async (
               false,
               0,
               {
-                amountSol: buyAmountPerWallet,
+                amountSol: buyAmount,
                 amountTokens: "0",
                 errorMessage: result.error,
                 retryAttempt: 0,
@@ -130,7 +144,7 @@ export const executeCTOOperation = async (
           return { success: false, error: result.error, walletAddress: wallet.publicKey };
         }
       } catch (error: any) {
-        logger.error(`[CTO] Buy ${index + 1}/${buyerWallets.length} error:`, error);
+        logger.error(`[CTO] Buy ${index + 1}/${selectedWallets.length} error:`, error);
         
         // Record the error transaction
         try {
@@ -143,7 +157,7 @@ export const executeCTOOperation = async (
             false,
             0,
             {
-              amountSol: buyAmountPerWallet,
+              amountSol: buyAmount,
               amountTokens: "0",
               errorMessage: error.message,
               retryAttempt: 0,
