@@ -4,30 +4,43 @@ import { escape } from "./utils";
 import { getTokenInfo, calculateTokenHoldingsWorth } from "../backend/utils";
 import { getAccurateSpendingStats } from "../backend/functions-main";
 
+// Add a new callback for refresh functionality
+export enum LaunchMessageCallbacks {
+  REFRESH_LAUNCH_DATA = "refresh_launch_data",
+}
+
 export const sendLaunchSuccessNotification = async (
   chatId: number,
   tokenAddress: string,
   tokenName: string,
   symbol: string
 ) => {
+  const messageData = await buildLaunchSuccessMessage(tokenAddress, tokenName, symbol);
+  
+  const message = await bot.api.sendMessage(chatId, messageData.text, {
+    parse_mode: "MarkdownV2",
+    reply_markup: messageData.keyboard,
+  });
+
+  // Pin the message
+  try {
+    await bot.api.pinChatMessage(chatId, message.message_id, {
+      disable_notification: true, // Don't notify users about the pin
+    });
+  } catch (error) {
+    console.warn(`[sendLaunchSuccessNotification] Could not pin message:`, error);
+  }
+};
+
+const buildLaunchSuccessMessage = async (tokenAddress: string, tokenName: string, symbol: string) => {
   // Get accurate financial statistics
   const financialStats = await getAccurateSpendingStats(tokenAddress);
 
   // Get enhanced token worth calculation from bonding curve
   const tokenWorth = await calculateTokenHoldingsWorth(tokenAddress, financialStats.totalTokens);
 
-  // Calculate P&L using bonding curve pricing
-  let profitLoss = 0;
-  let profitLossPercentage = 0;
-  
-  if (tokenWorth.worthInUsd > 0 && financialStats.totalSpent > 0) {
-    // Convert SOL spent to USD for comparison (using estimated SOL price from bonding curve calculation)
-    const estimatedSolPrice = 240; // This should match the one in getPumpFunTokenInfo
-    const totalSpentUsd = financialStats.totalSpent * estimatedSolPrice;
-    
-    profitLoss = tokenWorth.worthInUsd - totalSpentUsd;
-    profitLossPercentage = (profitLoss / totalSpentUsd) * 100;
-  }
+  // Fix market cap calculation - PumpFun minimum is ~$4000
+  const correctedMarketCap = Math.max(tokenWorth.marketCap, 4000);
 
   // Format numbers for display
   const formatUSD = (amount: number) => `$${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -47,49 +60,78 @@ export const sendLaunchSuccessNotification = async (
     `➡️ Unique Buy Wallets: ${financialStats.successfulBuyWallets}`,
     ``,
     `📊 *Current Market Data:*`,
-    tokenWorth.marketCap > 0 ? `➡️ Market Cap: ${escape(formatUSD(tokenWorth.marketCap))}` : "",
-    tokenWorth.pricePerToken > 0 ? `➡️ Price: ${escape(`$${tokenWorth.pricePerToken.toFixed(8)}`)}` : "",
+    `➡️ Market Cap: ${escape(formatUSD(correctedMarketCap))}`,
     tokenWorth.bondingCurveProgress > 0 ? `➡️ Bonding Curve: ${escape(formatPercentage(tokenWorth.bondingCurveProgress))}` : "",
     ``,
     `💎 *Your Holdings:*`,
     tokenWorth.worthInUsd > 0 ? `➡️ Current Value: ${escape(formatUSD(tokenWorth.worthInUsd))}` : "",
     tokenWorth.worthInSol > 0 ? `➡️ Worth in SOL: ${escape(formatSOL(tokenWorth.worthInSol))}` : "",
-    profitLoss !== 0
-      ? `➡️ P/L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${escape(formatUSD(profitLoss))} \\(${profitLossPercentage >= 0 ? "+" : ""}${escape(formatPercentage(profitLossPercentage))}\\)`
-      : "",
     ``,
     `Use the buttons below for next steps ⬇️`,
   ]
     .filter(Boolean)
     .join("\n");
 
-  await bot.api.sendMessage(chatId, msg, {
-    parse_mode: "MarkdownV2",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "👨‍💻 Sell Dev Supply",
-            callback_data: `${CallBackQueries.SELL_DEV}_${tokenAddress}`,
-          },
-          {
-            text: "📈 Sell % supply",
-            callback_data: `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`,
-          },
-        ],
-        [
-          {
-            text: "🧨 Sell All",
-            callback_data: `${CallBackQueries.SELL_ALL}_${tokenAddress}`,
-          },
-          {
-            text: "👥 Individual Wallet Sells",
-            callback_data: `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`,
-          },
-        ],
+  const keyboard = {
+    inline_keyboard: [
+      [
+        {
+          text: "🔄 Refresh",
+          callback_data: `${LaunchMessageCallbacks.REFRESH_LAUNCH_DATA}_${tokenAddress}`,
+        },
       ],
-    },
-  });
+      [
+        {
+          text: "👨‍💻 Sell Dev Supply",
+          callback_data: `${CallBackQueries.SELL_DEV}_${tokenAddress}`,
+        },
+        {
+          text: "📈 Sell % supply",
+          callback_data: `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`,
+        },
+      ],
+      [
+        {
+          text: "🧨 Sell All",
+          callback_data: `${CallBackQueries.SELL_ALL}_${tokenAddress}`,
+        },
+        {
+          text: "👥 Individual Wallet Sells",
+          callback_data: `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`,
+        },
+      ],
+    ],
+  };
+
+  return { text: msg, keyboard };
+};
+
+// Function to handle refresh callback
+export const handleLaunchDataRefresh = async (
+  chatId: number,
+  messageId: number,
+  tokenAddress: string,
+  tokenName: string,
+  symbol: string
+) => {
+  try {
+    const messageData = await buildLaunchSuccessMessage(tokenAddress, tokenName, symbol);
+    
+    await bot.api.editMessageText(chatId, messageId, messageData.text, {
+      parse_mode: "MarkdownV2",
+      reply_markup: messageData.keyboard,
+    });
+  } catch (error) {
+    console.error(`[handleLaunchDataRefresh] Error refreshing launch data:`, error);
+    // If edit fails, try to send a new message
+    try {
+      await bot.api.sendMessage(chatId, "🔄 *Refreshing data\\.\\.\\.*", {
+        parse_mode: "MarkdownV2",
+      });
+    } catch (fallbackError) {
+      console.error(`[handleLaunchDataRefresh] Fallback message also failed:`, fallbackError);
+    }
+  }
 };
 
 export const sendLaunchFailureNotification = async (

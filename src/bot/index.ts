@@ -858,6 +858,34 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
   await handleTokenAddressMessage(ctx, tokenAddress);
 });
 
+// Callback handler for launch data refresh button
+bot.callbackQuery(/^refresh_launch_data_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔄 Refreshing data...");
+  const tokenAddress = ctx.match![1];
+  
+  // Get token info to get name and symbol
+  const user = await getUser(ctx.chat!.id!.toString());
+  if (!user) {
+    await ctx.reply("❌ User not found");
+    return;
+  }
+  
+  const token = await getUserTokenWithBuyWallets(user.id, tokenAddress);
+  if (!token) {
+    await ctx.reply("❌ Token not found");
+    return;
+  }
+  
+  const { handleLaunchDataRefresh } = await import("./message");
+  await handleLaunchDataRefresh(
+    ctx.chat!.id,
+    ctx.callbackQuery!.message!.message_id,
+    tokenAddress,
+    token.name,
+    token.symbol
+  );
+});
+
 // Retry callback handlers
 bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
