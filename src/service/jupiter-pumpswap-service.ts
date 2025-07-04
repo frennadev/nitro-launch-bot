@@ -270,6 +270,25 @@ export class JupiterPumpswapService {
               const actualSolSpent = (
                 parseInt(solSpentLamports) / 1_000_000_000
               ).toString();
+              
+              // Collect 1% transaction fee after successful buy
+              try {
+                const { collectTransactionFee } = await import("../backend/functions-main");
+                const feeResult = await collectTransactionFee(
+                  bs58.encode(buyerKeypair.secretKey),
+                  parseFloat(actualSolSpent),
+                  "buy"
+                );
+                
+                if (feeResult.success) {
+                  logger.info(`[${logId}] Transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+                } else {
+                  logger.warn(`[${logId}] Failed to collect transaction fee: ${feeResult.error}`);
+                }
+              } catch (feeError: any) {
+                logger.warn(`[${logId}] Error collecting transaction fee: ${feeError.message}`);
+              }
+              
               return {
                 success: true,
                 signature,
@@ -320,6 +339,25 @@ export class JupiterPumpswapService {
 
           if (!confirmation.value.err) {
             logger.info(`[${logId}] PumpSwap buy successful: ${signature}`);
+            
+            // Collect 1% transaction fee after successful PumpSwap buy
+            try {
+              const { collectTransactionFee } = await import("../backend/functions-main");
+              const feeResult = await collectTransactionFee(
+                bs58.encode(buyerKeypair.secretKey),
+                actualTradeAmount,
+                "buy"
+              );
+              
+              if (feeResult.success) {
+                logger.info(`[${logId}] PumpSwap transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+              } else {
+                logger.warn(`[${logId}] Failed to collect PumpSwap transaction fee: ${feeResult.error}`);
+              }
+            } catch (feeError: any) {
+              logger.warn(`[${logId}] Error collecting PumpSwap transaction fee: ${feeError.message}`);
+            }
+            
             return {
               success: true,
               signature,
