@@ -163,7 +163,33 @@ export class JupiterPumpswapService {
     logger.info(`[${logId}] Starting Jupiter buy for ${solAmount} SOL`);
 
     try {
-      const solLamports = Math.floor(solAmount * 1_000_000_000); // Convert SOL to lamports
+      // CRITICAL FIX: Check actual wallet balance and account for fees
+      const walletBalance = await this.connection.getBalance(buyerKeypair.publicKey, "confirmed");
+      const walletBalanceSOL = walletBalance / 1_000_000_000;
+      
+      // Reserve 0.01 SOL for transaction fees (priority fees + base fees)
+      const feeReserve = 0.01;
+      const availableForTrade = walletBalanceSOL - feeReserve;
+      
+      logger.info(`[${logId}] Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL, available for trade: ${availableForTrade.toFixed(6)} SOL (reserved ${feeReserve} SOL for fees)`);
+      
+      // Validate we have enough balance
+      if (availableForTrade <= 0) {
+        return {
+          success: false,
+          signature: "",
+          error: `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${feeReserve} SOL for fees`
+        };
+      }
+      
+      // Use the minimum of requested amount or available balance
+      const actualTradeAmount = Math.min(solAmount, availableForTrade);
+      
+      if (actualTradeAmount < solAmount) {
+        logger.warn(`[${logId}] Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to insufficient balance`);
+      }
+      
+      const solLamports = Math.floor(actualTradeAmount * 1_000_000_000); // Convert SOL to lamports
 
       // Try Jupiter first
       const quote = await this.getQuote(
@@ -200,7 +226,7 @@ export class JupiterPumpswapService {
               try {
                 await sendMessage(
                   ctx,
-                  `🚀 Buy transaction sent! Processing ${solAmount} SOL with ${slippage}% slippage...`
+                  `🚀 Buy transaction sent! Processing ${actualTradeAmount.toFixed(6)} SOL with ${slippage}% slippage...`
                 );
               } catch (msgError) {
                 logger.warn(`[${logId}] Failed to send status message: ${msgError}`);
@@ -263,9 +289,13 @@ export class JupiterPumpswapService {
       if (isGraduated) {
         try {
           const pumpswapService = new PumpswapService();
+          
+          // Use actual available balance for Pumpswap
+          const pumpswapLamports = Math.floor(actualTradeAmount * 1_000_000_000);
+          
           const buyData = {
             mint: new PublicKey(tokenAddress),
-            amount: BigInt(solLamports),
+            amount: BigInt(pumpswapLamports),
             privateKey: bs58.encode(buyerKeypair.secretKey),
           };
 
@@ -288,6 +318,7 @@ export class JupiterPumpswapService {
               signature,
               platform: "pumpswap",
               tokensReceived: "unknown", // PumpSwap doesn't return exact amount
+              actualSolSpent: actualTradeAmount.toString(),
             };
           }
         } catch (pumpswapError: any) {
