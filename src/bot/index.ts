@@ -718,6 +718,16 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_BUYER_WALLETS, async (ctx) => {
   await ctx.conversation.enter("withdrawBuyerWalletsConversation");
 });
 
+bot.callbackQuery(CallBackQueries.WITHDRAW_TO_FUNDING, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("withdrawBuyerWalletsConversation");
+});
+
+bot.callbackQuery(CallBackQueries.WITHDRAW_TO_EXTERNAL, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("withdrawBuyerWalletsConversation");
+});
+
 bot.callbackQuery(CallBackQueries.VIEW_REFERRALS, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("referralsConversation");
