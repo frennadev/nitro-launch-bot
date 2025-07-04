@@ -55,7 +55,7 @@ export const sendLaunchSuccessNotification = async (
     tokenWorth.worthInUsd > 0 ? `➡️ Current Value: ${escape(formatUSD(tokenWorth.worthInUsd))}` : "",
     tokenWorth.worthInSol > 0 ? `➡️ Worth in SOL: ${escape(formatSOL(tokenWorth.worthInSol))}` : "",
     profitLoss !== 0
-      ? `➡️ P/L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${escape(formatUSD(profitLoss))} (${profitLossPercentage >= 0 ? "+" : ""}${escape(formatPercentage(profitLossPercentage))})`
+      ? `➡️ P/L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${escape(formatUSD(profitLoss))} \\(${profitLossPercentage >= 0 ? "+" : ""}${escape(formatPercentage(profitLossPercentage))}\\)`
       : "",
     ``,
     `Use the buttons below for next steps ⬇️`,
