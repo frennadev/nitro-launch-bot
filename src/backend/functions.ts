@@ -373,22 +373,22 @@ export const releasePumpAddress = async (publicKey: string) => {
 
 export const markPumpAddressAsUsed = async (publicKey: string, userId?: string) => {
   try {
-    const result = await PumpAddressModel.findOneAndUpdate(
-      { publicKey },
-      { 
+  const result = await PumpAddressModel.findOneAndUpdate(
+    { publicKey },
+    {
         isUsed: true,
         usedBy: userId || null,
         usedAt: new Date()
-      },
-      { new: true }
-    );
-    
-    if (!result) {
+    },
+    { new: true }
+  );
+
+  if (!result) {
       throw new Error(`Pump address ${publicKey} not found`);
-    }
-    
+  }
+
     logger.info(`Pump address ${publicKey} marked as used by user ${userId}`);
-    return result;
+  return result;
   } catch (error) {
     logger.error(`Error marking pump address ${publicKey} as used:`, error);
     throw error;

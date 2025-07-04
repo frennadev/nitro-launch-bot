@@ -1119,13 +1119,13 @@ ${initialHoldingsText}`,
                   logger.warn(`Error checking dev wallet balance:`, error);
                 }
 
-                return {
-                  type: 'holdings',
+                  return {
+                    type: 'holdings',
                   balance: totalTokenBalance,
                   walletsWithBalance: walletsWithBalance,
                   devWalletBalance: devWalletBalance
-                };
-              }
+                  };
+                }
               return { type: 'holdings', balance: 0, walletsWithBalance: 0, devWalletBalance: 0 };
             } catch (error: any) {
               logger.warn(`Holdings check failed: ${error.message}`);
@@ -1211,7 +1211,7 @@ ${initialHoldingsText}`,
                          maximumFractionDigits: 2,
                        });
                        holdingsText = `💰 ${formattedBalance} tokens found in ${walletsWithBalance} wallet(s) (including dev wallet: ${formattedDevBalance})`;
-                     } else {
+                   } else {
                        holdingsText = `💰 ${formattedBalance} tokens found in funding wallet`;
                      }
                    } else {
