@@ -67,7 +67,7 @@ export const ctoMonitorConversation = async (
           });
         }
       } catch (error) {
-        logger.warn(\`[CTO Monitor] Error checking balance for wallet \${wallet.publicKey}:\`, error);
+        logger.warn(`[CTO Monitor] Error checking balance for wallet ${wallet.publicKey}:`, error);
       }
     }
 
@@ -76,50 +76,50 @@ export const ctoMonitorConversation = async (
 
     // Build monitor message
     let monitorMessage = [
-      \`📊 **CTO Monitor**\`,
-      \`\`,
-      \`**Token:** \${escape(tokenName)} (\${escape(tokenSymbol)})\`,
-      \`**Address:** \\\`\${tokenAddress}\\\`\`,
-      \`\`,
-      \`💰 **Your Holdings:**\`,
-      \`• Total Tokens: \${escape(totalBalanceFormatted.toLocaleString(undefined, { maximumFractionDigits: 2 }))}\`,
-      totalValueUsd > 0 ? \`• Total Value: \${escape(\`$\${totalValueUsd.toFixed(2)}\`)}\` : "",
-      \`• Wallets with Balance: \${walletsWithBalance}/\${buyerWallets.length}\`,
-      \`\`,
-      \`📈 **Market Data:**\`,
-      tokenPrice > 0 ? \`• Price: \${escape(\`$\${tokenPrice.toFixed(8)}\`)}\` : "• Price: Unknown",
-      marketCap > 0 ? \`• Market Cap: \${escape(\`$\${marketCap.toLocaleString()}\`)}\` : "• Market Cap: Unknown",
-      \`\`,
+      `📊 **CTO Monitor**`,
+      ``,
+      `**Token:** ${escape(tokenName)} (${escape(tokenSymbol)})`,
+      `**Address:** \`${tokenAddress}\``,
+      ``,
+      `💰 **Your Holdings:**`,
+      `• Total Tokens: ${escape(totalBalanceFormatted.toLocaleString(undefined, { maximumFractionDigits: 2 }))}`,
+      totalValueUsd > 0 ? `• Total Value: ${escape(`$${totalValueUsd.toFixed(2)}`)}` : "",
+      `• Wallets with Balance: ${walletsWithBalance}/${buyerWallets.length}`,
+      ``,
+      `📈 **Market Data:**`,
+      tokenPrice > 0 ? `• Price: ${escape(`$${tokenPrice.toFixed(8)}`)}` : "• Price: Unknown",
+      marketCap > 0 ? `• Market Cap: ${escape(`$${marketCap.toLocaleString()}`)}` : "• Market Cap: Unknown",
+      ``,
     ].filter(Boolean).join("\n");
 
     // Add wallet breakdown if there are holdings
     if (walletsWithBalance > 0) {
-      monitorMessage += \`**💎 Wallet Breakdown:**\n\`;
+      monitorMessage += `**💎 Wallet Breakdown:**\n`;
       walletHoldings.forEach((holding, index) => {
-        const valueText = holding.valueUsd > 0 ? \` (\${escape(\`$\${holding.valueUsd.toFixed(2)}\`)}$)\` : "";
-        monitorMessage += \`\${index + 1}. \${holding.shortAddress}: \${escape(holding.balance.toLocaleString(undefined, { maximumFractionDigits: 2 }))}\${valueText}\n\`;
+        const valueText = holding.valueUsd > 0 ? ` (${escape(`$${holding.valueUsd.toFixed(2)}`)}$)` : "";
+        monitorMessage += `${index + 1}. ${holding.shortAddress}: ${escape(holding.balance.toLocaleString(undefined, { maximumFractionDigits: 2 }))}${valueText}\n`;
       });
-      monitorMessage += \`\n\`;
+      monitorMessage += `\n`;
     } else {
-      monitorMessage += \`❌ **No tokens found in your wallets**\n\n\`;
+      monitorMessage += `❌ **No tokens found in your wallets**\n\n`;
     }
 
-    monitorMessage += \`Use the buttons below to manage your position ⬇️\`;
+    monitorMessage += `Use the buttons below to manage your position ⬇️`;
 
     // Create keyboard with relevant actions
     const keyboard = new InlineKeyboard()
-      .text("🔄 Refresh", \`refresh_cto_monitor_\${tokenAddress}\`)
-      .text("📊 Chart", \`chart_\${tokenAddress}\`)
+      .text("🔄 Refresh", `refresh_cto_monitor_${tokenAddress}`)
+      .text("📊 Chart", `chart_${tokenAddress}`)
       .row();
 
     // Add sell buttons only if user has tokens
     if (walletsWithBalance > 0) {
       keyboard
-        .text("💸 Sell 25%", \`sell_ca_25_\${tokenAddress}\`)
-        .text("💸 Sell 50%", \`sell_ca_50_\${tokenAddress}\`)
+        .text("💸 Sell 25%", `sell_ca_25_${tokenAddress}`)
+        .text("💸 Sell 50%", `sell_ca_50_${tokenAddress}`)
         .row()
-        .text("💸 Sell 75%", \`sell_ca_75_\${tokenAddress}\`)
-        .text("💸 Sell 100%", \`sell_ca_100_\${tokenAddress}\`)
+        .text("💸 Sell 75%", `sell_ca_75_${tokenAddress}`)
+        .text("💸 Sell 100%", `sell_ca_100_${tokenAddress}`)
         .row();
     }
 
@@ -141,9 +141,9 @@ export const ctoMonitorConversation = async (
     // Pin the monitor message for easy access
     try {
       await ctx.api.pinChatMessage(ctx.chat!.id, loadingMessage.message_id, { disable_notification: true });
-      logger.info(\`[CTO Monitor] Monitor message pinned for token \${tokenAddress}\`);
+      logger.info(`[CTO Monitor] Monitor message pinned for token ${tokenAddress}`);
     } catch (pinError) {
-      logger.warn(\`[CTO Monitor] Failed to pin monitor message:\`, pinError);
+      logger.warn(`[CTO Monitor] Failed to pin monitor message:`, pinError);
     }
 
     // Wait for user interactions
@@ -152,7 +152,7 @@ export const ctoMonitorConversation = async (
       const data = response.callbackQuery?.data;
 
       // Handle refresh
-      if (data === \`refresh_cto_monitor_\${tokenAddress}\`) {
+      if (data === `refresh_cto_monitor_${tokenAddress}`) {
         await response.answerCallbackQuery("🔄 Refreshing...");
         // Restart the monitor conversation to refresh data
         return await ctoMonitorConversation(conversation, response, tokenAddress);
@@ -164,14 +164,14 @@ export const ctoMonitorConversation = async (
       }
 
       // Handle chart
-      if (data === \`chart_\${tokenAddress}\`) {
+      if (data === `chart_${tokenAddress}`) {
         await response.answerCallbackQuery("📊 Opening chart...");
         await response.reply(
-          \`📊 **Chart Links**\n\n\` +
-          \`**Token:** \\\`\${tokenAddress}\\\`\n\n\` +
-          \`• [DexScreener](https://dexscreener.com/solana/\${tokenAddress})\n\` +
-          \`• [Photon](https://photon-sol.tinyastro.io/en/lp/\${tokenAddress})\n\` +
-          \`• [Raydium](https://raydium.io/swap/?inputCurrency=sol&outputCurrency=\${tokenAddress})\`,
+          `📊 **Chart Links**\n\n` +
+          `**Token:** \`${tokenAddress}\`\n\n` +
+          `• [DexScreener](https://dexscreener.com/solana/${tokenAddress})\n` +
+          `• [Photon](https://photon-sol.tinyastro.io/en/lp/${tokenAddress})\n` +
+          `• [Raydium](https://raydium.io/swap/?inputCurrency=sol&outputCurrency=${tokenAddress})`,
           { parse_mode: "Markdown" }
         );
         continue;
@@ -189,12 +189,12 @@ export const ctoMonitorConversation = async (
     }
 
   } catch (error: any) {
-    logger.error(\`[CTO Monitor] Error:\`, error);
+    logger.error(`[CTO Monitor] Error:`, error);
     await ctx.api.editMessageText(
       ctx.chat!.id,
       loadingMessage.message_id,
-      \`❌ **CTO Monitor Error**\n\n\` +
-      \`Failed to load monitor data: \${error.message}\`,
+      `❌ **CTO Monitor Error**\n\n` +
+      `Failed to load monitor data: ${error.message}`,
       { parse_mode: "Markdown" }
     );
     return conversation.halt();
