@@ -358,6 +358,19 @@ export const executeTokenLaunch = async (
   if (currentStage >= PumpLaunchStage.LAUNCH && !tokenCreationAlreadySuccessful) {
     logger.info(`[${logIdentifier}]: Starting token creation stage`);
     const tokenStart = performance.now();
+    
+    // CRITICAL FIX: Verify dev wallet balance before token creation
+    logger.info(`[${logIdentifier}]: Verifying dev wallet balance before token creation...`);
+    const devWalletBalance = await getSolBalance(devKeypair.publicKey.toBase58(), 'confirmed');
+    const requiredDevBalance = devBuy + 0.05; // Dev buy amount + buffer for fees
+    
+    if (devWalletBalance < requiredDevBalance) {
+      logger.error(`[${logIdentifier}]: Dev wallet insufficient balance - Required: ${requiredDevBalance} SOL, Available: ${devWalletBalance} SOL`);
+      throw new Error(`Dev wallet insufficient balance: ${devWalletBalance} SOL (need ${requiredDevBalance} SOL)`);
+    }
+    
+    logger.info(`[${logIdentifier}]: Dev wallet balance verified - Available: ${devWalletBalance} SOL, Required: ${requiredDevBalance} SOL`);
+    
     const launchInstructions: TransactionInstruction[] = [];
     let devBuyTokenAmount: string | undefined;
     
@@ -732,12 +745,15 @@ export const executeTokenLaunch = async (
             // NEW: Enhanced slippage and quote calculation logic
             let currentSlippage, tokenOut, swapAmountLamports;
             
-            // Always use dynamic calculation based on current wallet balance
+            // CRITICAL FIX: Get fresh balance data before each buy attempt
+            logger.info(`[${logIdentifier}]: Fetching fresh balance for wallet ${keypair.publicKey.toBase58().slice(0, 8)} (attempt ${attempt + 1}/${maxRetries + 1})`);
             const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58(), 'confirmed');
             
             // Keep buying until balance drops below 0.05 SOL
             const minBalanceThreshold = 0.05;
             const availableForSpend = walletSolBalance - minBalanceThreshold;
+            
+            logger.info(`[${logIdentifier}]: Wallet ${keypair.publicKey.toBase58().slice(0, 8)} balance verification - Current: ${walletSolBalance.toFixed(6)} SOL, Available: ${availableForSpend.toFixed(6)} SOL`);
             
             // Check if wallet has enough balance to buy
             if (availableForSpend <= 0.01) { // Need at least 0.01 SOL to attempt a buy
@@ -914,12 +930,46 @@ export const executeTokenLaunch = async (
         return { success: false, error: "Max retries exceeded" };
       };
       
+      // CRITICAL FIX: Pre-flight balance verification for all snipe wallets
+      logger.info(`[${logIdentifier}]: Performing pre-flight balance verification for all ${walletsToProcess.length} snipe wallets...`);
+      const balanceCheckPromises = walletsToProcess.map(async (keypair, index) => {
+        const walletAddress = keypair.publicKey.toBase58();
+        const balance = await getSolBalance(walletAddress, 'confirmed');
+        return {
+          index,
+          address: walletAddress.slice(0, 8),
+          balance,
+          hasEnoughFunds: balance >= 0.06 // Need at least 0.06 SOL (0.05 threshold + 0.01 minimum)
+        };
+      });
+      
+      const balanceResults = await Promise.all(balanceCheckPromises);
+      const walletsWithSufficientFunds = balanceResults.filter(result => result.hasEnoughFunds);
+      const walletsWithInsufficientFunds = balanceResults.filter(result => !result.hasEnoughFunds);
+      
+      logger.info(`[${logIdentifier}]: Pre-flight balance verification complete`, {
+        totalWallets: walletsToProcess.length,
+        sufficientFunds: walletsWithSufficientFunds.length,
+        insufficientFunds: walletsWithInsufficientFunds.length,
+        balanceDetails: balanceResults.map(r => `${r.address}: ${r.balance.toFixed(6)} SOL ${r.hasEnoughFunds ? '✓' : '✗'}`).join(', ')
+      });
+      
+      if (walletsWithInsufficientFunds.length > 0) {
+        logger.warn(`[${logIdentifier}]: Found ${walletsWithInsufficientFunds.length} wallets with insufficient funds:`, 
+          walletsWithInsufficientFunds.map(w => `${w.address}: ${w.balance.toFixed(6)} SOL`).join(', ')
+        );
+      }
+      
+      if (walletsWithSufficientFunds.length === 0) {
+        throw new Error(`No wallets have sufficient funds for snipe buys. All ${walletsToProcess.length} wallets have insufficient balance.`);
+      }
+      
       // Execute buy transactions with true simultaneous execution
       const results = [];
       const maxConcurrentWallets = 5; // Limit concurrent wallets to avoid rate limits
       const processedWallets = new Set();
       
-      logger.info(`[${logIdentifier}]: Starting simultaneous buy execution with max ${maxConcurrentWallets} concurrent wallets`);
+      logger.info(`[${logIdentifier}]: Starting simultaneous buy execution with max ${maxConcurrentWallets} concurrent wallets (${walletsWithSufficientFunds.length}/${walletsToProcess.length} wallets have sufficient funds)`);
       
       // Process wallets in batches for true simultaneous execution
       while (processedWallets.size < walletsToProcess.length) {
