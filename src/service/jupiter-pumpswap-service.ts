@@ -167,18 +167,25 @@ export class JupiterPumpswapService {
       const walletBalance = await this.connection.getBalance(buyerKeypair.publicKey, "confirmed");
       const walletBalanceSOL = walletBalance / 1_000_000_000;
       
-      // Reserve 0.01 SOL for transaction fees (priority fees + base fees)
-      const feeReserve = 0.01;
-      const availableForTrade = walletBalanceSOL - feeReserve;
+      // Reserve fees: 0.01 SOL for transaction fees + 1% buy fee
+      const transactionFeeReserve = 0.01; // Priority fees + base fees
+      const buyFeePercent = 0.01; // 1% buy fee
+      const estimatedBuyFee = walletBalanceSOL * buyFeePercent;
+      const totalFeeReserve = transactionFeeReserve + estimatedBuyFee;
+      const availableForTrade = walletBalanceSOL - totalFeeReserve;
       
-      logger.info(`[${logId}] Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL, available for trade: ${availableForTrade.toFixed(6)} SOL (reserved ${feeReserve} SOL for fees)`);
+      logger.info(`[${logId}] Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);
+      logger.info(`[${logId}] Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`);
+      logger.info(`[${logId}] Estimated 1% buy fee: ${estimatedBuyFee.toFixed(6)} SOL`);
+      logger.info(`[${logId}] Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`);
+      logger.info(`[${logId}] Available for trade: ${availableForTrade.toFixed(6)} SOL`);
       
       // Validate we have enough balance
       if (availableForTrade <= 0) {
         return {
           success: false,
           signature: "",
-          error: `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${feeReserve} SOL for fees`
+          error: `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${estimatedBuyFee.toFixed(6)} SOL buy fee)`
         };
       }
       
