@@ -12,7 +12,7 @@ export const ctoMonitorConversation = async (
   conversation: Conversation<Context>,
   ctx: Context,
   tokenAddress: string
-) => {
+): Promise<void> => {
   await ctx.answerCallbackQuery();
   
   // Validate user

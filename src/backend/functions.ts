@@ -2772,13 +2772,16 @@ export const getDetailedSpendingBreakdown = async (tokenAddress: string, launchA
     walletAddress: string;
     devBuys: any[];
     snipeBuys: any[];
+    externalBuys: any[];
     devSells: any[];
     walletSells: any[];
     externalSells: any[];
     totalDevSpent: number;
     totalSnipeSpent: number;
+    totalExternalSpent: number;
     totalDevTokens: bigint;
     totalSnipeTokens: bigint;
+    totalExternalTokens: bigint;
     totalDevEarned: number;
     totalWalletEarned: number;
     totalExternalEarned: number;

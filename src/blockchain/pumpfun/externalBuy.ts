@@ -93,39 +93,39 @@ export async function executeExternalBuy(
   try {
     logger.info(`[${logId}] Starting external token buy for ${solAmount} SOL`);
     
-    // Check if token is graduated using bonding curve data
-    const isGraduated = await isTokenGraduated(tokenAddress);
-    logger.info(`[${logId}] Token graduation status: ${isGraduated ? 'graduated' : 'not graduated'}`);
+    // Check if token has graduated first to optimize routing
+    const graduated = await isTokenGraduated(tokenAddress);
+    logger.info(`[${logId}] Token graduation status: ${graduated ? 'graduated' : graduated === false ? 'active' : 'unknown'}`);
     
-    if (isGraduated) {
+    if (graduated === true) {
       logger.info(`[${logId}] Token has graduated to Raydium - trying Jupiter first (universal DEX aggregator)`);
       
-      // Try Jupiter first for graduated tokens (universal aggregator)
-      try {
+      // Try Jupiter first for graduated tokens
+      if (await isJupiterSupported(tokenAddress)) {
         logger.info(`[${logId}] Attempting Jupiter buy for graduated token...`);
-        const jupiterResult = await executeJupiterBuy({
-          tokenAddress,
-          solAmount,
-          walletPrivateKey: bs58.encode(buyerKeypair.secretKey),
-          userId: "external_buy", // Placeholder for external buys
-          slippageBps: 100, // 1% slippage
-          priorityLevel: "high"
-        });
-        
-        if (jupiterResult.success && jupiterResult.signature) {
-          logger.info(`[${logId}] Jupiter buy successful: ${jupiterResult.signature}`);
-          return {
-            success: true,
-            signature: jupiterResult.signature,
-            platform: 'jupiter',
-            solReceived: jupiterResult.inputAmount?.toString() || solAmount.toString()
-          };
+        try {
+          const jupiterResult = await executeJupiterBuy({
+            tokenAddress,
+            solAmount,
+            walletPrivateKey: bs58.encode(buyerKeypair.secretKey),
+            userId: "external_buy", // Placeholder for external buys
+            slippageBps: 100, // 1% slippage
+            priorityLevel: "high"
+          });
+          
+          if (jupiterResult.success) {
+            return {
+              success: true,
+              signature: jupiterResult.signature!,
+              platform: 'jupiter',
+              solReceived: solAmount.toString()
+            };
+          }
+          
+          logger.warn(`[${logId}] Jupiter buy failed: ${jupiterResult.error}`);
+        } catch (error: any) {
+          logger.warn(`[${logId}] Jupiter buy threw error: ${error.message}`);
         }
-        
-        logger.warn(`[${logId}] Jupiter buy failed: ${jupiterResult.error}`);
-        
-      } catch (error: any) {
-        logger.warn(`[${logId}] Jupiter buy threw error: ${error.message}`);
       }
       
       // Try Pumpswap as fallback for graduated tokens
@@ -147,9 +147,19 @@ export async function executeExternalBuy(
       } catch (error: any) {
         logger.warn(`[${logId}] Pumpswap buy threw error: ${error.message}`);
       }
+      
+      // For graduated tokens, we should NOT try PumpFun as it will fail with error 6005
+      logger.warn(`[${logId}] All platforms failed for graduated token - skipping PumpFun (would fail with BondingCurveComplete error)`);
+      
+      return {
+        success: false,
+        signature: '',
+        platform: 'unknown',
+        error: 'Token has graduated to Raydium but is not available on Jupiter or Pumpswap. It may be a very new graduation or have liquidity issues.'
+      };
     }
     
-    // Try PumpFun for non-graduated tokens or as fallback
+    // For non-graduated tokens or unknown status, try PumpFun first
     logger.info(`[${logId}] Attempting PumpFun buy with bonding curve detection`);
     
     try {
@@ -174,58 +184,52 @@ export async function executeExternalBuy(
       logger.warn(`[${logId}] PumpFun buy threw error (likely not PumpFun token): ${error.message}`);
     }
     
-    // Try Pumpswap as final fallback if not already tried
-    if (!isGraduated) {
-      logger.info(`[${logId}] Attempting Pumpswap buy as fallback`);
-      
-      try {
-        const pumpswapResult = await executePumpswapBuy(tokenAddress, buyerKeypair, solAmount);
-        
-        if (pumpswapResult.success) {
-          return {
-            success: true,
-            signature: pumpswapResult.signature,
-            platform: 'pumpswap',
-            solReceived: pumpswapResult.solReceived
-          };
-        }
-        
-        logger.warn(`[${logId}] Pumpswap buy failed: ${pumpswapResult.error}`);
-        
-      } catch (error: any) {
-        logger.error(`[${logId}] Pumpswap buy threw error: ${error.message}`);
-      }
-    }
-    
-    // Try Jupiter as final universal fallback if all else fails
-    if (!isGraduated) {
-      logger.info(`[${logId}] Attempting Jupiter as final fallback (universal aggregator)`);
-      
+    // Try Jupiter as fallback for non-graduated tokens
+    if (await isJupiterSupported(tokenAddress)) {
+      logger.info(`[${logId}] Trying Jupiter as fallback...`);
       try {
         const jupiterResult = await executeJupiterBuy({
           tokenAddress,
           solAmount,
           walletPrivateKey: bs58.encode(buyerKeypair.secretKey),
-          userId: "external_buy",
-          slippageBps: 150, // Higher slippage for final fallback
+          userId: "external_buy", // Placeholder for external buys
+          slippageBps: 150, // Higher slippage for fallback
           priorityLevel: "veryHigh"
         });
         
-        if (jupiterResult.success && jupiterResult.signature) {
-          logger.info(`[${logId}] Jupiter fallback successful: ${jupiterResult.signature}`);
+        if (jupiterResult.success) {
           return {
             success: true,
-            signature: jupiterResult.signature,
+            signature: jupiterResult.signature!,
             platform: 'jupiter',
-            solReceived: jupiterResult.inputAmount?.toString() || solAmount.toString()
+            solReceived: solAmount.toString()
           };
         }
         
         logger.warn(`[${logId}] Jupiter fallback failed: ${jupiterResult.error}`);
-        
       } catch (error: any) {
-        logger.error(`[${logId}] Jupiter fallback threw error: ${error.message}`);
+        logger.warn(`[${logId}] Jupiter fallback threw error: ${error.message}`);
       }
+    }
+    
+    // Try Pumpswap as final fallback
+    try {
+      logger.info(`[${logId}] Trying Pumpswap as final fallback...`);
+      const pumpswapResult = await executePumpswapBuy(tokenAddress, buyerKeypair, solAmount);
+      
+      if (pumpswapResult.success) {
+        return {
+          success: true,
+          signature: pumpswapResult.signature,
+          platform: 'pumpswap',
+          solReceived: pumpswapResult.solReceived
+        };
+      }
+      
+      logger.warn(`[${logId}] Pumpswap fallback failed: ${pumpswapResult.error}`);
+      
+    } catch (error: any) {
+      logger.warn(`[${logId}] Pumpswap fallback threw error: ${error.message}`);
     }
     
     // All methods failed

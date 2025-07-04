@@ -16,7 +16,7 @@ import { sendMessage } from "../../backend/sender";
 const walletConfigConversation = async (
   conversation: Conversation<Context>,
   ctx: Context
-) => {
+): Promise<void> => {
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {

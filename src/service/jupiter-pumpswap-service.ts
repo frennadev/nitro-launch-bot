@@ -10,7 +10,6 @@ import {
   ComputeBudgetProgram,
 } from "@solana/web3.js";
 import { getMint } from "@solana/spl-token";
-import { Wallet } from "@project-serum/anchor";
 import bs58 from "bs58";
 import axios from "axios";
 import { connection } from "./config";
@@ -22,7 +21,6 @@ import {
 import PumpswapService from "./pumpswap-service";
 import { sendMessage } from "../backend/sender";
 import { Context } from "grammy";
-import { aw } from "@raydium-io/raydium-sdk-v2/lib/api-7daf490d";
 
 export interface SwapRoute {
   inputMint: string;

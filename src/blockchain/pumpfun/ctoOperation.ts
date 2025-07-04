@@ -131,7 +131,7 @@ export const executeCTOOperation = async (
               tokenAddress,
               wallet.publicKey,
               "external_buy",
-              "", // No signature for failed transactions
+              result.signature || "failed_cto_buy", // Provide a default signature for failed transactions
               false,
               0,
               {
@@ -157,7 +157,7 @@ export const executeCTOOperation = async (
             tokenAddress,
             wallet.publicKey,
             "external_buy",
-            "",
+            "error_cto_buy", // Provide a default signature for error transactions
             false,
             0,
             {

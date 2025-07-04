@@ -2,6 +2,9 @@ import { Context } from "grammy";
 import { type ConversationFlavor } from "@grammyjs/conversations";
 
 // ==== Your Custom Types ==== //
+// Simple Chain type definition
+type Chain = 'solana' | 'ethereum' | 'bsc' | null;
+
 // import {
 //   BoostMode,
 //   BoostPackage,

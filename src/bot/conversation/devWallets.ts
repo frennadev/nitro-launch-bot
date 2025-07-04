@@ -17,7 +17,7 @@ import { secretKeyToKeypair } from "../../blockchain/common/utils";
 const manageDevWalletsConversation = async (
   conversation: Conversation<Context>,
   ctx: Context
-) => {
+): Promise<void> => {
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {

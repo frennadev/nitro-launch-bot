@@ -299,7 +299,7 @@ export async function isTokenGraduated(tokenAddress: string): Promise<boolean | 
     // Quick check with processed commitment for speed
     const accountInfo = await connection.getAccountInfo(bondingCurve, "processed");
     if (!accountInfo?.data) {
-      logger.info(`[${logId}]: No bonding curve account - likely native Pumpswap token`);
+      logger.info(`[${logId}]: No bonding curve account - likely native Pumpswap token or non-PumpFun token`);
       return null; // No bonding curve = not a PumpFun token
     }
     
@@ -309,8 +309,20 @@ export async function isTokenGraduated(tokenAddress: string): Promise<boolean | 
       return null;
     }
     
-    logger.info(`[${logId}]: Token graduation status: ${bondingCurveData.complete ? 'graduated' : 'active'}`);
-    return bondingCurveData.complete;
+    const isGraduated = bondingCurveData.complete;
+    logger.info(`[${logId}]: Token graduation status: ${isGraduated ? 'graduated' : 'active'}`);
+    
+    // Additional debugging for graduated tokens
+    if (isGraduated) {
+      logger.info(`[${logId}]: Token has graduated to Raydium - should be available on Jupiter or Pumpswap`);
+      logger.info(`[${logId}]: Creator: ${bondingCurveData.creator}`);
+      logger.info(`[${logId}]: Virtual token reserves: ${bondingCurveData.virtualTokenReserves.toString()}`);
+      logger.info(`[${logId}]: Virtual SOL reserves: ${bondingCurveData.virtualSolReserves.toString()}`);
+    } else {
+      logger.info(`[${logId}]: Token still on PumpFun bonding curve - should use PumpFun`);
+    }
+    
+    return isGraduated;
     
   } catch (error: any) {
     logger.error(`[${logId}]: Error checking graduation status: ${error.message}`);
