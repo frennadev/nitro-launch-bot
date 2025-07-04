@@ -1093,20 +1093,43 @@ ${initialHoldingsText}`,
             try {
               const user = await getUser(ctx.chat.id.toString());
               if (user) {
+                let totalTokenBalance = 0;
+                let walletsWithBalance = 0;
+                let devWalletBalance = 0;
+
+                // Check funding wallet
                 const fundingWallet = await getFundingWallet(user.id);
                 if (fundingWallet) {
                   const balance = await getTokenBalance(text, fundingWallet.publicKey);
-                  return {
-                    type: 'holdings',
-                    balance: balance,
-                    walletsWithBalance: balance > 0 ? 1 : 0
-                  };
+                  if (balance > 0) {
+                    totalTokenBalance += balance;
+                    walletsWithBalance++;
+                  }
                 }
+
+                // Check dev wallet
+                try {
+                  const devWalletAddress = await getDefaultDevWallet(String(user.id));
+                  devWalletBalance = await getTokenBalance(text, devWalletAddress);
+                  if (devWalletBalance > 0) {
+                    totalTokenBalance += devWalletBalance;
+                    walletsWithBalance++;
+                  }
+                } catch (error) {
+                  logger.warn(`Error checking dev wallet balance:`, error);
+                }
+
+                return {
+                  type: 'holdings',
+                  balance: totalTokenBalance,
+                  walletsWithBalance: walletsWithBalance,
+                  devWalletBalance: devWalletBalance
+                };
               }
-              return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
+              return { type: 'holdings', balance: 0, walletsWithBalance: 0, devWalletBalance: 0 };
             } catch (error: any) {
               logger.warn(`Holdings check failed: ${error.message}`);
-              return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
+              return { type: 'holdings', balance: 0, walletsWithBalance: 0, devWalletBalance: 0 };
             }
           })(),
           
@@ -1177,9 +1200,22 @@ ${initialHoldingsText}`,
                  } else if (data.type === 'holdings') {
                    walletsWithBalance = (data as any).walletsWithBalance;
                    if ((data as any).balance > 0) {
-                     holdingsText = `📌 ${(data as any).balance.toLocaleString()} tokens found in funding wallet`;
+                     const formattedBalance = ((data as any).balance / 1e6).toLocaleString(undefined, {
+                       maximumFractionDigits: 2,
+                     });
+                     
+                     // Check if dev wallet has tokens
+                     const devWalletBalance = (data as any).devWalletBalance || 0;
+                     if (devWalletBalance > 0) {
+                       const formattedDevBalance = (devWalletBalance / 1e6).toLocaleString(undefined, {
+                         maximumFractionDigits: 2,
+                       });
+                       holdingsText = `💰 ${formattedBalance} tokens found in ${walletsWithBalance} wallet(s) (including dev wallet: ${formattedDevBalance})`;
+                     } else {
+                       holdingsText = `💰 ${formattedBalance} tokens found in funding wallet`;
+                     }
                    } else {
-                     holdingsText = `📌 No tokens found in your funding wallet`;
+                     holdingsText = `📌 No tokens found in your wallets`;
                    }
                  } else if (data.type === 'platform') {
                    platformInfo = (data as any).platform;

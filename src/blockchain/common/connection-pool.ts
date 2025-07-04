@@ -53,10 +53,10 @@ export class SolanaConnectionPool {
       maxRequestsPerSecond: 195, // Increase from 180 (more aggressive)
       maxTransactionsPerSecond: 48, // Increase from 45 (more aggressive)
       cacheConfig: {
-        balanceTTL: 50, // Ultra-fast updates: 50ms
-        blockhashTTL: 50, // Ultra-fast blockhashes: 50ms
-        accountInfoTTL: 50, // Ultra-fast account info: 50ms
-        signatureStatusTTL: 50, // Ultra-fast confirmation: 50ms
+        balanceTTL: 1000, // Balanced updates: 1 second
+        blockhashTTL: 2000, // Balanced blockhashes: 2 seconds
+        accountInfoTTL: 1000, // Balanced account info: 1 second
+        signatureStatusTTL: 500, // Balanced confirmation: 500ms
       },
       ...config,
     };
@@ -484,10 +484,10 @@ export function createMixerConnectionPool(): SolanaConnectionPool {
     maxRequestsPerSecond: 195, // Aggressive rate limiting for mixer
     maxTransactionsPerSecond: 48, // Aggressive transaction rate
           cacheConfig: {
-        balanceTTL: 50, // Ultra-fast updates for mixer operations: 50ms
-        blockhashTTL: 50, // Ultra-fast blockhashes for mixer: 50ms
-        accountInfoTTL: 50, // Ultra-fast account info updates: 50ms
-        signatureStatusTTL: 50, // Ultra-fast confirmation checks: 50ms
+        balanceTTL: 1000, // Balanced updates for mixer operations: 1 second
+        blockhashTTL: 2000, // Balanced blockhashes for mixer: 2 seconds
+        accountInfoTTL: 1000, // Balanced account info updates: 1 second
+        signatureStatusTTL: 500, // Balanced confirmation checks: 500ms
       },
   });
 }

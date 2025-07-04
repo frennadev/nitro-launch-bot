@@ -771,9 +771,9 @@ export const executeTokenLaunch = async (
                 signers: [keypair],
                 payer: keypair.publicKey,
               },
-              50, // Ultra-fast timeout: 50ms
+              3000, // Balanced timeout: 3 seconds
               3,
-              50, // Ultra-fast retry delay: 50ms
+              200, // Balanced retry delay: 200ms
               logIdentifier,
             );
             
@@ -902,8 +902,8 @@ export const executeTokenLaunch = async (
         
         roundNumber++;
         
-        // Ultra-fast delay between rounds
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Balanced delay between rounds
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
       
       const success = results.filter((res) => res.success);

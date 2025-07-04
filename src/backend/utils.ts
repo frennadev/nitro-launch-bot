@@ -243,7 +243,7 @@ export const getTokenInfo = async (tokenAddress: string) => {
     // Fetch from DexScreener API
     console.log(`[getTokenInfo] Fetching from DexScreener API for ${tokenAddress}`);
     const response = await axios.get(`https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`, {
-      timeout: 50, // Ultra-fast timeout: 50ms
+      timeout: 5000, // Balanced timeout: 5 seconds
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; NitroBot/1.0)',
       }

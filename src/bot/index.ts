@@ -1187,7 +1187,9 @@ ${initialHoldingsText}`,
                 const buyerWallets = await getAllBuyerWallets(user.id);
                 let totalTokenBalance = 0;
                 let walletsWithBalance = 0;
+                let devWalletBalance = 0;
 
+                // Check buyer wallets
                 if (buyerWallets && buyerWallets.length > 0) {
                   const balancePromises = buyerWallets.map(async (wallet: any) => {
                     try {
@@ -1207,16 +1209,29 @@ ${initialHoldingsText}`,
                   totalTokenBalance = balances.reduce((sum, balance) => sum + balance, 0);
                 }
 
+                // Check dev wallet
+                try {
+                  const devWalletAddress = await getDefaultDevWallet(String(user.id));
+                  devWalletBalance = await getTokenBalance(text, devWalletAddress);
+                  if (devWalletBalance > 0) {
+                    totalTokenBalance += devWalletBalance;
+                    walletsWithBalance++;
+                  }
+                } catch (error) {
+                  logger.warn(`Error checking dev wallet balance:`, error);
+                }
+
                 return {
                   type: 'holdings',
                   balance: totalTokenBalance,
-                  walletsWithBalance: walletsWithBalance
+                  walletsWithBalance: walletsWithBalance,
+                  devWalletBalance: devWalletBalance
                 };
               }
-              return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
+              return { type: 'holdings', balance: 0, walletsWithBalance: 0, devWalletBalance: 0 };
             } catch (error: any) {
               logger.warn(`Holdings check failed: ${error.message}`);
-              return { type: 'holdings', balance: 0, walletsWithBalance: 0 };
+              return { type: 'holdings', balance: 0, walletsWithBalance: 0, devWalletBalance: 0 };
             }
           })(),
           
@@ -1290,7 +1305,17 @@ ${initialHoldingsText}`,
                      const formattedBalance = ((data as any).balance / 1e6).toLocaleString(undefined, {
                        maximumFractionDigits: 2,
                      });
-                     holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)`;
+                     
+                     // Check if dev wallet has tokens
+                     const devWalletBalance = (data as any).devWalletBalance || 0;
+                     if (devWalletBalance > 0) {
+                       const formattedDevBalance = (devWalletBalance / 1e6).toLocaleString(undefined, {
+                         maximumFractionDigits: 2,
+                       });
+                       holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} wallet(s) (including dev wallet: ${formattedDevBalance})`;
+                     } else {
+                       holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)`;
+                     }
                    } else {
                      holdingsText = `📌 No tokens found in your buyer wallets`;
                    }
