@@ -65,30 +65,29 @@ export const executeCTOOperation = async (
     // Wait a moment for funds to propagate
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // CRITICAL FIX: Use the same dynamic amount distribution as the mixer
-    // Instead of fixed amount per wallet, use incremental sequence
-    const incrementalSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
-    
-    // Calculate how many wallets we actually need based on the total amount
-    let cumulativeTotal = 0;
-    let walletsNeeded = 0;
-    for (let i = 0; i < incrementalSequence.length && cumulativeTotal < totalAmount; i++) {
-      cumulativeTotal += incrementalSequence[i];
-      walletsNeeded++;
-    }
-    
+    // CRITICAL FIX: Use the mixer's actual amount distribution instead of manual calculation
+    // The mixer already calculated optimal amounts in lamports, so we use those
+    const actualAmountsFromMixer = mixerResult.results
+      .filter(result => result.success)
+      .map(result => result.route.amount); // These are already in lamports from the mixer
+
+    logger.info(`[CTO] Using mixer's actual amount distribution: ${actualAmountsFromMixer.map(amt => (amt / 1e9).toFixed(6)).join(', ')} SOL`);
+
     // Use only the wallets that were actually funded by the mixer
-    const walletsToUse = Math.min(walletsNeeded, buyerWallets.length, mixerResult.successCount);
+    const successfulRoutes = mixerResult.results.filter(result => result.success);
+    const walletsToUse = successfulRoutes.length;
     const selectedWallets = buyerWallets.slice(0, walletsToUse);
-    
-    logger.info(`[CTO] Using dynamic amount distribution: ${walletsToUse} wallets from ${incrementalSequence.slice(0, walletsToUse).join(', ')} SOL sequence`);
+
+    logger.info(`[CTO] Using ${walletsToUse} wallets that were successfully funded by mixer`);
 
     // Execute buy transactions in parallel
     const buyPromises = selectedWallets.map(async (wallet, index) => {
-      const buyAmount = incrementalSequence[index]; // Use the corresponding amount from the sequence
+      const buyAmountLamports = actualAmountsFromMixer[index];
+      const buyAmountSol = buyAmountLamports / 1e9; // Convert lamports to SOL for external buy
+      
       try {
         const keypair = secretKeyToKeypair(wallet.privateKey);
-        const result = await executeExternalBuy(tokenAddress, keypair, buyAmount);
+        const result = await executeExternalBuy(tokenAddress, keypair, buyAmountSol);
         
         if (result.success) {
           logger.info(`[CTO] Buy ${index + 1}/${selectedWallets.length} successful: ${result.signature}`);
@@ -104,7 +103,7 @@ export const executeCTOOperation = async (
               true,
               0, // CTO operations don't have launch attempts
               {
-                amountSol: buyAmount,
+                amountSol: buyAmountSol,
                 amountTokens: "0", // Will be parsed from blockchain
                 errorMessage: undefined,
                 retryAttempt: 0,
@@ -131,7 +130,7 @@ export const executeCTOOperation = async (
               false,
               0,
               {
-                amountSol: buyAmount,
+                amountSol: buyAmountSol,
                 amountTokens: "0",
                 errorMessage: result.error,
                 retryAttempt: 0,
@@ -157,7 +156,7 @@ export const executeCTOOperation = async (
             false,
             0,
             {
-              amountSol: buyAmount,
+              amountSol: buyAmountSol,
               amountTokens: "0",
               errorMessage: error.message,
               retryAttempt: 0,

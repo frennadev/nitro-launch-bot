@@ -86,6 +86,13 @@ export class SolanaConnectionManager {
     to: PublicKey,
     amount: number
   ): Promise<Transaction> {
+    // CRITICAL: Ensure amount is an integer for SystemProgram.transfer
+    const lamportsAmount = Math.floor(amount);
+    
+    if (lamportsAmount <= 0) {
+      throw new Error(`Invalid transfer amount: ${amount} (floored to ${lamportsAmount})`);
+    }
+    
     const transaction = new Transaction();
 
     // Add priority fee instruction
@@ -102,7 +109,7 @@ export class SolanaConnectionManager {
       SystemProgram.transfer({
         fromPubkey: from,
         toPubkey: to,
-        lamports: amount,
+        lamports: lamportsAmount, // Use the integer amount
       })
     );
 
@@ -123,6 +130,13 @@ export class SolanaConnectionManager {
     amount: number,
     feePayer: PublicKey
   ): Promise<Transaction> {
+    // CRITICAL: Ensure amount is an integer for SystemProgram.transfer
+    const lamportsAmount = Math.floor(amount);
+    
+    if (lamportsAmount <= 0) {
+      throw new Error(`Invalid transfer amount: ${amount} (floored to ${lamportsAmount})`);
+    }
+    
     const transaction = new Transaction();
 
     // Add priority fee instruction
@@ -139,7 +153,7 @@ export class SolanaConnectionManager {
       SystemProgram.transfer({
         fromPubkey: from,
         toPubkey: to,
-        lamports: amount,
+        lamports: lamportsAmount, // Use the integer amount
       })
     );
 

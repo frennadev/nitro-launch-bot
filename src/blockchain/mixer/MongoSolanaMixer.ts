@@ -260,8 +260,8 @@ export class MongoSolanaMixer {
           `🔄 Transfer ${i + 1}/${route.intermediates.length}: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${nextWallet.publicKey.toString().slice(0, 8)}...`
         );
 
-        // Calculate transfer amount with minimal fee deduction
-        const transferAmount = Math.floor(remainingAmount * 0.998); // 0.2% buffer for fees
+        // Calculate transfer amount with minimal fee deduction - ENSURE INTEGER
+        const transferAmount = Math.floor(Math.floor(remainingAmount * 0.998)); // Double Math.floor to ensure integer
 
         let signature: string;
 
@@ -330,11 +330,13 @@ export class MongoSolanaMixer {
       let finalSignature: string;
 
       if (this.config.feeFundingWallet) {
-        // Use fee funding wallet for final intermediate wallet transaction
+        // Use fee funding wallet for final intermediate wallet transaction - ENSURE INTEGER
+        const finalAmount = Math.floor(remainingAmount); // Ensure integer
+        
         const finalTransaction = await this.connectionManager.createTransferTransactionWithFeePayer(
           currentWallet.publicKey,
           route.destination,
-          remainingAmount,
+          finalAmount,
           this.config.feeFundingWallet.publicKey
         );
 
@@ -343,9 +345,9 @@ export class MongoSolanaMixer {
           this.config.feeFundingWallet,
         ]);
       } else {
-        // Intermediate wallet pays its own fees
+        // Intermediate wallet pays its own fees - ENSURE INTEGER
         const estimatedFee = await this.connectionManager.estimateTransactionFee();
-        const finalAmount = remainingAmount - estimatedFee;
+        const finalAmount = Math.floor(remainingAmount - estimatedFee); // Ensure integer
 
         const finalTransaction = await this.connectionManager.createTransferTransaction(
           currentWallet.publicKey,
