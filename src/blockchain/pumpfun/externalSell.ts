@@ -194,6 +194,23 @@ export const executeExternalTokenSell = async (
             `[${logIdentifier}]: Wallet ${index + 1} sell successful - ${solReceived.toFixed(6)} SOL received`
           );
 
+          // Collect 1% transaction fee after successful PumpFun sell
+          try {
+            const feeResult = await collectTransactionFee(
+              bs58.encode(setup.wallet.secretKey),
+              solReceived,
+              "sell"
+            );
+            
+            if (feeResult.success) {
+              logger.info(`[${logIdentifier}]: Wallet ${index + 1} sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+            } else {
+              logger.warn(`[${logIdentifier}]: Failed to collect wallet ${index + 1} sell transaction fee: ${feeResult.error}`);
+            }
+          } catch (feeError: any) {
+            logger.warn(`[${logIdentifier}]: Error collecting wallet ${index + 1} sell transaction fee: ${feeError.message}`);
+          }
+
           return {
             success: true,
             solReceived,

@@ -484,6 +484,25 @@ export class JupiterPumpswapService {
               const solReceived = (
                 solReceivedLamports / 1_000_000_000
               ).toString(); // Convert lamports to SOL
+              
+              // Collect 1% transaction fee after successful Jupiter sell
+              try {
+                const { collectTransactionFee } = await import("../backend/functions-main");
+                const feeResult = await collectTransactionFee(
+                  bs58.encode(sellerKeypair.secretKey),
+                  parseFloat(solReceived),
+                  "sell"
+                );
+                
+                if (feeResult.success) {
+                  logger.info(`[${logId}] Jupiter sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+                } else {
+                  logger.warn(`[${logId}] Failed to collect Jupiter sell transaction fee: ${feeResult.error}`);
+                }
+              } catch (feeError: any) {
+                logger.warn(`[${logId}] Error collecting Jupiter sell transaction fee: ${feeError.message}`);
+              }
+              
               return {
                 success: true,
                 signature,
@@ -523,6 +542,29 @@ export class JupiterPumpswapService {
 
         if (!confirmation.value.err) {
           logger.info(`[${logId}] PumpSwap sell successful: ${signature}`);
+          
+          // Collect 1% transaction fee after successful PumpSwap sell
+          try {
+            const { collectTransactionFee } = await import("../backend/functions-main");
+            // For PumpSwap sells, we need to estimate SOL received since it's unknown
+            // Use a conservative estimate based on token amount and current price
+            const estimatedSolReceived = await this.estimateSolFromTokenSell(tokenAddress, sellAmount);
+            
+            const feeResult = await collectTransactionFee(
+              bs58.encode(sellerKeypair.secretKey),
+              estimatedSolReceived,
+              "sell"
+            );
+            
+            if (feeResult.success) {
+              logger.info(`[${logId}] PumpSwap sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+            } else {
+              logger.warn(`[${logId}] Failed to collect PumpSwap sell transaction fee: ${feeResult.error}`);
+            }
+          } catch (feeError: any) {
+            logger.warn(`[${logId}] Error collecting PumpSwap sell transaction fee: ${feeError.message}`);
+          }
+          
           return {
             success: true,
             signature,
@@ -575,6 +617,40 @@ export class JupiterPumpswapService {
         error instanceof Error ? error.message : String(error)
       );
       return null;
+    }
+  }
+
+  /**
+   * Estimate SOL received from token sell for fee calculation
+   * Used when exact SOL amount is unknown (like PumpSwap sells)
+   */
+  private async estimateSolFromTokenSell(tokenAddress: string, tokenAmount: number): Promise<number> {
+    try {
+      // Try to get current token price
+      const price = await this.getPrice(tokenAddress);
+      if (price > 0) {
+        // Convert token amount to SOL using current price
+        // tokenAmount is in raw units, convert to UI amount first
+        const tokenAmountUI = tokenAmount / 1_000_000; // Assuming 6 decimals
+        const estimatedUsd = tokenAmountUI * price;
+        
+        // Get SOL price to convert USD to SOL
+        const solPrice = await this.getPrice("So11111111111111111111111111111111111111112"); // SOL mint
+        if (solPrice > 0) {
+          const estimatedSol = estimatedUsd / solPrice;
+          return Math.max(0.001, estimatedSol); // Minimum 0.001 SOL for fee calculation
+        }
+      }
+      
+      // Fallback: Conservative estimate based on token amount
+      // Assume 1M tokens = ~0.1 SOL (very conservative)
+      const conservativeEstimate = (tokenAmount / 1_000_000) * 0.0001;
+      return Math.max(0.001, conservativeEstimate);
+      
+    } catch (error: any) {
+      logger.warn(`Failed to estimate SOL from token sell: ${error.message}`);
+      // Ultra-conservative fallback
+      return 0.001; // Minimum fee base
     }
   }
 }
