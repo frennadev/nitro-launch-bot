@@ -158,6 +158,34 @@ export const prepareTokenLaunch = async (
   
   logger.info(`[${logIdentifier}]: Wallet allocation - Buy Amount: ${buyAmount} SOL → Using ${optimalWalletCount}/${buyKeypairs.length} wallets (optimized from potential ${buyKeypairs.length})`);
   
+  // CRITICAL FIX: Log wallet addresses to verify consistency with execution phase
+  logger.info(`[${logIdentifier}]: Selected wallet addresses for funding:`, {
+    selectedWallets: selectedBuyKeypairs.map((kp, i) => `${i + 1}. ${kp.publicKey.toBase58()}`),
+    totalSelected: selectedBuyKeypairs.length,
+    destinationAddresses: destinationAddresses
+  });
+  
+  // CRITICAL FIX: Store the exact wallet order used for funding to ensure execution phase uses identical wallets
+  const { TokenModel } = await import("../../backend/models");
+  const selectedWalletPrivateKeys = selectedBuyKeypairs.map(kp => bs58.encode(kp.secretKey));
+  
+  try {
+    await TokenModel.findOneAndUpdate(
+      { tokenAddress: mintKeypair.publicKey.toBase58() },
+      { 
+        $set: { 
+          "launchData.buyWalletsOrder": selectedWalletPrivateKeys,
+          "launchData.fundedWalletAddresses": destinationAddresses,
+          "launchData.optimalWalletCount": optimalWalletCount
+        } 
+      },
+      { upsert: false }
+    );
+    logger.info(`[${logIdentifier}]: Stored wallet order for execution phase consistency`);
+  } catch (error) {
+    logger.warn(`[${logIdentifier}]: Failed to store wallet order, execution phase may use different wallets:`, error);
+  }
+  
   // Calculate total amount needed: buy amount + fees for each selected wallet
   // Each wallet needs 0.005 SOL for transaction fees (increased from 0.003 for safety buffer)
   const feePerWallet = 0.005;
@@ -248,18 +276,51 @@ export const executeTokenLaunch = async (
   const mintKeypair = secretKeyToKeypair(mint);
   const allBuyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
   
-  // Calculate optimal number of wallets needed for this buy amount (same logic as in prepareTokenLaunch)
-  const optimalWalletCount = calculateOptimalWalletCount(buyAmount, allBuyKeypairs.length);
+  const logIdentifier = `launch-${mintKeypair.publicKey.toBase58()}`;
+  const tokenAddress = mintKeypair.publicKey.toBase58();
   
-  // Only use the wallets that are actually needed based on buy amount
-  const buyKeypairs = allBuyKeypairs.slice(0, optimalWalletCount);
+  // CRITICAL FIX: Get the exact wallet order and count used in preparation phase
+  const TokenModelImport = await import("../../backend/models");
+  const tokenDoc = await TokenModelImport.TokenModel.findOne({ tokenAddress }).lean();
+  
+  let buyKeypairs: any[];
+  let optimalWalletCount: number;
+  
+  if (tokenDoc?.launchData?.buyWalletsOrder && (tokenDoc.launchData as any).optimalWalletCount) {
+    // Use the exact wallets and count from preparation phase
+    optimalWalletCount = (tokenDoc.launchData as any).optimalWalletCount;
+    const storedWalletKeys = tokenDoc.launchData.buyWalletsOrder.slice(0, optimalWalletCount);
+    buyKeypairs = storedWalletKeys.map((w: string) => secretKeyToKeypair(w));
+    
+    logger.info(`[${logIdentifier}]: Using stored wallet order from preparation phase (${optimalWalletCount} wallets)`);
+    
+    // Validate that the stored wallets match the funded addresses
+    if ((tokenDoc.launchData as any).fundedWalletAddresses) {
+      const expectedAddresses = (tokenDoc.launchData as any).fundedWalletAddresses;
+      const actualAddresses = buyKeypairs.map(kp => kp.publicKey.toBase58());
+      const mismatch = expectedAddresses.some((addr: string, i: number) => addr !== actualAddresses[i]);
+      
+      if (mismatch) {
+        logger.error(`[${logIdentifier}]: WALLET MISMATCH DETECTED!`, {
+          expectedFunded: expectedAddresses,
+          actualExecution: actualAddresses
+        });
+        throw new Error("Wallet mismatch between preparation and execution phases");
+      } else {
+        logger.info(`[${logIdentifier}]: Wallet addresses validated - execution will use the same wallets that were funded`);
+      }
+    }
+  } else {
+    // Fallback to original logic if stored data is missing
+    logger.warn(`[${logIdentifier}]: No stored wallet order found, falling back to original selection logic`);
+    optimalWalletCount = calculateOptimalWalletCount(buyAmount, allBuyKeypairs.length);
+    buyKeypairs = allBuyKeypairs.slice(0, optimalWalletCount);
+  }
   
   const funderKeypair = funderWallet ? secretKeyToKeypair(funderWallet) : null;
   const devKeypair = secretKeyToKeypair(devWallet);
   const { bondingCurve } = getBondingCurve(mintKeypair.publicKey);
   const globalSetting = await getGlobalSetting();
-  const logIdentifier = `launch-${mintKeypair.publicKey.toBase58()}`;
-  const tokenAddress = mintKeypair.publicKey.toBase58();
 
   logger.info(`[${logIdentifier}]: Token Launch Execution Data`, {
     wallets: buyKeypairs.map((kp) => kp.publicKey.toBase58()),
@@ -270,9 +331,13 @@ export const executeTokenLaunch = async (
   
   logger.info(`[${logIdentifier}]: Wallet optimization - Buy Amount: ${buyAmount} SOL → Using ${optimalWalletCount}/${allBuyKeypairs.length} wallets for execution`);
 
+  // CRITICAL FIX: Log wallet addresses to verify consistency with preparation phase
+  logger.info(`[${logIdentifier}]: Selected wallet addresses for execution:`, {
+    selectedWallets: buyKeypairs.map((kp, i) => `${i + 1}. ${kp.publicKey.toBase58()}`),
+    totalSelected: buyKeypairs.length
+  });
+
   // Get current launch attempt from token data
-  const { TokenModel } = await import("../../backend/models");
-  const tokenDoc = await TokenModel.findOne({ tokenAddress }).lean();
   const currentLaunchAttempt = tokenDoc?.launchData?.launchAttempt || 1;
 
   // Track current stage for proper flow control
