@@ -1314,7 +1314,7 @@ ${initialHoldingsText}`,
                        });
                        holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} wallet(s) (including dev wallet: ${formattedDevBalance})`;
                      } else {
-                       holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)`;
+                     holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)`;
                      }
                    } else {
                      holdingsText = `📌 No tokens found in your buyer wallets`;

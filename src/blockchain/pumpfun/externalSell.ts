@@ -857,7 +857,7 @@ export async function executeExternalSell(
 
         sellTx.sign([sellerKeypair]);
 
-        // Send with ultra-fast retry logic
+        // Send with proper timeout and retry logic
         const result = await sendAndConfirmTransactionWithRetry(
           sellTx,
           {
@@ -865,9 +865,9 @@ export async function executeExternalSell(
             signers: [sellerKeypair],
             instructions: [modifyComputeUnits, addPriorityFee, sellIx],
           },
-          50, // Ultra-fast timeout: 50ms
+          30_000, // Proper timeout: 30 seconds (same as cached PumpFun)
           3,
-          50, // Ultra-fast retry interval: 50ms
+          2000, // Proper retry interval: 2 seconds
           logId,
           {
             useSmartPriorityFees: true,
@@ -877,7 +877,7 @@ export async function executeExternalSell(
         );
 
         if (!result.success) {
-          throw new Error("PumpFun sell transaction failed");
+          throw new Error(`PumpFun sell transaction failed - signature: ${result.signature || 'none'}`);
         }
 
         logger.info(`[${logId}] PumpFun sell successful: ${result.signature}`);
@@ -937,8 +937,8 @@ export async function executeExternalSell(
         logger.info(`[${logId}] No bonding curve data found - token is likely Pumpswap`);
       }
     } catch (pumpfunError: any) {
-      logger.info(`[${logId}] Bonding curve detection failed (likely Pumpswap token): ${pumpfunError.message}`);
-      // If bonding curve detection fails, it's likely a Pumpswap token
+      logger.info(`[${logId}] PumpFun sell failed: ${pumpfunError.message}`);
+      // PumpFun sell failed, try Pumpswap as fallback
     }
 
     // Try Pumpswap as fallback
@@ -1024,7 +1024,7 @@ export async function executeExternalSell(
       logger.error(`[${logId}] Pumpswap sell failed:`, pumpswapError);
       return {
         success: false,
-        error: `Both platforms failed. PumpFun: bonding curve not found. Pumpswap: ${pumpswapError.message}`,
+        error: `Both platforms failed. PumpFun: transaction failed. Pumpswap: ${pumpswapError.message}`,
       };
     }
   } catch (error: any) {
