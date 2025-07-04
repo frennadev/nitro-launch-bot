@@ -219,9 +219,9 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
   }
 }
 
-export async function getSolBalance(walletAddress: string): Promise<number> {
+export async function getSolBalance(walletAddress: string, commitment: 'processed' | 'confirmed' | 'finalized' = 'confirmed'): Promise<number> {
   const pubkey = new PublicKey(walletAddress);
-  const lamports = await connection.getBalance(pubkey);
+  const lamports = await connection.getBalance(pubkey, commitment);
   return lamports / LAMPORTS_PER_SOL;
 }
 

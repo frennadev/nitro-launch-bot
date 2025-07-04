@@ -522,6 +522,12 @@ export const executeTokenLaunch = async (
   if (currentStage >= PumpLaunchStage.SNIPE) {
     logger.info(`[${logIdentifier}]: Starting snipe stage`);
     const snipeStart = performance.now();
+    
+    // CRITICAL FIX: Add delay after mixer funding to allow blockchain state propagation
+    // The mixer may have just completed, so balances might not be visible at 'confirmed' level yet
+    logger.info(`[${logIdentifier}]: Waiting for blockchain state propagation after mixer funding...`);
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+    logger.info(`[${logIdentifier}]: Proceeding with balance checks using 'confirmed' commitment level`);
 
     // Get fresh blockhash for transactions
     const blockHash = await connection.getLatestBlockhash("processed");
@@ -727,7 +733,7 @@ export const executeTokenLaunch = async (
             let currentSlippage, tokenOut, swapAmountLamports;
             
             // Always use dynamic calculation based on current wallet balance
-            const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58());
+            const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58(), 'confirmed');
             
             // Keep buying until balance drops below 0.05 SOL
             const minBalanceThreshold = 0.05;
