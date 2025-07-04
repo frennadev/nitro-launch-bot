@@ -70,4 +70,5 @@ export enum CallBackQueries {
   SELL_INDIVIDUAL = "sell_individual",
 
   VIEW_TOKEN_TRADES = "view_token_trades",
+  CTO = "cto",
 }

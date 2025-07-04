@@ -41,6 +41,7 @@ import { getTokenInfo, getTokenBalance, decryptPrivateKey, checkTokenRenouncedAn
 import { getTransactionFinancialStats } from "../backend/functions-main";
 import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
 import { referralsConversation } from "./conversation/referrals";
+import { ctoConversation } from "./conversation/ctoConversation";
 import { PublicKey } from "@solana/web3.js";
 import { executeFundingBuy } from "../blockchain/pumpfun/buy";
 import { buyCustonConversation } from "./conversation/buyCustom";
@@ -283,6 +284,7 @@ bot.use(createConversation(viewTokensConversation));
 bot.use(createConversation(externalTokenSellConversation));
 bot.use(createConversation(buyExternalTokenConversation));
 bot.use(createConversation(referralsConversation));
+bot.use(createConversation(ctoConversation));
 bot.use(createConversation(buyCustonConversation));
 bot.use(createConversation(sellIndividualToken));
 bot.use(createConversation(sellPercentageMessage));
@@ -943,6 +945,26 @@ bot.callbackQuery(/^refresh_launch_data_(.+)$/, async (ctx) => {
   );
 });
 
+// Callback handler for external token refresh button
+bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔄 Refreshing token data...");
+  const tokenAddress = ctx.match![1];
+  
+  // Resend the token address to trigger a fresh display
+  await handleTokenAddressMessage(ctx, tokenAddress);
+});
+
+// Callback handler for CTO button
+bot.callbackQuery(/^cto_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "📈 Starting CTO operation...");
+  const tokenAddress = ctx.match![1];
+  
+  logger.info(`[CTO] CTO button clicked for token: ${tokenAddress}`);
+  
+  // Start the CTO conversation
+  await ctx.conversation.enter("ctoConversation", tokenAddress);
+});
+
 // Retry callback handlers
 bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
@@ -1170,38 +1192,13 @@ ${initialHoldingsText}`,
           {
             parse_mode: "HTML",
             reply_markup: new InlineKeyboard()
-              .text("🔀 Switch to Sell", `sell_external_token_${text}`)
               .text("👀 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
-              .text("🔃 Refresh", `launch_token_${text}`)
-              .row()
-              .text(`💰 Active wallets: 0`, `launch_token_${text}`)
-              .row()
-              .text("💰 0.5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text("💰 1 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text("💰 2 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .row()
-              .text("💰 5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text("💰 10 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text("💰 X SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .row()
-              .text("💰 Buy Tip: 0 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text("🛍️ Slippage: 0%", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .row()
-              .text("📈 Limit Orders", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text("💸 Generate PNL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .row()
-              .text("🔴 Auto Tip (0.0001 SOL)", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text("🔴 Buy Protection", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .row()
-              .text("🔀 Split Tokens", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text("👀 Hide Position", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .row()
-              .text("🔙 Back", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-              .text("📊 Chart", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+              .text("🔃 Refresh", `refresh_ca_${text}`)
               .row()
               .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
+              .text("🔙 Back", CallBackQueries.BACK)
               .row()
-              .text("❌ Cancel", CallBackQueries.CANCEL),
+              .text("📈 CTO", `${CallBackQueries.CTO}_${text}`),
           }
         );
 
@@ -1453,38 +1450,13 @@ ${holdingsText}`,
               {
                 parse_mode: "HTML",
                 reply_markup: new InlineKeyboard()
-                  .text("🔀 Switch to Sell", `sell_external_token_${text}`)
                   .text("👀 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
-                  .text("🔃 Refresh", `launch_token_${text}`)
-                  .row()
-                  .text(`💰 Active wallets: ${walletsWithBalance}`, `launch_token_${text}`)
-                  .row()
-                  .text("💰 0.5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .text("💰 1 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .text("💰 2 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .row()
-                  .text("💰 5 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .text("💰 10 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .text("💰 X SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .row()
-                  .text("💰 Buy Tip: 0 SOL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .text("🛍️ Slippage: 0%", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .row()
-                  .text("📈 Limit Orders", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .text("💸 Generate PNL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .row()
-                  .text("🔴 Auto Tip (0.0001 SOL)", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .text("🔴 Buy Protection", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .row()
-                  .text("🔀 Split Tokens", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .text("👀 Hide Position", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .row()
-                  .text("🔙 Back", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
-                  .text("📊 Chart", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${text}`)
+                  .text("🔃 Refresh", `refresh_ca_${text}`)
                   .row()
                   .text("💸 Sell Token", `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`)
+                  .text("🔙 Back", CallBackQueries.BACK)
                   .row()
-                  .text("❌ Cancel", CallBackQueries.CANCEL),
+                  .text("📈 CTO", `${CallBackQueries.CTO}_${text}`),
               }
             );
 
