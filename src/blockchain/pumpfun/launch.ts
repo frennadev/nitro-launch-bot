@@ -771,9 +771,9 @@ export const executeTokenLaunch = async (
                 signers: [keypair],
                 payer: keypair.publicKey,
               },
-              3000, // Balanced timeout: 3 seconds
+              10_000, // Launch timeout: 10 seconds (same as dev buy)
               3,
-              200, // Balanced retry delay: 200ms
+              1000, // Launch retry delay: 1 second (same as dev buy)
               logIdentifier,
             );
             
@@ -811,8 +811,8 @@ export const executeTokenLaunch = async (
                 logger.error(`[${logIdentifier}]: All buy attempts failed for ${keypair.publicKey.toBase58()}`);
                 return result;
               }
-              // Ultra-fast retry delay
-              await randomizedSleep(50, 50);
+              // Simultaneous execution retry delay (minimal)
+              await randomizedSleep(25, 25);
             }
           } catch (error: any) {
             logger.error(`[${logIdentifier}]: Buy attempt ${attempt + 1} error for ${keypair.publicKey.toBase58()}: ${error.message}`);
@@ -836,40 +836,38 @@ export const executeTokenLaunch = async (
             if (attempt === maxRetries) {
               return { success: false, error: error.message };
             }
-            await randomizedSleep(50, 50);
+            await randomizedSleep(25, 25);
           }
         }
         
         return { success: false, error: "Max retries exceeded" };
       };
       
-      // Execute buy transactions continuously until wallets are depleted
+      // Execute buy transactions with true simultaneous execution
       const results = [];
-      let roundNumber = 1;
-      const maxRounds = 10; // Safety limit to prevent infinite loops
+      const maxConcurrentWallets = 5; // Limit concurrent wallets to avoid rate limits
+      const processedWallets = new Set();
       
-      while (roundNumber <= maxRounds) {
-        logger.info(`[${logIdentifier}]: Starting buy round ${roundNumber}`);
+      logger.info(`[${logIdentifier}]: Starting simultaneous buy execution with max ${maxConcurrentWallets} concurrent wallets`);
+      
+      // Process wallets in batches for true simultaneous execution
+      while (processedWallets.size < walletsToProcess.length) {
+        // Get wallets that haven't been processed yet
+        const unprocessedWallets = walletsToProcess.filter(w => !processedWallets.has(w.publicKey.toBase58()));
         
-        // Check which wallets still have sufficient balance
-        const walletsWithBalance = [];
-        for (const keypair of walletsToProcess) {
-          const balance = await getSolBalance(keypair.publicKey.toBase58());
-          if (balance > 0.06) { // Need more than 0.05 SOL + 0.01 SOL buffer
-            walletsWithBalance.push(keypair);
-          }
-        }
+        if (unprocessedWallets.length === 0) break;
         
-        if (walletsWithBalance.length === 0) {
-          logger.info(`[${logIdentifier}]: All wallets depleted, stopping buy rounds`);
-          break;
-        }
+        // Take next batch of wallets (up to maxConcurrentWallets)
+        const currentBatch = unprocessedWallets.slice(0, maxConcurrentWallets);
         
-        logger.info(`[${logIdentifier}]: Round ${roundNumber} - Processing ${walletsWithBalance.length} wallets with sufficient balance`);
+        logger.info(`[${logIdentifier}]: Processing batch of ${currentBatch.length} wallets simultaneously`);
         
-        // Execute buy transactions for this round in parallel (ultra-fast)
-        const roundPromises = walletsWithBalance.map(async (keypair, i) => {
+        // Execute all wallets in current batch simultaneously
+        const batchPromises = currentBatch.map(async (keypair, i) => {
           const walletComputeUnitPrice = maxComputeUnitPrice - (computeUnitPriceDecrement * i);
+          
+          // Mark wallet as processed immediately to prevent duplicate processing
+          processedWallets.add(keypair.publicKey.toBase58());
           
           return await executeBuyWithRetry(
             keypair,
@@ -881,29 +879,30 @@ export const executeTokenLaunch = async (
           );
         });
         
-        const roundResults = await Promise.all(roundPromises);
+        // Wait for all wallets in current batch to complete
+        const batchResults = await Promise.all(batchPromises);
         
-        const roundSuccess = roundResults.filter((res) => res.success);
-        const roundFailed = roundResults.filter((res) => !res.success);
+        const batchSuccess = batchResults.filter((res) => res.success);
+        const batchFailed = batchResults.filter((res) => !res.success);
         
-        results.push(...roundResults);
+        results.push(...batchResults);
         
-        logger.info(`[${logIdentifier}]: Round ${roundNumber} Results`, {
-          success: roundSuccess.length,
-          failed: roundFailed.length,
-          totalWallets: walletsWithBalance.length,
+        logger.info(`[${logIdentifier}]: Batch Results`, {
+          success: batchSuccess.length,
+          failed: batchFailed.length,
+          totalWallets: currentBatch.length,
+          processedTotal: processedWallets.size,
+          remainingWallets: walletsToProcess.length - processedWallets.size,
         });
         
-        // If no successful transactions this round, stop
-        if (roundSuccess.length === 0) {
-          logger.info(`[${logIdentifier}]: No successful transactions in round ${roundNumber}, stopping`);
-          break;
+        // If no successful transactions in this batch, continue with next batch
+        // (don't stop completely as other batches might succeed)
+        if (batchSuccess.length === 0) {
+          logger.info(`[${logIdentifier}]: No successful transactions in current batch, continuing with next batch`);
         }
         
-        roundNumber++;
-        
-        // Balanced delay between rounds
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Minimal delay between batches to allow for network processing
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
       
       const success = results.filter((res) => res.success);
@@ -912,8 +911,8 @@ export const executeTokenLaunch = async (
       // Get updated transaction stats
       const transactionStats = await getTransactionStats(tokenAddress, currentLaunchAttempt);
       
-      logger.info(`[${logIdentifier}]: Continuous Buy Results`, {
-        totalRounds: roundNumber - 1,
+      logger.info(`[${logIdentifier}]: Simultaneous Buy Results`, {
+        totalBatches: Math.ceil(walletsToProcess.length / maxConcurrentWallets),
         currentAttempt: {
           success: success.length,
           failed: failed.length,
