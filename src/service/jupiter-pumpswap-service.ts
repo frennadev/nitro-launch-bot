@@ -417,6 +417,21 @@ export class JupiterPumpswapService {
         }
       }
 
+      // CRITICAL: Check SOL balance before attempting sell
+      const solBalance = await this.connection.getBalance(sellerKeypair.publicKey, "confirmed");
+      const solBalanceSOL = solBalance / 1_000_000_000;
+      const minSolRequired = 0.01; // Minimum SOL required for transaction fees
+      
+      logger.info(`[${logId}] Wallet SOL balance: ${solBalanceSOL.toFixed(6)} SOL`);
+      
+      if (solBalanceSOL < minSolRequired) {
+        return {
+          success: false,
+          signature: "",
+          error: `Insufficient SOL for transaction fees. Required: ${minSolRequired} SOL, Available: ${solBalanceSOL.toFixed(6)} SOL`,
+        };
+      }
+
       logger.info(`[${logId}] Selling ${sellAmount} tokens`);
 
       // Try Jupiter first
@@ -578,6 +593,101 @@ export class JupiterPumpswapService {
         );
       }
 
+      // Final fallback to PumpFun direct sell
+      logger.info(`[${logId}] Both Jupiter and PumpSwap failed, trying PumpFun direct sell fallback...`);
+      
+      try {
+        // Import PumpFun sell utilities
+        const { getBondingCurve, getBondingCurveData } = await import("../blockchain/pumpfun/utils");
+        const { quoteSell } = await import("../blockchain/common/utils");
+        const { sellInstruction } = await import("../blockchain/pumpfun/instructions");
+        
+        const mintPublicKey = new PublicKey(tokenAddress);
+        const { bondingCurve } = getBondingCurve(mintPublicKey);
+        const bondingCurveData = await getBondingCurveData(bondingCurve);
+        
+        if (bondingCurveData && !bondingCurveData.complete) {
+          // Token is still on PumpFun bonding curve
+          logger.info(`[${logId}] Token found on PumpFun bonding curve, executing direct sell...`);
+          
+          const { minSolOut: solOut } = quoteSell(
+            BigInt(sellAmount),
+            bondingCurveData.virtualTokenReserves,
+            bondingCurveData.virtualSolReserves,
+            bondingCurveData.realTokenReserves
+          );
+          
+          const sellIx = sellInstruction(
+            mintPublicKey,
+            new PublicKey(bondingCurveData.creator),
+            sellerKeypair.publicKey,
+            BigInt(sellAmount),
+            solOut
+          );
+          
+          const { VersionedTransaction, TransactionMessage } = await import("@solana/web3.js");
+          const blockHash = await this.connection.getLatestBlockhash("confirmed");
+          
+          const sellTx = new VersionedTransaction(
+            new TransactionMessage({
+              instructions: [sellIx],
+              payerKey: sellerKeypair.publicKey,
+              recentBlockhash: blockHash.blockhash,
+            }).compileToV0Message()
+          );
+          
+          sellTx.sign([sellerKeypair]);
+          
+          const signature = await this.connection.sendTransaction(sellTx, {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+            maxRetries: 3,
+          });
+          
+          const confirmation = await this.connection.confirmTransaction({
+            signature,
+            blockhash: blockHash.blockhash,
+            lastValidBlockHeight: blockHash.lastValidBlockHeight,
+          });
+          
+          if (!confirmation.value.err) {
+            const solReceived = (Number(solOut) / 1_000_000_000).toString();
+            logger.info(`[${logId}] PumpFun direct sell successful: ${signature}`);
+            
+            // Collect 1% transaction fee after successful PumpFun sell
+            try {
+              const { collectTransactionFee } = await import("../backend/functions-main");
+              const feeResult = await collectTransactionFee(
+                bs58.encode(sellerKeypair.secretKey),
+                parseFloat(solReceived),
+                "sell"
+              );
+              
+              if (feeResult.success) {
+                logger.info(`[${logId}] PumpFun sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+              } else {
+                logger.warn(`[${logId}] Failed to collect PumpFun sell transaction fee: ${feeResult.error}`);
+              }
+            } catch (feeError: any) {
+              logger.warn(`[${logId}] Error collecting PumpFun sell transaction fee: ${feeError.message}`);
+            }
+            
+            return {
+              success: true,
+              signature,
+              platform: "pumpfun",
+              solReceived,
+            };
+          }
+        } else {
+          logger.info(`[${logId}] Token not available on PumpFun (graduated or not a PumpFun token)`);
+        }
+      } catch (pumpfunError: any) {
+        logger.error(
+          `[${logId}] PumpFun direct sell fallback failed: ${pumpfunError.message}`
+        );
+      }
+
       return {
         success: false,
         signature: "",
@@ -651,6 +761,62 @@ export class JupiterPumpswapService {
       logger.warn(`Failed to estimate SOL from token sell: ${error.message}`);
       // Ultra-conservative fallback
       return 0.001; // Minimum fee base
+    }
+  }
+
+  /**
+   * Fund a wallet with SOL for transaction fees
+   * This can be used to ensure wallets have enough SOL before attempting sells
+   */
+  async fundWalletForFees(
+    targetWallet: PublicKey,
+    fundingWallet: Keypair,
+    solAmount: number = 0.01
+  ): Promise<{ success: boolean; signature?: string; error?: string }> {
+    try {
+      const { SystemProgram, Transaction, sendAndConfirmTransaction } = await import("@solana/web3.js");
+      
+      // Check if funding wallet has enough SOL
+      const fundingBalance = await this.connection.getBalance(fundingWallet.publicKey);
+      const fundingBalanceSOL = fundingBalance / 1_000_000_000;
+      
+      if (fundingBalanceSOL < solAmount + 0.001) {
+        return {
+          success: false,
+          error: `Funding wallet insufficient balance. Required: ${solAmount + 0.001} SOL, Available: ${fundingBalanceSOL.toFixed(6)} SOL`,
+        };
+      }
+      
+      // Create transfer transaction
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: fundingWallet.publicKey,
+          toPubkey: targetWallet,
+          lamports: Math.floor(solAmount * 1_000_000_000),
+        })
+      );
+      
+      // Send and confirm transaction
+      const signature = await sendAndConfirmTransaction(
+        this.connection,
+        transaction,
+        [fundingWallet],
+        { commitment: "confirmed" }
+      );
+      
+      logger.info(`Funded wallet ${targetWallet.toBase58()} with ${solAmount} SOL for transaction fees`);
+      
+      return {
+        success: true,
+        signature,
+      };
+      
+    } catch (error: any) {
+      logger.error(`Failed to fund wallet with SOL: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
   }
 }
