@@ -117,7 +117,7 @@ export const getJupiterQuote = async (
 ) => {
   try {
     const SOL_MINT = "So11111111111111111111111111111111111111112";
-    const amountLamports = Math.floor(solAmount * 1e9);
+          const amountLamports = Math.ceil(solAmount * 1e9);
     
     return await jupiterService.getQuote(
       SOL_MINT,

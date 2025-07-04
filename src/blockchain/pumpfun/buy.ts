@@ -43,7 +43,7 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
       throw new Error("Bonding curve data not found");
     }
 
-    const solLamports = BigInt(Math.floor(solAmount * LAMPORTS_PER_SOL));
+    const solLamports = BigInt(Math.ceil(solAmount * LAMPORTS_PER_SOL));
     console.log(`[${logId}]: solLamports = ${solLamports}`);
 
     const { tokenOut } = quoteBuy(
@@ -293,7 +293,7 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
 
     console.log(`[${logId}]: bondingCurveData fetched successfully`);
 
-    const solLamports = BigInt(Math.floor(solAmount * LAMPORTS_PER_SOL));
+    const solLamports = BigInt(Math.ceil(solAmount * LAMPORTS_PER_SOL));
     console.log(`[${logId}]: solLamports = ${solLamports}`);
 
     const { tokenOut } = quoteBuy(

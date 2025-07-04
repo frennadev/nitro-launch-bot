@@ -120,8 +120,8 @@ export class JupiterService {
       // SOL mint address
       const SOL_MINT = "So11111111111111111111111111111111111111112";
       
-      // Convert SOL to lamports
-      const amountLamports = Math.floor(params.solAmount * 1e9);
+              // Convert SOL to lamports
+        const amountLamports = Math.ceil(params.solAmount * 1e9);
       
       // Get quote
       const quote = await this.getQuote(

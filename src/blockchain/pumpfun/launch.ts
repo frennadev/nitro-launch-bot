@@ -431,7 +431,7 @@ export const executeTokenLaunch = async (
         devKeypair.publicKey,
         mintKeypair.publicKey,
       );
-      const devBuyLamports = BigInt(Math.floor(devBuy * LAMPORTS_PER_SOL));
+      const devBuyLamports = BigInt(Math.ceil(devBuy * LAMPORTS_PER_SOL));
       const { tokenOut } = quoteBuy(
         devBuyLamports,
         globalSetting.initialVirtualTokenReserves,
@@ -801,7 +801,7 @@ export const executeTokenLaunch = async (
             
             // Use the full available amount for the swap
             const swapAmountSOL = availableForSpend;
-            swapAmountLamports = BigInt(Math.floor(swapAmountSOL * LAMPORTS_PER_SOL));
+            swapAmountLamports = BigInt(Math.ceil(swapAmountSOL * LAMPORTS_PER_SOL));
             
             // Ensure swap amount is positive and properly converted
             if (swapAmountLamports <= 0) {

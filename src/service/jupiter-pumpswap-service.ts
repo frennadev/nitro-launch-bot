@@ -83,7 +83,7 @@ export class JupiterPumpswapService {
   ): Promise<SwapRoute | undefined> {
     slippageBps = slippageBps || (txnType === "buy" ? 500 : 800); // 5% and 8% in basis points
     try {
-      const url = `${this.baseUrl}/quote?inputMint=${swapFrom}&outputMint=${swapTo}&amount=${Math.round(amount)}&slippageBps=${slippageBps}`;
+      const url = `${this.baseUrl}/quote?inputMint=${swapFrom}&outputMint=${swapTo}&amount=${Math.ceil(amount)}&slippageBps=${slippageBps}`;
       logger.info(
         `Fetching Jupiter quote from ${url} for ${txnType} ${amount} from ${swapFrom} to ${swapTo}`
       );

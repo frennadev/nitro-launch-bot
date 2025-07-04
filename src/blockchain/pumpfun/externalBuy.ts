@@ -35,7 +35,7 @@ async function executePumpswapBuy(
     
     const buyData = {
       mint: new PublicKey(tokenAddress),
-      amount: BigInt(Math.floor(solAmount * LAMPORTS_PER_SOL)),
+      amount: BigInt(Math.ceil(solAmount * LAMPORTS_PER_SOL)),
       privateKey: privateKeyBase58
     };
     
