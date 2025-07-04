@@ -41,9 +41,9 @@ export const sendLaunchSuccessNotification = async (
     `*Address:* \`${tokenAddress}\``,
     ``,
     `💰 *Financial Overview:*`,
-    `➡️ Total Spent: ${formatSOL(financialStats.totalSpent)}`,
-    `➡️ Dev Allocation: ${formatSOL(financialStats.totalDevSpent)}`,
-    `➡️ Snipe Buys: ${formatSOL(financialStats.totalSnipeSpent)}`,
+    `➡️ Total Spent: ${escape(formatSOL(financialStats.totalSpent))}`,
+    `➡️ Dev Allocation: ${escape(formatSOL(financialStats.totalDevSpent))}`,
+    `➡️ Snipe Buys: ${escape(formatSOL(financialStats.totalSnipeSpent))}`,
     `➡️ Unique Buy Wallets: ${financialStats.successfulBuyWallets}`,
     ``,
     `📊 *Current Market Data:*`,
@@ -55,7 +55,7 @@ export const sendLaunchSuccessNotification = async (
     tokenWorth.worthInUsd > 0 ? `➡️ Current Value: ${escape(formatUSD(tokenWorth.worthInUsd))}` : "",
     tokenWorth.worthInSol > 0 ? `➡️ Worth in SOL: ${escape(formatSOL(tokenWorth.worthInSol))}` : "",
     profitLoss !== 0
-      ? `➡️ P/L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${escape(formatUSD(profitLoss))} (${profitLossPercentage >= 0 ? "+" : ""}${formatPercentage(profitLossPercentage)})`
+      ? `➡️ P/L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${escape(formatUSD(profitLoss))} (${profitLossPercentage >= 0 ? "+" : ""}${escape(formatPercentage(profitLossPercentage))})`
       : "",
     ``,
     `Use the buttons below for next steps ⬇️`,
