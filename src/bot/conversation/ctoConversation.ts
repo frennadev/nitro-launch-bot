@@ -119,14 +119,22 @@ export const ctoConversation = async (
 
   // Wait for confirmation
   const confirmation = await conversation.waitFor("callback_query:data");
-  await confirmation.answerCallbackQuery();
-
+  
   if (confirmation.callbackQuery?.data === CallBackQueries.CANCEL) {
+    await confirmation.answerCallbackQuery();
     await sendMessage(confirmation, "❌ CTO operation cancelled.");
     return conversation.halt();
   }
 
   if (confirmation.callbackQuery?.data === "confirm_cto") {
+    // Answer callback query immediately to prevent timeout
+    try {
+      await confirmation.answerCallbackQuery();
+    } catch (error: any) {
+      logger.warn("Failed to answer callback query (likely timeout):", error.message);
+      // Continue with operation even if callback query fails
+    }
+
     try {
       // Show processing message
       await sendMessage(
@@ -208,7 +216,14 @@ export const ctoConversation = async (
 
           // Wait for user action on the failure message
           const failureAction = await conversation.waitFor("callback_query:data");
-          await failureAction.answerCallbackQuery();
+          
+          // Answer callback query with timeout handling
+          try {
+            await failureAction.answerCallbackQuery();
+          } catch (error: any) {
+            logger.warn("Failed to answer failure action callback query:", error.message);
+            // Continue with operation even if callback query fails
+          }
 
           const actionData = failureAction.callbackQuery?.data;
           
