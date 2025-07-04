@@ -54,7 +54,7 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
     );
     console.log(`[${logId}]: Quoted tokenOut = ${tokenOut.toString()}`);
 
-    const tokensWithSlippage = applySlippage(tokenOut, 10);
+    const tokensWithSlippage = applySlippage(tokenOut, 1);
     console.log(`[${logId}]: tokensWithSlippage = ${tokensWithSlippage.toString()}`);
 
     const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({

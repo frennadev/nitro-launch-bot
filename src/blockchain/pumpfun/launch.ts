@@ -438,7 +438,7 @@ export const executeTokenLaunch = async (
         globalSetting.initialVirtualSolReserves,
         globalSetting.initialRealTokenReserves,
       );
-      const tokenOutWithSlippage = applySlippage(tokenOut, 10);
+      const tokenOutWithSlippage = applySlippage(tokenOut, 1);
       const devBuyIx = buyInstruction(
         mintKeypair.publicKey,
         devKeypair.publicKey,
@@ -775,8 +775,8 @@ export const executeTokenLaunch = async (
         maxRetries: number = 3,
         curveTracker?: BondingCurveTracker // Optional real-time curve tracker
       ) => {
-        let baseSlippage = 50; // Start with 50% slippage (fallback)
-        const maxSlippage = 90; // Maximum slippage cap
+        let baseSlippage = 10; // Start with 10% slippage (fallback)
+        const maxSlippage = 50; // Maximum slippage cap (reduced from 90%)
         
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           try {
@@ -815,25 +815,48 @@ export const executeTokenLaunch = async (
 
             if (curveTracker) {
               // NEW: Enhanced path with real-time curve tracking
-              currentSlippage = 20; // Fixed 20% slippage with accurate data
+              currentSlippage = 10; // Fixed 10% slippage with accurate data
               const currentQuote = curveTracker.quoteCurrentBuy(swapAmountLamports);
               tokenOut = currentQuote.tokenOut;
               
               logger.info(`[${logIdentifier}]: Real-time curve buy for ${keypair.publicKey.toBase58().slice(0, 8)} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
               logger.info(`[${logIdentifier}]: Real-time calculation - SOL: ${swapAmountSOL.toFixed(6)}, Tokens: ${tokenOut.toString()}, Balance: ${walletSolBalance.toFixed(6)} SOL`);
             } else {
-              // FALLBACK: Existing logic with escalating slippage
-              currentSlippage = Math.min(baseSlippage + (attempt * 20), maxSlippage); // Increase by 20% each retry, capped at 90%
+              // FALLBACK: Enhanced logic with fresh curve data and escalating slippage
+              currentSlippage = Math.min(baseSlippage + (attempt * 5), maxSlippage); // Increase by 5% each retry, capped at 50%
+              
+              // CRITICAL IMPROVEMENT: Fetch fresh bonding curve data on retries
+              let currentVirtualTokenReserve = virtualTokenReserve;
+              let currentVirtualSolReserve = virtualSolReserve;
+              let currentRealTokenReserve = realTokenReserve;
+              
+              if (attempt > 0) {
+                try {
+                  logger.info(`[${logIdentifier}]: Fetching fresh bonding curve data for retry attempt ${attempt + 1}`);
+                  const freshCurveData = await getBondingCurveData(bondingCurve);
+                  if (freshCurveData) {
+                    currentVirtualTokenReserve = freshCurveData.virtualTokenReserves;
+                    currentVirtualSolReserve = freshCurveData.virtualSolReserves;
+                    currentRealTokenReserve = freshCurveData.realTokenReserves;
+                    logger.info(`[${logIdentifier}]: Fresh curve data fetched for retry - Virtual SOL: ${currentVirtualSolReserve.toString()}, Virtual Tokens: ${currentVirtualTokenReserve.toString()}`);
+                  } else {
+                    logger.warn(`[${logIdentifier}]: Could not fetch fresh curve data, using cached values`);
+                  }
+                } catch (curveError: any) {
+                  logger.warn(`[${logIdentifier}]: Error fetching fresh curve data: ${curveError.message}, using cached values`);
+                }
+              }
+              
               const fallbackQuote = quoteBuy(
                 swapAmountLamports,
-                virtualTokenReserve,
-                virtualSolReserve,
-                realTokenReserve,
+                currentVirtualTokenReserve,
+                currentVirtualSolReserve,
+                currentRealTokenReserve,
               );
               tokenOut = fallbackQuote.tokenOut;
               
               logger.info(`[${logIdentifier}]: Fallback buy for ${keypair.publicKey.toBase58().slice(0, 8)} with ${currentSlippage}% slippage (attempt ${attempt + 1}/${maxRetries + 1})`);
-              logger.info(`[${logIdentifier}]: Fallback calculation - SOL: ${swapAmountSOL.toFixed(6)}, Tokens: ${tokenOut.toString()}, Balance: ${walletSolBalance.toFixed(6)} SOL`);
+              logger.info(`[${logIdentifier}]: Fallback calculation - SOL: ${swapAmountSOL.toFixed(6)}, Tokens: ${tokenOut.toString()}, Balance: ${walletSolBalance.toFixed(6)} SOL, Fresh data: ${attempt > 0 ? 'Yes' : 'No'}`);
             }
             
             const ata = getAssociatedTokenAddressSync(
@@ -951,7 +974,7 @@ export const executeTokenLaunch = async (
               false,
               currentLaunchAttempt,
               {
-                slippageUsed: baseSlippage + (attempt * 50),
+                slippageUsed: baseSlippage + (attempt * 5),
                 amountSol: 0, // We don't know the amount for failed attempts
                 errorMessage: error.message,
                 retryAttempt: attempt,
