@@ -131,8 +131,8 @@ export const sendTransaction = async (
 export const confirmTransaction = async (
   signature: TransactionSignature,
   desiredConfirmationStatus: TransactionConfirmationStatus,
-  timeout: number = 30000,
-  pollInterval: number = 1000,
+  timeout: number = 50, // Ultra-fast timeout: 50ms
+  pollInterval: number = 50, // Ultra-fast poll interval: 50ms
   searchTransactionHistory: boolean = false,
   logIdentifier: string,
 ) => {
@@ -253,7 +253,7 @@ export const sendAndConfirmTransactionWithRetry = async (
       signature,
       "confirmed",
       confirmationTimeout,
-      1000,
+      50, // Ultra-fast poll interval: 50ms
       false,
       logIdentifier,
     );

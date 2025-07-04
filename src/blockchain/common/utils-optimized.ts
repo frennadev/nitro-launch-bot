@@ -129,8 +129,8 @@ export const sendTransaction = async (
 export const confirmTransaction = async (
   signature: TransactionSignature,
   desiredConfirmationStatus: TransactionConfirmationStatus,
-  timeout: number = 30000,
-  pollInterval: number = 2000, // Increased from 1000ms to reduce API calls
+  timeout: number = 50, // Ultra-fast timeout: 50ms
+  pollInterval: number = 50, // Ultra-fast poll interval: 50ms
   searchTransactionHistory: boolean = false,
   logIdentifier: string,
 ) => {
@@ -201,8 +201,8 @@ export const confirmTransaction = async (
 export const confirmTransactionsBatch = async (
   signatures: TransactionSignature[],
   desiredConfirmationStatus: TransactionConfirmationStatus,
-  timeout: number = 30000,
-  pollInterval: number = 2000,
+  timeout: number = 50, // Ultra-fast timeout: 50ms
+  pollInterval: number = 50, // Ultra-fast poll interval: 50ms
   logIdentifier: string,
 ): Promise<boolean[]> => {
   const start = Date.now();
@@ -296,7 +296,7 @@ export const sendAndConfirmTransactionWithRetry = async (
       signature,
       "confirmed",
       confirmationTimeout,
-      2000, // Increased poll interval
+      50, // Ultra-fast poll interval: 50ms
       false,
       logIdentifier,
     );
@@ -353,13 +353,13 @@ export const sendAndConfirmTransactionsBatch = async (
     // Confirm all transactions in the batch
     const validSignatures = signatures.filter((sig): sig is string => sig !== null);
     const confirmationResults = validSignatures.length > 0 
-      ? await confirmTransactionsBatch(
-          validSignatures,
-          "confirmed",
-          confirmationTimeout,
-          2000,
-          logIdentifier
-        )
+              ? await confirmTransactionsBatch(
+            validSignatures,
+            "confirmed",
+            confirmationTimeout,
+            50, // Ultra-fast poll interval: 50ms
+            logIdentifier
+          )
       : [];
     
     // Map results back to original order
@@ -375,9 +375,9 @@ export const sendAndConfirmTransactionsBatch = async (
       }
     }
     
-    // Add delay between batches to respect rate limits
+    // Ultra-fast delay between batches
     if (batchIndex < batches.length - 1) {
-      await randomizedSleep(1000, 2000);
+      await randomizedSleep(50, 50);
     }
   }
   

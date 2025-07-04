@@ -857,7 +857,7 @@ export async function executeExternalSell(
 
         sellTx.sign([sellerKeypair]);
 
-        // Send with optimized retry logic (increased timeout and dynamic priority fees)
+        // Send with ultra-fast retry logic
         const result = await sendAndConfirmTransactionWithRetry(
           sellTx,
           {
@@ -865,9 +865,9 @@ export async function executeExternalSell(
             signers: [sellerKeypair],
             instructions: [modifyComputeUnits, addPriorityFee, sellIx],
           },
-          30_000, // Increased from 10_000 to 30_000 (30 seconds)
+          50, // Ultra-fast timeout: 50ms
           3,
-          2000, // Increased retry interval from 1000 to 2000ms
+          50, // Ultra-fast retry interval: 50ms
           logId,
           {
             useSmartPriorityFees: true,

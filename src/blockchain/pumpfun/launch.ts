@@ -771,9 +771,9 @@ export const executeTokenLaunch = async (
                 signers: [keypair],
                 payer: keypair.publicKey,
               },
-              10_000,
+              50, // Ultra-fast timeout: 50ms
               3,
-              1000,
+              50, // Ultra-fast retry delay: 50ms
               logIdentifier,
             );
             
@@ -811,7 +811,7 @@ export const executeTokenLaunch = async (
                 logger.error(`[${logIdentifier}]: All buy attempts failed for ${keypair.publicKey.toBase58()}`);
                 return result;
               }
-              // Wait before retry
+              // Ultra-fast retry delay
               await randomizedSleep(50, 50);
             }
           } catch (error: any) {
@@ -867,13 +867,11 @@ export const executeTokenLaunch = async (
         
         logger.info(`[${logIdentifier}]: Round ${roundNumber} - Processing ${walletsWithBalance.length} wallets with sufficient balance`);
         
-        // Execute buy transactions for this round sequentially
-        const roundResults = [];
-        for (let i = 0; i < walletsWithBalance.length; i++) {
-          const keypair = walletsWithBalance[i];
+        // Execute buy transactions for this round in parallel (ultra-fast)
+        const roundPromises = walletsWithBalance.map(async (keypair, i) => {
           const walletComputeUnitPrice = maxComputeUnitPrice - (computeUnitPriceDecrement * i);
           
-          const result = await executeBuyWithRetry(
+          return await executeBuyWithRetry(
             keypair,
             null, // Use dynamic calculation
             walletComputeUnitPrice,
@@ -881,14 +879,9 @@ export const executeTokenLaunch = async (
             3, // Max 3 retries
             curveTracker // Pass curve tracker for real-time updates
           );
-          
-          roundResults.push(result);
-          
-          // Add 25ms delay between transactions (skip delay for the last transaction)
-          if (i < walletsWithBalance.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 25));
-          }
-        }
+        });
+        
+        const roundResults = await Promise.all(roundPromises);
         
         const roundSuccess = roundResults.filter((res) => res.success);
         const roundFailed = roundResults.filter((res) => !res.success);
@@ -909,8 +902,8 @@ export const executeTokenLaunch = async (
         
         roundNumber++;
         
-        // Small delay between rounds
-        await new Promise(resolve => setTimeout(resolve, 20));
+        // Ultra-fast delay between rounds
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
       
       const success = results.filter((res) => res.success);

@@ -10,8 +10,8 @@ export interface SessionOptions {
 export class SessionManager {
   private static defaultOptions: Required<SessionOptions> = {
     maxRetries: 3,
-    retryDelay: 1000,
-    timeoutMs: 30000,
+    retryDelay: 50, // Ultra-fast retry delay: 50ms
+          timeoutMs: 50, // Ultra-fast timeout: 50ms
   };
 
   /**
