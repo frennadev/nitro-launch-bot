@@ -526,16 +526,17 @@ export const createToken = async (userId: string, name: string, symbol: string, 
   let isPumpAddress = false;
   let validationAttempts = 0;
   const maxValidationAttempts = 10;
+  const excludeAddresses: string[] = []; // Track failed addresses to exclude them
 
   logger.info(`[createToken] Starting token creation for user ${userId} with enhanced validation`);
 
   while (validationAttempts < maxValidationAttempts) {
     validationAttempts++;
-    logger.info(`[createToken] Validation attempt ${validationAttempts}/${maxValidationAttempts}`);
+    logger.info(`[createToken] Validation attempt ${validationAttempts}/${maxValidationAttempts}${excludeAddresses.length > 0 ? ` (excluding ${excludeAddresses.length} failed addresses)` : ''}`);
 
     try {
-      // Try to get a pump address first
-      tokenKey = await getAvailablePumpAddress(userId);
+      // Try to get a pump address first, excluding previously failed addresses
+      tokenKey = await getAvailablePumpAddress(userId, excludeAddresses);
       isPumpAddress = true;
       logger.info(`[createToken] Got pump address: ${tokenKey.publicKey}`);
     } catch (error: any) {
@@ -558,6 +559,9 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     } else {
       logger.warn(`[createToken] Address ${tokenKey.publicKey} validation failed: ${validation.message}`);
       
+      // Add this address to the exclusion list for future attempts
+      excludeAddresses.push(tokenKey.publicKey);
+      
       // If pump address was allocated but validation failed, release it back to the pool
       if (isPumpAddress) {
         logger.info(`[createToken] Releasing invalid pump address ${tokenKey.publicKey} back to pool`);
@@ -566,7 +570,14 @@ export const createToken = async (userId: string, name: string, symbol: string, 
       
       // If this is our last attempt, throw an error
       if (validationAttempts >= maxValidationAttempts) {
-        throw new Error(`Failed to generate valid token address after ${maxValidationAttempts} attempts. Last error: ${validation.message}`);
+        throw new Error(`Failed to generate valid token address after ${maxValidationAttempts} attempts. Last error: ${validation.message}. Excluded addresses: ${excludeAddresses.join(', ')}`);
+      }
+      
+      // Add a small delay between retries to avoid overwhelming the database
+      if (validationAttempts > 1) {
+        const delay = Math.min(100 * validationAttempts, 500); // Progressive delay, max 500ms
+        logger.info(`[createToken] Waiting ${delay}ms before next attempt...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
       
       // Continue to next attempt
