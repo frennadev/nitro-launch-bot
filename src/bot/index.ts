@@ -23,7 +23,7 @@ import { CallBackQueries } from "./types";
 import { escape, formatUSD, safeEditMessageReplyMarkup, safeEditMessageText, safeEditOrSendMessage } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
-import devSellConversation from "./conversation/devSell";
+import devSellConversation, { devSell100Conversation } from "./conversation/devSell";
 import walletSellConversation from "./conversation/walletSell";
 import { TokenState } from "../backend/types";
 import walletConfigConversation from "./conversation/walletConfig";
@@ -306,6 +306,8 @@ bot.use(async (ctx, next) => {
 bot.use(createConversation(createTokenConversation));
 bot.use(createConversation(launchTokenConversation));
 bot.use(createConversation(devSellConversation));
+bot.use(createConversation(devSell100Conversation));
+bot.use(createConversation(devSell100Conversation));
 bot.use(createConversation(walletSellConversation));
 bot.use(createConversation(walletConfigConversation));
 bot.use(createConversation(mainMenuConversation));
@@ -631,76 +633,11 @@ bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
 });
 
 bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
-  await safeAnswerCallbackQuery(ctx, "🔄 Selling 100% dev supply...");
+  await safeAnswerCallbackQuery(ctx, "🔄 Starting 100% dev sell...");
   const tokenAddress = ctx.match![1];
   
-  try {
-    // Get user and token info
-    const user = await getUser(ctx.chat!.id!.toString());
-    if (!user) {
-      await ctx.reply("❌ User not found");
-      return;
-    }
-    
-    const token = await getUserToken(user.id, tokenAddress);
-    if (!token) {
-      await ctx.reply("❌ Token not found");
-      return;
-    }
-    
-    if (token.state !== TokenState.LAUNCHED) {
-      await ctx.reply("❌ Token is not launched yet");
-      return;
-    }
-    
-    if (token.launchData?.lockDevSell === true) {
-      await ctx.reply("❌ Dev sell job is currently processing. Please wait...");
-      return;
-    }
-    
-    // Send loading message
-    const loadingMsg = await ctx.reply("🔄 **Submitting 100% Dev Supply Sell...**\n\n⏳ Adding to queue...", {
-      parse_mode: "Markdown"
-    });
-    
-    // Get dev wallet private key
-    const devWalletPrivateKey = decryptPrivateKey(
-      (token.launchData!.devWallet! as any).privateKey
-    );
-    
-    // Use the proper queue system for dev sell (100% = sell all)
-    const result = await enqueueDevSell(
-      user.id,
-      ctx.chat!.id,
-      tokenAddress,
-      devWalletPrivateKey,
-      100 // 100% dev sell
-    );
-    
-    if (result.success) {
-      await ctx.api.editMessageText(
-        ctx.chat!.id,
-        loadingMsg.message_id,
-        `✅ **100% Dev Supply Sell Submitted!**\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed.`,
-        { parse_mode: "Markdown" }
-      );
-      
-      // Start the loading state for the actual dev sell process
-      await startLoadingState(ctx, "dev_sell", tokenAddress);
-    } else {
-      await ctx.api.editMessageText(
-        ctx.chat!.id,
-        loadingMsg.message_id,
-        `❌ **Failed to submit 100% dev sell**\n\n🔍 **Error:** ${result.message}\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`,
-        { parse_mode: "Markdown" }
-      );
-    }
-  } catch (error: any) {
-    logger.error("Error in sell dev supply 100%:", error);
-    await ctx.reply(`❌ **Sell Failed**\n\n🔍 **Error:** ${error.message}\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`, {
-      parse_mode: "Markdown"
-    });
-  }
+  // Use the conversation system like other sell handlers
+  await ctx.conversation.enter("devSell100Conversation", tokenAddress);
 });
 bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);

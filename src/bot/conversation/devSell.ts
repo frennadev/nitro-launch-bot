@@ -109,4 +109,90 @@ const devSellConversation = async (
   }
 };
 
-export default devSellConversation;
+const devSell100Conversation = async (
+  conversation: Conversation,
+  ctx: Context,
+  tokenAddress: string
+) => {
+  // Don't answer callback query here - already handled by main handler
+  
+  // --------- VALIDATE USER ---------
+  const user = await getUser(ctx.chat!.id!.toString());
+  if (!user) {
+    await ctx.reply("❌ User not found");
+    await conversation.halt();
+    return;
+  }
+
+  // -------- VALIDATE TOKEN ----------
+  const token = await getUserToken(user.id, tokenAddress);
+  if (!token) {
+    await ctx.reply("❌ Token not found");
+    await conversation.halt();
+    return;
+  }
+  
+  if (token.state !== TokenState.LAUNCHED) {
+    await ctx.reply("❌ Token is not launched yet");
+    await conversation.halt();
+    return;
+  }
+  
+  if (token.launchData?.lockDevSell === true) {
+    await ctx.reply("❌ Dev sell job is currently processing. Please wait...");
+    await conversation.halt();
+    return;
+  }
+
+  // Send loading message
+  const loadingMsg = await ctx.reply("🔄 **Submitting 100% Dev Supply Sell...**\n\n⏳ Adding to queue...", {
+    parse_mode: "Markdown"
+  });
+
+  try {
+    // Get dev wallet private key
+    const devWalletPrivateKey = decryptPrivateKey(
+      (token.launchData!.devWallet! as any).privateKey
+    );
+    
+    // Use the proper queue system for dev sell (100% = sell all)
+    const result = await enqueueDevSell(
+      user.id,
+      ctx.chat!.id,
+      tokenAddress,
+      devWalletPrivateKey,
+      100 // 100% dev sell
+    );
+    
+    if (result.success) {
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        loadingMsg.message_id,
+        `✅ **100% Dev Supply Sell Submitted!**\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed.`,
+        { parse_mode: "Markdown" }
+      );
+      
+      // Start the loading state for the actual dev sell process
+      await startLoadingState(ctx, "dev_sell", tokenAddress);
+    } else {
+      await ctx.api.editMessageText(
+        ctx.chat!.id,
+        loadingMsg.message_id,
+        `❌ **Failed to submit 100% dev sell**\n\n🔍 **Error:** ${result.message}\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`,
+        { parse_mode: "Markdown" }
+      );
+    }
+  } catch (error: any) {
+    logger.error("Error in 100% dev sell conversation:", error);
+    await ctx.api.editMessageText(
+      ctx.chat!.id,
+      loadingMsg.message_id,
+      `❌ **Sell Failed**\n\n🔍 **Error:** ${error.message}\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`,
+      { parse_mode: "Markdown" }
+    );
+  }
+  
+  await conversation.halt();
+};
+
+export { devSellConversation, devSell100Conversation };
