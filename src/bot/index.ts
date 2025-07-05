@@ -307,7 +307,6 @@ bot.use(createConversation(createTokenConversation));
 bot.use(createConversation(launchTokenConversation));
 bot.use(createConversation(devSellConversation));
 bot.use(createConversation(devSell100Conversation));
-bot.use(createConversation(devSell100Conversation));
 bot.use(createConversation(walletSellConversation));
 bot.use(createConversation(walletConfigConversation));
 bot.use(createConversation(mainMenuConversation));
@@ -636,7 +635,7 @@ bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Starting 100% dev sell...");
   const tokenAddress = ctx.match![1];
   
-  // Use the conversation system like other sell handlers
+  // Use the conversation system like other sell handlers to avoid state conflicts
   await ctx.conversation.enter("devSell100Conversation", tokenAddress);
 });
 bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
