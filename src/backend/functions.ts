@@ -3060,11 +3060,19 @@ export const validateTokenAddressAvailability = async (
     
     // Check if the user is trying to use their own token address
     if (usage.usedBy === userId) {
+      // If there's already a token created with this address, it's not available
+      if (usage.tokenName) {
+        return {
+          isAvailable: false,
+          message: `You already have a token with this address: ${usage.tokenName}`
+        };
+      }
+      
+      // If the address is allocated to this user but no token exists yet, it's available
+      // This happens when the address was just allocated from the pump address pool
       return {
-        isAvailable: false,
-        message: usage.tokenName 
-          ? `You already have a token with this address: ${usage.tokenName}`
-          : "You have already used this address"
+        isAvailable: true,
+        message: "Address is allocated to you and ready for token creation"
       };
     }
     
