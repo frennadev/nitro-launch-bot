@@ -34,6 +34,37 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
     const devKeypair = secretKeyToKeypair(devWallet);
     console.log(`[${logId}]: Derived dev keypair`);
 
+    // CRITICAL: Check wallet balance and reserve SOL for future sell transactions
+    const walletBalance = await connection.getBalance(devKeypair.publicKey, "confirmed");
+    const walletBalanceSOL = walletBalance / LAMPORTS_PER_SOL;
+    
+    // Reserve fees for buy transaction AND future sell transactions
+    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const sellFeeReserve = 0.01; // Reserve 0.01 SOL for future sell transaction fees
+    const buyFeePercent = 0.01; // 1% buy fee
+    const estimatedBuyFee = solAmount * buyFeePercent;
+    const totalFeeReserve = transactionFeeReserve + sellFeeReserve + estimatedBuyFee;
+    const availableForTrade = walletBalanceSOL - totalFeeReserve;
+    
+    console.log(`[${logId}]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);
+    console.log(`[${logId}]: Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`);
+    console.log(`[${logId}]: Sell fee reserve: ${sellFeeReserve.toFixed(6)} SOL (for future sells)`);
+    console.log(`[${logId}]: Estimated 1% buy fee: ${estimatedBuyFee.toFixed(6)} SOL`);
+    console.log(`[${logId}]: Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`);
+    console.log(`[${logId}]: Available for trade: ${availableForTrade.toFixed(6)} SOL`);
+    
+    // Validate we have enough balance
+    if (availableForTrade <= 0) {
+      throw new Error(`Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${sellFeeReserve.toFixed(6)} SOL sell reserve + ${estimatedBuyFee.toFixed(6)} SOL buy fee)`);
+    }
+    
+    // Use the minimum of requested amount or available balance
+    const actualTradeAmount = Math.min(solAmount, availableForTrade);
+    
+    if (actualTradeAmount < solAmount) {
+      console.warn(`[${logId}]: Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations (keeping ${sellFeeReserve} SOL for future sells)`);
+    }
+
     const { bondingCurve } = getBondingCurve(mintPk);
     console.log(`[${logId}]: bondingCurve = ${bondingCurve.toBase58()}`);
 
@@ -43,8 +74,8 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
       throw new Error("Bonding curve data not found");
     }
 
-    const solLamports = BigInt(Math.ceil(solAmount * LAMPORTS_PER_SOL));
-    console.log(`[${logId}]: solLamports = ${solLamports}`);
+    const solLamports = BigInt(Math.ceil(actualTradeAmount * LAMPORTS_PER_SOL));
+    console.log(`[${logId}]: solLamports = ${solLamports} (adjusted from ${solAmount} SOL)`);
 
     const { tokenOut } = quoteBuy(
       solLamports,
@@ -119,7 +150,7 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
         result.success,
         0,
         {
-          amountSol: solAmount,
+          amountSol: actualTradeAmount,
           amountTokens: tokensWithSlippage.toString(),
           errorMessage: result.success ? undefined : "Transaction failed",
         },
@@ -132,7 +163,7 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
 
     console.log(`[${logId}]: Collecting fee`);
     try {
-      const feeResult = await collectTransactionFee(bs58.encode(devKeypair.secretKey), solAmount, "buy");
+      const feeResult = await collectTransactionFee(bs58.encode(devKeypair.secretKey), actualTradeAmount, "buy");
       console.log(`[${logId}]: Fee collection result =`, feeResult);
     } catch (err: any) {
       console.error(`[${logId}]: Fee collection error`, err);
@@ -159,141 +190,49 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
     const fundingKeypair = secretKeyToKeypair(fundingWallet);
     console.log(`[${logId}]: Derived funding keypair`);
 
+    // CRITICAL: Check wallet balance and reserve SOL for future sell transactions
+    const walletBalance = await connection.getBalance(fundingKeypair.publicKey, "confirmed");
+    const walletBalanceSOL = walletBalance / LAMPORTS_PER_SOL;
+    
+    // Reserve fees for buy transaction AND future sell transactions
+    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const sellFeeReserve = 0.01; // Reserve 0.01 SOL for future sell transaction fees
+    const buyFeePercent = 0.01; // 1% buy fee
+    const estimatedBuyFee = solAmount * buyFeePercent;
+    const totalFeeReserve = transactionFeeReserve + sellFeeReserve + estimatedBuyFee;
+    const availableForTrade = walletBalanceSOL - totalFeeReserve;
+    
+    console.log(`[${logId}]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);
+    console.log(`[${logId}]: Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`);
+    console.log(`[${logId}]: Sell fee reserve: ${sellFeeReserve.toFixed(6)} SOL (for future sells)`);
+    console.log(`[${logId}]: Estimated 1% buy fee: ${estimatedBuyFee.toFixed(6)} SOL`);
+    console.log(`[${logId}]: Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`);
+    console.log(`[${logId}]: Available for trade: ${availableForTrade.toFixed(6)} SOL`);
+    
+    // Validate we have enough balance
+    if (availableForTrade <= 0) {
+      throw new Error(`Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${sellFeeReserve.toFixed(6)} SOL sell reserve + ${estimatedBuyFee.toFixed(6)} SOL buy fee)`);
+    }
+    
+    // Use the minimum of requested amount or available balance
+    const actualTradeAmount = Math.min(solAmount, availableForTrade);
+    
+    if (actualTradeAmount < solAmount) {
+      console.warn(`[${logId}]: Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations (keeping ${sellFeeReserve} SOL for future sells)`);
+    }
+
     const { bondingCurve } = getBondingCurve(mintPk);
     console.log(`[${logId}]: bondingCurve = ${bondingCurve.toBase58()}`);
 
-    // Use robust bonding curve data fetching (same as launch process)
-    console.log(`[${logId}]: Fetching bonding curve data with retry strategy...`);
-    const curveDataStart = performance.now();
-    
-    let bondingCurveData = null;
-    
-    try {
-      // Strategy 1: Parallel fetch with different commitment levels (fastest)
-      const parallelFetchPromises = [
-        // Most likely to succeed quickly
-        (async () => {
-          try {
-            const accountInfo = await connection.getAccountInfo(bondingCurve, "processed");
-            if (accountInfo?.data) {
-              const data = await getBondingCurveData(bondingCurve);
-              if (data) {
-                console.log(`[${logId}]: Fast curve data fetch successful with 'processed' commitment`);
-                return { data, commitment: "processed" };
-              }
-            }
-          } catch (error) {
-            return null;
-          }
-          return null;
-        })(),
-        
-        // Backup with confirmed
-        (async () => {
-          await new Promise(resolve => setTimeout(resolve, 500)); // Small delay to prefer processed
-          try {
-            const accountInfo = await connection.getAccountInfo(bondingCurve, "confirmed");
-            if (accountInfo?.data) {
-              const data = await getBondingCurveData(bondingCurve);
-              if (data) {
-                console.log(`[${logId}]: Curve data fetch successful with 'confirmed' commitment`);
-                return { data, commitment: "confirmed" };
-              }
-            }
-          } catch (error) {
-            return null;
-          }
-          return null;
-        })(),
-        
-        // Final fallback with finalized
-        (async () => {
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Delay to prefer faster options
-          try {
-            const accountInfo = await connection.getAccountInfo(bondingCurve, "finalized");
-            if (accountInfo?.data) {
-              const data = await getBondingCurveData(bondingCurve);
-              if (data) {
-                console.log(`[${logId}]: Curve data fetch successful with 'finalized' commitment`);
-                return { data, commitment: "finalized" };
-              }
-            }
-          } catch (error) {
-            return null;
-          }
-          return null;
-        })()
-      ];
-      
-      // Race to get the first successful result
-      const results = await Promise.allSettled(parallelFetchPromises);
-      const successfulResult = results.find(result => 
-        result.status === 'fulfilled' && result.value !== null
-      );
-      
-      if (successfulResult && successfulResult.status === 'fulfilled' && successfulResult.value) {
-        bondingCurveData = successfulResult.value.data;
-        const fetchTime = performance.now() - curveDataStart;
-        console.log(`[${logId}]: Parallel curve data fetch completed in ${Math.round(fetchTime)}ms using ${successfulResult.value.commitment} commitment`);
-      }
-      
-    } catch (error: any) {
-      console.warn(`[${logId}]: Parallel curve data fetch failed: ${error.message}`);
-    }
-    
-    // Fallback to sequential retry logic if parallel fetch failed
+    const bondingCurveData = await getBondingCurveData(bondingCurve);
+    console.log(`[${logId}]: bondingCurveData fetched`);
     if (!bondingCurveData) {
-      console.log(`[${logId}]: Parallel fetch failed, falling back to sequential retry logic...`);
-      
-      let retries = 0;
-      const maxRetries = 5;
-      const baseDelay = 1000;
-      
-      while (!bondingCurveData && retries < maxRetries) {
-        try {
-          const commitmentLevel = retries < 2 ? "processed" : retries < 4 ? "confirmed" : "finalized";
-          
-          const accountInfo = await connection.getAccountInfo(bondingCurve, commitmentLevel);
-          if (accountInfo && accountInfo.data) {
-            bondingCurveData = await getBondingCurveData(bondingCurve);
-            if (bondingCurveData) {
-              console.log(`[${logId}]: Sequential fallback successful on attempt ${retries + 1} with ${commitmentLevel} commitment`);
-              break;
-            }
-          }
-        } catch (error: any) {
-          console.warn(`[${logId}]: Sequential fallback attempt ${retries + 1} failed: ${error.message}`);
-        }
-        
-        retries += 1;
-        if (!bondingCurveData && retries < maxRetries) {
-          const delay = Math.min(baseDelay * Math.pow(1.5, retries), 3000) + Math.random() * 500;
-          console.log(`[${logId}]: Retrying in ${Math.round(delay)}ms (attempt ${retries}/${maxRetries})`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-    }
-    
-    if (!bondingCurveData) {
-      console.error(`[${logId}]: Failed to fetch curve data after all attempts`);
-      
-      // Additional debugging - check if bonding curve account exists
-      try {
-        const accountInfo = await connection.getAccountInfo(bondingCurve, "finalized");
-        if (!accountInfo) {
-          throw new Error(`Bonding curve account does not exist: ${bondingCurve.toBase58()}`);
-        } else {
-          throw new Error(`Bonding curve account exists but data is invalid. Account owner: ${accountInfo.owner.toBase58()}, Data length: ${accountInfo.data.length}`);
-        }
-      } catch (debugError: any) {
-        console.error(`[${logId}]: Bonding curve debug info: ${debugError.message}`);
-        throw new Error(`Unable to fetch curve data: ${debugError.message}`);
-      }
+      throw new Error("Bonding curve data not found");
     }
 
     console.log(`[${logId}]: bondingCurveData fetched successfully`);
 
-    const solLamports = BigInt(Math.ceil(solAmount * LAMPORTS_PER_SOL));
+    const solLamports = BigInt(Math.ceil(actualTradeAmount * LAMPORTS_PER_SOL));
     console.log(`[${logId}]: solLamports = ${solLamports}`);
 
     const { tokenOut } = quoteBuy(
@@ -381,7 +320,7 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
         result.success,
         0,
         {
-          amountSol: solAmount,
+          amountSol: actualTradeAmount,
           amountTokens: tokensWithSlippage.toString(),
           errorMessage: result.success ? undefined : "Transaction failed",
         },
@@ -394,7 +333,7 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
 
     console.log(`[${logId}]: Collecting fee`);
     try {
-      const feeResult = await collectTransactionFee(bs58.encode(fundingKeypair.secretKey), solAmount, "buy");
+      const feeResult = await collectTransactionFee(bs58.encode(fundingKeypair.secretKey), actualTradeAmount, "buy");
       console.log(`[${logId}]: Fee collection result =`, feeResult);
     } catch (err: any) {
       console.error(`[${logId}]: Fee collection error`, err);
