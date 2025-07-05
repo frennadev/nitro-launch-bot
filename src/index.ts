@@ -1,9 +1,11 @@
 import { connectDB, disconnectDB } from "./backend/db";
 import { botLogger, dbLogger, logSystemHealth } from "./utils/logger";
 import { env, LIGHTWEIGHT_MODE, ENABLE_BACKGROUND_PRELOADING, MAX_POOL_CACHE_SIZE } from "./config";
+import { initializeExternalPumpAddressService, cleanupExternalPumpAddressService } from "./service/external-pump-address-service";
 
 let bot: any = null; // Will be initialized only with valid token
 let dbConnected = false;
+let externalServiceInitialized = false;
 
 const nitroLaunchRunner = async () => {
   // Initialize logging system
@@ -40,6 +42,20 @@ const nitroLaunchRunner = async () => {
     } else {
       dbLogger.error("❌ Database connection required for production mode");
       throw error;
+    }
+  }
+  
+  // Initialize external pump address service
+  if (dbConnected) {
+    try {
+      dbLogger.info("Initializing external pump address service...");
+      await initializeExternalPumpAddressService();
+      externalServiceInitialized = true;
+      dbLogger.info("✅ External pump address service initialized");
+    } catch (error: any) {
+      dbLogger.warn("⚠️  External pump address service initialization failed:", { error: error.message });
+      dbLogger.info("📌 Continuing with local pump addresses only");
+      externalServiceInitialized = false;
     }
   }
   
@@ -109,6 +125,11 @@ nitroLaunchRunner().catch((err) => {
 });
 
 const onCloseSignal = async () => {
+  if (externalServiceInitialized) {
+    dbLogger.info("Cleaning up external pump address service...");
+    await cleanupExternalPumpAddressService();
+  }
+  
   if (dbConnected) {
     dbLogger.info("Closing mongo db connection...");
     await disconnectDB();

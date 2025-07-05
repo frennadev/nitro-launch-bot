@@ -31,6 +31,7 @@ import { logger } from "../blockchain/common/logger";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
 import { sendAndConfirmTransaction } from "@solana/web3.js";
+import { getExternalPumpAddressService } from "../service/external-pump-address-service";
 
 export const getUser = async (telegramId: String) => {
   const user = await UserModel.findOne({
@@ -317,6 +318,37 @@ const createTokenMetadata = async (name: string, symbol: string, description: st
 };
 
 export const getAvailablePumpAddress = async (userId: string, excludeAddresses: string[] = []) => {
+  const externalService = getExternalPumpAddressService();
+  
+  try {
+    // First try to get an address from the external database
+    logger.info(`[getAvailablePumpAddress] Attempting to get pump address from external database for user ${userId}`);
+    
+    const externalAddress = await externalService.getUnusedPumpAddress(userId, excludeAddresses);
+    
+    if (externalAddress) {
+      logger.info(`[getAvailablePumpAddress] Successfully allocated external pump address ${externalAddress.publicKey} to user ${userId}`);
+      
+      // Also mark it as used in our local database for consistency
+      try {
+        await markPumpAddressAsUsed(externalAddress.publicKey, userId);
+      } catch (localError: any) {
+        // If local database doesn't have this address, that's okay - external is the source of truth
+        logger.warn(`[getAvailablePumpAddress] Local database doesn't have address ${externalAddress.publicKey}, continuing with external allocation`);
+      }
+      
+      return {
+        publicKey: externalAddress.publicKey,
+        secretKey: externalAddress.secretKey,
+      };
+    } else {
+      logger.warn(`[getAvailablePumpAddress] No external pump addresses available, falling back to local database`);
+    }
+  } catch (error: any) {
+    logger.error(`[getAvailablePumpAddress] Error accessing external database: ${error.message}, falling back to local database`);
+  }
+
+  // Fallback to local database if external service fails or has no addresses
   const session = await mongoose.startSession();
 
   try {
@@ -345,8 +377,10 @@ export const getAvailablePumpAddress = async (userId: string, excludeAddresses: 
       );
 
       if (!pumpAddress) {
-        throw new Error("No available pump addresses found. Please contact support.");
+        throw new Error("No available pump addresses found in either external or local database. Please contact support.");
       }
+
+      logger.info(`[getAvailablePumpAddress] Using local pump address ${pumpAddress.publicKey} for user ${userId}`);
 
       return {
         publicKey: pumpAddress.publicKey,
@@ -359,16 +393,35 @@ export const getAvailablePumpAddress = async (userId: string, excludeAddresses: 
 };
 
 export const releasePumpAddress = async (publicKey: string) => {
-  await PumpAddressModel.findOneAndUpdate(
-    { publicKey },
-    {
-      $set: {
-        isUsed: false,
-        usedBy: null,
-        usedAt: null,
-      },
+  const externalService = getExternalPumpAddressService();
+  
+  try {
+    // First try to release from external database
+    const externalReleased = await externalService.releasePumpAddress(publicKey);
+    
+    if (externalReleased) {
+      logger.info(`[releasePumpAddress] Released external pump address ${publicKey}`);
     }
-  );
+  } catch (error: any) {
+    logger.error(`[releasePumpAddress] Error releasing external pump address ${publicKey}: ${error.message}`);
+  }
+
+  // Also try to release from local database for consistency
+  try {
+    await PumpAddressModel.findOneAndUpdate(
+      { publicKey },
+      {
+        $set: {
+          isUsed: false,
+          usedBy: null,
+          usedAt: null,
+        },
+      }
+    );
+    logger.info(`[releasePumpAddress] Released local pump address ${publicKey}`);
+  } catch (error: any) {
+    logger.warn(`[releasePumpAddress] Error releasing local pump address ${publicKey}: ${error.message}`);
+  }
 };
 
 export const markPumpAddressAsUsed = async (publicKey: string, userId?: string) => {
@@ -468,124 +521,88 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     throw new Error("Token metadata uri not uploaded");
   }
 
-  // Use pump address instead of generating random keypair
+  // Enhanced address allocation with comprehensive validation
   let tokenKey;
   let isPumpAddress = false;
-  try {
-    tokenKey = await getAvailablePumpAddress(userId);
-    isPumpAddress = true;
-  } catch (error: any) {
-    // Fallback to random generation if no pump addresses available
-    logger.warn(`No pump addresses available for user ${userId}, falling back to random generation: ${error.message}`);
-    const [randomKey] = generateKeypairs(1);
-    tokenKey = randomKey;
-  }
+  let validationAttempts = 0;
+  const maxValidationAttempts = 10;
 
-  // Validate that the token address is not already used
-  let finalTokenKey = tokenKey;
-  let finalIsPumpAddress = isPumpAddress;
-  
-  const availability = await validateTokenAddressAvailability(tokenKey.publicKey, userId);
-  if (!availability.isAvailable) {
-    logger.warn(`Token address ${tokenKey.publicKey} already in use for user ${userId}. Generating new address...`);
-    
-    // If pump address was allocated, release it back to the pool
-    if (isPumpAddress) {
-      await releasePumpAddress(tokenKey.publicKey);
-    }
-    
-    // Generate a new address automatically
+  logger.info(`[createToken] Starting token creation for user ${userId} with enhanced validation`);
+
+  while (validationAttempts < maxValidationAttempts) {
+    validationAttempts++;
+    logger.info(`[createToken] Validation attempt ${validationAttempts}/${maxValidationAttempts}`);
+
     try {
-      // Try to get another pump address first, excluding the original conflicted address
-      finalTokenKey = await getAvailablePumpAddress(userId, [tokenKey.publicKey]);
-      finalIsPumpAddress = true;
-      logger.info(`Generated new pump address: ${finalTokenKey.publicKey} for user ${userId}`);
+      // Try to get a pump address first
+      tokenKey = await getAvailablePumpAddress(userId);
+      isPumpAddress = true;
+      logger.info(`[createToken] Got pump address: ${tokenKey.publicKey}`);
     } catch (error: any) {
       // Fallback to random generation if no pump addresses available
-      logger.warn(`No pump addresses available for user ${userId}, generating random address: ${error.message}`);
+      logger.warn(`[createToken] No pump addresses available for user ${userId}, using random generation: ${error.message}`);
       const [randomKey] = generateKeypairs(1);
-      finalTokenKey = randomKey;
-      finalIsPumpAddress = false;
+      tokenKey = randomKey;
+      isPumpAddress = false;
+      logger.info(`[createToken] Generated random address: ${tokenKey.publicKey}`);
     }
+
+    // Comprehensive validation before proceeding
+    logger.info(`[createToken] Validating address ${tokenKey.publicKey} before use...`);
     
-        // Validate the new address (recursive check with max attempts)
-    let attempts = 0;
-    const maxAttempts = 5;
-    const usedAddresses = new Set([tokenKey.publicKey]); // Track used addresses to avoid duplicates
+    const validation = await validateTokenAddressAvailability(tokenKey.publicKey, userId);
     
-    while (attempts < maxAttempts) {
-      const newAvailability = await validateTokenAddressAvailability(finalTokenKey.publicKey, userId);
-      if (newAvailability.isAvailable) {
-        logger.info(`Successfully generated available token address: ${finalTokenKey.publicKey} for user ${userId}`);
-        break;
+    if (validation.isAvailable) {
+      logger.info(`[createToken] Address ${tokenKey.publicKey} validated successfully on attempt ${validationAttempts}`);
+      break;
+    } else {
+      logger.warn(`[createToken] Address ${tokenKey.publicKey} validation failed: ${validation.message}`);
+      
+      // If pump address was allocated but validation failed, release it back to the pool
+      if (isPumpAddress) {
+        logger.info(`[createToken] Releasing invalid pump address ${tokenKey.publicKey} back to pool`);
+        await releasePumpAddress(tokenKey.publicKey);
       }
       
-      attempts++;
-      logger.warn(`Generated address ${finalTokenKey.publicKey} also in use. Attempt ${attempts}/${maxAttempts}. Reason: ${newAvailability.message}`);
-      
-      // Track this address as used
-      usedAddresses.add(finalTokenKey.publicKey);
-      
-      // Release the current address if it's a pump address
-      if (finalIsPumpAddress) {
-        await releasePumpAddress(finalTokenKey.publicKey);
+      // If this is our last attempt, throw an error
+      if (validationAttempts >= maxValidationAttempts) {
+        throw new Error(`Failed to generate valid token address after ${maxValidationAttempts} attempts. Last error: ${validation.message}`);
       }
       
-      if (attempts >= maxAttempts) {
-        // As a last resort, use random generation
-        logger.warn(`All pump addresses appear to be in use. Falling back to random generation for user ${userId}`);
-        const [randomKey] = generateKeypairs(1);
-        
-        // Validate the random key
-        const randomAvailability = await validateTokenAddressAvailability(randomKey.publicKey, userId);
-        if (randomAvailability.isAvailable) {
-          finalTokenKey = randomKey;
-          finalIsPumpAddress = false;
-          logger.info(`Successfully generated random token address: ${finalTokenKey.publicKey} for user ${userId}`);
-        } else {
-          throw new Error(`Failed to generate available token address after ${maxAttempts} attempts. Please try again later.`);
-        }
-      }
-      
-      // Generate another address, ensuring it's different from previously tried ones
-      let newAddress;
-      let isNewPumpAddress = false;
-      
-      // After 2 attempts, start mixing in random generation
-      if (attempts >= 2) {
-        logger.info(`Attempt ${attempts}: Using random generation due to pump address conflicts`);
-        const [randomKey] = generateKeypairs(1);
-        newAddress = randomKey;
-        isNewPumpAddress = false;
-      } else {
-        // Try pump address first for early attempts
-        try {
-          // Pass the list of already tried addresses to exclude them
-          newAddress = await getAvailablePumpAddress(userId, Array.from(usedAddresses));
-          isNewPumpAddress = true;
-          logger.info(`Got pump address: ${newAddress.publicKey}`);
-        } catch (error: any) {
-          logger.warn(`No pump addresses available, using random generation: ${error.message}`);
-          const [randomKey] = generateKeypairs(1);
-          newAddress = randomKey;
-          isNewPumpAddress = false;
-        }
-        
-        // If we got a duplicate pump address, release it and use random generation
-        if (usedAddresses.has(newAddress.publicKey) && isNewPumpAddress) {
-          logger.warn(`Got duplicate pump address ${newAddress.publicKey}, releasing it and using random generation`);
-          await releasePumpAddress(newAddress.publicKey);
-          const [randomKey] = generateKeypairs(1);
-          newAddress = randomKey;
-          isNewPumpAddress = false;
-        }
-      }
-      
-      finalTokenKey = newAddress;
-      finalIsPumpAddress = isNewPumpAddress;
-      
-      logger.info(`Generated new candidate address: ${finalTokenKey.publicKey} (${finalIsPumpAddress ? 'pump' : 'random'})`);
+      // Continue to next attempt
+      tokenKey = null;
     }
+  }
+
+  if (!tokenKey) {
+    throw new Error("Failed to allocate a valid token address");
+  }
+
+  // Final blockchain validation (check if address actually exists on-chain)
+  logger.info(`[createToken] Performing final blockchain validation for address ${tokenKey.publicKey}`);
+  
+  try {
+    const { connection } = await import("../blockchain/common/connection");
+    const accountInfo = await connection.getAccountInfo(new PublicKey(tokenKey.publicKey));
+    
+    if (accountInfo) {
+      logger.error(`[createToken] Address ${tokenKey.publicKey} already exists on blockchain!`);
+      
+      // Release the address if it was a pump address
+      if (isPumpAddress) {
+        await releasePumpAddress(tokenKey.publicKey);
+      }
+      
+      throw new Error("Token address already exists on blockchain. This should not happen with proper validation.");
+    } else {
+      logger.info(`[createToken] Blockchain validation passed - address ${tokenKey.publicKey} is available`);
+    }
+  } catch (error: any) {
+    if (error.message.includes("already exists on blockchain")) {
+      throw error; // Re-throw blockchain existence errors
+    }
+    // Network errors during validation are acceptable - continue with token creation
+    logger.warn(`[createToken] Blockchain validation network error (continuing): ${error.message}`);
   }
 
   try {
@@ -597,24 +614,26 @@ export const createToken = async (userId: string, name: string, symbol: string, 
       launchData: {
         devWallet: devWallet?.id,
       },
-      tokenAddress: finalTokenKey.publicKey,
-      tokenPrivateKey: encryptPrivateKey(finalTokenKey.secretKey),
+      tokenAddress: tokenKey.publicKey,
+      tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
       tokenMetadataUrl: metadataUri,
     });
     
     // Tag the token address as used with metadata
-    await tagTokenAddressAsUsed(finalTokenKey.publicKey, userId, {
+    await tagTokenAddressAsUsed(tokenKey.publicKey, userId, {
       tokenName: name,
       tokenSymbol: symbol,
       reason: 'token_creation',
-      originalAddress: tokenKey.publicKey !== finalTokenKey.publicKey ? tokenKey.publicKey : undefined
     });
+    
+    logger.info(`[createToken] Successfully created token ${name} (${symbol}) with address ${tokenKey.publicKey} for user ${userId}`);
     
     return token;
   } catch (error) {
     // If token creation fails and we used a pump address, release it
-    if (finalIsPumpAddress) {
-      await releasePumpAddress(finalTokenKey.publicKey);
+    if (isPumpAddress) {
+      logger.error(`[createToken] Token creation failed, releasing pump address ${tokenKey.publicKey}`);
+      await releasePumpAddress(tokenKey.publicKey);
     }
     throw error;
   }
@@ -2961,7 +2980,23 @@ export const checkTokenAddressUsage = async (tokenAddress: string): Promise<{
       };
     }
     
-    // Check if this is a pump address that's already been used
+    // Check external pump address database first
+    const externalService = getExternalPumpAddressService();
+    try {
+      const externalValidation = await externalService.validatePumpAddress(tokenAddress);
+      
+      if (externalValidation.exists && externalValidation.isUsed) {
+        return {
+          isUsed: true,
+          usedBy: externalValidation.usedBy,
+          createdAt: externalValidation.usedAt
+        };
+      }
+    } catch (error: any) {
+      logger.warn(`[checkTokenAddressUsage] Error checking external database: ${error.message}`);
+    }
+    
+    // Check if this is a pump address that's already been used in local database
     const pumpAddress = await PumpAddressModel.findOne({ publicKey: tokenAddress }).lean();
     
     if (pumpAddress && pumpAddress.isUsed) {
@@ -2980,40 +3015,142 @@ export const checkTokenAddressUsage = async (tokenAddress: string): Promise<{
 };
 
 /**
- * Validate that a token address is available for use
- * @param tokenAddress - The token contract address to validate
- * @param userId - The user ID requesting to use this address
- * @returns Object with validation result and message
+ * Enhanced validation that checks if a token address is available for use
+ * @param tokenAddress - The token address to validate
+ * @param userId - The user ID requesting the address
+ * @returns Object with availability status and message
  */
 export const validateTokenAddressAvailability = async (
   tokenAddress: string, 
   userId: string
-): Promise<{ isAvailable: boolean; message: string }> => {
+): Promise<{
+  isAvailable: boolean;
+  message: string;
+}> => {
   try {
+    // First check if it's a valid Solana address
+    try {
+      new PublicKey(tokenAddress);
+    } catch (error) {
+      return {
+        isAvailable: false,
+        message: "Invalid Solana address format"
+      };
+    }
+
     const usage = await checkTokenAddressUsage(tokenAddress);
     
     if (!usage.isUsed) {
-      return { isAvailable: true, message: "Token address is available" };
-    }
-    
-    // Check if it's used by the same user
-    if (usage.usedBy === userId) {
-      return { 
-        isAvailable: false, 
-        message: `You have already created a token with this address: ${usage.tokenName || 'Unknown'}`
+      return {
+        isAvailable: true,
+        message: "Address is available for use"
       };
     }
     
-    // Used by different user
-    return { 
-      isAvailable: false, 
-      message: `This token address is already in use by another user${usage.tokenName ? ` (${usage.tokenName})` : ''}`
+    // Check if the user is trying to use their own token address
+    if (usage.usedBy === userId) {
+      return {
+        isAvailable: false,
+        message: usage.tokenName 
+          ? `You already have a token with this address: ${usage.tokenName}`
+          : "You have already used this address"
+      };
+    }
+    
+    // Address is used by someone else
+    return {
+      isAvailable: false,
+      message: usage.tokenName 
+        ? `Address already in use for token: ${usage.tokenName}`
+        : "Address is already in use by another user"
     };
-  } catch (error) {
-    logger.error(`Error validating token address availability:`, error);
-    return { 
-      isAvailable: false, 
-      message: "Error validating token address. Please try again." 
+    
+  } catch (error: any) {
+    logger.error(`Error validating token address availability for ${tokenAddress}:`, error);
+    return {
+      isAvailable: false,
+      message: `Validation error: ${error.message}`
     };
   }
+};
+
+/**
+ * Get comprehensive pump address usage statistics
+ * @returns Statistics from both external and local databases
+ */
+export const getPumpAddressUsageStatistics = async (): Promise<{
+  external: {
+    total: number;
+    used: number;
+    available: number;
+    usagePercentage: number;
+  };
+  local: {
+    total: number;
+    used: number;
+    available: number;
+    usagePercentage: number;
+  };
+  combined: {
+    total: number;
+    used: number;
+    available: number;
+    usagePercentage: number;
+  };
+}> => {
+  const externalService = getExternalPumpAddressService();
+  
+  // Get external database statistics
+  let externalStats = {
+    total: 0,
+    used: 0,
+    available: 0,
+    usagePercentage: 0
+  };
+  
+  try {
+    externalStats = await externalService.getUsageStats();
+  } catch (error: any) {
+    logger.error("[getPumpAddressUsageStatistics] Error getting external stats:", error);
+  }
+  
+  // Get local database statistics
+  let localStats = {
+    total: 0,
+    used: 0,
+    available: 0,
+    usagePercentage: 0
+  };
+  
+  try {
+    const localTotal = await PumpAddressModel.countDocuments({});
+    const localUsed = await PumpAddressModel.countDocuments({ isUsed: true });
+    const localAvailable = localTotal - localUsed;
+    
+    localStats = {
+      total: localTotal,
+      used: localUsed,
+      available: localAvailable,
+      usagePercentage: localTotal > 0 ? Math.round((localUsed / localTotal) * 100 * 100) / 100 : 0
+    };
+  } catch (error: any) {
+    logger.error("[getPumpAddressUsageStatistics] Error getting local stats:", error);
+  }
+  
+  // Calculate combined statistics
+  const combinedTotal = externalStats.total + localStats.total;
+  const combinedUsed = externalStats.used + localStats.used;
+  const combinedAvailable = combinedTotal - combinedUsed;
+  const combinedUsagePercentage = combinedTotal > 0 ? Math.round((combinedUsed / combinedTotal) * 100 * 100) / 100 : 0;
+  
+  return {
+    external: externalStats,
+    local: localStats,
+    combined: {
+      total: combinedTotal,
+      used: combinedUsed,
+      available: combinedAvailable,
+      usagePercentage: combinedUsagePercentage
+    }
+  };
 };

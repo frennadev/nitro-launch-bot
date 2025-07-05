@@ -23,7 +23,7 @@ import { CallBackQueries } from "./types";
 import { escape, formatUSD, safeEditMessageReplyMarkup, safeEditMessageText, safeEditOrSendMessage } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
-import devSellConversation, { devSell100Conversation } from "./conversation/devSell";
+import { devSellConversation, devSell100Conversation } from "./conversation/devSell";
 import walletSellConversation from "./conversation/walletSell";
 import { TokenState } from "../backend/types";
 import walletConfigConversation from "./conversation/walletConfig";
