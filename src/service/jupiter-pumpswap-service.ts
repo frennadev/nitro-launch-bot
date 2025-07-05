@@ -150,7 +150,9 @@ export class JupiterPumpswapService {
   }
 
   /**
-   * Execute a buy transaction using Jupiter routing with PumpSwap fallback
+   * Execute a buy transaction using intelligent platform routing
+   * PumpFun tokens (still on bonding curve) -> PumpFun first
+   * Graduated tokens -> Jupiter first, then PumpSwap fallback
    */
   async executeBuy(
     tokenAddress: string,
@@ -159,8 +161,8 @@ export class JupiterPumpswapService {
     slippage: number = 3, // Default slippage percentage
     ctx?: Context
   ): Promise<JupiterPumpswapResult> {
-    const logId = `jupiter-buy-${tokenAddress.substring(0, 8)}`;
-    logger.info(`[${logId}] Starting Jupiter buy for ${solAmount} SOL`);
+    const logId = `smart-buy-${tokenAddress.substring(0, 8)}`;
+    logger.info(`[${logId}] Starting intelligent buy for ${solAmount} SOL`);
 
     try {
       // CRITICAL FIX: Check actual wallet balance and account for fees
@@ -197,52 +199,124 @@ export class JupiterPumpswapService {
       if (actualTradeAmount < solAmount) {
         logger.warn(`[${logId}] Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations (keeping ${sellFeeReserve} SOL for future sells)`);
       }
-      
-      const solLamports = Math.floor(actualTradeAmount * 1_000_000_000); // Convert SOL to lamports
 
-      // Try Jupiter first
-      const quote = await this.getQuote(
-        WSOL,
-        tokenAddress,
-        solLamports,
-        "buy",
-        slippage * 100
+      // CRITICAL FIX: Check token graduation status to determine optimal platform order
+      const isGraduated = await isTokenGraduated(tokenAddress);
+      logger.info(`[${logId}] Token graduation status: ${isGraduated === null ? 'unknown' : (isGraduated ? 'graduated' : 'active')}`);
+
+      // NEW: Intelligent platform routing based on token status
+      if (isGraduated === false) {
+        // Token is still on PumpFun bonding curve - use PumpFun FIRST
+        logger.info(`[${logId}] Token still on bonding curve - trying PumpFun first (optimal for active tokens)`);
+        
+        const pumpfunResult = await this.tryPumpFunBuy(tokenAddress, buyerKeypair, actualTradeAmount, logId);
+        if (pumpfunResult.success) {
+          return pumpfunResult;
+        }
+        
+        logger.info(`[${logId}] PumpFun failed, trying Jupiter fallback...`);
+        const jupiterResult = await this.tryJupiterBuy(tokenAddress, buyerKeypair, actualTradeAmount, slippage, logId, ctx);
+        if (jupiterResult.success) {
+          return jupiterResult;
+        }
+        
+        logger.info(`[${logId}] Jupiter failed, trying PumpSwap fallback...`);
+        const pumpswapResult = await this.tryPumpSwapBuy(tokenAddress, buyerKeypair, actualTradeAmount, logId);
+        if (pumpswapResult.success) {
+          return pumpswapResult;
+        }
+      } else {
+        // Token is graduated or unknown - use Jupiter FIRST
+        logger.info(`[${logId}] Token is graduated/unknown - trying Jupiter first (optimal for graduated tokens)`);
+        
+        const jupiterResult = await this.tryJupiterBuy(tokenAddress, buyerKeypair, actualTradeAmount, slippage, logId, ctx);
+        if (jupiterResult.success) {
+          return jupiterResult;
+        }
+        
+        logger.info(`[${logId}] Jupiter failed, trying PumpSwap fallback...`);
+        const pumpswapResult = await this.tryPumpSwapBuy(tokenAddress, buyerKeypair, actualTradeAmount, logId);
+        if (pumpswapResult.success) {
+          return pumpswapResult;
+        }
+        
+        logger.info(`[${logId}] PumpSwap failed, trying PumpFun fallback...`);
+        const pumpfunResult = await this.tryPumpFunBuy(tokenAddress, buyerKeypair, actualTradeAmount, logId);
+        if (pumpfunResult.success) {
+          return pumpfunResult;
+        }
+      }
+
+      return {
+        success: false,
+        signature: "",
+        error: "All buy methods failed",
+      };
+    } catch (error: any) {
+      logger.error(
+        `[${logId}] Smart buy failed with error:`,
+        error instanceof Error ? error.message : String(error)
       );
+      return {
+        success: false,
+        signature: "",
+        error: error.message,
+      };
+    }
+  }
 
-      if (quote) {
-        logger.info(
-          `[${logId}] Jupiter quote received, initializing swap...`
-        );
-        const swapData = await this.initializeSwap(
-          quote,
-          buyerKeypair.publicKey.toBase58()
+  /**
+   * Try Jupiter buy with retries
+   */
+  private async tryJupiterBuy(
+    tokenAddress: string,
+    buyerKeypair: Keypair,
+    actualTradeAmount: number,
+    slippage: number,
+    logId: string,
+    ctx?: Context,
+    maxRetries: number = 2
+  ): Promise<JupiterPumpswapResult> {
+    const solLamports = Math.floor(actualTradeAmount * 1_000_000_000);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.info(`[${logId}] Jupiter attempt ${attempt}/${maxRetries}`);
+        
+        const quote = await this.getQuote(
+          WSOL,
+          tokenAddress,
+          solLamports,
+          "buy",
+          slippage * 100
         );
 
-        if (swapData) {
-          try {
+        if (quote) {
+          logger.info(`[${logId}] Jupiter quote received, initializing swap...`);
+          const swapData = await this.initializeSwap(
+            quote,
+            buyerKeypair.publicKey.toBase58()
+          );
+
+          if (swapData) {
             const swapTransactionBuf = Buffer.from(
               swapData.swapTransaction,
               "base64"
             );
-            const transaction =
-              VersionedTransaction.deserialize(swapTransactionBuf);
-
-            // Sign the transaction
+            const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
             transaction.sign([buyerKeypair]);
 
-            // Only send message if ctx and ctx.chat are available
             if (ctx && ctx.chat) {
               try {
                 await sendMessage(
                   ctx,
-                  `🚀 Buy transaction sent! Processing ${actualTradeAmount.toFixed(6)} SOL with ${slippage}% slippage...`
+                  `🔄 Jupiter buy attempt ${attempt}/${maxRetries} - Processing ${actualTradeAmount.toFixed(6)} SOL...`
                 );
               } catch (msgError) {
                 logger.warn(`[${logId}] Failed to send status message: ${msgError}`);
               }
             }
 
-            // Send transaction with proper settings
             const signature = await this.connection.sendTransaction(
               transaction,
               {
@@ -252,26 +326,18 @@ export class JupiterPumpswapService {
               }
             );
 
-            // Confirm transaction
-            const latestBlockhash =
-              await this.connection.getLatestBlockhash("confirmed");
+            const latestBlockhash = await this.connection.getLatestBlockhash("confirmed");
             const confirmation = await this.connection.confirmTransaction({
               blockhash: latestBlockhash.blockhash,
               lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
               signature: signature,
             });
 
-            if (confirmation.value.err) {
-              logger.warn(
-                `[${logId}] Jupiter transaction failed: ${JSON.stringify(confirmation.value.err)}`
-              );
-            } else {
+            if (!confirmation.value.err) {
               logger.info(`[${logId}] Jupiter buy successful: ${signature}`);
               const tokensReceived = quote.outAmount;
               const solSpentLamports = quote.inAmount;
-              const actualSolSpent = (
-                parseInt(solSpentLamports) / 1_000_000_000
-              ).toString();
+              const actualSolSpent = (parseInt(solSpentLamports) / 1_000_000_000).toString();
               
               // Collect 1% transaction fee after successful buy
               try {
@@ -299,98 +365,173 @@ export class JupiterPumpswapService {
                 actualSolSpent,
                 priceImpact: quote.priceImpactPct,
               };
-            }
-          } catch (txError: any) {
-            logger.warn(
-              `[${logId}] Jupiter transaction execution failed: ${txError.message}`
-            );
-          }
-        }
-      }
-
-      // Fallback to PumpSwap for native tokens
-      logger.info(`[${logId}] Jupiter failed, trying PumpSwap fallback...`);
-
-      // Check if token is graduated or suitable for PumpSwap
-      const isGraduated = await isTokenGraduated(tokenAddress);
-
-      if (isGraduated) {
-        try {
-          const pumpswapService = new PumpswapService();
-          
-          // Use actual available balance for Pumpswap
-          const pumpswapLamports = Math.floor(actualTradeAmount * 1_000_000_000);
-          
-          const buyData = {
-            mint: new PublicKey(tokenAddress),
-            amount: BigInt(pumpswapLamports),
-            privateKey: bs58.encode(buyerKeypair.secretKey),
-          };
-
-          const buyTx = await pumpswapService.buyTx(buyData);
-          const signature = await this.connection.sendTransaction(buyTx, {
-            skipPreflight: false,
-            preflightCommitment: "confirmed",
-            maxRetries: 3,
-          });
-
-          const confirmation = await this.connection.confirmTransaction(
-            signature,
-            "confirmed"
-          );
-
-          if (!confirmation.value.err) {
-            logger.info(`[${logId}] PumpSwap buy successful: ${signature}`);
-            
-            // Collect 1% transaction fee after successful PumpSwap buy
-            try {
-              const { collectTransactionFee } = await import("../backend/functions-main");
-              const feeResult = await collectTransactionFee(
-                bs58.encode(buyerKeypair.secretKey),
-                actualTradeAmount,
-                "buy"
-              );
-              
-              if (feeResult.success) {
-                logger.info(`[${logId}] PumpSwap transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
-              } else {
-                logger.warn(`[${logId}] Failed to collect PumpSwap transaction fee: ${feeResult.error}`);
+            } else {
+              logger.warn(`[${logId}] Jupiter transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+              if (attempt < maxRetries) {
+                logger.info(`[${logId}] Retrying Jupiter in 1 second...`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                continue;
               }
-            } catch (feeError: any) {
-              logger.warn(`[${logId}] Error collecting PumpSwap transaction fee: ${feeError.message}`);
             }
-            
-            return {
-              success: true,
-              signature,
-              platform: "pumpswap",
-              tokensReceived: "unknown", // PumpSwap doesn't return exact amount
-              actualSolSpent: actualTradeAmount.toString(),
-            };
           }
-        } catch (pumpswapError: any) {
-          logger.error(
-            `[${logId}] PumpSwap fallback failed: ${pumpswapError.message}`
-          );
+        }
+        
+        if (attempt < maxRetries) {
+          logger.info(`[${logId}] Jupiter quote failed, retrying in 1 second...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (error: any) {
+        logger.warn(`[${logId}] Jupiter attempt ${attempt} error: ${error.message}`);
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
-
-      return {
-        success: false,
-        signature: "",
-        error: "All buy methods failed",
-      };
-    } catch (error: any) {
-      logger.error(
-        `[${logId}] Jupiter buy failed with error:`,
-        error instanceof Error ? error.message : String(error)
-      );
-      return {
-        success: false,
-        signature: "",
-        error: error.message,
-      };
     }
+
+    return {
+      success: false,
+      signature: "",
+      error: `Jupiter failed after ${maxRetries} attempts`,
+    };
+  }
+
+  /**
+   * Try PumpSwap buy with retries
+   */
+  private async tryPumpSwapBuy(
+    tokenAddress: string,
+    buyerKeypair: Keypair,
+    actualTradeAmount: number,
+    logId: string,
+    maxRetries: number = 2
+  ): Promise<JupiterPumpswapResult> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.info(`[${logId}] PumpSwap attempt ${attempt}/${maxRetries}`);
+        
+        const pumpswapService = new PumpswapService();
+        const pumpswapLamports = Math.floor(actualTradeAmount * 1_000_000_000);
+        
+        const buyData = {
+          mint: new PublicKey(tokenAddress),
+          amount: BigInt(pumpswapLamports),
+          privateKey: bs58.encode(buyerKeypair.secretKey),
+        };
+
+        const buyTx = await pumpswapService.buyTx(buyData);
+        const signature = await this.connection.sendTransaction(buyTx, {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+          maxRetries: 3,
+        });
+
+        const confirmation = await this.connection.confirmTransaction(
+          signature,
+          "confirmed"
+        );
+
+        if (!confirmation.value.err) {
+          logger.info(`[${logId}] PumpSwap buy successful: ${signature}`);
+          
+          // Collect 1% transaction fee after successful PumpSwap buy
+          try {
+            const { collectTransactionFee } = await import("../backend/functions-main");
+            const feeResult = await collectTransactionFee(
+              bs58.encode(buyerKeypair.secretKey),
+              actualTradeAmount,
+              "buy"
+            );
+            
+            if (feeResult.success) {
+              logger.info(`[${logId}] PumpSwap transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+            } else {
+              logger.warn(`[${logId}] Failed to collect PumpSwap transaction fee: ${feeResult.error}`);
+            }
+          } catch (feeError: any) {
+            logger.warn(`[${logId}] Error collecting PumpSwap transaction fee: ${feeError.message}`);
+          }
+          
+          return {
+            success: true,
+            signature,
+            platform: "pumpswap",
+            tokensReceived: "unknown",
+            actualSolSpent: actualTradeAmount.toString(),
+          };
+        } else {
+          logger.warn(`[${logId}] PumpSwap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          if (attempt < maxRetries) {
+            logger.info(`[${logId}] Retrying PumpSwap in 1 second...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      } catch (error: any) {
+        logger.warn(`[${logId}] PumpSwap attempt ${attempt} error: ${error.message}`);
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+
+    return {
+      success: false,
+      signature: "",
+      error: `PumpSwap failed after ${maxRetries} attempts`,
+    };
+  }
+
+  /**
+   * Try PumpFun direct buy with retries
+   */
+  private async tryPumpFunBuy(
+    tokenAddress: string,
+    buyerKeypair: Keypair,
+    actualTradeAmount: number,
+    logId: string,
+    maxRetries: number = 2
+  ): Promise<JupiterPumpswapResult> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.info(`[${logId}] PumpFun attempt ${attempt}/${maxRetries}`);
+        
+        // Use the existing PumpFun buy function
+        const { executeExternalPumpFunBuy } = await import("../blockchain/pumpfun/buy");
+        const result = await executeExternalPumpFunBuy(
+          tokenAddress,
+          bs58.encode(buyerKeypair.secretKey),
+          actualTradeAmount
+        );
+        
+        if (result.success) {
+          logger.info(`[${logId}] PumpFun buy successful: ${result.signature || 'no-signature'}`);
+          return {
+            success: true,
+            signature: result.signature || "",
+            platform: "pumpfun",
+            tokensReceived: (result as any).tokensReceived || "unknown",
+            actualSolSpent: (result as any).actualSolSpent || actualTradeAmount.toString(),
+          };
+        } else {
+          const errorMsg = (result as any).error || "PumpFun buy failed";
+          logger.warn(`[${logId}] PumpFun attempt ${attempt} failed: ${errorMsg}`);
+          if (attempt < maxRetries) {
+            logger.info(`[${logId}] Retrying PumpFun in 1 second...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      } catch (error: any) {
+        logger.warn(`[${logId}] PumpFun attempt ${attempt} error: ${error.message}`);
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+
+    return {
+      success: false,
+      signature: "",
+      error: `PumpFun failed after ${maxRetries} attempts`,
+    };
   }
 
   /**

@@ -13,7 +13,13 @@ export const ctoMonitorConversation = async (
   ctx: Context,
   tokenAddress: string
 ): Promise<void> => {
-  await ctx.answerCallbackQuery();
+  // Don't answer callback query here if it's already been answered
+  try {
+    await ctx.answerCallbackQuery();
+  } catch (error: any) {
+    logger.warn("Failed to answer callback query in CTO monitor (likely already answered):", error.message);
+    // Continue with monitor - this is not critical
+  }
   
   // Validate user
   const user = await getUser(ctx.chat!.id!.toString());
@@ -32,8 +38,13 @@ export const ctoMonitorConversation = async (
   );
 
   try {
-    // Get token information
-    const tokenInfo = await getTokenInfo(tokenAddress);
+    // Get token information with timeout
+    const tokenInfoPromise = getTokenInfo(tokenAddress);
+    const tokenInfo = await Promise.race([
+      tokenInfoPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Token info timeout')), 10000))
+    ]) as any;
+    
     const tokenName = tokenInfo?.baseToken?.name || "Unknown Token";
     const tokenSymbol = tokenInfo?.baseToken?.symbol || "Unknown";
     const tokenPrice = parseFloat(tokenInfo?.priceUsd || "0");
@@ -42,34 +53,55 @@ export const ctoMonitorConversation = async (
     // Get buyer wallets
     const buyerWallets = await getAllTradingWallets(user.id);
     
-    // Check holdings across all wallets
+    // Check holdings across all wallets with timeout
     let totalTokenBalance = 0;
     let totalValueUsd = 0;
     let walletsWithBalance = 0;
-    const walletHoldings = [];
+    const walletHoldings: Array<{
+      address: string;
+      balance: number;
+      valueUsd: number;
+      shortAddress: string;
+      rawBalance: number;
+    }> = [];
 
-    for (const wallet of buyerWallets) {
+    const balanceCheckPromises = buyerWallets.map(async (wallet) => {
       try {
-        const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        const balance = await Promise.race([
+          getTokenBalance(tokenAddress, wallet.publicKey),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Balance check timeout')), 5000))
+        ]) as number;
+        
         if (balance > 0) {
           const balanceFormatted = balance / 1e6; // Convert to human readable
           const valueUsd = balanceFormatted * tokenPrice;
           
-          totalTokenBalance += balance;
-          totalValueUsd += valueUsd;
-          walletsWithBalance++;
-          
-          walletHoldings.push({
+          return {
             address: wallet.publicKey,
             balance: balanceFormatted,
             valueUsd: valueUsd,
-            shortAddress: wallet.publicKey.slice(0, 6) + "…" + wallet.publicKey.slice(-4)
-          });
+            shortAddress: wallet.publicKey.slice(0, 6) + "…" + wallet.publicKey.slice(-4),
+            rawBalance: balance
+          };
         }
+        return null;
       } catch (error) {
         logger.warn(`[CTO Monitor] Error checking balance for wallet ${wallet.publicKey}:`, error);
+        return null;
       }
-    }
+    });
+
+    const balanceResults = await Promise.allSettled(balanceCheckPromises);
+    
+    balanceResults.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value) {
+        const holding = result.value;
+        totalTokenBalance += holding.rawBalance;
+        totalValueUsd += holding.valueUsd;
+        walletsWithBalance++;
+        walletHoldings.push(holding);
+      }
+    });
 
     // Format total balance
     const totalBalanceFormatted = totalTokenBalance / 1e6;

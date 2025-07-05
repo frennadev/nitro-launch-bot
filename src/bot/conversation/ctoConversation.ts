@@ -129,7 +129,7 @@ export const ctoConversation = async (
   if (confirmation.callbackQuery?.data === "confirm_cto") {
     // Answer callback query immediately to prevent timeout
     try {
-      await confirmation.answerCallbackQuery();
+      await confirmation.answerCallbackQuery("🔄 Starting CTO operation...");
     } catch (error: any) {
       logger.warn("Failed to answer callback query (likely timeout):", error.message);
       // Continue with operation even if callback query fails
@@ -137,7 +137,7 @@ export const ctoConversation = async (
 
     try {
       // Show processing message
-      await sendMessage(
+      const processingMessage = await sendMessage(
         confirmation,
         `🔄 **Processing CTO Operation...**\n\n` +
         `⏳ Step 1: Distributing ${buyAmount.toFixed(6)} SOL to buy wallets via mixer...\n` +
@@ -152,8 +152,9 @@ export const ctoConversation = async (
 
       if (result.success) {
         // Success message with detailed results
-        await sendMessage(
-          confirmation,
+        await confirmation.api.editMessageText(
+          confirmation.chat!.id,
+          processingMessage.message_id,
           `✅ **CTO Operation Completed Successfully!**\n\n` +
           `**Token:** \`${tokenAddress}\`\n` +
           `**Total Spent:** ${buyAmount.toFixed(6)} SOL\n` +
@@ -174,8 +175,9 @@ export const ctoConversation = async (
         // Check if this was a partial success that we should handle differently
         if (result.successfulBuys && result.successfulBuys > 0) {
           // Partial success - some buys worked
-          await sendMessage(
-            confirmation,
+          await confirmation.api.editMessageText(
+            confirmation.chat!.id,
+            processingMessage.message_id,
             `⚠️ **CTO Operation Partially Completed**\n\n` +
             `**Token:** \`${tokenAddress}\`\n` +
             `**Successful Buys:** ${result.successfulBuys || 0}\n` +
@@ -192,8 +194,9 @@ export const ctoConversation = async (
           await ctoMonitorConversation(conversation, confirmation, tokenAddress);
         } else {
           // Complete failure
-          await sendMessage(
-            confirmation,
+          await confirmation.api.editMessageText(
+            confirmation.chat!.id,
+            processingMessage.message_id,
             `❌ **CTO Operation Failed**\n\n` +
             `**Error:** ${result.error || "Unknown error occurred"}\n\n` +
             `**Details:**\n` +
@@ -211,42 +214,54 @@ export const ctoConversation = async (
             }
           );
 
-          // Wait for user action on the failure message
-          const failureAction = await conversation.waitFor("callback_query:data");
-          
-          // Answer callback query with timeout handling
+          // Wait for user action on the failure message with timeout handling
           try {
-            await failureAction.answerCallbackQuery();
-          } catch (error: any) {
-            logger.warn("Failed to answer failure action callback query:", error.message);
-            // Continue with operation even if callback query fails
-          }
+            const failureAction = await conversation.waitFor("callback_query:data");
+            
+            // Answer callback query with timeout handling
+            try {
+              await failureAction.answerCallbackQuery();
+            } catch (error: any) {
+              logger.warn("Failed to answer failure action callback query:", error.message);
+              // Continue with operation even if callback query fails
+            }
 
-          const actionData = failureAction.callbackQuery?.data;
-          
-          if (actionData === CallBackQueries.WITHDRAW_TO_FUNDING) {
-            // Start funding wallet withdrawal conversation
-            const { withdrawFundingWalletConversation } = await import("./withdrawal");
-            return await withdrawFundingWalletConversation(conversation, failureAction);
-          } else if (actionData === CallBackQueries.WITHDRAW_TO_EXTERNAL) {
-            // Start buyer wallets withdrawal conversation (most likely to have funds after CTO failure)
-            const { withdrawBuyerWalletsConversation } = await import("./withdrawal");
-            return await withdrawBuyerWalletsConversation(conversation, failureAction);
-          } else if (actionData === `cto_${tokenAddress}`) {
-            // Restart CTO conversation
-            return await ctoConversation(conversation, failureAction, tokenAddress);
-          } else if (actionData === CallBackQueries.CANCEL) {
-            await sendMessage(failureAction, "❌ CTO operation cancelled.");
-            return conversation.halt();
+            const actionData = failureAction.callbackQuery?.data;
+            
+            if (actionData === CallBackQueries.WITHDRAW_TO_FUNDING) {
+              // Start funding wallet withdrawal conversation
+              const { withdrawFundingWalletConversation } = await import("./withdrawal");
+              return await withdrawFundingWalletConversation(conversation, failureAction);
+            } else if (actionData === CallBackQueries.WITHDRAW_TO_EXTERNAL) {
+              // Start buyer wallets withdrawal conversation (most likely to have funds after CTO failure)
+              const { withdrawBuyerWalletsConversation } = await import("./withdrawal");
+              return await withdrawBuyerWalletsConversation(conversation, failureAction);
+            } else if (actionData === `cto_${tokenAddress}`) {
+              // Restart CTO conversation
+              return await ctoConversation(conversation, failureAction, tokenAddress);
+            } else if (actionData === CallBackQueries.CANCEL) {
+              await sendMessage(failureAction, "❌ CTO operation cancelled.");
+              return conversation.halt();
+            }
+          } catch (waitError: any) {
+            logger.warn("Timeout waiting for user action on failure message:", waitError.message);
+            // Continue to halt the conversation
           }
         }
       }
     } catch (error: any) {
       logger.error("Error executing CTO operation:", error);
-      await sendErrorWithAutoDelete(
-        confirmation,
-        `❌ **CTO Operation Error**\n\n${error.message || "Unknown error occurred"}`
-      );
+      
+      // Use safe error message sending with timeout handling
+      try {
+        await sendMessage(
+          confirmation,
+          `❌ **CTO Operation Error**\n\n${error.message || "Unknown error occurred"}`,
+          { parse_mode: "Markdown" }
+        );
+      } catch (msgError: any) {
+        logger.warn("Failed to send error message:", msgError.message);
+      }
     }
   }
 

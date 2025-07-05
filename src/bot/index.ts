@@ -139,47 +139,77 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   }
 
   // Handle Grammy.js conversation state errors
-  if (err.stack && err.stack.includes("Bad replay, expected op")) {
-    logger.warn("Grammy.js conversation state error detected in global handler:", err.stack);
+  if (err.stack && (
+    err.stack.includes("Bad replay, expected op") ||
+    err.stack.includes("Cannot begin another operation after the replay has completed") ||
+    err.stack.includes("are you missing an `await`?")
+  )) {
+    logger.warn("Grammy.js conversation state error detected in global handler:", {
+      error: err.message,
+      stack: err.stack?.split('\n').slice(0, 3).join('\n'), // First 3 lines of stack
+      user: ctx.from?.username || ctx.from?.id,
+      callback_data: ctx.callbackQuery?.data
+    });
 
     // Clear the conversation state completely
     const cleared = await clearConversationState(ctx);
+    logger.info(`Conversation state cleared: ${cleared}`);
 
     // Send user-friendly message with recovery options
     if (ctx.chat) {
-      const keyboard = new InlineKeyboard()
-        .text("🚀 Direct Launch", "direct_launch_recovery")
-        .row()
-        .text("🔧 Fix & Retry", "fix_and_retry")
-        .row()
-        .text("📋 View Tokens", CallBackQueries.VIEW_TOKENS);
+      try {
+        const keyboard = new InlineKeyboard()
+          .text("🔧 Main Menu", CallBackQueries.BACK)
+          .text("📋 View Tokens", CallBackQueries.VIEW_TOKENS)
+          .row()
+          .text("💳 Wallet Config", CallBackQueries.WALLET_CONFIG);
 
-      ctx
-        .reply(
-          "🔧 **Error Fixed Automatically**\n\n" +
+        await ctx.reply(
+          "🔧 **Session Reset Complete**\n\n" +
             "✅ Conversation state cleared\n" +
-            "✅ Session reset completed\n\n" +
-            "**Choose how to continue:**",
+            "✅ Ready for new operations\n\n" +
+            "**You can now continue using the bot:**",
           {
             parse_mode: "Markdown",
             reply_markup: keyboard,
           }
-        )
-        .catch(() => logger.error("Failed to send conversation reset message"));
+        );
+      } catch (replyError: any) {
+        logger.error("Failed to send conversation reset message:", replyError.message);
+      }
     }
     return;
   }
 
-  // Log other errors (after filtering out callback timeouts)
+  // Handle message editing errors (common with long operations)
+  if (
+    err.error instanceof GrammyError &&
+    (err.error.description.includes("message is not modified") ||
+     err.error.description.includes("message to edit not found"))
+  ) {
+    logger.debug("Message edit error ignored (normal behavior):", {
+      description: err.error.description,
+      user: ctx.from?.username || ctx.from?.id
+    });
+    return;
+  }
+
+  // Log other errors (after filtering out common timeouts and state issues)
   logger.error("Error in bot middleware:", {
-    error: err.error,
-    update: ctx.update,
-    stack: err.stack,
+    error: err.error instanceof Error ? err.error.message : String(err.error),
+    name: err.error instanceof Error ? err.error.name : 'UnknownError',
+    user: ctx.from?.username || ctx.from?.id,
+    update_type: ctx.update.message ? 'message' : ctx.update.callback_query ? 'callback_query' : 'other',
+    stack: err.stack?.split('\n').slice(0, 5).join('\n') // First 5 lines of stack
   });
 
   // For other errors, try to notify the user if possible
   if (ctx.chat) {
-    await sendErrorWithAutoDelete(ctx, "❌ An unexpected error occurred. Please try again or contact support.");
+    try {
+      await sendErrorWithAutoDelete(ctx, "❌ An unexpected error occurred. Please try the main menu or contact support.");
+    } catch (notifyError: any) {
+      logger.error("Failed to send error notification:", notifyError.message);
+    }
   }
 });
 
