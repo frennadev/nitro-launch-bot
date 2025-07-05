@@ -7,6 +7,7 @@ import {
   getDefaultDevWallet,
   getTokensForUser,
   getUser,
+  getUserToken,
   getOrCreateFundingWallet,
   getPumpAddressStats,
   markPumpAddressAsUsed,
@@ -16,6 +17,7 @@ import {
   createUserWithReferral,
   getFundingWallet,
   getWalletForTrading,
+  enqueueDevSell,
 } from "../backend/functions";
 import { CallBackQueries } from "./types";
 import { escape, formatUSD, safeEditMessageReplyMarkup, safeEditMessageText, safeEditOrSendMessage } from "./utils";
@@ -59,6 +61,7 @@ import { TokenModel } from "../backend/models";
 import { handleSingleSell } from "../blockchain/common/singleSell";
 import { sellPercentageMessage } from "./conversation/sellPercent";
 import { sendErrorWithAutoDelete } from "./utils";
+import { startLoadingState } from "./loading";
 
 // Platform detection and caching for external tokens
 const platformCache = new Map<
@@ -609,40 +612,56 @@ bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
       return;
     }
     
-    const token = await getUserTokenWithBuyWallets(user.id, tokenAddress);
+    const token = await getUserToken(user.id, tokenAddress);
     if (!token) {
       await ctx.reply("❌ Token not found");
       return;
     }
     
-    // Get dev wallet
-    const devWallet = await getDevWallet(user.id);
-    if (!devWallet || !devWallet.wallet) {
-      await ctx.reply("❌ Dev wallet not found");
+    if (token.state !== TokenState.LAUNCHED) {
+      await ctx.reply("❌ Token is not launched yet");
+      return;
+    }
+    
+    if (token.launchData?.lockDevSell === true) {
+      await ctx.reply("❌ Dev sell job is currently processing. Please wait...");
       return;
     }
     
     // Send loading message
-    const loadingMsg = await ctx.reply("🔄 **Selling 100% Dev Supply...**\n\n⏳ Processing transaction...", {
+    const loadingMsg = await ctx.reply("🔄 **Submitting 100% Dev Supply Sell...**\n\n⏳ Adding to queue...", {
       parse_mode: "Markdown"
     });
     
-    // Execute 100% dev sell
-    const { executeDevSell } = await import("../blockchain/pumpfun/sell");
-    const result = await executeDevSell(tokenAddress, devWallet.wallet, 100);
+    // Get dev wallet private key
+    const devWalletPrivateKey = decryptPrivateKey(
+      (token.launchData!.devWallet! as any).privateKey
+    );
+    
+    // Use the proper queue system for dev sell (100% = sell all)
+    const result = await enqueueDevSell(
+      user.id,
+      ctx.chat!.id,
+      tokenAddress,
+      devWalletPrivateKey,
+      100 // 100% dev sell
+    );
     
     if (result.success) {
       await ctx.api.editMessageText(
         ctx.chat!.id,
         loadingMsg.message_id,
-        `✅ **100% Dev Supply Sold Successfully!**\n\n💰 **SOL Received:** ${result.solReceived || 'Processing...'}\n🔗 **Signature:** \`${result.signature}\`\n🏢 **Platform:** ${result.platform || 'PumpFun'}`,
+        `✅ **100% Dev Supply Sell Submitted!**\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed.`,
         { parse_mode: "Markdown" }
       );
+      
+      // Start the loading state for the actual dev sell process
+      await startLoadingState(ctx, "dev_sell", tokenAddress);
     } else {
       await ctx.api.editMessageText(
         ctx.chat!.id,
         loadingMsg.message_id,
-        `❌ **Dev Supply Sell Failed**\n\n🔍 **Error:** Transaction failed\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`,
+        `❌ **Failed to submit 100% dev sell**\n\n🔍 **Error:** ${result.message}\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`,
         { parse_mode: "Markdown" }
       );
     }
