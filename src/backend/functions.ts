@@ -353,8 +353,16 @@ export const getAvailablePumpAddress = async (userId: string, excludeAddresses: 
 
   try {
     return await session.withTransaction(async () => {
-      // Build query to exclude specific addresses
-      const query: any = { isUsed: false };
+      // Build query to find addresses that have NEVER been allocated to any user
+      // Use the same logic as external database
+      const query: any = { 
+        $or: [
+          { usedBy: { $exists: false } },
+          { usedBy: null },
+          { usedBy: "" }
+        ]
+      };
+      
       if (excludeAddresses.length > 0) {
         query.publicKey = { $nin: excludeAddresses };
       }
@@ -470,7 +478,12 @@ export const tagTokenAddressAsUsed = async (
 
 export const getPumpAddressStats = async () => {
   const total = await PumpAddressModel.countDocuments();
-  const used = await PumpAddressModel.countDocuments({ isUsed: true });
+  const used = await PumpAddressModel.countDocuments({ 
+    $or: [
+      { usedBy: { $exists: true, $ne: null } },
+      { usedBy: { $ne: "" } }
+    ]
+  });
   const available = total - used;
 
   return {
@@ -529,9 +542,10 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     });
     return token;
   } catch (error) {
-    // If token creation fails and we used a pump address, release it
+    // Pump addresses are never released once allocated to prevent reuse
+    // This ensures each address is only used once by one user, regardless of token creation success/failure
     if (isPumpAddress) {
-      await releasePumpAddress(tokenKey.publicKey);
+      logger.info(`[createToken] Token creation failed for pump address ${tokenKey.publicKey} - address remains permanently allocated to user ${userId}`);
     }
     throw error;
   }
@@ -1130,22 +1144,11 @@ export const deleteToken = async (userId: string, tokenAddress: string) => {
       throw new Error("Token not found");
     }
 
-    // 2. If a pump address was reserved, release it
-    const pumpAddress = await PumpAddressModel.findOne({
-      publicKey: tokenAddress,
-      usedBy: userId,
-    });
+    // 2. If this is a pump address, mark it as permanently used (never release)
+    const pumpAddress = await PumpAddressModel.findOne({ publicKey: tokenAddress });
     if (pumpAddress) {
-      await PumpAddressModel.updateOne(
-        { publicKey: tokenAddress },
-        {
-          $set: {
-            isUsed: false,
-            usedBy: null,
-            usedAt: null,
-          },
-        }
-      );
+      logger.info(`[deleteToken] Token ${tokenAddress} is a pump address - keeping it permanently allocated to user ${pumpAddress.usedBy}`);
+      // Pump addresses are never released once allocated to prevent reuse
     }
 
     // 3. Delete the token document
@@ -3012,7 +3015,12 @@ export const getPumpAddressUsageStatistics = async (): Promise<{
   
   try {
     const localTotal = await PumpAddressModel.countDocuments({});
-    const localUsed = await PumpAddressModel.countDocuments({ isUsed: true });
+    const localUsed = await PumpAddressModel.countDocuments({ 
+      $or: [
+        { usedBy: { $exists: true, $ne: null } },
+        { usedBy: { $ne: "" } }
+      ]
+    });
     const localAvailable = localTotal - localUsed;
     
     localStats = {
