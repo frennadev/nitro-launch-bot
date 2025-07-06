@@ -14,6 +14,7 @@ export interface ExternalPumpAddress {
   isUsed?: boolean;
   usedBy?: string;
   usedAt?: Date;
+  permanentlyAllocated?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -80,6 +81,7 @@ export class ExternalPumpAddressService {
 
   /**
    * Get an unused pump address from the external database
+   * NOTE: Once allocated, addresses are permanently marked as used and never released
    */
   async getUnusedPumpAddress(userId: string, excludeAddresses: string[] = []): Promise<ExternalPumpAddress | null> {
     if (!this.isConnected) {
@@ -100,7 +102,7 @@ export class ExternalPumpAddressService {
         query.publicKey = { $nin: excludeAddresses };
       }
 
-      // Find and mark an address as used in a single atomic operation
+      // Find and mark an address as permanently used in a single atomic operation
       const result = await this.collection.findOneAndUpdate(
         query,
         {
@@ -108,6 +110,7 @@ export class ExternalPumpAddressService {
             isUsed: true,
             usedBy: userId,
             usedAt: new Date(),
+            permanentlyAllocated: true, // Mark as permanently allocated
           },
         },
         {
@@ -117,7 +120,7 @@ export class ExternalPumpAddressService {
       );
 
       if (result) {
-        logger.info(`[ExternalPumpAddressService] Allocated pump address ${result.publicKey} to user ${userId}`);
+        logger.info(`[ExternalPumpAddressService] Permanently allocated pump address ${result.publicKey} to user ${userId}`);
         return result;
       } else {
         logger.warn("[ExternalPumpAddressService] No unused pump addresses available");
@@ -130,37 +133,12 @@ export class ExternalPumpAddressService {
   }
 
   /**
-   * Release a pump address back to the pool (mark as unused)
+   * DEPRECATED: Pump addresses are never released once allocated
+   * This method is kept for compatibility but does nothing
    */
   async releasePumpAddress(publicKey: string): Promise<boolean> {
-    if (!this.isConnected) {
-      await this.connect();
-    }
-
-    try {
-      const result = await this.collection.findOneAndUpdate(
-        { publicKey },
-        {
-          $set: {
-            isUsed: false,
-            usedBy: null,
-            usedAt: null,
-          },
-        },
-        { returnDocument: 'after' }
-      );
-
-      if (result) {
-        logger.info(`[ExternalPumpAddressService] Released pump address ${publicKey} back to pool`);
-        return true;
-      } else {
-        logger.warn(`[ExternalPumpAddressService] Pump address ${publicKey} not found for release`);
-        return false;
-      }
-    } catch (error: any) {
-      logger.error(`[ExternalPumpAddressService] Error releasing pump address ${publicKey}:`, error);
-      throw error;
-    }
+    logger.warn(`[ExternalPumpAddressService] Attempted to release pump address ${publicKey} - addresses are never released once allocated`);
+    return false; // Never release addresses
   }
 
   /**

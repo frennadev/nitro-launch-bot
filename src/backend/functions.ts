@@ -393,35 +393,15 @@ export const getAvailablePumpAddress = async (userId: string, excludeAddresses: 
 };
 
 export const releasePumpAddress = async (publicKey: string) => {
-  const externalService = getExternalPumpAddressService();
+  logger.warn(`[releasePumpAddress] Attempted to release pump address ${publicKey} - addresses are never released once allocated`);
   
-  try {
-    // First try to release from external database
-    const externalReleased = await externalService.releasePumpAddress(publicKey);
-    
-    if (externalReleased) {
-      logger.info(`[releasePumpAddress] Released external pump address ${publicKey}`);
-    }
-  } catch (error: any) {
-    logger.error(`[releasePumpAddress] Error releasing external pump address ${publicKey}: ${error.message}`);
-  }
-
-  // Also try to release from local database for consistency
-  try {
-    await PumpAddressModel.findOneAndUpdate(
-      { publicKey },
-      {
-        $set: {
-          isUsed: false,
-          usedBy: null,
-          usedAt: null,
-        },
-      }
-    );
-    logger.info(`[releasePumpAddress] Released local pump address ${publicKey}`);
-  } catch (error: any) {
-    logger.warn(`[releasePumpAddress] Error releasing local pump address ${publicKey}: ${error.message}`);
-  }
+  // Pump addresses are never released once allocated to prevent reuse
+  // This ensures each address is only used once by one user
+  
+  // Only log the attempt for monitoring purposes
+  logger.info(`[releasePumpAddress] Pump address ${publicKey} remains permanently allocated`);
+  
+  return false; // Never release addresses
 };
 
 export const markPumpAddressAsUsed = async (publicKey: string, userId?: string) => {
@@ -1179,7 +1159,9 @@ export const deleteToken = async (userId: string, tokenAddress: string) => {
 };
 
 export const handleTokenLaunchFailure = async (tokenAddress: string, error?: any) => {
-  // Release pump address if launch fails permanently
+  // Pump addresses are never released once allocated to prevent reuse
+  // This ensures each address is only used once by one user, regardless of launch success/failure
+  
   const pumpAddress = await PumpAddressModel.findOne({
     publicKey: tokenAddress,
     isUsed: true,
@@ -1197,37 +1179,17 @@ export const handleTokenLaunchFailure = async (tokenAddress: string, error?: any
       "token_creation"
     ) : false;
 
-    // Check for specific errors that indicate the address is permanently unusable
-    const shouldReleaseImmediately =
-      error &&
-      // Pump.fun Custom:0 error (NotAuthorized/AlreadyInitialized)
-      (error.message?.includes('{"InstructionError":[0,{"Custom":0}]}') ||
-        error.message?.includes("Custom:0") ||
-        // Token creation failed with bonding curve errors
-        error.message?.includes("Token creation failed") ||
-        // Unable to fetch curve data (indicates token might already exist)
-        error.message?.includes("Unable to fetch curve data"));
-
-    // Release pump address if:
-    // 1. Token was successfully created (even if buy phase failed)
-    // 2. Specific permanent errors occurred
-    // 3. Too many launch attempts
-    if (tokenCreationSuccessful) {
-      logger.info(
-        `Releasing pump address ${tokenAddress} because token was successfully created (buy phase may have failed)`
-      );
-      await releasePumpAddress(tokenAddress);
-    } else if (shouldReleaseImmediately) {
-      logger.info(
-        `Releasing pump address ${tokenAddress} immediately due to permanent error: ${error?.message || "Unknown error"}`
-      );
-      await releasePumpAddress(tokenAddress);
-    } else if (launchAttempt > 3) {
-      logger.info(`Releasing pump address ${tokenAddress} after ${launchAttempt} failed launch attempts`);
-      await releasePumpAddress(tokenAddress);
-    } else {
-      logger.info(`Keeping pump address ${tokenAddress} for retry (attempt ${launchAttempt}/3)`);
+    // Log the failure but never release the pump address
+    logger.info(`[handleTokenLaunchFailure] Token launch failed for ${tokenAddress} (attempt ${launchAttempt})`);
+    logger.info(`[handleTokenLaunchFailure] Token creation successful: ${tokenCreationSuccessful}`);
+    logger.info(`[handleTokenLaunchFailure] Pump address ${tokenAddress} remains permanently allocated to user ${pumpAddress.usedBy}`);
+    
+    if (error) {
+      logger.error(`[handleTokenLaunchFailure] Error details: ${error.message}`);
     }
+    
+    // Pump address remains permanently allocated - no release
+    logger.info(`[handleTokenLaunchFailure] Pump address ${tokenAddress} will never be released - permanently allocated to user ${pumpAddress.usedBy}`);
   }
 };
 

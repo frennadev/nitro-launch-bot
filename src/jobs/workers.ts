@@ -62,10 +62,8 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
       
       await updateTokenState(data.tokenAddress, TokenState.LAUNCHED, data.userId);
       
-      // Release pump address on successful launch
-      const { releasePumpAddress } = await import("../backend/functions");
-      await releasePumpAddress(data.tokenAddress);
-      logger.info(`Released pump address ${data.tokenAddress} after successful launch`);
+      // Pump addresses are never released - they remain permanently allocated to the user
+      logger.info(`Pump address ${data.tokenAddress} remains permanently allocated to user ${data.userId}`);
       
       // Complete loading state
       await completeLoadingState(
@@ -488,10 +486,8 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
       
       await updateTokenState(data.tokenAddress, TokenState.LAUNCHED, data.userId);
       
-      // Release pump address on successful launch
-      const { releasePumpAddress } = await import("../backend/functions");
-      await releasePumpAddress(data.tokenAddress);
-      logger.info(`Released pump address ${data.tokenAddress} after successful launch`);
+      // Pump addresses are never released - they remain permanently allocated to the user
+      logger.info(`Pump address ${data.tokenAddress} remains permanently allocated to user ${data.userId}`);
       
       // Complete loading state
       await completeLoadingState(
