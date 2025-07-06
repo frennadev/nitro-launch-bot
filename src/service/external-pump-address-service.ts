@@ -89,12 +89,13 @@ export class ExternalPumpAddressService {
     }
 
     try {
-      // Build query to find unused addresses, excluding specific ones
+      // Build query to find addresses that have NEVER been allocated to any user
+      // Only get addresses that have no usedBy field or usedBy is null
       const query: any = { 
         $or: [
-          { isUsed: false },
-          { isUsed: { $exists: false } },
-          { isUsed: null }
+          { usedBy: { $exists: false } },
+          { usedBy: null },
+          { usedBy: "" }
         ]
       };
       
@@ -151,7 +152,8 @@ export class ExternalPumpAddressService {
 
     try {
       const address = await this.collection.findOne({ publicKey });
-      return address ? (address.isUsed === true) : false;
+      // Check if address has been allocated to any user (usedBy field exists and is not null/empty)
+      return address ? !!(address.usedBy && address.usedBy !== "") : false;
     } catch (error: any) {
       logger.error(`[ExternalPumpAddressService] Error checking pump address ${publicKey}:`, error);
       throw error;
@@ -185,9 +187,12 @@ export class ExternalPumpAddressService {
         return { exists: false, isUsed: false };
       }
 
+      // Check if address has been allocated to any user
+      const isUsed = !!(address.usedBy && address.usedBy !== "");
+
       return {
         exists: true,
-        isUsed: address.isUsed === true,
+        isUsed,
         usedBy: address.usedBy,
         usedAt: address.usedAt,
       };
@@ -213,7 +218,12 @@ export class ExternalPumpAddressService {
     try {
       const [total, used] = await Promise.all([
         this.collection.countDocuments({}),
-        this.collection.countDocuments({ isUsed: true }),
+        this.collection.countDocuments({ 
+          $or: [
+            { usedBy: { $exists: true, $ne: null } },
+            { usedBy: { $ne: "" } }
+          ]
+        }),
       ]);
 
       const available = total - used;
@@ -244,9 +254,9 @@ export class ExternalPumpAddressService {
         { 
           publicKey: { $in: publicKeys },
           $or: [
-            { isUsed: false },
-            { isUsed: { $exists: false } },
-            { isUsed: null }
+            { usedBy: { $exists: false } },
+            { usedBy: null },
+            { usedBy: "" }
           ]
         },
         {
@@ -254,11 +264,12 @@ export class ExternalPumpAddressService {
             isUsed: true,
             usedBy: userId,
             usedAt: new Date(),
+            permanentlyAllocated: true,
           },
         }
       );
 
-      logger.info(`[ExternalPumpAddressService] Marked ${result.modifiedCount} addresses as used for user ${userId}`);
+      logger.info(`[ExternalPumpAddressService] Marked ${result.modifiedCount} addresses as permanently used for user ${userId}`);
       return result.modifiedCount;
     } catch (error: any) {
       logger.error("[ExternalPumpAddressService] Error marking addresses as used:", error);
