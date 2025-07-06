@@ -551,7 +551,28 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     // Comprehensive validation before proceeding
     logger.info(`[createToken] Validating address ${tokenKey.publicKey} before use...`);
     
-    const validation = await validateTokenAddressAvailability(tokenKey.publicKey, userId);
+    // SKIP VALIDATION: If this address was just allocated to the current user, skip validation entirely
+    // This prevents the false positive "already in use by another user" errors
+    let skipValidation = false;
+    if (isPumpAddress) {
+      const externalService = getExternalPumpAddressService();
+      try {
+        const externalValidation = await externalService.validatePumpAddress(tokenKey.publicKey);
+        if (externalValidation.exists && externalValidation.isUsed && externalValidation.usedBy === userId) {
+          logger.info(`[createToken] Skipping validation for address ${tokenKey.publicKey} - allocated to current user`);
+          skipValidation = true;
+        }
+      } catch (error: any) {
+        logger.warn(`[createToken] Error checking external validation for skip: ${error.message}`);
+      }
+    }
+    
+    let validation;
+    if (skipValidation) {
+      validation = { isAvailable: true, message: "Address allocated to current user - validation skipped" };
+    } else {
+      validation = await validateTokenAddressAvailability(tokenKey.publicKey, userId);
+    }
     
     if (validation.isAvailable) {
       logger.info(`[createToken] Address ${tokenKey.publicKey} validated successfully on attempt ${validationAttempts}`);
