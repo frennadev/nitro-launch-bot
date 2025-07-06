@@ -606,7 +606,8 @@ Please enter a smaller buy amount:`,
 
   const checkResult = await preLaunchChecks(
     fundingWallet.privateKey,
-    await getCurrentDevWalletPrivateKey(user.id),
+    (token.launchData!.devWallet! as unknown as { privateKey: string })
+      .privateKey,
     buyAmount,
     devBuy,
     buyerKeys.length
@@ -657,7 +658,8 @@ ${checkResult.message}`,
     ctx.chat!.id,
     tokenAddress,
     fundingWallet.privateKey,
-    await getCurrentDevWalletPrivateKey(user.id),
+    (token.launchData!.devWallet! as unknown as { privateKey: string })
+      .privateKey,
     buyerKeys,
     devBuy,
     buyAmount
