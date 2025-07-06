@@ -521,120 +521,17 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     throw new Error("Token metadata uri not uploaded");
   }
 
-  // Enhanced address allocation with comprehensive validation
+  // Use pump address instead of generating random keypair
   let tokenKey;
   let isPumpAddress = false;
-  let validationAttempts = 0;
-  const maxValidationAttempts = 10;
-  const excludeAddresses: string[] = []; // Track failed addresses to exclude them
-
-  logger.info(`[createToken] Starting token creation for user ${userId} with enhanced validation`);
-
-  while (validationAttempts < maxValidationAttempts) {
-    validationAttempts++;
-    logger.info(`[createToken] Validation attempt ${validationAttempts}/${maxValidationAttempts}${excludeAddresses.length > 0 ? ` (excluding ${excludeAddresses.length} failed addresses)` : ''}`);
-
-    try {
-      // Try to get a pump address first, excluding previously failed addresses
-      tokenKey = await getAvailablePumpAddress(userId, excludeAddresses);
-      isPumpAddress = true;
-      logger.info(`[createToken] Got pump address: ${tokenKey.publicKey}`);
-    } catch (error: any) {
-      // Fallback to random generation if no pump addresses available
-      logger.warn(`[createToken] No pump addresses available for user ${userId}, using random generation: ${error.message}`);
-      const [randomKey] = generateKeypairs(1);
-      tokenKey = randomKey;
-      isPumpAddress = false;
-      logger.info(`[createToken] Generated random address: ${tokenKey.publicKey}`);
-    }
-
-    // Comprehensive validation before proceeding
-    logger.info(`[createToken] Validating address ${tokenKey.publicKey} before use...`);
-    
-    // SKIP VALIDATION: If this address was just allocated to the current user, skip validation entirely
-    // This prevents the false positive "already in use by another user" errors
-    let skipValidation = false;
-    if (isPumpAddress) {
-      const externalService = getExternalPumpAddressService();
-      try {
-        const externalValidation = await externalService.validatePumpAddress(tokenKey.publicKey);
-        if (externalValidation.exists && externalValidation.isUsed && externalValidation.usedBy === userId) {
-          logger.info(`[createToken] Skipping validation for address ${tokenKey.publicKey} - allocated to current user`);
-          skipValidation = true;
-        }
-      } catch (error: any) {
-        logger.warn(`[createToken] Error checking external validation for skip: ${error.message}`);
-      }
-    }
-    
-    let validation;
-    if (skipValidation) {
-      validation = { isAvailable: true, message: "Address allocated to current user - validation skipped" };
-    } else {
-      validation = await validateTokenAddressAvailability(tokenKey.publicKey, userId);
-    }
-    
-    if (validation.isAvailable) {
-      logger.info(`[createToken] Address ${tokenKey.publicKey} validated successfully on attempt ${validationAttempts}`);
-      break;
-    } else {
-      logger.warn(`[createToken] Address ${tokenKey.publicKey} validation failed: ${validation.message}`);
-      
-      // Add this address to the exclusion list for future attempts
-      excludeAddresses.push(tokenKey.publicKey);
-      
-      // If pump address was allocated but validation failed, release it back to the pool
-      if (isPumpAddress) {
-        logger.info(`[createToken] Releasing invalid pump address ${tokenKey.publicKey} back to pool`);
-        await releasePumpAddress(tokenKey.publicKey);
-      }
-      
-      // If this is our last attempt, throw an error
-      if (validationAttempts >= maxValidationAttempts) {
-        throw new Error(`Failed to generate valid token address after ${maxValidationAttempts} attempts. Last error: ${validation.message}. Excluded addresses: ${excludeAddresses.join(', ')}`);
-      }
-      
-      // Add a small delay between retries to avoid overwhelming the database
-      if (validationAttempts > 1) {
-        const delay = Math.min(100 * validationAttempts, 500); // Progressive delay, max 500ms
-        logger.info(`[createToken] Waiting ${delay}ms before next attempt...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-      
-      // Continue to next attempt
-      tokenKey = null;
-    }
-  }
-
-  if (!tokenKey) {
-    throw new Error("Failed to allocate a valid token address");
-  }
-
-  // Final blockchain validation (check if address actually exists on-chain)
-  logger.info(`[createToken] Performing final blockchain validation for address ${tokenKey.publicKey}`);
-  
   try {
-    const { connection } = await import("../blockchain/common/connection");
-    const accountInfo = await connection.getAccountInfo(new PublicKey(tokenKey.publicKey));
-    
-    if (accountInfo) {
-      logger.error(`[createToken] Address ${tokenKey.publicKey} already exists on blockchain!`);
-      
-      // Release the address if it was a pump address
-      if (isPumpAddress) {
-        await releasePumpAddress(tokenKey.publicKey);
-      }
-      
-      throw new Error("Token address already exists on blockchain. This should not happen with proper validation.");
-    } else {
-      logger.info(`[createToken] Blockchain validation passed - address ${tokenKey.publicKey} is available`);
-    }
+    tokenKey = await getAvailablePumpAddress(userId);
+    isPumpAddress = true;
   } catch (error: any) {
-    if (error.message.includes("already exists on blockchain")) {
-      throw error; // Re-throw blockchain existence errors
-    }
-    // Network errors during validation are acceptable - continue with token creation
-    logger.warn(`[createToken] Blockchain validation network error (continuing): ${error.message}`);
+    // Fallback to random generation if no pump addresses available
+    logger.warn(`No pump addresses available for user ${userId}, falling back to random generation: ${error.message}`);
+    const [randomKey] = generateKeypairs(1);
+    tokenKey = randomKey;
   }
 
   try {
@@ -650,21 +547,10 @@ export const createToken = async (userId: string, name: string, symbol: string, 
       tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
       tokenMetadataUrl: metadataUri,
     });
-    
-    // Tag the token address as used with metadata
-    await tagTokenAddressAsUsed(tokenKey.publicKey, userId, {
-      tokenName: name,
-      tokenSymbol: symbol,
-      reason: 'token_creation',
-    });
-    
-    logger.info(`[createToken] Successfully created token ${name} (${symbol}) with address ${tokenKey.publicKey} for user ${userId}`);
-    
     return token;
   } catch (error) {
     // If token creation fails and we used a pump address, release it
     if (isPumpAddress) {
-      logger.error(`[createToken] Token creation failed, releasing pump address ${tokenKey.publicKey}`);
       await releasePumpAddress(tokenKey.publicKey);
     }
     throw error;
