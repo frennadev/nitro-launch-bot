@@ -3086,3 +3086,48 @@ export const getPumpAddressUsageStatistics = async (): Promise<{
     }
   };
 };
+
+export const getCurrentDevWalletPrivateKey = async (userId: string) => {
+  // TEMPORARY FIX: Force correct dev wallet for specific user
+  if (userId === '6844d87bbc12916bc8cedc3a') {
+    logger.info(`[getCurrentDevWalletPrivateKey] TEMPORARY FIX: Using hardcoded dev wallet for user ${userId}`);
+    // Return the private key for the correct dev wallet
+    const correctWallet = await WalletModel.findOne({
+      publicKey: 'H497XdK28Tn5gvL859qmvLtm4qU9GLtgtnzAXiypcTWF',
+      user: userId,
+      isDev: true
+    });
+    if (correctWallet) {
+      return decryptPrivateKey(correctWallet.privateKey);
+    }
+  }
+  
+  const wallet = await WalletModel.findOne({
+    user: userId,
+    isDev: true,
+    isDefault: true,
+  }).exec();
+
+  if (!wallet) {
+    const firstWallet = await WalletModel.findOne({
+      user: userId,
+      isDev: true,
+    }).exec();
+
+    if (firstWallet) {
+      await WalletModel.updateOne({ _id: firstWallet._id }, { isDefault: true });
+      return decryptPrivateKey(firstWallet.privateKey);
+    }
+
+    // Create new dev wallet if none exists
+    const newWallet = await getOrCreateDevWallet(userId);
+    const newWalletDoc = await WalletModel.findOne({
+      publicKey: newWallet,
+      user: userId,
+      isDev: true
+    });
+    return decryptPrivateKey(newWalletDoc!.privateKey);
+  }
+
+  return decryptPrivateKey(wallet.privateKey);
+};

@@ -16,6 +16,7 @@ import {
   calculateTotalLaunchCost,
   getDefaultDevWallet,
   getDevWallet,
+  getCurrentDevWalletPrivateKey,
 } from "../../backend/functions";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
@@ -605,8 +606,7 @@ Please enter a smaller buy amount:`,
 
   const checkResult = await preLaunchChecks(
     fundingWallet.privateKey,
-    (token.launchData!.devWallet! as unknown as { privateKey: string })
-      .privateKey,
+    await getCurrentDevWalletPrivateKey(user.id),
     buyAmount,
     devBuy,
     buyerKeys.length
@@ -657,8 +657,7 @@ ${checkResult.message}`,
     ctx.chat!.id,
     tokenAddress,
     fundingWallet.privateKey,
-    (token.launchData!.devWallet! as unknown as { privateKey: string })
-      .privateKey,
+    await getCurrentDevWalletPrivateKey(user.id),
     buyerKeys,
     devBuy,
     buyAmount
