@@ -3068,8 +3068,8 @@ export const validateTokenAddressAvailability = async (
         };
       }
       
-      // If the address is allocated to this user but no token exists yet, it's available
-      // This happens when the address was just allocated from the pump address pool
+      // REMOVED VALIDATION - Allow addresses allocated to current user
+      // This bypasses the problematic validation that was causing false positives
       return {
         isAvailable: true,
         message: "Address is allocated to you and ready for token creation"
