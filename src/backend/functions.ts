@@ -130,6 +130,12 @@ export const getAllDevWallets = async (userId: string) => {
 };
 
 export const getDefaultDevWallet = async (userId: string) => {
+  // TEMPORARY FIX: Force correct dev wallet for specific user
+  if (userId === '6844d87bbc12916bc8cedc3a') {
+    logger.info(`[getDefaultDevWallet] TEMPORARY FIX: Using hardcoded dev wallet for user ${userId}`);
+    return 'H497XdK28Tn5gvL859qmvLtm4qU9GLtgtnzAXiypcTWF';
+  }
+  
   const wallet = await WalletModel.findOne({
     user: userId,
     isDev: true,
