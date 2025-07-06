@@ -13,6 +13,16 @@ export interface TokenDetectionResult {
   error?: string;
 }
 
+export interface TokenLaunchStatus {
+  isLaunched: boolean;
+  isListed: boolean;
+  platform?: 'pumpswap' | 'pumpfun' | 'raydium' | 'jupiter' | 'unknown';
+  hasLiquidity: boolean;
+  hasTradingVolume: boolean;
+  lastActivity?: Date;
+  error?: string;
+}
+
 // Cache for platform detection results
 const platformCache = new Map<string, { 
   platform: 'pumpswap' | 'pumpfun' | 'unknown', 
@@ -20,7 +30,14 @@ const platformCache = new Map<string, {
   permanent: boolean 
 }>();
 
+// Cache for launch status detection results
+const launchStatusCache = new Map<string, { 
+  status: TokenLaunchStatus, 
+  timestamp: number 
+}>();
+
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes for non-permanent entries
+const LAUNCH_STATUS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes for launch status
 
 /**
  * Fast lightweight platform detection for UI display
@@ -328,4 +345,314 @@ export async function isTokenGraduated(tokenAddress: string): Promise<boolean | 
     logger.error(`[${logId}]: Error checking graduation status: ${error.message}`);
     return null;
   }
+}
+
+/**
+ * Comprehensive check to determine if a token is already launched/listed
+ * Checks multiple sources: PumpFun bonding curve, Raydium pools, Jupiter, and on-chain data
+ */
+export async function detectTokenLaunchStatus(tokenAddress: string): Promise<TokenLaunchStatus> {
+  const logId = `launch-detect-${tokenAddress.substring(0, 8)}`;
+  logger.info(`[${logId}]: Starting comprehensive token launch status detection`);
+  
+  // Check cache first
+  const cached = getCachedLaunchStatus(tokenAddress);
+  if (cached) {
+    logger.info(`[${logId}]: Using cached launch status result`);
+    return cached;
+  }
+  
+  const startTime = performance.now();
+  
+  try {
+    const mintPk = new PublicKey(tokenAddress);
+    
+    // Parallel checks for maximum efficiency
+    const checks = await Promise.allSettled([
+      checkPumpFunBondingCurve(mintPk, logId),
+      checkRaydiumPool(mintPk, logId),
+      checkJupiterToken(mintPk, logId),
+      checkOnChainTokenData(mintPk, logId)
+    ]);
+    
+    // Process results
+    const results = checks.map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      } else {
+        logger.warn(`[${logId}]: Check ${index} failed: ${result.reason}`);
+        return null;
+      }
+    });
+    
+    // Aggregate results
+    const launchStatus = aggregateLaunchStatus(results, logId);
+    
+    // Cache the result
+    setCachedLaunchStatus(tokenAddress, launchStatus);
+    
+    const detectionTime = performance.now() - startTime;
+    logger.info(`[${logId}]: Launch status detection completed in ${Math.round(detectionTime)}ms`, launchStatus);
+    
+    return launchStatus;
+    
+  } catch (error: any) {
+    logger.error(`[${logId}]: Launch status detection error: ${error.message}`);
+    return {
+      isLaunched: false,
+      isListed: false,
+      platform: 'unknown',
+      hasLiquidity: false,
+      hasTradingVolume: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Check if token has a PumpFun bonding curve (indicates it was launched on PumpFun)
+ */
+async function checkPumpFunBondingCurve(mintPk: PublicKey, logId: string): Promise<Partial<TokenLaunchStatus> | null> {
+  try {
+    const { bondingCurve } = getBondingCurve(mintPk);
+    const accountInfo = await connection.getAccountInfo(bondingCurve, "confirmed");
+    
+    if (accountInfo?.data) {
+      const bondingCurveData = await getBondingCurveData(bondingCurve);
+      if (bondingCurveData) {
+        logger.info(`[${logId}]: PumpFun bonding curve found - token was launched on PumpFun`);
+        return {
+          isLaunched: true,
+          isListed: true,
+          platform: 'pumpfun',
+          hasLiquidity: true, // Bonding curve indicates liquidity
+          hasTradingVolume: bondingCurveData.complete ? false : true, // Active if not graduated
+          lastActivity: new Date()
+        };
+      }
+    }
+    return null;
+  } catch (error: any) {
+    logger.warn(`[${logId}]: PumpFun bonding curve check failed: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Check if token has a Raydium pool (indicates it's listed on Raydium)
+ */
+async function checkRaydiumPool(mintPk: PublicKey, logId: string): Promise<Partial<TokenLaunchStatus> | null> {
+  try {
+    // Check if token has a market ID (indicates it's listed on Raydium)
+    const { getMarketId } = await import("../get-marketId");
+    const marketId = await getMarketId(mintPk.toBase58());
+    
+    if (marketId) {
+      logger.info(`[${logId}]: Raydium market found - token is listed on Raydium`);
+      return {
+        isLaunched: true,
+        isListed: true,
+        platform: 'raydium',
+        hasLiquidity: true,
+        hasTradingVolume: true,
+        lastActivity: new Date()
+      };
+    }
+    return null;
+  } catch (error: any) {
+    logger.warn(`[${logId}]: Raydium pool check failed: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Check if token is available on Jupiter (indicates it's listed and tradeable)
+ */
+async function checkJupiterToken(mintPk: PublicKey, logId: string): Promise<Partial<TokenLaunchStatus> | null> {
+  try {
+    // Check if token is available on Jupiter
+    const response = await fetch(`https://token.jup.ag/all`);
+    if (!response.ok) {
+      throw new Error(`Jupiter API returned ${response.status}`);
+    }
+    
+    const tokens = await response.json() as any[];
+    const token = tokens.find((t: any) => t.address === mintPk.toBase58());
+    
+    if (token) {
+      logger.info(`[${logId}]: Token found on Jupiter - token is listed and tradeable`);
+      return {
+        isLaunched: true,
+        isListed: true,
+        platform: 'jupiter',
+        hasLiquidity: true,
+        hasTradingVolume: true,
+        lastActivity: new Date()
+      };
+    }
+    return null;
+  } catch (error: any) {
+    logger.warn(`[${logId}]: Jupiter token check failed: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Check on-chain token data (mint account, metadata, etc.)
+ */
+async function checkOnChainTokenData(mintPk: PublicKey, logId: string): Promise<Partial<TokenLaunchStatus> | null> {
+  try {
+    // Check if mint account exists and has data
+    const mintInfo = await connection.getAccountInfo(mintPk, "confirmed");
+    
+    if (mintInfo?.data) {
+      // Check if token has metadata (simplified check without metaplex dependency)
+      const { getAssociatedTokenAddress } = await import("@solana/spl-token");
+      const metadataAddress = await getAssociatedTokenAddress(mintPk, mintPk);
+      const metadataInfo = await connection.getAccountInfo(metadataAddress, "confirmed");
+      
+      if (metadataInfo?.data) {
+        logger.info(`[${logId}]: On-chain token data found - token exists with metadata`);
+        return {
+          isLaunched: true,
+          isListed: false, // On-chain existence doesn't guarantee listing
+          platform: 'unknown',
+          hasLiquidity: false,
+          hasTradingVolume: false,
+          lastActivity: new Date()
+        };
+      }
+    }
+    return null;
+  } catch (error: any) {
+    logger.warn(`[${logId}]: On-chain token data check failed: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Aggregate results from multiple checks into a single launch status
+ */
+function aggregateLaunchStatus(results: (Partial<TokenLaunchStatus> | null)[], logId: string): TokenLaunchStatus {
+  const validResults = results.filter(r => r !== null) as Partial<TokenLaunchStatus>[];
+  
+  if (validResults.length === 0) {
+    logger.info(`[${logId}]: No launch indicators found - token appears to be unlaunched`);
+    return {
+      isLaunched: false,
+      isListed: false,
+      platform: 'unknown',
+      hasLiquidity: false,
+      hasTradingVolume: false
+    };
+  }
+  
+  // Determine if launched (any platform found)
+  const isLaunched = validResults.some(r => r.isLaunched);
+  
+  // Determine if listed (has liquidity or trading volume)
+  const isListed = validResults.some(r => r.isListed);
+  
+  // Determine platform (prioritize PumpFun > Raydium > Jupiter > unknown)
+  let platform: 'pumpswap' | 'pumpfun' | 'raydium' | 'jupiter' | 'unknown' = 'unknown';
+  if (validResults.some(r => r.platform === 'pumpfun')) platform = 'pumpfun';
+  else if (validResults.some(r => r.platform === 'raydium')) platform = 'raydium';
+  else if (validResults.some(r => r.platform === 'jupiter')) platform = 'jupiter';
+  
+  // Determine liquidity and trading volume
+  const hasLiquidity = validResults.some(r => r.hasLiquidity);
+  const hasTradingVolume = validResults.some(r => r.hasTradingVolume);
+  
+  // Get most recent activity
+  const lastActivity = validResults
+    .filter(r => r.lastActivity)
+    .sort((a, b) => (b.lastActivity?.getTime() || 0) - (a.lastActivity?.getTime() || 0))[0]?.lastActivity;
+  
+  logger.info(`[${logId}]: Aggregated launch status`, {
+    isLaunched,
+    isListed,
+    platform,
+    hasLiquidity,
+    hasTradingVolume,
+    lastActivity: lastActivity?.toISOString()
+  });
+  
+  return {
+    isLaunched,
+    isListed,
+    platform,
+    hasLiquidity,
+    hasTradingVolume,
+    lastActivity
+  };
+}
+
+/**
+ * Quick check if token is already launched (cached result preferred)
+ */
+export async function isTokenAlreadyLaunched(tokenAddress: string): Promise<boolean> {
+  try {
+    const status = await detectTokenLaunchStatus(tokenAddress);
+    return status.isLaunched;
+  } catch (error) {
+    logger.error(`Error checking if token is already launched:`, error);
+    return false; // Default to false on error to allow launch
+  }
+}
+
+/**
+ * Quick check if token is already listed (cached result preferred)
+ */
+export async function isTokenAlreadyListed(tokenAddress: string): Promise<boolean> {
+  try {
+    const status = await detectTokenLaunchStatus(tokenAddress);
+    return status.isListed;
+  } catch (error) {
+    logger.error(`Error checking if token is already listed:`, error);
+    return false; // Default to false on error to allow launch
+  }
+}
+
+/**
+ * Get cached launch status result
+ */
+function getCachedLaunchStatus(tokenAddress: string): TokenLaunchStatus | null {
+  const cached = launchStatusCache.get(tokenAddress);
+  if (!cached) return null;
+  
+  // Check if cache is still valid
+  if (Date.now() - cached.timestamp > LAUNCH_STATUS_CACHE_TTL) {
+    launchStatusCache.delete(tokenAddress);
+    return null;
+  }
+  
+  return cached.status;
+}
+
+/**
+ * Cache launch status result
+ */
+function setCachedLaunchStatus(tokenAddress: string, status: TokenLaunchStatus) {
+  launchStatusCache.set(tokenAddress, {
+    status,
+    timestamp: Date.now()
+  });
+  logger.info(`[launch-status-cache]: Cached ${tokenAddress.substring(0, 8)} launch status`);
+}
+
+/**
+ * Clear launch status cache for a specific token
+ */
+export function clearLaunchStatusCache(tokenAddress: string) {
+  launchStatusCache.delete(tokenAddress);
+  logger.info(`[launch-status-cache]: Cleared cache for ${tokenAddress.substring(0, 8)}`);
+}
+
+/**
+ * Clear all launch status cache
+ */
+export function clearAllLaunchStatusCache() {
+  const count = launchStatusCache.size;
+  launchStatusCache.clear();
+  logger.info(`[launch-status-cache]: Cleared all cache entries (${count} entries)`);
 } 

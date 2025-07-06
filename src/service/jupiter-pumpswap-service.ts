@@ -283,22 +283,22 @@ export class JupiterPumpswapService {
       try {
         logger.info(`[${logId}] Jupiter attempt ${attempt}/${maxRetries}`);
         
-        const quote = await this.getQuote(
-          WSOL,
-          tokenAddress,
-          solLamports,
-          "buy",
-          slippage * 100
+      const quote = await this.getQuote(
+        WSOL,
+        tokenAddress,
+        solLamports,
+        "buy",
+        slippage * 100
+      );
+
+      if (quote) {
+          logger.info(`[${logId}] Jupiter quote received, initializing swap...`);
+        const swapData = await this.initializeSwap(
+          quote,
+          buyerKeypair.publicKey.toBase58()
         );
 
-        if (quote) {
-          logger.info(`[${logId}] Jupiter quote received, initializing swap...`);
-          const swapData = await this.initializeSwap(
-            quote,
-            buyerKeypair.publicKey.toBase58()
-          );
-
-          if (swapData) {
+        if (swapData) {
             const swapTransactionBuf = Buffer.from(
               swapData.swapTransaction,
               "base64"
@@ -409,29 +409,29 @@ export class JupiterPumpswapService {
       try {
         logger.info(`[${logId}] PumpSwap attempt ${attempt}/${maxRetries}`);
         
-        const pumpswapService = new PumpswapService();
+          const pumpswapService = new PumpswapService();
         const pumpswapLamports = Math.floor(actualTradeAmount * 1_000_000_000);
         
-        const buyData = {
-          mint: new PublicKey(tokenAddress),
+          const buyData = {
+            mint: new PublicKey(tokenAddress),
           amount: BigInt(pumpswapLamports),
-          privateKey: bs58.encode(buyerKeypair.secretKey),
-        };
+            privateKey: bs58.encode(buyerKeypair.secretKey),
+          };
 
-        const buyTx = await pumpswapService.buyTx(buyData);
-        const signature = await this.connection.sendTransaction(buyTx, {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
-          maxRetries: 3,
-        });
+          const buyTx = await pumpswapService.buyTx(buyData);
+          const signature = await this.connection.sendTransaction(buyTx, {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+            maxRetries: 3,
+          });
 
-        const confirmation = await this.connection.confirmTransaction(
-          signature,
-          "confirmed"
-        );
+          const confirmation = await this.connection.confirmTransaction(
+            signature,
+            "confirmed"
+          );
 
-        if (!confirmation.value.err) {
-          logger.info(`[${logId}] PumpSwap buy successful: ${signature}`);
+          if (!confirmation.value.err) {
+            logger.info(`[${logId}] PumpSwap buy successful: ${signature}`);
           
           // Collect 1% transaction fee after successful PumpSwap buy
           try {
@@ -451,10 +451,10 @@ export class JupiterPumpswapService {
             logger.warn(`[${logId}] Error collecting PumpSwap transaction fee: ${feeError.message}`);
           }
           
-          return {
-            success: true,
-            signature,
-            platform: "pumpswap",
+            return {
+              success: true,
+              signature,
+              platform: "pumpswap",
             tokensReceived: "unknown",
             actualSolSpent: actualTradeAmount.toString(),
           };
@@ -470,12 +470,12 @@ export class JupiterPumpswapService {
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
+        }
       }
-    }
 
-    return {
-      success: false,
-      signature: "",
+      return {
+        success: false,
+        signature: "",
       error: `PumpSwap failed after ${maxRetries} attempts`,
     };
   }
@@ -519,7 +519,7 @@ export class JupiterPumpswapService {
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }
-      } catch (error: any) {
+    } catch (error: any) {
         logger.warn(`[${logId}] PumpFun attempt ${attempt} error: ${error.message}`);
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -527,11 +527,11 @@ export class JupiterPumpswapService {
       }
     }
 
-    return {
-      success: false,
-      signature: "",
+      return {
+        success: false,
+        signature: "",
       error: `PumpFun failed after ${maxRetries} attempts`,
-    };
+      };
   }
 
   /**

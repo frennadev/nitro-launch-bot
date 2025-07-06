@@ -106,6 +106,35 @@ const launchTokenConversation = async (
     return;
   }
 
+  // -------- CHECK IF TOKEN IS ALREADY LAUNCHED ON OTHER PLATFORMS --------
+  const { isTokenAlreadyLaunched, isTokenAlreadyListed } = await import("../../service/token-detection-service");
+  
+  const isLaunched = await isTokenAlreadyLaunched(tokenAddress);
+  const isListed = await isTokenAlreadyListed(tokenAddress);
+  
+  if (isLaunched || isListed) {
+    await sendMessage(
+      ctx,
+      `⚠️ <b>Token Already Active!</b>
+
+This token address is already ${isListed ? 'listed' : 'launched'} on a trading platform.
+
+🚫 <b>Cannot proceed with launch</b>
+• Token is already active and tradeable
+• Launching again could cause conflicts
+• Consider using a different token address
+
+<b>Token Status:</b>
+• Launched: ${isLaunched ? 'Yes' : 'No'}
+• Listed: ${isListed ? 'Yes' : 'No'}
+
+Please create a new token with a different address.`,
+      { parse_mode: "HTML" }
+    );
+    await conversation.halt();
+    return;
+  }
+
   // -------- FOR RETRIES -------
   // Instead of automatically retrying with old values, let user enter new values
   if ((token.launchData?.launchStage || 1) > 1) {

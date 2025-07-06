@@ -2924,6 +2924,19 @@ export const validateTokenAddressAvailability = async (
     const usage = await checkTokenAddressUsage(tokenAddress);
     
     if (!usage.isUsed) {
+      // Check if token is already launched/listed on any platform
+      const { isTokenAlreadyLaunched, isTokenAlreadyListed } = await import("../service/token-detection-service");
+      
+      const isLaunched = await isTokenAlreadyLaunched(tokenAddress);
+      const isListed = await isTokenAlreadyListed(tokenAddress);
+      
+      if (isLaunched || isListed) {
+        return {
+          isAvailable: false,
+          message: `Token is already ${isListed ? 'listed' : 'launched'} on a trading platform and cannot be used for new launches`
+        };
+      }
+      
       return {
         isAvailable: true,
         message: "Address is available for use"
