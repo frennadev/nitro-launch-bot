@@ -17,6 +17,7 @@ import {
   getDefaultDevWallet,
   getDevWallet,
   getCurrentDevWalletPrivateKey,
+  autoReplaceLaunchedTokenAddress,
 } from "../../backend/functions";
 import { TokenState } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
@@ -25,6 +26,7 @@ import { CallBackQueries } from "../types";
 import { env } from "../../config";
 import { startLoadingState, sendLoadingMessage } from "../loading";
 import { safeAnswerCallbackQuery } from "../utils";
+import { logger } from "../../blockchain/common/logger";
 
 enum LaunchCallBackQueries {
   CANCEL = "CANCEL_LAUNCH",
@@ -107,28 +109,51 @@ const launchTokenConversation = async (
   }
 
   // -------- CHECK IF TOKEN IS ALREADY LAUNCHED ON OTHER PLATFORMS --------
-  const { isTokenAlreadyLaunched, isTokenAlreadyListed } = await import("../../service/token-detection-service");
-  
-  const isLaunched = await isTokenAlreadyLaunched(tokenAddress);
-  const isListed = await isTokenAlreadyListed(tokenAddress);
-  
-  if (isLaunched || isListed) {
+  // Automatically replace token address if it's already launched/listed
+  try {
+    const replacementResult = await autoReplaceLaunchedTokenAddress(user.id, tokenAddress);
+    
+    if (replacementResult.wasReplaced) {
+      // Token was replaced with a new address
+      await sendMessage(
+        ctx,
+        `🔄 <b>Token Address Replaced</b>
+
+The original token address was already ${replacementResult.reason?.includes('listed') ? 'listed' : 'launched'} on a trading platform.
+
+✅ <b>Automatically assigned new address:</b>
+<code>${replacementResult.newTokenAddress}</code>
+
+Your token metadata remains the same:
+• <b>Name:</b> ${token.name}
+• <b>Symbol:</b> ${token.symbol}
+• <b>Description:</b> ${token.description}
+
+Continuing with launch process...`,
+        { parse_mode: "HTML" }
+      );
+      
+      // Update the token address for the rest of the conversation
+      tokenAddress = replacementResult.newTokenAddress;
+      
+      // Get the updated token data
+      const updatedToken = await getUserToken(user.id, tokenAddress);
+      if (!updatedToken) {
+        await sendMessage(ctx, "Error: Could not retrieve updated token data ❌");
+        await conversation.halt();
+        return;
+      }
+      token = updatedToken;
+    }
+  } catch (error: any) {
+    logger.error(`[launchToken] Error during token address replacement: ${error.message}`);
     await sendMessage(
       ctx,
-      `⚠️ <b>Token Already Active!</b>
+      `❌ <b>Error checking token status</b>
 
-This token address is already ${isListed ? 'listed' : 'launched'} on a trading platform.
+Could not verify if token is already launched. Please try again or contact support.
 
-🚫 <b>Cannot proceed with launch</b>
-• Token is already active and tradeable
-• Launching again could cause conflicts
-• Consider using a different token address
-
-<b>Token Status:</b>
-• Launched: ${isLaunched ? 'Yes' : 'No'}
-• Listed: ${isListed ? 'Yes' : 'No'}
-
-Please create a new token with a different address.`,
+Error: ${error.message}`,
       { parse_mode: "HTML" }
     );
     await conversation.halt();

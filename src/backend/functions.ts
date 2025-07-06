@@ -515,16 +515,46 @@ export const createToken = async (userId: string, name: string, symbol: string, 
   }
 
   // Use pump address instead of generating random keypair
-  let tokenKey;
+  let tokenKey: any;
   let isPumpAddress = false;
-  try {
-    tokenKey = await getAvailablePumpAddress(userId);
-    isPumpAddress = true;
-  } catch (error: any) {
-    // Fallback to random generation if no pump addresses available
-    logger.warn(`No pump addresses available for user ${userId}, falling back to random generation: ${error.message}`);
-    const [randomKey] = generateKeypairs(1);
-    tokenKey = randomKey;
+  let attempts = 0;
+  const maxAttempts = 3; // Try up to 3 times to get a non-launched address
+  
+  while (attempts < maxAttempts) {
+    attempts++;
+    
+    try {
+      tokenKey = await getAvailablePumpAddress(userId);
+      isPumpAddress = true;
+      logger.info(`[createToken] Got pump address: ${tokenKey.publicKey} (attempt ${attempts})`);
+    } catch (error: any) {
+      // Fallback to random generation if no pump addresses available
+      logger.warn(`No pump addresses available for user ${userId}, falling back to random generation: ${error.message}`);
+      const [randomKey] = generateKeypairs(1);
+      tokenKey = randomKey;
+    }
+    
+    // Check if the allocated address is already launched/listed
+    const { isTokenAlreadyLaunched, isTokenAlreadyListed } = await import("../service/token-detection-service");
+    
+    const isLaunched = await isTokenAlreadyLaunched(tokenKey.publicKey);
+    const isListed = await isTokenAlreadyListed(tokenKey.publicKey);
+    
+    if (!isLaunched && !isListed) {
+      // Address is not launched/listed, we can use it
+      logger.info(`[createToken] Address ${tokenKey.publicKey} is not launched/listed - proceeding with token creation`);
+      break;
+    }
+    
+    // Address is already launched/listed, try again
+    logger.warn(`[createToken] Address ${tokenKey.publicKey} is already ${isListed ? 'listed' : 'launched'} - trying again (attempt ${attempts}/${maxAttempts})`);
+    
+    if (attempts >= maxAttempts) {
+      throw new Error(`Failed to find a non-launched address after ${maxAttempts} attempts. All allocated addresses appear to be already active on trading platforms.`);
+    }
+    
+    // Small delay before retry
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
   try {
@@ -547,6 +577,116 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     if (isPumpAddress) {
       logger.info(`[createToken] Token creation failed for pump address ${tokenKey.publicKey} - address remains permanently allocated to user ${userId}`);
     }
+    throw error;
+  }
+};
+
+/**
+ * Automatically replace a token address if it's already launched/listed
+ * This function checks if the token is active and gets a new address if needed
+ * @param userId - The user ID
+ * @param tokenAddress - The current token address to check
+ * @returns Object with new token address and whether it was replaced
+ */
+export const autoReplaceLaunchedTokenAddress = async (
+  userId: string,
+  tokenAddress: string
+): Promise<{
+  newTokenAddress: string;
+  wasReplaced: boolean;
+  reason?: string;
+}> => {
+  try {
+    // Check if token is already launched/listed
+    const { isTokenAlreadyLaunched, isTokenAlreadyListed } = await import("../service/token-detection-service");
+    
+    const isLaunched = await isTokenAlreadyLaunched(tokenAddress);
+    const isListed = await isTokenAlreadyListed(tokenAddress);
+    
+    if (!isLaunched && !isListed) {
+      // Token is not launched/listed, no replacement needed
+      return {
+        newTokenAddress: tokenAddress,
+        wasReplaced: false
+      };
+    }
+    
+    logger.info(`[autoReplaceLaunchedTokenAddress] Token ${tokenAddress} is already ${isListed ? 'listed' : 'launched'} - getting new address`);
+    
+    // Get a new pump address from the pool
+    let newTokenKey;
+    let isPumpAddress = false;
+    
+    try {
+      newTokenKey = await getAvailablePumpAddress(userId);
+      isPumpAddress = true;
+      logger.info(`[autoReplaceLaunchedTokenAddress] Got new pump address: ${newTokenKey.publicKey}`);
+    } catch (error: any) {
+      // Fallback to random generation if no pump addresses available
+      logger.warn(`[autoReplaceLaunchedTokenAddress] No pump addresses available, falling back to random generation: ${error.message}`);
+      const [randomKey] = generateKeypairs(1);
+      newTokenKey = randomKey;
+    }
+    
+    // Update the token document with the new address
+    const session = await mongoose.startSession();
+    
+    try {
+      await session.withTransaction(async () => {
+        // Get the current token data
+        const currentToken = await TokenModel.findOne({ 
+          tokenAddress, 
+          user: userId 
+        }).session(session);
+        
+        if (!currentToken) {
+          throw new Error("Token not found");
+        }
+        
+        // Create new token with the same metadata but new address
+        const newToken = await TokenModel.create([{
+          user: userId,
+          name: currentToken.name,
+          symbol: currentToken.symbol,
+          description: currentToken.description,
+          launchData: {
+            devWallet: currentToken.launchData?.devWallet,
+            // Reset launch data since this is a new token
+            launchAttempt: 0,
+            launchStage: 1
+          },
+          tokenAddress: newTokenKey.publicKey,
+          tokenPrivateKey: encryptPrivateKey(newTokenKey.secretKey),
+          tokenMetadataUrl: currentToken.tokenMetadataUrl
+          // State will default to undefined (not launched)
+        }], { session });
+        
+        // Delete the old token
+        await TokenModel.deleteOne({ 
+          _id: currentToken._id 
+        }).session(session);
+        
+        logger.info(`[autoReplaceLaunchedTokenAddress] Successfully replaced token address from ${tokenAddress} to ${newTokenKey.publicKey}`);
+      });
+      
+      return {
+        newTokenAddress: newTokenKey.publicKey,
+        wasReplaced: true,
+        reason: `Token was already ${isListed ? 'listed' : 'launched'} on a trading platform`
+      };
+      
+    } catch (error: any) {
+      // If token replacement fails, release the new pump address (if it was a pump address)
+      if (isPumpAddress) {
+        logger.warn(`[autoReplaceLaunchedTokenAddress] Token replacement failed, but pump address ${newTokenKey.publicKey} remains allocated to user ${userId} (never released)`);
+      }
+      throw error;
+    } finally {
+      await session.endSession();
+    }
+    
+  } catch (error: any) {
+    logger.error(`[autoReplaceLaunchedTokenAddress] Error replacing token address: ${error.message}`);
     throw error;
   }
 };
