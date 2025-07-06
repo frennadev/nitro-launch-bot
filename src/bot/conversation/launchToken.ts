@@ -91,7 +91,7 @@ const launchTokenConversation = async (
   console.log("Launch Token - Retry check:", { isRetry, existingRetryData });
 
   // -------- VALIDATE TOKEN ----------
-  const token = await getUserToken(user.id, tokenAddress);
+  let token = await getUserToken(user.id, tokenAddress);
   if (!token) {
     await sendMessage(ctx, "Token not found ❌");
     await conversation.halt();
