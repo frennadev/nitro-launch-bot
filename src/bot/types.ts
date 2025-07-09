@@ -71,4 +71,6 @@ export enum CallBackQueries {
 
   VIEW_TOKEN_TRADES = "view_token_trades",
   CTO = "cto",
+  PUMPFUN = "pumpfun",
+  LETSBONK = "letsbonk",
 }

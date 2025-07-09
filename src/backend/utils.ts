@@ -7,7 +7,7 @@ import * as crypto from "crypto";
 import { env } from "../config";
 import { ENCRYPTION_ALGORITHM, ENCRYPTION_IV_LENGTH } from "./constants";
 import axios from "axios";
-import { TokenModel, UserModel } from "./models";
+import { BonkAddressModel, TokenModel, UsedBonkAddressModel, UserModel } from "./models";
 import { redisClient } from "../jobs/db";
 import { DexscreenerTokenResponse } from "./types";
 
@@ -136,11 +136,11 @@ export async function editMessage(
 export async function getTokenBalance(tokenAddress: string, walletAddress: string): Promise<number> {
   try {
     console.log({ walletAddress });
-    
+
     // Validate addresses first
     let mint: PublicKey;
     let owner: PublicKey;
-    
+
     try {
       mint = new PublicKey(tokenAddress);
       owner = new PublicKey(walletAddress);
@@ -160,7 +160,9 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
     } catch (rpcError: any) {
       // Handle specific RPC errors
       if (rpcError.message?.includes("Token mint could not be unpacked")) {
-        console.warn(`[getTokenBalance] Token mint unpacking failed for ${tokenAddress} - token may not exist or use different program`);
+        console.warn(
+          `[getTokenBalance] Token mint unpacking failed for ${tokenAddress} - token may not exist or use different program`
+        );
         return 0;
       } else if (rpcError.message?.includes("Invalid param")) {
         console.warn(`[getTokenBalance] Invalid parameters for token ${tokenAddress}`);
@@ -199,7 +201,9 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
         // Use raw amount (not uiAmount) for precise token calculations
         const rawAmount = account.data.parsed.info.tokenAmount.amount || "0";
         const amt = parseInt(rawAmount, 10);
-        console.log(`[getTokenBalance] Account balance: ${amt} raw tokens (${account.data.parsed.info.tokenAmount.uiAmount} UI amount)`);
+        console.log(
+          `[getTokenBalance] Account balance: ${amt} raw tokens (${account.data.parsed.info.tokenAmount.uiAmount} UI amount)`
+        );
         return sum + amt;
       } catch (parseError) {
         console.warn(`[getTokenBalance] Error parsing account data:`, parseError);
@@ -219,7 +223,10 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
   }
 }
 
-export async function getSolBalance(walletAddress: string, commitment: 'processed' | 'confirmed' | 'finalized' = 'confirmed'): Promise<number> {
+export async function getSolBalance(
+  walletAddress: string,
+  commitment: "processed" | "confirmed" | "finalized" = "confirmed"
+): Promise<number> {
   const pubkey = new PublicKey(walletAddress);
   const lamports = await connection.getBalance(pubkey, commitment);
   return lamports / LAMPORTS_PER_SOL;
@@ -495,20 +502,17 @@ export interface BirdeyeExtensions {
  */
 export const getBirdeyeTokenInfo = async (tokenAddress: string): Promise<BirdeyeData | null> => {
   try {
-    const response = await axios.get(
-      "https://public-api.birdeye.so/defi/token_overview?address=" + tokenAddress,
-      {
-        headers: {
-          accept: "application/json",
-          "x-chain": "solana",
-          "X-API-KEY": "e750e17792ae478983170f78486de13c",
-        },
-        timeout: 5000,
-      }
-    );
+    const response = await axios.get("https://public-api.birdeye.so/defi/token_overview?address=" + tokenAddress, {
+      headers: {
+        accept: "application/json",
+        "x-chain": "solana",
+        "X-API-KEY": "e750e17792ae478983170f78486de13c",
+      },
+      timeout: 5000,
+    });
 
     const data: BirdeyeResponse = response.data || {};
-    
+
     if (!data.success || !data.data) {
       console.log(`[getBirdeyeTokenInfo] Birdeye API returned unsuccessful response for ${tokenAddress}`);
       return null;
@@ -519,7 +523,7 @@ export const getBirdeyeTokenInfo = async (tokenAddress: string): Promise<Birdeye
       symbol: data.data.symbol,
       marketCap: data.data.marketCap,
       price: data.data.price,
-      liquidity: data.data.liquidity
+      liquidity: data.data.liquidity,
     });
 
     return data.data;
@@ -547,7 +551,7 @@ export const getTokenInfo = async (tokenAddress: string) => {
     // First try Birdeye API
     console.log(`[getTokenInfo] Fetching from Birdeye API for ${tokenAddress}`);
     const birdeyeData = await getBirdeyeTokenInfo(tokenAddress);
-    
+
     if (birdeyeData) {
       // Convert Birdeye data to DexScreener-compatible format for backward compatibility
       const convertedData = {
@@ -559,13 +563,13 @@ export const getTokenInfo = async (tokenAddress: string) => {
           address: tokenAddress,
           name: birdeyeData.name,
           symbol: birdeyeData.symbol,
-          decimals: birdeyeData.decimals
+          decimals: birdeyeData.decimals,
         },
         quoteToken: {
           address: "So11111111111111111111111111111111111111112", // WSOL
           name: "Wrapped SOL",
           symbol: "SOL",
-          decimals: 9
+          decimals: 9,
         },
         priceNative: birdeyeData.price ? (birdeyeData.price / 240).toString() : "0", // Rough SOL price estimate
         priceUsd: birdeyeData.price ? birdeyeData.price.toString() : "0",
@@ -573,14 +577,14 @@ export const getTokenInfo = async (tokenAddress: string) => {
         liquidity: {
           usd: birdeyeData.liquidity || 0,
           base: 0,
-          quote: 0
+          quote: 0,
         },
         fdv: birdeyeData.fdv || birdeyeData.marketCap || 0,
         pairCreatedAt: Date.now() - 86400000, // Estimate 1 day ago
         info: {
           imageUrl: birdeyeData.logoURI || null,
           websites: [`https://birdeye.so/token/${tokenAddress}`],
-          socials: []
+          socials: [],
         },
         // Additional Birdeye-specific data
         birdeye: {
@@ -589,8 +593,8 @@ export const getTokenInfo = async (tokenAddress: string) => {
           holder: birdeyeData.holder,
           priceChange24h: birdeyeData.priceChange24hPercent,
           volume24h: birdeyeData.v24hUSD,
-          trades24h: birdeyeData.trade24h
-        }
+          trades24h: birdeyeData.trade24h,
+        },
       };
 
       // Try to cache the result
@@ -609,15 +613,15 @@ export const getTokenInfo = async (tokenAddress: string) => {
     const response = await axios.get(`https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`, {
       timeout: 5000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; NitroBot/1.0)',
-      }
+        "User-Agent": "Mozilla/5.0 (compatible; NitroBot/1.0)",
+      },
     });
-    
+
     const data = response.data || [];
     console.log(`[getTokenInfo] DexScreener response for ${tokenAddress}:`, {
       status: response.status,
       dataLength: data.length,
-      hasFirstItem: !!data[0]
+      hasFirstItem: !!data[0],
     });
 
     // If DexScreener returns empty data, try PumpFun fallback
@@ -626,14 +630,14 @@ export const getTokenInfo = async (tokenAddress: string) => {
       const pumpfunData = await getPumpFunTokenInfo(tokenAddress);
       if (pumpfunData) {
         console.log(`[getTokenInfo] PumpFun fallback successful for ${tokenAddress}`);
-        
+
         // Try to cache the PumpFun result
         try {
           await redisClient.set(cacheKey, JSON.stringify(pumpfunData), "EX", 60); // Shorter cache for PumpFun data
         } catch (redisError) {
           console.warn(`[getTokenInfo] Redis cache set failed for PumpFun data:`, redisError);
         }
-        
+
         return pumpfunData;
       }
     }
@@ -651,9 +655,9 @@ export const getTokenInfo = async (tokenAddress: string) => {
       message: error.message,
       status: error.response?.status,
       statusText: error.response?.statusText,
-      data: error.response?.data
+      data: error.response?.data,
     });
-    
+
     // Try PumpFun fallback on complete API failure
     console.log(`[getTokenInfo] All APIs failed, trying PumpFun fallback as last resort...`);
     try {
@@ -665,7 +669,7 @@ export const getTokenInfo = async (tokenAddress: string) => {
     } catch (pumpfunError) {
       console.warn(`[getTokenInfo] PumpFun fallback also failed:`, pumpfunError);
     }
-    
+
     return null; // Return null instead of undefined for better error handling
   }
 };
@@ -676,29 +680,29 @@ export const getTokenInfo = async (tokenAddress: string) => {
 export const getPumpFunTokenInfo = async (tokenAddress: string) => {
   try {
     // Import PumpFun utilities dynamically to avoid circular imports
-    const { getBondingCurve, getBondingCurveData } = await import('../blockchain/pumpfun/utils');
-    const { PublicKey } = await import('@solana/web3.js');
-    const { connection } = await import('../blockchain/common/connection');
-    const { getMint } = await import('@solana/spl-token');
-    
+    const { getBondingCurve, getBondingCurveData } = await import("../blockchain/pumpfun/utils");
+    const { PublicKey } = await import("@solana/web3.js");
+    const { connection } = await import("../blockchain/common/connection");
+    const { getMint } = await import("@solana/spl-token");
+
     console.log(`[getPumpFunTokenInfo] Fetching bonding curve data for ${tokenAddress}`);
-    
+
     const mintPk = new PublicKey(tokenAddress);
     const { bondingCurve } = getBondingCurve(mintPk);
     const bondingCurveData = await getBondingCurveData(bondingCurve);
-    
+
     if (!bondingCurveData) {
       console.log(`[getPumpFunTokenInfo] No bonding curve data found - not a PumpFun token`);
       return null;
     }
-    
+
     console.log(`[getPumpFunTokenInfo] Bonding curve data found, calculating market metrics...`);
-    
+
     // Get token metadata
     let tokenName = "Unknown Token";
     let tokenSymbol = "UNK";
     let tokenDecimals = 6; // PumpFun tokens are typically 6 decimals
-    
+
     try {
       const mintInfo = await getMint(connection, mintPk);
       tokenDecimals = mintInfo.decimals;
@@ -706,38 +710,38 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
     } catch (error) {
       console.warn(`[getPumpFunTokenInfo] Could not fetch mint info, using default decimals`);
     }
-    
+
     // Calculate market metrics from bonding curve data
     const virtualSolReserves = Number(bondingCurveData.virtualSolReserves) / 1e9; // Convert lamports to SOL
     const virtualTokenReserves = Number(bondingCurveData.virtualTokenReserves) / Math.pow(10, tokenDecimals);
     const realTokenReserves = Number(bondingCurveData.realTokenReserves) / Math.pow(10, tokenDecimals);
     const tokenTotalSupply = Number(bondingCurveData.tokenTotalSupply) / Math.pow(10, tokenDecimals);
-    
+
     // Calculate price: SOL per token
     const priceInSol = virtualSolReserves / virtualTokenReserves;
-    
+
     // Estimate SOL price (this could be fetched from an API for more accuracy)
     const estimatedSolPrice = 240; // USD, could be made dynamic
     const priceUsd = priceInSol * estimatedSolPrice;
-    
+
     // Calculate market cap: circulating supply * price
     const circulatingSupply = tokenTotalSupply - realTokenReserves; // Tokens that have been bought
     const marketCap = circulatingSupply * priceUsd;
-    
+
     // Calculate liquidity (total SOL in the curve)
     const liquidityUsd = virtualSolReserves * estimatedSolPrice;
-    
+
     // Calculate bonding curve progress (percentage of tokens sold)
     const bondingCurveProgress = ((tokenTotalSupply - realTokenReserves) / tokenTotalSupply) * 100;
-    
+
     console.log(`[getPumpFunTokenInfo] Calculated metrics:`, {
       priceUsd: priceUsd.toFixed(8),
       marketCap: marketCap.toFixed(2),
       liquidityUsd: liquidityUsd.toFixed(2),
       circulatingSupply: circulatingSupply.toFixed(0),
-      bondingCurveProgress: bondingCurveProgress.toFixed(2)
+      bondingCurveProgress: bondingCurveProgress.toFixed(2),
     });
-    
+
     // Return data in DexScreener-compatible format
     return {
       chainId: "solana",
@@ -748,13 +752,13 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
         address: tokenAddress,
         name: tokenName,
         symbol: tokenSymbol,
-        decimals: tokenDecimals
+        decimals: tokenDecimals,
       },
       quoteToken: {
         address: "So11111111111111111111111111111111111111112", // WSOL
         name: "Wrapped SOL",
         symbol: "SOL",
-        decimals: 9
+        decimals: 9,
       },
       priceNative: priceInSol.toString(),
       priceUsd: priceUsd.toString(),
@@ -762,7 +766,7 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
       liquidity: {
         usd: liquidityUsd,
         base: realTokenReserves,
-        quote: virtualSolReserves
+        quote: virtualSolReserves,
       },
       fdv: tokenTotalSupply * priceUsd, // Fully diluted valuation
       pairCreatedAt: Date.now() - 86400000, // Estimate 1 day ago
@@ -770,10 +774,9 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
       info: {
         imageUrl: null,
         websites: [`https://pump.fun/${tokenAddress}`],
-        socials: []
-      }
+        socials: [],
+      },
     };
-    
   } catch (error: any) {
     console.error(`[getPumpFunTokenInfo] Error calculating token info:`, error);
     return null;
@@ -783,7 +786,10 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
 /**
  * Calculate token holdings worth based on current bonding curve price
  */
-export const calculateTokenHoldingsWorth = async (tokenAddress: string, totalTokens: string): Promise<{
+export const calculateTokenHoldingsWorth = async (
+  tokenAddress: string,
+  totalTokens: string
+): Promise<{
   worthInSol: number;
   worthInUsd: number;
   pricePerToken: number;
@@ -792,34 +798,33 @@ export const calculateTokenHoldingsWorth = async (tokenAddress: string, totalTok
 }> => {
   try {
     const tokenInfo = await getPumpFunTokenInfo(tokenAddress);
-    
+
     if (!tokenInfo) {
       return {
         worthInSol: 0,
         worthInUsd: 0,
         pricePerToken: 0,
         marketCap: 0,
-        bondingCurveProgress: 0
+        bondingCurveProgress: 0,
       };
     }
-    
+
     // Convert token amount to human readable format (assuming 6 decimals)
     const tokenAmount = Number(totalTokens) / 1e6;
     const pricePerToken = Number(tokenInfo.priceUsd);
     const pricePerTokenInSol = Number(tokenInfo.priceNative);
-    
+
     // Calculate worth
     const worthInUsd = tokenAmount * pricePerToken;
     const worthInSol = tokenAmount * pricePerTokenInSol;
-    
+
     return {
       worthInSol,
       worthInUsd,
       pricePerToken,
       marketCap: tokenInfo.marketCap,
-      bondingCurveProgress: tokenInfo.bondingCurveProgress || 0
+      bondingCurveProgress: tokenInfo.bondingCurveProgress || 0,
     };
-    
   } catch (error: any) {
     console.error(`[calculateTokenHoldingsWorth] Error calculating holdings worth:`, error);
     return {
@@ -827,7 +832,7 @@ export const calculateTokenHoldingsWorth = async (tokenAddress: string, totalTok
       worthInUsd: 0,
       pricePerToken: 0,
       marketCap: 0,
-      bondingCurveProgress: 0
+      bondingCurveProgress: 0,
     };
   }
 };
@@ -946,7 +951,14 @@ export const parseTransactionAmounts = async (
 export const recordTransactionWithActualAmounts = async (
   tokenAddress: string,
   walletPublicKey: string,
-  transactionType: "token_creation" | "dev_buy" | "snipe_buy" | "dev_sell" | "wallet_sell" | "external_sell" | "external_buy",
+  transactionType:
+    | "token_creation"
+    | "dev_buy"
+    | "snipe_buy"
+    | "dev_sell"
+    | "wallet_sell"
+    | "external_sell"
+    | "external_buy",
   signature: string,
   success: boolean,
   launchAttempt: number,
@@ -1069,5 +1081,46 @@ export async function checkTokenRenouncedAndFrozen(tokenMintAddress: string): Pr
   } catch (error) {
     logger.error(`[checkTokenRenouncedAndFrozen] Error:`, error);
     throw error;
+  }
+}
+
+export function formatTokenLink(tokenAddress: string): string {
+  return `https://letsbonk.fun/token/${tokenAddress}`;
+}
+
+export async function archiveAddress(
+  publicKey: string,
+  tokenName: string,
+  tokenSymbol: string,
+  transactionSignature?: string
+) {
+  try {
+    const address = await BonkAddressModel.findOne({ publicKey });
+
+    if (!address) {
+      console.log(`Address ${publicKey} not found in main collection.`);
+      return false;
+    }
+
+    const usedAddress = new UsedBonkAddressModel({
+      publicKey: address.publicKey,
+      secretKey: address.secretKey,
+      rawSecretKey: address.rawSecretKey,
+      tokenName,
+      tokenSymbol,
+      transactionSignature,
+      createdAt: new Date(),
+      usedAt: new Date(),
+    });
+
+    await usedAddress.save();
+
+    await BonkAddressModel.deleteOne({ _id: address._id });
+
+    console.log(`Archived address ${publicKey} to used collection.`);
+    return true;
+  } catch (error) {
+    console.error("Error archiving address:", error);
+    return false;
   }
 }

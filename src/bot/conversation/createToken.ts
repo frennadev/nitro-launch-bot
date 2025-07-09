@@ -1,27 +1,17 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import {
-  createToken,
-  getUser,
-  getDefaultDevWallet,
-  getOrCreateFundingWallet,
-} from "../../backend/functions";
+import { createToken, getUser, getDefaultDevWallet, getOrCreateFundingWallet } from "../../backend/functions";
+import { createBonkToken } from "../../blockchain/letsbonk/integrated-token-creator";
 import axios from "axios";
 import { CallBackQueries } from "../types";
 import { env } from "../../config";
 import { sendLoadingMessage } from "../loading";
 import { sendErrorWithAutoDelete } from "../utils";
 
-const cancelKeyboard = new InlineKeyboard().text(
-  "❌ Cancel",
-  CallBackQueries.BACK
-);
+const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", CallBackQueries.BACK);
 
-const createTokenConversation = async (
-  conversation: Conversation,
-  ctx: Context
-) => {
+const createTokenConversation = async (conversation: Conversation, ctx: Context) => {
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
@@ -29,7 +19,43 @@ const createTokenConversation = async (
     return conversation.halt();
   }
 
-  // Get wallet addresses
+  // === 1) Ask for launch mode first ===
+  const modeKeyboard = new InlineKeyboard()
+    .text("🎉 PumpFun", CallBackQueries.PUMPFUN)
+    .row()
+    .text("🚀 LetsBonk", CallBackQueries.LETSBONK)
+    .row()
+    .text("❌ Cancel", CallBackQueries.BACK);
+
+  await ctx.reply("❓ Choose your launch mode:", {
+    reply_markup: modeKeyboard,
+  });
+
+  let mode: CallBackQueries.PUMPFUN | CallBackQueries.LETSBONK;
+  while (true) {
+    const modeUpd = await conversation.wait();
+    const data = modeUpd.callbackQuery?.data;
+    if (!data || data === CallBackQueries.BACK) {
+      if (data === CallBackQueries.BACK) {
+        await modeUpd.answerCallbackQuery();
+        await ctx.reply("Token creation cancelled.");
+      }
+      return conversation.halt();
+    }
+    await modeUpd.answerCallbackQuery();
+    if (data === CallBackQueries.PUMPFUN) {
+      mode = CallBackQueries.PUMPFUN;
+      await modeUpd.reply("✅ Launch mode set to *PumpFun*.", { parse_mode: "Markdown" });
+      break;
+    }
+    if (data === CallBackQueries.LETSBONK) {
+      mode = CallBackQueries.LETSBONK;
+      await modeUpd.reply("✅ Launch mode set to *LetsBonk*.", { parse_mode: "Markdown" });
+      break;
+    }
+  }
+
+  // === 2) Now send the token‐details prompt and wallet instructions ===
   const devWalletAddress = await getDefaultDevWallet(user.id);
   const fundingWalletAddress = await getOrCreateFundingWallet(user.id);
 
@@ -45,6 +71,7 @@ const createTokenConversation = async (
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
 
+  // === 3) Collect name,symbol,description ===
   let details: string[];
   while (true) {
     const upd = await conversation.wait();
@@ -56,18 +83,15 @@ const createTokenConversation = async (
     if (upd.message?.text) {
       details = upd.message.text.split(",").map((s) => s.trim());
       if (details.length === 3) break;
-      await ctx.reply(
-        "Invalid format. Please send again as <b>name,symbol,description</b>.",
-        {
-          parse_mode: "HTML",
-          reply_markup: cancelKeyboard,
-        }
-      );
+      await ctx.reply("Invalid format. Please send again as <b>name,symbol,description</b>.", {
+        parse_mode: "HTML",
+        reply_markup: cancelKeyboard,
+      });
     }
   }
-
   const [name, symbol, description] = details;
 
+  // === 4) Ask for image upload ===
   await ctx.reply("Upload an image for your token (max 20 MB):", {
     reply_markup: cancelKeyboard,
   });
@@ -93,16 +117,20 @@ const createTokenConversation = async (
   }
 
   const imageUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-  const { data: fileData } = await axios.get<ArrayBuffer>(imageUrl, {
-    responseType: "arraybuffer",
-  });
+  const { data: fileData } = await axios.get<ArrayBuffer>(imageUrl, { responseType: "arraybuffer" });
 
+  // === 5) Create token based on mode and show result ===
   const { update } = await sendLoadingMessage(
     ctx,
     "🔄 **Creating your token...**\n\n⏳ Processing image and metadata..."
   );
 
-  const token = await createToken(user.id, name, symbol, description, fileData);
+  let token: any;
+  if (mode === CallBackQueries.PUMPFUN) {
+    token = await createToken(user.id, name, symbol, description, fileData);
+  } else {
+    token = await createBonkToken(name, symbol, imageUrl, true);
+  }
 
   await update(
     `🎉 **Token created successfully!**\n\n✅ Your token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
@@ -116,6 +144,7 @@ const createTokenConversation = async (
   await ctx.reply(
     `<b>Token created successfully!</b>
 
+<b>Launch Mode:</b> <code>${mode}</code>
 <b>Name:</b> <code>${token.name}</code>
 <b>Symbol:</b> <code>${token.symbol}</code>
 <b>Description:</b> ${token.description}

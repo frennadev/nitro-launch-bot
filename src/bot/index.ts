@@ -105,7 +105,7 @@ async function detectPlatformInBackground(tokenAddress: string, chatId: number) 
     logger.info(`[${logId}]: Starting fast background platform detection`);
 
     // Use fast detection that respects recent cache
-    const { detectTokenPlatformFast } = await import('../service/token-detection-service');
+    const { detectTokenPlatformFast } = await import("../service/token-detection-service");
     const platform = await detectTokenPlatformFast(tokenAddress);
     logger.info(`[${logId}]: Fast background detection completed: ${platform}`);
 
@@ -122,33 +122,34 @@ export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 // Global error handler
 bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   const ctx = err.ctx;
-  
+
   // Check for callback query timeout errors FIRST (before logging as errors)
   if (
     err.error instanceof GrammyError &&
-    (err.error.description.includes("query is too old") || 
-     err.error.description.includes("response timeout expired") ||
-     err.error.description.includes("query ID is invalid"))
+    (err.error.description.includes("query is too old") ||
+      err.error.description.includes("response timeout expired") ||
+      err.error.description.includes("query ID is invalid"))
   ) {
     logger.debug("Callback query timeout ignored (normal behavior):", {
       description: err.error.description,
       user: ctx.from?.username || ctx.from?.id,
-      callback_data: ctx.callbackQuery?.data
+      callback_data: ctx.callbackQuery?.data,
     });
     return;
   }
 
   // Handle Grammy.js conversation state errors
-  if (err.stack && (
-    err.stack.includes("Bad replay, expected op") ||
-    err.stack.includes("Cannot begin another operation after the replay has completed") ||
-    err.stack.includes("are you missing an `await`?")
-  )) {
+  if (
+    err.stack &&
+    (err.stack.includes("Bad replay, expected op") ||
+      err.stack.includes("Cannot begin another operation after the replay has completed") ||
+      err.stack.includes("are you missing an `await`?"))
+  ) {
     logger.warn("Grammy.js conversation state error detected in global handler:", {
       error: err.message,
-      stack: err.stack?.split('\n').slice(0, 3).join('\n'), // First 3 lines of stack
+      stack: err.stack?.split("\n").slice(0, 3).join("\n"), // First 3 lines of stack
       user: ctx.from?.username || ctx.from?.id,
-      callback_data: ctx.callbackQuery?.data
+      callback_data: ctx.callbackQuery?.data,
     });
 
     // Clear the conversation state completely
@@ -185,11 +186,11 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   if (
     err.error instanceof GrammyError &&
     (err.error.description.includes("message is not modified") ||
-     err.error.description.includes("message to edit not found"))
+      err.error.description.includes("message to edit not found"))
   ) {
     logger.debug("Message edit error ignored (normal behavior):", {
       description: err.error.description,
-      user: ctx.from?.username || ctx.from?.id
+      user: ctx.from?.username || ctx.from?.id,
     });
     return;
   }
@@ -197,16 +198,19 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   // Log other errors (after filtering out common timeouts and state issues)
   logger.error("Error in bot middleware:", {
     error: err.error instanceof Error ? err.error.message : String(err.error),
-    name: err.error instanceof Error ? err.error.name : 'UnknownError',
+    name: err.error instanceof Error ? err.error.name : "UnknownError",
     user: ctx.from?.username || ctx.from?.id,
-    update_type: ctx.update.message ? 'message' : ctx.update.callback_query ? 'callback_query' : 'other',
-    stack: err.stack?.split('\n').slice(0, 5).join('\n') // First 5 lines of stack
+    update_type: ctx.update.message ? "message" : ctx.update.callback_query ? "callback_query" : "other",
+    stack: err.stack?.split("\n").slice(0, 5).join("\n"), // First 5 lines of stack
   });
 
   // For other errors, try to notify the user if possible
   if (ctx.chat) {
     try {
-      await sendErrorWithAutoDelete(ctx, "❌ An unexpected error occurred. Please try the main menu or contact support.");
+      await sendErrorWithAutoDelete(
+        ctx,
+        "❌ An unexpected error occurred. Please try the main menu or contact support."
+      );
     } catch (notifyError: any) {
       logger.error("Failed to send error notification:", notifyError.message);
     }
@@ -634,18 +638,18 @@ bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
 bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Starting 100% dev sell...");
   const tokenAddress = ctx.match![1];
-  
+
   // Use the conversation system like other sell handlers to avoid state conflicts
   await ctx.conversation.enter("devSell100Conversation", tokenAddress);
 });
 bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   const tokenAddress = ctx.match![1];
-  
+
   // Add logging for debugging
   logger.info(`[SellAll] Main sell all button clicked for token: ${tokenAddress}`);
   console.log("Sell All button clicked for token:", tokenAddress);
-  
+
   await ctx.conversation.enter("walletSellConversation", tokenAddress, 100);
 });
 bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
@@ -746,7 +750,7 @@ bot.callbackQuery(/^sellAll_([^_]+)_([^_]+)$/, async (ctx) => {
   const [, walletAddress, shortTokenAddress] = ctx.match!;
 
   console.log("Found hereee", { walletAddress, shortTokenAddress });
-  
+
   // Reconstruct full token address from shortened format (E8UwNk-PUMP -> E8UwNkiXc26D5LNHkKRNKPP5ttsY4kzfNRjE5N7GPUMP)
   const [prefix, suffix] = shortTokenAddress.split("-");
   const re = new RegExp(`^${prefix}[A-Za-z0-9]*${suffix}$`);
@@ -758,29 +762,32 @@ bot.callbackQuery(/^sellAll_([^_]+)_([^_]+)$/, async (ctx) => {
   if (token) {
     // Token found in database = launch token, use internal sell mechanism
     logger.info(`[SellAll] Found launch token in database: ${token.tokenAddress}`);
-    
+
     const result = await handleSingleSell(new PublicKey(token.tokenAddress), walletAddress, "all");
     if (!result) return ctx.reply("❌ Error selling all token in address");
     const { success, signature } = result;
-    if (success) return ctx.reply(
-      `✅ Sold all tokens in address.\n\nTransaction Signature: <a href="https://solscan.io/tx/${signature}">View Transaction</a>`,
-      { parse_mode: "HTML" }
-    );
+    if (success)
+      return ctx.reply(
+        `✅ Sold all tokens in address.\n\nTransaction Signature: <a href="https://solscan.io/tx/${signature}">View Transaction</a>`,
+        { parse_mode: "HTML" }
+      );
   } else {
     // Token not found in database = external token
     // Individual wallet sells are only for launch tokens, redirect to external sell
     logger.info(`[SellAll] Token ${shortTokenAddress} not found in database - redirecting to external sell`);
-    
+
     // Try to reconstruct full address from current message context
     const messageText = ctx.callbackQuery?.message?.text || "";
     const fullAddressMatch = messageText.match(/🔑 Address: (\w+)/);
-    
+
     if (fullAddressMatch) {
       const fullTokenAddress = fullAddressMatch[1];
       logger.info(`[SellAll] Extracted full address ${fullTokenAddress} from message context`);
       await ctx.conversation.enter("externalTokenSellConversation", fullTokenAddress, 100);
     } else {
-      return ctx.reply("❌ Could not determine full token address. Please use the main sell buttons from the token display.");
+      return ctx.reply(
+        "❌ Could not determine full token address. Please use the main sell buttons from the token display."
+      );
     }
   }
 });
@@ -800,15 +807,17 @@ bot.callbackQuery(/^sellPct_([^_]+)_([^_]+)$/, async (ctx) => {
   if (!token) {
     // Token not found in database = external token
     // Extract full address from message context and route to external sell
-    logger.info(`[SellPct] Token ${shortTokenAddress} not found in database - routing to external sell percentage selector`);
-    
+    logger.info(
+      `[SellPct] Token ${shortTokenAddress} not found in database - routing to external sell percentage selector`
+    );
+
     const messageText = ctx.callbackQuery?.message?.text || "";
     const fullAddressMatch = messageText.match(/🔑 Address: (\w+)/);
-    
+
     if (fullAddressMatch) {
       const fullTokenAddress = fullAddressMatch[1];
       logger.info(`[SellPct] Extracted full address ${fullTokenAddress} from message context`);
-      
+
       // Show percentage selection for external tokens
       const keyboard = new InlineKeyboard()
         .text("💸 Sell 25%", `sell_ca_25_${fullTokenAddress}`)
@@ -824,13 +833,15 @@ bot.callbackQuery(/^sellPct_([^_]+)_([^_]+)$/, async (ctx) => {
         reply_markup: keyboard,
       });
     } else {
-      return ctx.reply("❌ Could not determine full token address. Please use the main sell buttons from the token display.");
+      return ctx.reply(
+        "❌ Could not determine full token address. Please use the main sell buttons from the token display."
+      );
     }
     return;
   }
-  
+
   // Token found in database = launch token, use internal percentage selector
-  await ctx.conversation.enter("sellPercentageMessage", { tokenAddress: token.tokenAddress, walletAddress })
+  await ctx.conversation.enter("sellPercentageMessage", { tokenAddress: token.tokenAddress, walletAddress });
 });
 
 // Handle external token buy button clicks (from token address messages)
@@ -918,20 +929,20 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
 bot.callbackQuery(/^refresh_launch_data_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Refreshing data...");
   const tokenAddress = ctx.match![1];
-  
+
   // Get token info to get name and symbol
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
     await ctx.reply("❌ User not found");
     return;
   }
-  
+
   const token = await getUserTokenWithBuyWallets(user.id, tokenAddress);
   if (!token) {
     await ctx.reply("❌ Token not found");
     return;
   }
-  
+
   const { handleLaunchDataRefresh } = await import("./message");
   await handleLaunchDataRefresh(
     ctx.chat!.id,
@@ -946,7 +957,7 @@ bot.callbackQuery(/^refresh_launch_data_(.+)$/, async (ctx) => {
 bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Refreshing token data...");
   const tokenAddress = ctx.match![1];
-  
+
   // Resend the token address to trigger a fresh display
   await handleTokenAddressMessage(ctx, tokenAddress);
 });
@@ -955,9 +966,9 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
 bot.callbackQuery(/^cto_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "📈 Starting CTO operation...");
   const tokenAddress = ctx.match![1];
-  
+
   logger.info(`[CTO] CTO button clicked for token: ${tokenAddress}`);
-  
+
   // Start the CTO conversation
   await ctx.conversation.enter("ctoConversation", tokenAddress);
 });
@@ -966,9 +977,9 @@ bot.callbackQuery(/^cto_(.+)$/, async (ctx) => {
 bot.callbackQuery(/^refresh_cto_monitor_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Refreshing monitor...");
   const tokenAddress = ctx.match![1];
-  
+
   logger.info(`[CTO Monitor] Refresh clicked for token: ${tokenAddress}`);
-  
+
   // Start the CTO monitor conversation
   await ctx.conversation.enter("ctoMonitorConversation", tokenAddress);
 });
@@ -977,9 +988,9 @@ bot.callbackQuery(/^refresh_cto_monitor_(.+)$/, async (ctx) => {
 bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
   const [, sellPercent, tokenAddress] = ctx.match!;
   await safeAnswerCallbackQuery(ctx, `💸 Selling ${sellPercent}%...`);
-  
+
   logger.info(`[CTO Monitor] Sell ${sellPercent}% clicked for token: ${tokenAddress}`);
-  
+
   // Start external token sell conversation
   await ctx.conversation.enter("externalTokenSellConversation", tokenAddress, parseInt(sellPercent));
 });
@@ -1107,7 +1118,7 @@ bot.on("message:text", async (ctx) => {
       try {
         new PublicKey(text); // Validate if it's a valid Solana address
         logger.info(`User sent token address: ${text}`);
-        
+
         // **ULTRA-FAST DISPLAY: Show token page IMMEDIATELY with zero blocking operations**
         let initialTokenName = "Loading...";
         let initialTokenSymbol = "...";
@@ -1119,7 +1130,7 @@ bot.on("message:text", async (ctx) => {
         let initialDex = "Loading...";
         let initialRenouncedText = "🔍 Checking...";
         let initialFrozenText = "🔍 Checking...";
-        
+
         // Only check cache (this is instant, no blocking calls)
         const cachedPlatform = getCachedPlatform(text);
         if (cachedPlatform) {
@@ -1132,7 +1143,7 @@ bot.on("message:text", async (ctx) => {
           }
           logger.info(`[token-display] Using cached platform for ${text}: ${cachedPlatform}`);
         }
-        
+
         const links = [
           {
             abbr: "CA",
@@ -1231,7 +1242,7 @@ ${initialHoldingsText}`,
               let tokenName = initialTokenName;
               let tokenSymbol = initialTokenSymbol;
               let isUserToken = false;
-              
+
               // Check if it's a user token
               if (user) {
                 const userToken = await getUserTokenWithBuyWallets(user.id, text);
@@ -1241,7 +1252,7 @@ ${initialHoldingsText}`,
                   isUserToken = true;
                 }
               }
-              
+
               // If not a user token, fetch from external API
               if (!isUserToken) {
                 const tokenInfo = await getTokenInfo(text);
@@ -1249,7 +1260,7 @@ ${initialHoldingsText}`,
                   tokenName = tokenInfo.baseToken.name || tokenName;
                   tokenSymbol = tokenInfo.baseToken.symbol || tokenSymbol;
                   return {
-                    type: 'tokenInfo',
+                    type: "tokenInfo",
                     name: tokenName,
                     symbol: tokenSymbol,
                     marketCap: formatUSD(tokenInfo.marketCap),
@@ -1257,14 +1268,14 @@ ${initialHoldingsText}`,
                     liquidity: tokenInfo.liquidity ? formatUSD(tokenInfo.liquidity.usd) : "N/A",
                     dex: tokenInfo.dexId,
                     pairAddress: tokenInfo.pairAddress,
-                    isUserToken: false
+                    isUserToken: false,
                   };
                 }
               }
-              
+
               // Return user token info
               return {
-                type: 'tokenInfo',
+                type: "tokenInfo",
                 name: tokenName,
                 symbol: tokenSymbol,
                 marketCap: "User Token",
@@ -1272,14 +1283,14 @@ ${initialHoldingsText}`,
                 liquidity: "N/A",
                 dex: "PUMPFUN",
                 pairAddress: null,
-                isUserToken: true
+                isUserToken: true,
               };
             } catch (error: any) {
               logger.warn(`Token info fetch failed: ${error.message}`);
               return null;
             }
           })(),
-          
+
           // Holdings check (moved to background)
           (async () => {
             try {
@@ -1323,53 +1334,57 @@ ${initialHoldingsText}`,
                 }
 
                 return {
-                  type: 'holdings',
+                  type: "holdings",
                   balance: totalTokenBalance,
                   walletsWithBalance: walletsWithBalance,
-                  devWalletBalance: devWalletBalance
+                  devWalletBalance: devWalletBalance,
                 };
               }
-              return { type: 'holdings', balance: 0, walletsWithBalance: 0, devWalletBalance: 0 };
+              return { type: "holdings", balance: 0, walletsWithBalance: 0, devWalletBalance: 0 };
             } catch (error: any) {
               logger.warn(`Holdings check failed: ${error.message}`);
-              return { type: 'holdings', balance: 0, walletsWithBalance: 0, devWalletBalance: 0 };
+              return { type: "holdings", balance: 0, walletsWithBalance: 0, devWalletBalance: 0 };
             }
           })(),
-          
+
           // Platform detection (only if not cached)
-          !cachedPlatform ? (async () => {
-            try {
-              // Use fast detection that respects recent cache
-              const { detectTokenPlatformFast } = await import('../service/token-detection-service');
-              const platform = await detectTokenPlatformFast(text);
-              
-              let platformText = "❓ Unknown platform";
-              if (platform === "pumpswap") {
-                platformText = "⚡ Pumpswap";
-              } else if (platform === "pumpfun") {
-                platformText = "🚀 PumpFun";
-              }
-              return { type: 'platform', platform: platformText };
-            } catch (error) {
-              return null;
-            }
-          })() : Promise.resolve(null),
-          
+          !cachedPlatform
+            ? (async () => {
+                try {
+                  // Use fast detection that respects recent cache
+                  const { detectTokenPlatformFast } = await import("../service/token-detection-service");
+                  const platform = await detectTokenPlatformFast(text);
+
+                  let platformText = "❓ Unknown platform";
+                  if (platform === "pumpswap") {
+                    platformText = "⚡ Pumpswap";
+                  } else if (platform === "pumpfun") {
+                    platformText = "🚀 PumpFun";
+                  }
+                  return { type: "platform", platform: platformText };
+                } catch (error) {
+                  return null;
+                }
+              })()
+            : Promise.resolve(null),
+
           // Renounced and frozen check
-          checkTokenRenouncedAndFrozen(text).then(renouncedAndFrozen => {
-            return {
-              type: 'security',
-              renouncedText: renouncedAndFrozen.isRenounced ? "🟢 Renounced" : "🔴 Not Renounced",
-              frozenText: renouncedAndFrozen.isFrozen ? "🟢 Freeze" : "🔴 Not Freezed"
-            };
-                     }).catch((error: any) => {
-             logger.warn(`Security check failed: ${error.message}`);
-             return {
-               type: 'security',
-               renouncedText: "❓ Renounced check failed",
-               frozenText: "❓ Freeze check failed"
-             };
-           })
+          checkTokenRenouncedAndFrozen(text)
+            .then((renouncedAndFrozen) => {
+              return {
+                type: "security",
+                renouncedText: renouncedAndFrozen.isRenounced ? "🟢 Renounced" : "🔴 Not Renounced",
+                frozenText: renouncedAndFrozen.isFrozen ? "🟢 Freeze" : "🔴 Not Freezed",
+              };
+            })
+            .catch((error: any) => {
+              logger.warn(`Security check failed: ${error.message}`);
+              return {
+                type: "security",
+                renouncedText: "❓ Renounced check failed",
+                frozenText: "❓ Freeze check failed",
+              };
+            }),
         ];
 
         // Wait for all background operations and update the message
@@ -1388,56 +1403,58 @@ ${initialHoldingsText}`,
             let frozenText = initialFrozenText;
             let pairAddress = null;
 
-                         // Process results
-             results.forEach(result => {
-               if (result.status === 'fulfilled' && result.value) {
-                 const data = result.value;
-                 if (data.type === 'tokenInfo') {
-                   tokenName = (data as any).name;
-                   tokenSymbol = (data as any).symbol;
-                   marketCap = (data as any).marketCap;
-                   price = (data as any).price;
-                   liquidity = (data as any).liquidity;
-                   dex = (data as any).dex.toLocaleUpperCase();
-                   pairAddress = (data as any).pairAddress;
-                 } else if (data.type === 'holdings') {
-                   walletsWithBalance = (data as any).walletsWithBalance;
-                   if ((data as any).balance > 0) {
-                     const formattedBalance = ((data as any).balance / 1e6).toLocaleString(undefined, {
-                       maximumFractionDigits: 2,
-                     });
-                     
-                     // Check if dev wallet has tokens
-                     const devWalletBalance = (data as any).devWalletBalance || 0;
-                     if (devWalletBalance > 0) {
-                       const formattedDevBalance = (devWalletBalance / 1e6).toLocaleString(undefined, {
-                         maximumFractionDigits: 2,
-                       });
-                       holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} wallet(s) (including dev wallet: ${formattedDevBalance})`;
-                     } else {
-                     holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)`;
-                     }
-                   } else {
-                     holdingsText = `📌 No tokens found in your buyer wallets`;
-                   }
-                 } else if (data.type === 'platform') {
-                   platformInfo = (data as any).platform;
-                 } else if (data.type === 'security') {
-                   renouncedText = (data as any).renouncedText;
-                   frozenText = (data as any).frozenText;
-                 }
-               }
-             });
+            // Process results
+            results.forEach((result) => {
+              if (result.status === "fulfilled" && result.value) {
+                const data = result.value;
+                if (data.type === "tokenInfo") {
+                  tokenName = (data as any).name;
+                  tokenSymbol = (data as any).symbol;
+                  marketCap = (data as any).marketCap;
+                  price = (data as any).price;
+                  liquidity = (data as any).liquidity;
+                  dex = (data as any).dex.toLocaleUpperCase();
+                  pairAddress = (data as any).pairAddress;
+                } else if (data.type === "holdings") {
+                  walletsWithBalance = (data as any).walletsWithBalance;
+                  if ((data as any).balance > 0) {
+                    const formattedBalance = ((data as any).balance / 1e6).toLocaleString(undefined, {
+                      maximumFractionDigits: 2,
+                    });
+
+                    // Check if dev wallet has tokens
+                    const devWalletBalance = (data as any).devWalletBalance || 0;
+                    if (devWalletBalance > 0) {
+                      const formattedDevBalance = (devWalletBalance / 1e6).toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      });
+                      holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} wallet(s) (including dev wallet: ${formattedDevBalance})`;
+                    } else {
+                      holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)`;
+                    }
+                  } else {
+                    holdingsText = `📌 No tokens found in your buyer wallets`;
+                  }
+                } else if (data.type === "platform") {
+                  platformInfo = (data as any).platform;
+                } else if (data.type === "security") {
+                  renouncedText = (data as any).renouncedText;
+                  frozenText = (data as any).frozenText;
+                }
+              }
+            });
 
             // Update Photon link with actual pair address if available
             if (pairAddress) {
-              const photonLink = links.find(link => link.abbr === "PHO");
+              const photonLink = links.find((link) => link.abbr === "PHO");
               if (photonLink) {
                 photonLink.url = `https://photon-sol.tinyastro.io/en/lp/${pairAddress}`;
               }
             }
 
-            const updatedLinksHtml = links.map((link) => `<a href="${link.url}" target="_blank">${link.abbr}</a>`).join(" • ");
+            const updatedLinksHtml = links
+              .map((link) => `<a href="${link.url}" target="_blank">${link.abbr}</a>`)
+              .join(" • ");
 
             // Update the message with all the fetched data
             await ctx.api.editMessageText(
@@ -1480,9 +1497,9 @@ ${holdingsText}`,
             );
 
             logger.info(`[token-display] Successfully updated token details for ${text}`);
-                     } catch (updateError: any) {
-             logger.error(`[token-display] Failed to update message: ${updateError.message}`);
-           }
+          } catch (updateError: any) {
+            logger.error(`[token-display] Failed to update message: ${updateError.message}`);
+          }
         });
 
         return;
