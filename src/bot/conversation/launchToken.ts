@@ -18,8 +18,9 @@ import {
   getDevWallet,
   getCurrentDevWalletPrivateKey,
   autoReplaceLaunchedTokenAddress,
+  launchBonkToken,
 } from "../../backend/functions";
-import { TokenState } from "../../backend/types";
+import { TokenState, LaunchDestination } from "../../backend/types";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 import { decryptPrivateKey } from "../../backend/utils";
 import { CallBackQueries } from "../types";
@@ -706,34 +707,84 @@ ${checkResult.message}`,
     "✅ **Pre-launch checks completed successfully!**\n\n🚀 Submitting launch to queue..."
   );
 
-  // ------ SEND LAUNCH DATA TO QUEUE -----
-  const result = await enqueuePrepareTokenLaunch(
-    user.id,
-    ctx.chat!.id,
-    tokenAddress,
-    fundingWallet.privateKey,
-    (token.launchData!.devWallet! as unknown as { privateKey: string })
-      .privateKey,
-    buyerKeys,
-    devBuy,
-    buyAmount
-  );
-
-  if (!result.success) {
+  // ------ HANDLE LAUNCH BASED ON TOKEN TYPE -----
+  let result: any;
+  
+  // Check if this is a Bonk token
+  if (token.launchData?.destination === LaunchDestination.LETSBONK) {
+    // Bonk tokens use direct launch (no complex staging)
     await checksLoading.update(
-      "❌ **Failed to submit launch**\n\nAn error occurred while submitting launch details for execution. Please try again."
+      "🚀 **Launching Bonk token...**\n\n⏳ Creating token on Raydium Launch Lab..."
     );
-    await sendMessage(
-      ctx,
-      "An error occurred while submitting launch details for execution ❌. Please try again.."
-    );
+    
+    result = await launchBonkToken(user.id, tokenAddress);
+    
+    if (result.success) {
+      await checksLoading.update(
+        "🎉 **Bonk token launched successfully!**\n\n✅ Your token is now live on Raydium Launch Lab.\n\n📱 Check your token status in the tokens list."
+      );
+      
+      await sendMessage(
+        ctx,
+        `🎉 <b>Bonk Token Launched Successfully!</b>
+
+<b>Token Details:</b>
+• <b>Name:</b> ${result.tokenName}
+• <b>Symbol:</b> ${result.tokenSymbol}
+• <b>Address:</b> <code>${tokenAddress}</code>
+• <b>Transaction:</b> <code>${result.signature}</code>
+
+<b>Platform:</b> Raydium Launch Lab (LetsBonk.fun)
+<b>Status:</b> ✅ Live and trading
+
+<i>💡 Your token is now available for trading on LetsBonk.fun</i>`,
+        { parse_mode: "HTML" }
+      );
+    } else {
+      await checksLoading.update(
+        "❌ **Bonk token launch failed**\n\nAn error occurred during launch. Please try again."
+      );
+      
+      await sendMessage(
+        ctx,
+        `❌ <b>Bonk token launch failed</b>
+
+Error: ${result.error}
+
+Please try again or contact support if the issue persists.`,
+        { parse_mode: "HTML", reply_markup: retryKeyboard }
+      );
+    }
   } else {
-    await checksLoading.update(
-      "🎉 **Launch submitted successfully!**\n\n⏳ Your token launch is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the launch is completed."
+    // PumpFun tokens use the complex staging process
+    result = await enqueuePrepareTokenLaunch(
+      user.id,
+      ctx.chat!.id,
+      tokenAddress,
+      fundingWallet.privateKey,
+      (token.launchData!.devWallet! as unknown as { privateKey: string })
+        .privateKey,
+      buyerKeys,
+      devBuy,
+      buyAmount
     );
 
-    // Start the loading state for the actual launch process
-    await startLoadingState(ctx, "token_launch", tokenAddress);
+    if (!result.success) {
+      await checksLoading.update(
+        "❌ **Failed to submit launch**\n\nAn error occurred while submitting launch details for execution. Please try again."
+      );
+      await sendMessage(
+        ctx,
+        "An error occurred while submitting launch details for execution ❌. Please try again.."
+      );
+    } else {
+      await checksLoading.update(
+        "🎉 **Launch submitted successfully!**\n\n⏳ Your token launch is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the launch is completed."
+      );
+
+      // Start the loading state for the actual launch process
+      await startLoadingState(ctx, "token_launch", tokenAddress);
+    }
   }
 };
 

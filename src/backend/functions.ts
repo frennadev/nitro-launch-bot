@@ -3248,3 +3248,88 @@ export const getCurrentDevWalletPrivateKey = async (userId: string) => {
 
   return decryptPrivateKey(wallet.privateKey);
 };
+
+/**
+ * Launch a Bonk token (direct launch without complex staging)
+ */
+export const launchBonkToken = async (
+  userId: string,
+  tokenAddress: string
+): Promise<{
+  success: boolean;
+  signature?: string;
+  error?: string;
+  tokenName?: string;
+  tokenSymbol?: string;
+}> => {
+  const logId = `bonk-launch-${tokenAddress.substring(0, 8)}`;
+  logger.info(`[${logId}]: Starting Bonk token launch for user ${userId}`);
+
+  try {
+    // Get token from database
+    const token = await TokenModel.findOne({ 
+      tokenAddress, 
+      user: userId 
+    });
+
+    if (!token) {
+      logger.error(`[${logId}]: Token not found in database`);
+      return {
+        success: false,
+        error: "Token not found in database"
+      };
+    }
+
+    // Check if token is already launched
+    if (token.state === TokenState.LAUNCHED) {
+      logger.warn(`[${logId}]: Token is already launched`);
+      return {
+        success: false,
+        error: "Token is already launched"
+      };
+    }
+
+    // Update token state to launching
+    await TokenModel.updateOne(
+      { _id: token._id },
+      { state: TokenState.LAUNCHING }
+    );
+
+    // Import and call the Bonk launch function
+    const { launchBonkToken: launchBonkTokenFunction } = await import("../blockchain/letsbonk/integrated-token-creator");
+    
+    const result = await launchBonkTokenFunction(tokenAddress, userId);
+
+    logger.info(`[${logId}]: Bonk token launch successful`, {
+      tokenAddress,
+      signature: result.transaction,
+      tokenName: result.tokenName,
+      tokenSymbol: result.tokenSymbol
+    });
+
+    return {
+      success: true,
+      signature: result.transaction,
+      tokenName: result.tokenName,
+      tokenSymbol: result.tokenSymbol
+    };
+
+  } catch (error: any) {
+    logger.error(`[${logId}]: Bonk token launch failed: ${error.message}`);
+    
+    // Update token state back to listed for retry
+    try {
+      await TokenModel.updateOne(
+        { tokenAddress, user: userId },
+        { state: TokenState.LISTED }
+      );
+    } catch (updateError) {
+      logger.error(`[${logId}]: Failed to update token state after launch failure: ${updateError}`);
+    }
+
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};

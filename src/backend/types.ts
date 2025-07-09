@@ -6,6 +6,7 @@ export enum TokenState {
 
 export enum LaunchDestination {
   PUMPFUN = "pumpfun",
+  LETSBONK = "letsbonk",
 }
 
 export interface DexscreenerTokenResponse {

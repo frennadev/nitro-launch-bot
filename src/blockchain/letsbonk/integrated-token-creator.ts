@@ -323,7 +323,7 @@ async function getUnusedBonkAddressFromDB() {
   }
 }
 
-// Main token creation function
+// Main token creation function - Modified to separate metadata upload from launch
 export async function createBonkToken(
   tokenName: string,
   ticker: string,
@@ -332,14 +332,8 @@ export async function createBonkToken(
   userId: string
 ) {
   try {
-    console.log("=== Solana Token Creation ===");
-    console.log("============================");
-
-    console.log("\nLoading wallet for funding...");
-    const devWalletPrivateKey = await getDevWallet(userId);
-    const wallet = Keypair.fromSecretKey(bs58.decode(devWalletPrivateKey.wallet));
-
-    console.log(`Using wallet address for funding: ${wallet.publicKey.toString()}`);
+    console.log("=== Bonk Token Creation (Metadata Only) ===");
+    console.log("===========================================");
 
     console.log("\nStep 1: Collecting token information...");
     const name = tokenName;
@@ -402,10 +396,8 @@ export async function createBonkToken(
 
     console.log(`Metadata uploaded successfully: ${metadataUri}`);
 
-    // Step 4: Create token
-    console.log("\nStep 4: Creating Solana token...");
-
-    // Get token keypair (either configured bonk address or random)
+    // Step 4: Get token keypair (either configured bonk address or random)
+    console.log("\nStep 4: Getting token keypair...");
     const tokenKeypair = await getUnusedBonkAddressFromDB();
 
     if (!tokenKeypair) {
@@ -420,12 +412,118 @@ export async function createBonkToken(
     fs.writeFileSync(`token-keypair-${name.replace(/\s+/g, "-")}.json`, JSON.stringify(keypairData, null, 2));
     console.log(`Saved token keypair to token-keypair-${name.replace(/\s+/g, "-")}.json`);
 
+    // Step 5: Create token record in database (without launching)
+    console.log("\nStep 5: Creating token record in database...");
+    
+    // Import required modules
+    const { TokenModel } = await import("../../backend/models");
+    const { encryptPrivateKey } = await import("../../backend/utils");
+    const { getDefaultDevWallet } = await import("../../backend/functions");
+    
+    // Get default dev wallet for the user
+    const devWalletAddress = await getDefaultDevWallet(userId);
+    const { WalletModel } = await import("../../backend/models");
+    const devWallet = await WalletModel.findOne({ 
+      user: userId, 
+      publicKey: devWalletAddress,
+      isDev: true 
+    });
+
+    if (!devWallet) {
+      throw new Error("Default dev wallet not found");
+    }
+
+    // Create token record in database (similar to PumpFun createToken function)
+    const token = await TokenModel.create({
+      user: userId,
+      name,
+      symbol,
+      description: `${name} Token`,
+      launchData: {
+        devWallet: devWallet.id,
+        destination: "LETSBONK", // Set destination to LETSBONK
+      },
+      tokenAddress: tokenKeypair.publicKey.toString(),
+      tokenPrivateKey: encryptPrivateKey(bs58.encode(tokenKeypair.secretKey)),
+      tokenMetadataUrl: metadataUri,
+      // State will default to LISTED (not launched yet)
+    });
+
+    console.log("\n=== TOKEN CREATION COMPLETE (Metadata Only) ===");
+    console.log(`Token address: ${tokenKeypair.publicKey.toString()}`);
+    console.log(`Token name: ${name}`);
+    console.log(`Token symbol: ${symbol}`);
+    console.log(`Metadata URI: ${metadataUri}`);
+    console.log(`Token record created in database with ID: ${token._id}`);
+
+    const formattedLink = formatTokenLink(tokenKeypair.publicKey.toString());
+    console.log(`Future trading link: ${formattedLink}`);
+
+    // Archive the address for tracking
+    await archiveAddress(tokenKeypair.publicKey.toString(), name, symbol, "PENDING_LAUNCH");
+
+    return {
+      tokenAddress: tokenKeypair.publicKey.toString(),
+      tokenName: name,
+      tokenSymbol: symbol,
+      description: `${name} Token`,
+      metadataUri,
+      link: formattedLink,
+      // Note: No transaction signature since we're not launching yet
+    };
+
+  } catch (error) {
+    console.error("Error creating Bonk token (metadata only):", error);
+    throw error;
+  }
+}
+
+// Launch function for Bonk tokens (separate from creation)
+export async function launchBonkToken(
+  tokenAddress: string,
+  userId: string
+) {
+  try {
+    console.log("=== Bonk Token Launch ===");
+    console.log("========================");
+
+    // Import required modules
+    const { TokenModel } = await import("../../backend/models");
+    const { decryptPrivateKey } = await import("../../backend/utils");
+    const { getDevWallet } = await import("../../backend/functions");
+
+    // Get token from database
+    const token = await TokenModel.findOne({ 
+      tokenAddress, 
+      user: userId 
+    });
+
+    if (!token) {
+      throw new Error("Token not found in database");
+    }
+
+    console.log(`Launching token: ${token.name} (${token.symbol})`);
+    console.log(`Token address: ${tokenAddress}`);
+
+    // Get dev wallet for funding
+    console.log("\nLoading wallet for funding...");
+    const devWalletPrivateKey = await getDevWallet(userId);
+    const wallet = Keypair.fromSecretKey(bs58.decode(devWalletPrivateKey.wallet));
+
+    console.log(`Using wallet address for funding: ${wallet.publicKey.toString()}`);
+
+    // Decrypt token private key
+    const tokenPrivateKey = decryptPrivateKey(token.tokenPrivateKey);
+    const tokenKeypair = Keypair.fromSecretKey(bs58.decode(tokenPrivateKey));
+
+    console.log("\nStep 1: Creating Solana token...");
+
     // Create mint params
     const mintParams: MintParams = {
       decimals: 6,
-      name,
-      symbol,
-      uri: metadataUri,
+      name: token.name,
+      symbol: token.symbol,
+      uri: token.tokenMetadataUrl,
     };
 
     const curveParams: CurveParams = {
@@ -472,39 +570,50 @@ export async function createBonkToken(
         maxRetries: 5,
       });
 
-      console.log("\n=== TOKEN CREATION COMPLETE ===");
+      console.log("\n=== BONK TOKEN LAUNCH COMPLETE ===");
       console.log(`Transaction signature: ${signature}`);
-      console.log(`Token address: ${tokenKeypair.publicKey.toString()}`);
-      console.log(`Token name: ${name}`);
-      console.log(`Token symbol: ${symbol}`);
-      console.log(`Metadata URI: ${metadataUri}`);
+      console.log(`Token address: ${tokenAddress}`);
+      console.log(`Token name: ${token.name}`);
+      console.log(`Token symbol: ${token.symbol}`);
+      console.log(`Metadata URI: ${token.tokenMetadataUrl}`);
 
-      const formattedLink = formatTokenLink(tokenKeypair.publicKey.toString());
+      const formattedLink = formatTokenLink(tokenAddress);
       console.log(formattedLink);
-      await archiveAddress(tokenKeypair.publicKey.toString(), name, symbol, signature);
+
+      // Update token state in database
+      await TokenModel.updateOne(
+        { _id: token._id },
+        { 
+          state: "launched",
+          "launchData.launchAttempt": (token.launchData?.launchAttempt || 0) + 1
+        }
+      );
+
+      // Archive the address with the actual transaction signature
+      await archiveAddress(tokenAddress, token.name, token.symbol, signature);
 
       return {
         transaction: signature,
-        tokenAddress: tokenKeypair.publicKey.toString(),
-        tokenName: name,
-        tokenSymbol: symbol,
+        tokenAddress,
+        tokenName: token.name,
+        tokenSymbol: token.symbol,
         link: formattedLink,
-        metadataUri,
+        metadataUri: token.tokenMetadataUrl,
       };
     } catch (error) {
-      console.error("\nTransaction failed, but token keypair is saved.");
-      console.error("You can retry later using the saved token keypair file.");
+      console.error("\nTransaction failed.");
       console.error("Error details:", error);
 
-      return {
-        tokenAddress: tokenKeypair.publicKey.toString(),
-        tokenName: name,
-        tokenSymbol: symbol,
-        metadataUri,
-      };
+      // Update token state to reflect failure
+      await TokenModel.updateOne(
+        { _id: token._id },
+        { state: "listed" } // Keep as listed for retry
+      );
+
+      throw error;
     }
   } catch (error) {
-    console.error("Error creating token:", error);
+    console.error("Error launching Bonk token:", error);
     throw error;
   }
 }
