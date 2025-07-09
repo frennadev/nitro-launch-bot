@@ -518,7 +518,7 @@ export const createToken = async (userId: string, name: string, symbol: string, 
   let tokenKey: any;
   let isPumpAddress = false;
   let attempts = 0;
-  const maxAttempts = 3; // Try up to 3 times to get a non-launched address
+  const maxAttempts = 5; // Increased from 3 to 5 attempts
   
   while (attempts < maxAttempts) {
     attempts++;
@@ -535,7 +535,10 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     }
     
     // Check if the allocated address is already launched/listed
-    const { isTokenAlreadyLaunched, isTokenAlreadyListed } = await import("../service/token-detection-service");
+    const { isTokenAlreadyLaunched, isTokenAlreadyListed, clearLaunchStatusCache } = await import("../service/token-detection-service");
+    
+    // Clear cache for this address to ensure fresh detection
+    clearLaunchStatusCache(tokenKey.publicKey);
     
     const isLaunched = await isTokenAlreadyLaunched(tokenKey.publicKey);
     const isListed = await isTokenAlreadyListed(tokenKey.publicKey);
@@ -550,7 +553,25 @@ export const createToken = async (userId: string, name: string, symbol: string, 
     logger.warn(`[createToken] Address ${tokenKey.publicKey} is already ${isListed ? 'listed' : 'launched'} - trying again (attempt ${attempts}/${maxAttempts})`);
     
     if (attempts >= maxAttempts) {
-      throw new Error(`Failed to find a non-launched address after ${maxAttempts} attempts. All allocated addresses appear to be already active on trading platforms.`);
+      // If we've tried multiple times and all addresses seem to be launched,
+      // this might be a false positive. Try one more time with a random address
+      logger.warn(`[createToken] All pump addresses appear to be launched - this might be a false positive. Trying with random address.`);
+      
+      const [randomKey] = generateKeypairs(1);
+      tokenKey = randomKey;
+      
+      // Clear cache and check the random address
+      clearLaunchStatusCache(tokenKey.publicKey);
+      const finalIsLaunched = await isTokenAlreadyLaunched(tokenKey.publicKey);
+      const finalIsListed = await isTokenAlreadyListed(tokenKey.publicKey);
+      
+      if (!finalIsLaunched && !finalIsListed) {
+        logger.info(`[createToken] Random address ${tokenKey.publicKey} is available - proceeding with token creation`);
+        isPumpAddress = false; // Mark as random address
+        break;
+      } else {
+        throw new Error(`Failed to find a non-launched address after ${maxAttempts} attempts. All addresses appear to be already active on trading platforms. This may indicate a system issue with token detection.`);
+      }
     }
     
     // Small delay before retry
@@ -570,6 +591,8 @@ export const createToken = async (userId: string, name: string, symbol: string, 
       tokenPrivateKey: encryptPrivateKey(tokenKey.secretKey),
       tokenMetadataUrl: metadataUri,
     });
+    
+    logger.info(`[createToken] Successfully created token ${name} (${symbol}) with address ${tokenKey.publicKey} (${isPumpAddress ? 'pump address' : 'random address'})`);
     return token;
   } catch (error) {
     // Pump addresses are never released once allocated to prevent reuse

@@ -506,23 +506,33 @@ async function checkOnChainTokenData(mintPk: PublicKey, logId: string): Promise<
     const mintInfo = await connection.getAccountInfo(mintPk, "confirmed");
     
     if (mintInfo?.data) {
-      // Check if token has metadata (simplified check without metaplex dependency)
-      const { getAssociatedTokenAddress } = await import("@solana/spl-token");
-      const metadataAddress = await getAssociatedTokenAddress(mintPk, mintPk);
-      const metadataInfo = await connection.getAccountInfo(metadataAddress, "confirmed");
-      
-      if (metadataInfo?.data) {
-        logger.info(`[${logId}]: On-chain token data found - token exists with metadata`);
-        return {
-          isLaunched: true,
-          isListed: false, // On-chain existence doesn't guarantee listing
-          platform: 'unknown',
-          hasLiquidity: false,
-          hasTradingVolume: false,
-          lastActivity: new Date()
-        };
+      // Check if this is actually a token mint by verifying the data structure
+      // A token mint should have specific data layout (Mint layout from SPL Token)
+      try {
+        const { MintLayout } = await import("@solana/spl-token");
+        const mintData = MintLayout.decode(mintInfo.data);
+        
+        // If we can decode it as a mint, it's a real token
+        if (mintData) {
+          logger.info(`[${logId}]: Valid token mint found on-chain - token is launched`);
+          return {
+            isLaunched: true,
+            isListed: false, // On-chain existence doesn't guarantee listing
+            platform: 'unknown',
+            hasLiquidity: false,
+            hasTradingVolume: false,
+            lastActivity: new Date()
+          };
+        }
+      } catch (decodeError) {
+        // If we can't decode it as a mint, it's not a token (could be a regular account)
+        logger.debug(`[${logId}]: Address exists but is not a valid token mint - likely unused keypair`);
+        return null;
       }
     }
+    
+    // No mint account found or not a valid token mint
+    logger.debug(`[${logId}]: No valid token mint found for address`);
     return null;
   } catch (error: any) {
     logger.warn(`[${logId}]: On-chain token data check failed: ${error.message}`);
@@ -655,4 +665,26 @@ export function clearAllLaunchStatusCache() {
   const count = launchStatusCache.size;
   launchStatusCache.clear();
   logger.info(`[launch-status-cache]: Cleared all cache entries (${count} entries)`);
+}
+
+/**
+ * Clear cache for multiple addresses (useful for bulk operations)
+ */
+export function clearMultipleLaunchStatusCache(tokenAddresses: string[]) {
+  let clearedCount = 0;
+  for (const address of tokenAddresses) {
+    if (launchStatusCache.has(address)) {
+      launchStatusCache.delete(address);
+      clearedCount++;
+    }
+  }
+  logger.info(`[launch-status-cache]: Cleared cache for ${clearedCount}/${tokenAddresses.length} addresses`);
+}
+
+/**
+ * Force refresh launch status for a specific token (clear cache and re-check)
+ */
+export async function forceRefreshLaunchStatus(tokenAddress: string): Promise<TokenLaunchStatus> {
+  clearLaunchStatusCache(tokenAddress);
+  return await detectTokenLaunchStatus(tokenAddress);
 } 
