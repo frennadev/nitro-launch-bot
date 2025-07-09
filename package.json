@@ -11,7 +11,7 @@
     "start:lightweight": "LIGHTWEIGHT_MODE=true ENABLE_BACKGROUND_PRELOADING=false bun run build/index.js",
     "start:full": "LIGHTWEIGHT_MODE=false ENABLE_BACKGROUND_PRELOADING=true bun run build/index.js",
     "start:bun": "bun run build/index.js",
-    "start:address-finder": "bun run build/address-finder.js",
+    "start:address-finder": "ts-node src/address-finder.js",
     "start:node": "node build/index.js",
     "demo:lightweight": "node lightweight-bot.js",
     "format": "prettier --write \"src/**/*.ts\""
@@ -26,6 +26,7 @@
     "eslint": "^9.27.0",
     "globals": "^16.2.0",
     "prettier": "^3.5.3",
+    "ts-node": "^10.9.2",
     "ts-prune": "^0.10.3",
     "typescript-eslint": "^8.32.1"
   },
