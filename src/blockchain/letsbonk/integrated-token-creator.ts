@@ -29,6 +29,7 @@ import { exec } from "child_process";
 import { BonkAddressModel } from "../../backend/models";
 import { env } from "../../config";
 import { archiveAddress, formatTokenLink } from "../../backend/utils";
+import { getDevWallet } from "../../backend/functions";
 
 const execAsync = promisify(exec);
 
@@ -323,13 +324,21 @@ async function getUnusedBonkAddressFromDB() {
 }
 
 // Main token creation function
-export async function createBonkToken(tokenName: string, ticker: string, image: string, hasMedia: boolean) {
+export async function createBonkToken(
+  tokenName: string,
+  ticker: string,
+  image: string,
+  hasMedia: boolean,
+  userId: string
+) {
   try {
     console.log("=== Solana Token Creation ===");
     console.log("============================");
 
     console.log("\nLoading wallet for funding...");
-    const wallet = getWallet();
+    const devWalletPrivateKey = await getDevWallet(userId);
+    const wallet = Keypair.fromSecretKey(bs58.decode(devWalletPrivateKey.wallet));
+
     console.log(`Using wallet address for funding: ${wallet.publicKey.toString()}`);
 
     console.log("\nStep 1: Collecting token information...");

@@ -129,7 +129,7 @@ const createTokenConversation = async (conversation: Conversation, ctx: Context)
   if (mode === CallBackQueries.PUMPFUN) {
     token = await createToken(user.id, name, symbol, description, fileData);
   } else {
-    token = await createBonkToken(name, symbol, imageUrl, true);
+    token = await createBonkToken(name, symbol, imageUrl, true, user.id);
   }
 
   await update(

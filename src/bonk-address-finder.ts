@@ -135,6 +135,7 @@ function runWorker(workerId: number) {
     }
   }
 }
+``;
 
 // Main thread function to find addresses ending with 'bonk'
 export async function findBonkAddresses() {
