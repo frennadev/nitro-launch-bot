@@ -3,72 +3,134 @@ import bs58 from "bs58";
 import fs from "fs";
 import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
 import os from "os";
+import crypto from "crypto";
 // import { dbManager } from "../db/db-con";
 import { BonkAddressModel } from "./backend/models";
 import { connectDB } from "./backend/db";
 
 const SAVE_FOLDER = "./bonk-addresses";
-const NUM_WORKERS = Math.max(2, Math.floor(os.cpus().length * 0.75)); // Use 75% of available CPU cores
+const NUM_WORKERS = Math.max(2, Math.floor(os.cpus().length * 0.90)); // Use 90% of available CPU cores
 const REPORT_INTERVAL = 100000; // Report progress every 100,000 attempts
 const MAX_ADDRESSES_TO_SAVE = 20; // Save this many 'bonk' addresses
 const SAVE_ALL_ADDRESSES = false; // Only save addresses ending with 'bonk'
 
-// Create a function to check if a base58 string ends with 'bonk'
-function endsWithBonk(address: string): boolean {
-  return address.toLowerCase().endsWith("bonk");
+// Memory pool for reusing buffers
+const bufferPool: Buffer[] = [];
+const POOL_SIZE = 100;
+
+function getBuffer(size: number): Buffer {
+  if (bufferPool.length > 0) {
+    const buffer = bufferPool.pop()!;
+    if (buffer.length >= size) {
+      return buffer;
+    }
+  }
+  return Buffer.alloc(size);
 }
 
-// Worker process function
+function returnBuffer(buffer: Buffer) {
+  if (bufferPool.length < POOL_SIZE) {
+    bufferPool.push(buffer);
+  }
+}
+
+// Optimized string operations
+const BONK_SUFFIX = "bonk";
+function endsWithBonkOptimized(address: string): boolean {
+  const len = address.length;
+  if (len < 4) return false;
+  
+  // Check last 4 characters directly
+  return address[len - 4] === 'b' && 
+         address[len - 3] === 'o' && 
+         address[len - 2] === 'n' && 
+         address[len - 1] === 'k';
+}
+
+// Optimized RNG for faster keypair generation
+function generateOptimizedKeypair(): Keypair {
+  // Use crypto.randomBytes for better performance than Keypair.generate()
+  const secretKey = crypto.randomBytes(64);
+  return Keypair.fromSecretKey(secretKey);
+}
+
+// Batch-optimized keypair generation for better performance
+function generateBatchKeypairs(batchSize: number): Keypair[] {
+  const keypairs: Keypair[] = [];
+  
+  // Use memory pool for better performance
+  const randomData = getBuffer(batchSize * 64);
+  crypto.randomFillSync(randomData, 0, batchSize * 64);
+  
+  for (let i = 0; i < batchSize; i++) {
+    const secretKey = randomData.slice(i * 64, (i + 1) * 64);
+    keypairs.push(Keypair.fromSecretKey(secretKey));
+  }
+  
+  // Return buffer to pool
+  returnBuffer(randomData);
+  
+  return keypairs;
+}
+
+// High-performance batch processing for address generation
+
+// Optimized worker process function with batch processing
 function runWorker(workerId: number) {
   let attempts = 0;
   const startTime = Date.now();
   let addressesSaved = 0;
+  const BATCH_SIZE = 1000; // Process 1000 keypairs at a time
 
   while (true) {
-    const newKeypair = Keypair.generate();
-    attempts++;
+    // Generate batch of keypairs for better performance
+    const keypairs = generateBatchKeypairs(BATCH_SIZE);
+    
+    for (const newKeypair of keypairs) {
+      attempts++;
 
-    if (attempts % REPORT_INTERVAL === 0) {
-      const elapsedSeconds = (Date.now() - startTime) / 1000;
-      const attemptsPerSecond = Math.round(attempts / elapsedSeconds);
-      parentPort?.postMessage({
-        type: "progress",
-        workerId,
-        attempts,
-        attemptsPerSecond,
-      });
-    }
-
-    const address = newKeypair.publicKey.toString();
-    const isBonkAddress = endsWithBonk(address);
-
-    // Only save 'bonk' addresses
-    if (isBonkAddress) {
-      const keypairData = {
-        publicKey: newKeypair.publicKey.toString(),
-        secretKey: bs58.encode(newKeypair.secretKey),
-        rawSecretKey: Array.from(newKeypair.secretKey),
-      };
-
-      parentPort?.postMessage({
-        type: "found",
-        workerId,
-        attempts,
-        address,
-        keypairData,
-        isBonkAddress,
-      });
-
-      addressesSaved++;
-
-      // If this worker has saved enough addresses, terminate it
-      if (addressesSaved >= Math.ceil(MAX_ADDRESSES_TO_SAVE / NUM_WORKERS)) {
+      if (attempts % REPORT_INTERVAL === 0) {
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        const attemptsPerSecond = Math.round(attempts / elapsedSeconds);
         parentPort?.postMessage({
-          type: "complete",
+          type: "progress",
           workerId,
-          addressesSaved,
+          attempts,
+          attemptsPerSecond,
         });
-        break; // Exit the worker loop
+      }
+
+      const address = newKeypair.publicKey.toString();
+      const isBonkAddress = endsWithBonkOptimized(address);
+
+      // Only save 'bonk' addresses
+      if (isBonkAddress) {
+        const keypairData = {
+          publicKey: newKeypair.publicKey.toString(),
+          secretKey: bs58.encode(newKeypair.secretKey),
+          rawSecretKey: Array.from(newKeypair.secretKey),
+        };
+
+        parentPort?.postMessage({
+          type: "found",
+          workerId,
+          attempts,
+          address,
+          keypairData,
+          isBonkAddress,
+        });
+
+        addressesSaved++;
+
+        // If this worker has saved enough addresses, terminate it
+        if (addressesSaved >= Math.ceil(MAX_ADDRESSES_TO_SAVE / NUM_WORKERS)) {
+          parentPort?.postMessage({
+            type: "complete",
+            workerId,
+            addressesSaved,
+          });
+          return; // Exit the worker function
+        }
       }
     }
   }
