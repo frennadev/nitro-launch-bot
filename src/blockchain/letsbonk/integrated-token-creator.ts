@@ -294,7 +294,7 @@ async function getUnusedBonkAddressFromDB() {
 
       // Try to generate a new bonk address
       try {
-        await execAsync("npx bun bonk-address-finder.ts");
+        await execAsync("npx bun src/bonk-address-finder.ts");
         const newAddresses = await BonkAddressModel.find({
           isBonk: true,
           isUsed: false,
