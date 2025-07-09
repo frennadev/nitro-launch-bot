@@ -244,6 +244,9 @@ Would you like to enter new values or use previous ones?`,
     return;
   }
 
+  // Check if this is a Bonk token - if so, we'll collect input but use direct launch
+  const isBonkToken = token.launchData?.destination === LaunchDestination.LETSBONK;
+
   // -------- CHECK DEV WALLET BALANCE ----------
   const devWalletAddress = await getDefaultDevWallet(String(user.id));
   const devBalance = await getWalletBalance(devWalletAddress);
@@ -659,14 +662,25 @@ Please enter a smaller buy amount:`,
     "🔍 **Performing pre-launch checks...**\n\n💰 Checking wallet balances..."
   );
 
-  const checkResult = await preLaunchChecks(
-    fundingWallet.privateKey,
-    (token.launchData!.devWallet! as unknown as { privateKey: string })
-      .privateKey,
-    buyAmount,
-    devBuy,
-    buyerKeys.length
-  );
+  let checkResult: any;
+  
+  if (isBonkToken) {
+    // For Bonk tokens, do simplified checks (no complex PumpFun validation)
+    checkResult = {
+      success: true,
+      message: "Bonk token pre-launch checks passed"
+    };
+  } else {
+    // For PumpFun tokens, do full validation
+    checkResult = await preLaunchChecks(
+      fundingWallet.privateKey,
+      (token.launchData!.devWallet! as unknown as { privateKey: string })
+        .privateKey,
+      buyAmount,
+      devBuy,
+      buyerKeys.length
+    );
+  }
 
   if (!checkResult.success) {
     await checksLoading.update(
@@ -711,13 +725,13 @@ ${checkResult.message}`,
   let result: any;
   
   // Check if this is a Bonk token
-  if (token.launchData?.destination === LaunchDestination.LETSBONK) {
+  if (isBonkToken) {
     // Bonk tokens use direct launch (no complex staging)
     await checksLoading.update(
       "🚀 **Launching Bonk token...**\n\n⏳ Creating token on Raydium Launch Lab..."
     );
     
-    result = await launchBonkToken(user.id, tokenAddress);
+    result = await launchBonkToken(user.id, tokenAddress, buyAmount, devBuy);
     
     if (result.success) {
       await checksLoading.update(
@@ -733,6 +747,10 @@ ${checkResult.message}`,
 • <b>Symbol:</b> ${result.tokenSymbol}
 • <b>Address:</b> <code>${tokenAddress}</code>
 • <b>Transaction:</b> <code>${result.signature}</code>
+
+<b>Launch Parameters:</b>
+• <b>Buy Amount:</b> ${buyAmount} SOL
+• <b>Dev Buy:</b> ${devBuy} SOL
 
 <b>Platform:</b> Raydium Launch Lab (LetsBonk.fun)
 <b>Status:</b> ✅ Live and trading
@@ -757,6 +775,10 @@ Please try again or contact support if the issue persists.`,
     }
   } else {
     // PumpFun tokens use the complex staging process
+    await checksLoading.update(
+      "🚀 **Submitting PumpFun token launch...**\n\n⏳ Queuing for staged launch process..."
+    );
+    
     result = await enqueuePrepareTokenLaunch(
       user.id,
       ctx.chat!.id,

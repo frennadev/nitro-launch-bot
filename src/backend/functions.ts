@@ -3254,7 +3254,9 @@ export const getCurrentDevWalletPrivateKey = async (userId: string) => {
  */
 export const launchBonkToken = async (
   userId: string,
-  tokenAddress: string
+  tokenAddress: string,
+  buyAmount: number = 0,
+  devBuy: number = 0
 ): Promise<{
   success: boolean;
   signature?: string;
@@ -3263,7 +3265,10 @@ export const launchBonkToken = async (
   tokenSymbol?: string;
 }> => {
   const logId = `bonk-launch-${tokenAddress.substring(0, 8)}`;
-  logger.info(`[${logId}]: Starting Bonk token launch for user ${userId}`);
+  logger.info(`[${logId}]: Starting Bonk token launch for user ${userId}`, {
+    buyAmount,
+    devBuy
+  });
 
   try {
     // Get token from database
@@ -3289,10 +3294,15 @@ export const launchBonkToken = async (
       };
     }
 
-    // Update token state to launching
+    // Update token state to launching and store launch parameters
     await TokenModel.updateOne(
       { _id: token._id },
-      { state: TokenState.LAUNCHING }
+      { 
+        state: TokenState.LAUNCHING,
+        "launchData.buyAmount": buyAmount,
+        "launchData.devBuy": devBuy,
+        "launchData.launchAttempt": (token.launchData?.launchAttempt || 0) + 1
+      }
     );
 
     // Import and call the Bonk launch function
@@ -3304,7 +3314,9 @@ export const launchBonkToken = async (
       tokenAddress,
       signature: result.transaction,
       tokenName: result.tokenName,
-      tokenSymbol: result.tokenSymbol
+      tokenSymbol: result.tokenSymbol,
+      buyAmount,
+      devBuy
     });
 
     return {
