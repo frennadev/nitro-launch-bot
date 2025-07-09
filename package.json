@@ -1,6 +1,6 @@
 {
   "name": "nitro-launch",
-  "type": "module",
+  "type": "commonjs",
   "module": "main.ts",
   "scripts": {
     "build:bot": "bun build src/index.ts --outdir build --sourcemap=linked --target bun --external ws --external rpc-websockets --external @solana/web3.js",
