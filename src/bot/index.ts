@@ -953,6 +953,34 @@ bot.callbackQuery(/^refresh_launch_data_(.+)$/, async (ctx) => {
   );
 });
 
+// Callback handler for Bonk launch data refresh button
+bot.callbackQuery(/^refresh_bonk_launch_data_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔄 Refreshing Bonk data...");
+  const tokenAddress = ctx.match![1];
+
+  // Get token info to get name and symbol
+  const user = await getUser(ctx.chat!.id!.toString());
+  if (!user) {
+    await ctx.reply("❌ User not found");
+    return;
+  }
+
+  const token = await getUserTokenWithBuyWallets(user.id, tokenAddress);
+  if (!token) {
+    await ctx.reply("❌ Token not found");
+    return;
+  }
+
+  const { handleBonkLaunchDataRefresh } = await import("./message");
+  await handleBonkLaunchDataRefresh(
+    ctx.chat!.id,
+    ctx.callbackQuery!.message!.message_id,
+    tokenAddress,
+    token.name,
+    token.symbol
+  );
+});
+
 // Callback handler for external token refresh button
 bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Refreshing token data...");

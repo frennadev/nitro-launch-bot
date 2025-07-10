@@ -735,28 +735,16 @@ ${checkResult.message}`,
     
     if (result.success) {
       await checksLoading.update(
-        "🎉 **Bonk token launched successfully!**\n\n✅ Your token is now live on Raydium Launch Lab.\n\n📱 Check your token status in the tokens list."
+        "🎉 **Bonk token launched successfully!**\n\n✅ Your token is now live on Raydium Launch Lab.\n\n📱 Sending detailed success notification..."
       );
       
-      await sendMessage(
-        ctx,
-        `🎉 <b>Bonk Token Launched Successfully!</b>
-
-<b>Token Details:</b>
-• <b>Name:</b> ${result.tokenName}
-• <b>Symbol:</b> ${result.tokenSymbol}
-• <b>Address:</b> <code>${tokenAddress}</code>
-• <b>Transaction:</b> <code>${result.signature}</code>
-
-<b>Launch Parameters:</b>
-• <b>Buy Amount:</b> ${buyAmount} SOL
-• <b>Dev Buy:</b> ${devBuy} SOL
-
-<b>Platform:</b> Raydium Launch Lab (LetsBonk.fun)
-<b>Status:</b> ✅ Live and trading
-
-<i>💡 Your token is now available for trading on LetsBonk.fun</i>`,
-        { parse_mode: "HTML" }
+      // Send Bonk-specific success notification
+      const { sendBonkLaunchSuccessNotification } = await import("../message");
+      await sendBonkLaunchSuccessNotification(
+        ctx.chat!.id,
+        tokenAddress,
+        result.tokenName,
+        result.tokenSymbol
       );
     } else {
       await checksLoading.update(
