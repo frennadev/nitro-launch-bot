@@ -2,6 +2,16 @@ import { Bot, InlineKeyboard, type Context, type BotError, GrammyError, HttpErro
 import { Conversation, conversations, createConversation, type ConversationFlavor } from "@grammyjs/conversations";
 import { env } from "../config";
 import {
+  rateLimitCommands,
+  rateLimitCallbacks,
+  rateLimitMessages,
+  rateLimitTokenOperations,
+  rateLimitWalletOperations,
+  rateLimitTradingOperations,
+  getRateLimitStats,
+  resetRateLimits,
+} from "./rateLimiter";
+import {
   createUser,
   getDevWallet,
   getDefaultDevWallet,
@@ -118,6 +128,11 @@ async function detectPlatformInBackground(tokenAddress: string, chatId: number) 
 }
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
+
+// Apply rate limiting middleware globally
+bot.use(rateLimitCommands()); // Rate limit all commands
+bot.use(rateLimitCallbacks()); // Rate limit callback queries
+bot.use(rateLimitMessages()); // Rate limit message handling
 
 // Global error handler
 bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
@@ -583,6 +598,105 @@ bot.command("removetoken", async (ctx) => {
     } else {
       await ctx.reply(`❌ Error removing token: ${error.message}`);
     }
+  }
+});
+
+bot.command("ratelimit", async (ctx) => {
+  // Simple admin check
+  const adminIds = env.ADMIN_IDS ? env.ADMIN_IDS.split(",").map((id: string) => parseInt(id)) : [];
+
+  if (!adminIds.includes(ctx.from!.id)) {
+    await ctx.reply("❌ Access denied. Admin only command.");
+    return;
+  }
+
+  const args = ctx.message?.text?.split(" ");
+  
+  if (!args || args.length < 2) {
+    // Show rate limit stats
+    const stats = getRateLimitStats();
+    const message = `
+🔧 *Rate Limit Statistics*
+
+📊 *System Stats:*
+• Total Entries: \`${stats.totalEntries}\`
+• Active Users: \`${stats.activeUsers}\`
+• Memory Usage: \`${(stats.memoryUsage / 1024 / 1024).toFixed(2)} MB\`
+
+*Commands:*
+• \`/ratelimit stats\` - Show detailed statistics
+• \`/ratelimit reset <user_id>\` - Reset rate limits for a user
+• \`/ratelimit user <user_id>\` - Show rate limit status for a user
+`;
+    await ctx.reply(message, { parse_mode: "MarkdownV2" });
+    return;
+  }
+
+  const subcommand = args[1];
+
+  if (subcommand === "stats") {
+    const stats = getRateLimitStats();
+    const message = `
+📊 *Detailed Rate Limit Statistics*
+
+🔢 *System Overview:*
+• Total Rate Limit Entries: \`${stats.totalEntries}\`
+• Currently Active Users: \`${stats.activeUsers}\`
+• Memory Usage: \`${(stats.memoryUsage / 1024 / 1024).toFixed(2)} MB\`
+
+⏰ *Rate Limit Windows:*
+• General Commands: 10 requests per minute
+• Token Operations: 3 requests per 5 minutes
+• Wallet Operations: 5 requests per 2 minutes
+• Trading Operations: 3 requests per 30 seconds
+• Admin Operations: 2 requests per 10 seconds
+• Message Handling: 5 requests per 10 seconds
+• Callback Queries: 10 requests per 5 seconds
+`;
+    await ctx.reply(message, { parse_mode: "MarkdownV2" });
+  } else if (subcommand === "reset" && args[2]) {
+    const userId = parseInt(args[2]);
+    if (isNaN(userId)) {
+      await ctx.reply("❌ Invalid user ID. Please provide a valid number.");
+      return;
+    }
+    
+    const reset = resetRateLimits(userId);
+    if (reset) {
+      await ctx.reply(`✅ Rate limits reset for user \`${userId}\``, { parse_mode: "MarkdownV2" });
+    } else {
+      await ctx.reply(`⚠️ No rate limits found for user \`${userId}\``, { parse_mode: "MarkdownV2" });
+    }
+  } else if (subcommand === "user" && args[2]) {
+    const userId = parseInt(args[2]);
+    if (isNaN(userId)) {
+      await ctx.reply("❌ Invalid user ID. Please provide a valid number.");
+      return;
+    }
+    
+    const { getRateLimitStatus } = await import("./rateLimiter");
+    const status = getRateLimitStatus(userId);
+    
+    const message = `
+👤 *Rate Limit Status for User \`${userId}\`*
+
+📊 *Current Limits:*
+• General Commands: \`${status.general.count}/${status.general.remaining + status.general.count}\` (${status.general.remaining} remaining)
+• Token Operations: \`${status.token_operations.count}/${status.token_operations.remaining + status.token_operations.count}\` (${status.token_operations.remaining} remaining)
+• Wallet Operations: \`${status.wallet_operations.count}/${status.wallet_operations.remaining + status.wallet_operations.count}\` (${status.wallet_operations.remaining} remaining)
+• Trading Operations: \`${status.trading_operations.count}/${status.trading_operations.remaining + status.trading_operations.count}\` (${status.trading_operations.remaining} remaining)
+• Admin Operations: \`${status.admin_operations.count}/${status.admin_operations.remaining + status.admin_operations.count}\` (${status.admin_operations.remaining} remaining)
+
+⏰ *Reset Times:*
+• General: <t:${Math.floor(status.general.resetTime / 1000)}:R>
+• Token Ops: <t:${Math.floor(status.token_operations.resetTime / 1000)}:R>
+• Wallet Ops: <t:${Math.floor(status.wallet_operations.resetTime / 1000)}:R>
+• Trading Ops: <t:${Math.floor(status.trading_operations.resetTime / 1000)}:R>
+• Admin Ops: <t:${Math.floor(status.admin_operations.resetTime / 1000)}:R>
+`;
+    await ctx.reply(message, { parse_mode: "MarkdownV2" });
+  } else {
+    await ctx.reply("❌ Unknown subcommand. Use /ratelimit for help.");
   }
 });
 
@@ -1759,6 +1873,29 @@ bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
 
   console.log(data, "From firsttt");
+
+  // Apply specific rate limiting based on callback type
+  try {
+    if (data === CallBackQueries.CREATE_TOKEN) {
+      // Token creation is resource intensive
+      const tokenRateLimiter = rateLimitTokenOperations();
+      await tokenRateLimiter(ctx, async () => {});
+    } else if (data.startsWith(CallBackQueries.MANAGE_BUYER_WALLETS) || 
+               data.startsWith(CallBackQueries.CHANGE_DEV_WALLET) ||
+               data.includes('DELETE_BUYER_WALLET') ||
+               data.includes('DELETE_DEV')) {
+      // Wallet operations are sensitive
+      const walletRateLimiter = rateLimitWalletOperations();
+      await walletRateLimiter(ctx, async () => {});
+    } else if (data.includes('SELL_') || data.includes('BUY_') || data.includes('buy_') || data.includes('sell_')) {
+      // Trading operations need higher frequency limits
+      const tradingRateLimiter = rateLimitTradingOperations();
+      await tradingRateLimiter(ctx, async () => {});
+    }
+  } catch (error) {
+    // If rate limiting fails, log but continue
+    logger.warn("Rate limiting check failed:", error);
+  }
 
   // Handle "back-buy" and similar cases first
   if (data.startsWith("back-_")) {
