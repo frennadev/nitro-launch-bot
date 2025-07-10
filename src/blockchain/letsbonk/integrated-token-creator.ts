@@ -30,6 +30,7 @@ import { BonkAddressModel } from "../../backend/models";
 import { env } from "../../config";
 import { archiveAddress, formatTokenLink, uploadFileToPinata, uploadJsonToPinata } from "../../backend/utils";
 import { getDevWallet } from "../../backend/functions";
+import { LaunchDestination } from "../../backend/types";
 
 const execAsync = promisify(exec);
 
@@ -372,7 +373,7 @@ export async function createBonkToken(
       description: `${name} Token`,
       launchData: {
         devWallet: devWallet.id,
-        destination: "LETSBONK", // Set destination to LETSBONK
+        destination: LaunchDestination.LETSBONK, // Set destination to letsbonk
       },
       tokenAddress: tokenKeypair.publicKey.toString(),
       tokenPrivateKey: encryptPrivateKey(bs58.encode(tokenKeypair.secretKey)),
