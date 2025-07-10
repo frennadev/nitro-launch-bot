@@ -10,54 +10,54 @@ interface RateLimitConfig {
   skipFailedRequests?: boolean; // Skip counting failed requests
 }
 
-// Default rate limit configurations
+// Default rate limit configurations - ALL LIMITS REMOVED
 const DEFAULT_RATE_LIMITS: Record<string, RateLimitConfig> = {
   // General commands (start, menu, etc.)
   general: {
-    windowMs: 60 * 1000, // 1 minute
-    maxRequests: 40,
+    windowMs: 1000, // 1 second window
+    maxRequests: 999999, // Effectively unlimited
     message: "⚠️ Too many requests. Please wait a moment before trying again.",
   },
   
   // Token creation and launching (resource intensive)
   token_operations: {
-    windowMs: 60 * 1000, // 1 minute
-    maxRequests: 20,
+    windowMs: 1000, // 1 second window
+    maxRequests: 999999, // Effectively unlimited
     message: "⚠️ Token operations are rate limited. Please wait 1 minute between launches.",
   },
   
   // Wallet operations (sensitive operations)
   wallet_operations: {
-    windowMs: 5 * 1000, // 5 seconds
-    maxRequests: 2,
+    windowMs: 1000, // 1 second window
+    maxRequests: 999999, // Effectively unlimited
     message: "⚠️ Wallet operations are rate limited. Please wait 5 seconds between operations.",
   },
   
   // Trading operations (high frequency potential)
   trading_operations: {
-    windowMs: 10 * 1000, // 10 seconds
-    maxRequests: 10,
+    windowMs: 1000, // 1 second window
+    maxRequests: 999999, // Effectively unlimited
     message: "⚠️ Trading operations are rate limited. Please wait 10 seconds between trades.",
   },
   
   // Admin commands (very sensitive)
   admin_operations: {
-    windowMs: 10 * 1000, // 10 seconds
-    maxRequests: 4,
+    windowMs: 1000, // 1 second window
+    maxRequests: 999999, // Effectively unlimited
     message: "⚠️ Admin operations are rate limited. Please wait 10 seconds between commands.",
   },
   
   // Message handling (token addresses, etc.)
   message_handling: {
-    windowMs: 10 * 1000, // 10 seconds
-    maxRequests: 10,
+    windowMs: 1000, // 1 second window
+    maxRequests: 999999, // Effectively unlimited
     message: "⚠️ Too many messages. Please wait 10 seconds before sending another.",
   },
   
   // Callback queries (button clicks)
   callback_queries: {
-    windowMs: 5 * 1000, // 5 seconds
-    maxRequests: 20,
+    windowMs: 1000, // 1 second window
+    maxRequests: 999999, // Effectively unlimited
     message: "⚠️ Too many button clicks. Please wait 5 seconds before trying again.",
   },
 };

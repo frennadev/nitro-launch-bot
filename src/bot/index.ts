@@ -645,13 +645,13 @@ bot.command("ratelimit", async (ctx) => {
 • Memory Usage: \`${(stats.memoryUsage / 1024 / 1024).toFixed(2)} MB\`
 
 ⏰ *Rate Limit Windows:*
-• General Commands: 40 requests per minute
-• Token Operations: 20 requests per minute
-• Wallet Operations: 2 requests per 5 seconds
-• Trading Operations: 10 requests per 10 seconds
-• Admin Operations: 4 requests per 10 seconds
-• Message Handling: 10 requests per 10 seconds
-• Callback Queries: 20 requests per 5 seconds
+• General Commands: Unlimited (999,999 per second)
+• Token Operations: Unlimited (999,999 per second)
+• Wallet Operations: Unlimited (999,999 per second)
+• Trading Operations: Unlimited (999,999 per second)
+• Admin Operations: Unlimited (999,999 per second)
+• Message Handling: Unlimited (999,999 per second)
+• Callback Queries: Unlimited (999,999 per second)
 `;
     await ctx.reply(message, { parse_mode: "MarkdownV2" });
   } else if (subcommand === "reset" && args[2]) {
