@@ -183,33 +183,33 @@ const buildBonkLaunchSuccessMessage = async (tokenAddress: string, tokenName: st
       [
         {
           text: "🔄 Refresh",
-          callback_data: `${LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA}_${tokenAddress}`,
+          callback_data: `${LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA}_${tokenAddress.substring(0, 8)}`,
         },
       ],
       [
         {
           text: "💯 Sell 100% Dev Supply",
-          callback_data: `${CallBackQueries.SELL_DEV_SUPPLY}_${tokenAddress}`,
+          callback_data: `${CallBackQueries.SELL_DEV_SUPPLY}_${tokenAddress.substring(0, 8)}`,
         },
       ],
       [
         {
           text: "👨‍💻 Sell Dev Supply",
-          callback_data: `${CallBackQueries.SELL_DEV}_${tokenAddress}`,
+          callback_data: `${CallBackQueries.SELL_DEV}_${tokenAddress.substring(0, 8)}`,
         },
         {
           text: "📈 Sell % supply",
-          callback_data: `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`,
+          callback_data: `${CallBackQueries.SELL_PERCENT}_${tokenAddress.substring(0, 8)}`,
         },
       ],
       [
         {
           text: "🧨 Sell All",
-          callback_data: `${CallBackQueries.SELL_ALL}_${tokenAddress}`,
+          callback_data: `${CallBackQueries.SELL_ALL}_${tokenAddress.substring(0, 8)}`,
         },
         {
           text: "👥 Individual Wallet Sells",
-          callback_data: `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`,
+          callback_data: `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress.substring(0, 8)}`,
         },
       ],
     ],
