@@ -171,7 +171,6 @@ const buildBonkLaunchSuccessMessage = async (tokenAddress: string, tokenName: st
     `➡️ Platform: Raydium Launch Lab`,
     ``,
     `💎 *Your Holdings:*`,
-    `➡️ Current Value: ${escape(formatUSD(estimatedHoldingsWorth))}`,
     `➡️ Worth in SOL: ${escape(formatSOL(estimatedHoldingsSOL))}`,
     ``,
     `Use the buttons below for next steps ⬇️`,
