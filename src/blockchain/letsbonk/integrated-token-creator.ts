@@ -340,13 +340,8 @@ export async function createBonkToken(
       throw new Error("keypair not found");
     }
 
-    // Save the token keypair to a file for future reference (unless it's a bonk address already saved)
-    const keypairData = {
-      publicKey: tokenKeypair.publicKey.toString(),
-      secretKey: bs58.encode(tokenKeypair.secretKey),
-    };
-    fs.writeFileSync(`token-keypair-${name.replace(/\s+/g, "-")}.json`, JSON.stringify(keypairData, null, 2));
-    console.log(`Saved token keypair to token-keypair-${name.replace(/\s+/g, "-")}.json`);
+    // Token keypair is already saved to database, no need for local file
+    console.log(`Token keypair obtained: ${tokenKeypair.publicKey.toString()}`);
 
     // Step 5: Create token record in database (without launching)
     console.log("\nStep 5: Creating token record in database...");
