@@ -168,8 +168,8 @@ const createTokenConversation = async (conversation: Conversation, ctx: Context)
       `<b>Bonk Token Created Successfully!</b>
 
 <b>Launch Mode:</b> <code>${mode}</code>
-<b>Name:</b> <code>${token.name}</code>
-<b>Symbol:</b> <code>${token.symbol}</code>
+<b>Name:</b> <code>${token.tokenName}</code>
+<b>Symbol:</b> <code>${token.tokenSymbol}</code>
 <b>Description:</b> ${token.description}
 <b>Token Address:</b> <code>${token.tokenAddress}</code>
 
