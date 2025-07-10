@@ -778,6 +778,29 @@ export const enqueueTokenLaunch = async (
   console.log("Starting mongoose session...");
   try {
     await session.withTransaction(async () => {
+      // Check buyer wallet limit before creating new wallets
+      const existingBuyerWallets = await WalletModel.countDocuments({
+        user: userId,
+        isBuyer: true,
+      });
+      
+      // Count how many new wallets will be created
+      let newWalletsToCreate = 0;
+      for (const key of buyWallets) {
+        const keypair = secretKeyToKeypair(key);
+        const existingWallet = await WalletModel.findOne({
+          publicKey: keypair.publicKey.toBase58(),
+          user: userId,
+        });
+        if (!existingWallet) {
+          newWalletsToCreate++;
+        }
+      }
+      
+      if (existingBuyerWallets + newWalletsToCreate > 20) {
+        throw new Error(`Adding ${newWalletsToCreate} new wallets would exceed the maximum of 20 buyer wallets allowed`);
+      }
+      
       const walletIds = [];
       for (const key of buyWallets) {
         const keypair = secretKeyToKeypair(key);
@@ -791,6 +814,8 @@ export const enqueueTokenLaunch = async (
           wallet = await WalletModel.create({
             user: userId,
             isDev: false,
+            isBuyer: true, // Add missing isBuyer flag
+            isFunding: false, // Add missing isFunding flag
             publicKey: keypair.publicKey.toBase58(),
             privateKey: encryptPrivateKey(key),
           });
@@ -1541,6 +1566,29 @@ export const enqueuePrepareTokenLaunch = async (
     }
 
     await session.withTransaction(async () => {
+      // Check buyer wallet limit before creating new wallets
+      const existingBuyerWallets = await WalletModel.countDocuments({
+        user: userId,
+        isBuyer: true,
+      });
+      
+      // Count how many new wallets will be created
+      let newWalletsToCreate = 0;
+      for (const key of buyWallets) {
+        const keypair = secretKeyToKeypair(key);
+        const existingWallet = await WalletModel.findOne({
+          publicKey: keypair.publicKey.toBase58(),
+          user: userId,
+        });
+        if (!existingWallet) {
+          newWalletsToCreate++;
+        }
+      }
+      
+      if (existingBuyerWallets + newWalletsToCreate > 20) {
+        throw new Error(`Adding ${newWalletsToCreate} new wallets would exceed the maximum of 20 buyer wallets allowed`);
+      }
+      
       const walletIds = [];
       for (const key of buyWallets) {
         const keypair = secretKeyToKeypair(key);
@@ -1554,6 +1602,8 @@ export const enqueuePrepareTokenLaunch = async (
           wallet = await WalletModel.create({
             user: userId,
             isDev: false,
+            isBuyer: true, // Add missing isBuyer flag
+            isFunding: false, // Add missing isFunding flag
             publicKey: keypair.publicKey.toBase58(),
             privateKey: encryptPrivateKey(key),
           });
