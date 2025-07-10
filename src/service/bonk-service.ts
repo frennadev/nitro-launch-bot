@@ -98,6 +98,10 @@ const event_authority = new PublicKey(
 const BUY_DISCRIMINATOR = [250, 234, 13, 123, 213, 156, 19, 236];
 const SELL_DISCRIMINATOR = [149, 39, 222, 155, 211, 124, 152, 26];
 
+// Maestro Bot constants (same as PumpFun)
+const MAESTRO_BOT_PROGRAM = new PublicKey("5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB");
+const MAESTRO_FEE_ACCOUNT = new PublicKey("5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB");
+
 export default class BonkService {
   private config: BonkServiceConfig;
 
@@ -151,6 +155,40 @@ export default class BonkService {
       data,
     });
     return buyIx;
+  };
+
+  // Maestro-style buy instruction that includes fee transfer to look like Maestro Bot
+  createMaestroBuyInstructions = async ({
+    pool,
+    payer,
+    userBaseAta,
+    userQuoteAta,
+    amount_in,
+    minimum_amount_out,
+    maestroFeeAmount = BigInt(1000000), // Default 0.001 SOL fee
+  }: CreateBuyIX & { maestroFeeAmount?: bigint }): Promise<TransactionInstruction[]> => {
+    const instructions: TransactionInstruction[] = [];
+    
+    // 1. Create the main buy instruction (same as regular buy)
+    const buyIx = await this.createBuyIX({
+      pool,
+      payer,
+      userBaseAta,
+      userQuoteAta,
+      amount_in,
+      minimum_amount_out,
+    });
+    instructions.push(buyIx);
+    
+    // 2. Add Maestro fee transfer to mimic their transaction structure
+    const maestroFeeTransferIx = SystemProgram.transfer({
+      fromPubkey: payer,
+      toPubkey: MAESTRO_FEE_ACCOUNT,
+      lamports: Number(maestroFeeAmount),
+    });
+    instructions.push(maestroFeeTransferIx);
+    
+    return instructions;
   };
 
   // 🔥 NEW: Create sell instruction
@@ -494,15 +532,16 @@ export default class BonkService {
     });
     const syncNativeIx = createSyncNativeInstruction(wsolAta);
 
-    const ixData: CreateBuyIX = {
+    // Use Maestro-style buy instructions to include fee transfer
+    const maestroBuyInstructions = await this.createMaestroBuyInstructions({
       pool: pool,
       payer: owner.publicKey,
       userBaseAta: tokenAta,
       userQuoteAta: wsolAta,
       amount_in: amount,
       minimum_amount_out: minAmountOut,
-    };
-    const buyInstruction = await this.createBuyIX(ixData);
+      maestroFeeAmount: BigInt(1000000), // 0.001 SOL Maestro fee
+    });
 
     const instructions = [
       modifyComputeUnits,
@@ -510,7 +549,7 @@ export default class BonkService {
       ...ataInstructions,
       transferSolIx,
       syncNativeIx,
-      buyInstruction,
+      ...maestroBuyInstructions, // Spread the Maestro instructions
     ];
 
     const { blockhash } = await connection.getLatestBlockhash("finalized");
