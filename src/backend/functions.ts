@@ -3426,6 +3426,67 @@ export const launchBonkToken = async (
       return balance / 1_000_000_000; // Convert lamports to SOL
     };
     
+    // Helper function to create Bonk buy instruction
+    const createBonkBuyInstruction = async ({
+      pool,
+      payer,
+      userBaseAta,
+      userQuoteAta,
+      amount_in,
+      minimum_amount_out,
+    }: {
+      pool: any;
+      payer: PublicKey;
+      userBaseAta: PublicKey;
+      userQuoteAta: PublicKey;
+      amount_in: bigint;
+      minimum_amount_out: bigint;
+    }) => {
+      const { TransactionInstruction } = await import("@solana/web3.js");
+      const { TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
+      
+      // Bonk program constants
+      const BONK_PROGRAM_ID = new PublicKey("LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj");
+      const raydim_authority = new PublicKey("WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh");
+      const global_config = new PublicKey("6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX");
+      const platform_config = new PublicKey("FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1");
+      const event_authority = new PublicKey("2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr");
+      
+      // Buy instruction discriminator
+      const BUY_DISCRIMINATOR = Buffer.from([102, 6, 61, 18, 1, 218, 235, 234]);
+      
+      const keys = [
+        { pubkey: payer, isSigner: true, isWritable: true },
+        { pubkey: raydim_authority, isSigner: false, isWritable: false },
+        { pubkey: global_config, isSigner: false, isWritable: false },
+        { pubkey: platform_config, isSigner: false, isWritable: false },
+        { pubkey: pool.poolId, isSigner: false, isWritable: true },
+        { pubkey: userBaseAta, isSigner: false, isWritable: true },
+        { pubkey: userQuoteAta, isSigner: false, isWritable: true },
+        { pubkey: pool.baseVault, isSigner: false, isWritable: true },
+        { pubkey: pool.quoteVault, isSigner: false, isWritable: true },
+        { pubkey: pool.baseMint, isSigner: false, isWritable: true },
+        { pubkey: pool.quoteMint, isSigner: false, isWritable: true },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: event_authority, isSigner: false, isWritable: false },
+        { pubkey: BONK_PROGRAM_ID, isSigner: false, isWritable: false },
+      ];
+
+      const data = Buffer.alloc(32);
+      const discriminator = Buffer.from(BUY_DISCRIMINATOR);
+      discriminator.copy(data, 0);
+      data.writeBigUInt64LE(amount_in, 8);
+      data.writeBigUInt64LE(minimum_amount_out, 16);
+      data.writeBigUInt64LE(BigInt(0), 24); // share fee rate
+
+      return new TransactionInstruction({
+        keys,
+        programId: BONK_PROGRAM_ID,
+        data,
+      });
+    };
+    
     // Get fresh blockhash for transactions
     const blockHash = await connection.getLatestBlockhash("processed");
     const baseComputeUnitPrice = 1_000_000;
@@ -3541,27 +3602,70 @@ export const launchBonkToken = async (
               // Get fresh blockhash for each attempt to avoid stale blockhash errors
               const freshBlockHash = await connection.getLatestBlockhash("processed");
               
-              // Create ATA instruction
-              const ata = getAssociatedTokenAddressSync(
-                new PublicKey(tokenAddress),
-                wallet.keypair.publicKey
-              );
-              const ataIx = createAssociatedTokenAccountIdempotentInstruction(
+              // Import Bonk-specific constants and functions
+              const { BONK_PROGRAM_ID, getBonkPoolState } = await import("../service/bonk-pool-service");
+              const { NATIVE_MINT, createSyncNativeInstruction } = await import("@solana/spl-token");
+              
+              // Get Bonk pool state for this token
+              const poolState = await getBonkPoolState(tokenAddress);
+              if (!poolState) {
+                throw new Error(`No Bonk pool found for token ${tokenAddress}`);
+              }
+              
+              // Create WSOL and token ATAs
+              const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, wallet.keypair.publicKey);
+              const tokenAta = getAssociatedTokenAddressSync(new PublicKey(tokenAddress), wallet.keypair.publicKey);
+              
+              // Create ATA instructions
+              const wsolAtaIx = createAssociatedTokenAccountIdempotentInstruction(
                 wallet.keypair.publicKey,
-                ata,
+                wsolAta,
                 wallet.keypair.publicKey,
-                wallet.keypair.publicKey
+                NATIVE_MINT
               );
+              const tokenAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+                wallet.keypair.publicKey,
+                tokenAta,
+                wallet.keypair.publicKey,
+                new PublicKey(tokenAddress)
+              );
+              
+              // Transfer SOL to WSOL account
+              const transferSolIx = SystemProgram.transfer({
+                fromPubkey: wallet.keypair.publicKey,
+                toPubkey: wsolAta,
+                lamports: Number(buyAmountLamports),
+              });
+              
+              // Sync native instruction to convert SOL to WSOL
+              const syncNativeIx = createSyncNativeInstruction(wsolAta);
+              
+              // Create Bonk buy instruction
+              const buyIx = await createBonkBuyInstruction({
+                pool: poolState,
+                payer: wallet.keypair.publicKey,
+                userBaseAta: tokenAta,
+                userQuoteAta: wsolAta,
+                amount_in: buyAmountLamports,
+                minimum_amount_out: BigInt(1), // Minimum 1 token
+              });
               
               // Add priority fee instruction
               const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
                 microLamports: walletComputeUnitPrice,
               });
               
-              // Create buy transaction (simplified for Bonk - would need actual buy instruction)
+              // Create buy transaction with all Bonk instructions
               const buyTx = new VersionedTransaction(
                 new TransactionMessage({
-                  instructions: [addPriorityFee, ataIx], // Simplified - would need actual buy instruction
+                  instructions: [
+                    addPriorityFee,
+                    wsolAtaIx,
+                    tokenAtaIx,
+                    transferSolIx,
+                    syncNativeIx,
+                    buyIx
+                  ],
                   payerKey: wallet.keypair.publicKey,
                   recentBlockhash: freshBlockHash.blockhash,
                 }).compileToV0Message(),
