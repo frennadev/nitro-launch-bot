@@ -631,26 +631,81 @@ bot.callbackQuery(/^launch_token_(.+)$/, async (ctx) => {
 });
 bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
-  const tokenAddress = ctx.match![1];
-  await ctx.conversation.enter("devSellConversation", tokenAddress);
+  const tokenAddressPrefix = ctx.match![1];
+
+  // Find token by address prefix
+  const user = await getUser(ctx.chat!.id!.toString());
+  if (!user) {
+    await ctx.reply("❌ User not found");
+    return;
+  }
+
+  const { TokenModel } = await import("../backend/models");
+  const token = await TokenModel.findOne({ 
+    user: user.id,
+    tokenAddress: { $regex: `^${tokenAddressPrefix}` }
+  });
+  
+  if (!token) {
+    await ctx.reply("❌ Token not found");
+    return;
+  }
+
+  await ctx.conversation.enter("devSellConversation", token.tokenAddress);
 });
 
 bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Starting 100% dev sell...");
-  const tokenAddress = ctx.match![1];
+  const tokenAddressPrefix = ctx.match![1];
+
+  // Find token by address prefix
+  const user = await getUser(ctx.chat!.id!.toString());
+  if (!user) {
+    await ctx.reply("❌ User not found");
+    return;
+  }
+
+  const { TokenModel } = await import("../backend/models");
+  const token = await TokenModel.findOne({ 
+    user: user.id,
+    tokenAddress: { $regex: `^${tokenAddressPrefix}` }
+  });
+  
+  if (!token) {
+    await ctx.reply("❌ Token not found");
+    return;
+  }
 
   // Use the conversation system like other sell handlers to avoid state conflicts
-  await ctx.conversation.enter("devSell100Conversation", tokenAddress);
+  await ctx.conversation.enter("devSell100Conversation", token.tokenAddress);
 });
 bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
-  const tokenAddress = ctx.match![1];
+  const tokenAddressPrefix = ctx.match![1];
 
   // Add logging for debugging
-  logger.info(`[SellAll] Main sell all button clicked for token: ${tokenAddress}`);
-  console.log("Sell All button clicked for token:", tokenAddress);
+  logger.info(`[SellAll] Main sell all button clicked for token prefix: ${tokenAddressPrefix}`);
+  console.log("Sell All button clicked for token prefix:", tokenAddressPrefix);
 
-  await ctx.conversation.enter("walletSellConversation", tokenAddress, 100);
+  // Find token by address prefix
+  const user = await getUser(ctx.chat!.id!.toString());
+  if (!user) {
+    await ctx.reply("❌ User not found");
+    return;
+  }
+
+  const { TokenModel } = await import("../backend/models");
+  const token = await TokenModel.findOne({ 
+    user: user.id,
+    tokenAddress: { $regex: `^${tokenAddressPrefix}` }
+  });
+  
+  if (!token) {
+    await ctx.reply("❌ Token not found");
+    return;
+  }
+
+  await ctx.conversation.enter("walletSellConversation", token.tokenAddress, 100);
 });
 bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
@@ -738,11 +793,30 @@ bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
 
 bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
-  const tokenAddress = ctx.match![1];
+  const tokenAddressPrefix = ctx.match![1];
   console.log("Found hereee");
-  console.log("Sell individual button clicked for token:", tokenAddress);
+  console.log("Sell individual button clicked for token prefix:", tokenAddressPrefix);
   console.log("Full callback data:", ctx.callbackQuery?.data);
-  await ctx.conversation.enter("sellIndividualToken", tokenAddress);
+
+  // Find token by address prefix
+  const user = await getUser(ctx.chat!.id!.toString());
+  if (!user) {
+    await ctx.reply("❌ User not found");
+    return;
+  }
+
+  const { TokenModel } = await import("../backend/models");
+  const token = await TokenModel.findOne({ 
+    user: user.id,
+    tokenAddress: { $regex: `^${tokenAddressPrefix}` }
+  });
+  
+  if (!token) {
+    await ctx.reply("❌ Token not found");
+    return;
+  }
+
+  await ctx.conversation.enter("sellIndividualToken", token.tokenAddress);
 });
 
 bot.callbackQuery(/^sellAll_([^_]+)_([^_]+)$/, async (ctx) => {
