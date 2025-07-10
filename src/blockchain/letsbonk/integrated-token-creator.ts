@@ -121,7 +121,7 @@ function encodeString(str: string) {
   return buffer;
 }
 
-// Create token instruction - Fixed for Bonk program
+// Create token instruction
 const createTokenInstruction = (
   payer: Keypair,
   token: Keypair,
@@ -129,58 +129,53 @@ const createTokenInstruction = (
   curveParams: CurveParams,
   vestingParams: VestingParams
 ) => {
-  // For Bonk program, we need to create the token using SPL Token program first
-  // Then initialize the pool on Bonk
-  
   const [metadataPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("metadata"), METADATA_PROGRAM.toBuffer(), token.publicKey.toBuffer()],
     METADATA_PROGRAM
   );
-  
   const [poolPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from([112, 111, 111, 108]), token.publicKey.toBuffer(), WSOL_MINT.toBuffer()],
     RAYDIUM_LAUNCH_LAB_PROGRAM_ID
   );
-  
   const [baseVaultPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]), poolPDA.toBuffer(), token.publicKey.toBuffer()],
     RAYDIUM_LAUNCH_LAB_PROGRAM_ID
   );
-  
   const [quoteVaultPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]), poolPDA.toBuffer(), WSOL_MINT.toBuffer()],
     RAYDIUM_LAUNCH_LAB_PROGRAM_ID
   );
 
   console.log("Using name in instruction:", mintParams.name);
-  
+
   const keys = [
     { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-    { pubkey: token.publicKey, isSigner: true, isWritable: true },
-    { pubkey: metadataPDA, isSigner: false, isWritable: true },
-    { pubkey: poolPDA, isSigner: false, isWritable: true },
-    { pubkey: baseVaultPDA, isSigner: false, isWritable: true },
-    { pubkey: quoteVaultPDA, isSigner: false, isWritable: true },
+    { pubkey: payer.publicKey, isSigner: true, isWritable: true },
     { pubkey: GLOBAL_CONFIG, isSigner: false, isWritable: false },
     { pubkey: PLATFORM_CONFIG, isSigner: false, isWritable: false },
     { pubkey: RAY_LAUNCHPAD_AUTHORITY, isSigner: false, isWritable: false },
+    { pubkey: poolPDA, isSigner: false, isWritable: true },
+    { pubkey: token.publicKey, isSigner: true, isWritable: true },
     { pubkey: WSOL_MINT, isSigner: false, isWritable: false },
+    { pubkey: baseVaultPDA, isSigner: false, isWritable: true },
+    { pubkey: quoteVaultPDA, isSigner: false, isWritable: true },
+    { pubkey: metadataPDA, isSigner: false, isWritable: true },
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     { pubkey: METADATA_PROGRAM, isSigner: false, isWritable: false },
     { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     { pubkey: RENT_PROGRAM, isSigner: false, isWritable: false },
     { pubkey: EVENT_AUTHORITY, isSigner: false, isWritable: false },
-    { pubkey: RAYDIUM_LAUNCH_LAB_PROGRAM_ID, isSigner: false, isWritable: false },
+    {
+      pubkey: RAYDIUM_LAUNCH_LAB_PROGRAM_ID,
+      isSigner: false,
+      isWritable: false,
+    },
   ];
-
-  // Use the correct Bonk program initialize instruction discriminator
-  // This should be different from PumpFun's initialize discriminator
-  const BONK_INITIALIZE_DISCRIMINATOR = Buffer.from([237, 155, 152, 13, 31, 109, 175, 175]);
-  
   const instructionBuffer = Buffer.alloc(INITIALIZE_INSTRUCTION_LAYOUT.span);
   INITIALIZE_INSTRUCTION_LAYOUT.encode(
     {
-      instruction: BONK_INITIALIZE_DISCRIMINATOR.readBigUInt64LE(),
+      instruction: Buffer.from([175, 175, 109, 31, 13, 152, 155, 237]).readBigUInt64LE(),
     },
     instructionBuffer
   );
@@ -205,7 +200,6 @@ const createTokenInstruction = (
   const totalLength =
     instructionBuffer.length + mintParamBuffer.length + curveParamsBuffer.length + vestingParamBuffer.length;
   const data = Buffer.concat([instructionBuffer, mintParamBuffer, curveParamsBuffer, vestingParamBuffer], totalLength);
-  
   return new TransactionInstruction({
     keys,
     programId: RAYDIUM_LAUNCH_LAB_PROGRAM_ID,
