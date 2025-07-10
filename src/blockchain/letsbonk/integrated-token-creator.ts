@@ -28,7 +28,7 @@ import { exec } from "child_process";
 // import secret from "../config/secret-config";
 import { BonkAddressModel } from "../../backend/models";
 import { env } from "../../config";
-import { archiveAddress, formatTokenLink } from "../../backend/utils";
+import { archiveAddress, formatTokenLink, uploadFileToPinata, uploadJsonToPinata } from "../../backend/utils";
 import { getDevWallet } from "../../backend/functions";
 
 const execAsync = promisify(exec);
@@ -111,63 +111,9 @@ const askQuestion = async (question: string): Promise<string> => {
   });
 };
 
-// Upload file to IPFS via Pinata
-async function uploadFileToPinata(filePath: string, fileName: string) {
-  try {
-    const formData = new FormData();
-    formData.append("file", fs.createReadStream(filePath));
 
-    const metadata = JSON.stringify({
-      name: fileName,
-    });
-    formData.append("pinataMetadata", metadata);
 
-    const options = JSON.stringify({
-      cidVersion: 0,
-    });
-    formData.append("pinataOptions", options);
 
-    const res = await axios.post(`${PINATA_API_URL}/pinFileToIPFS`, formData, {
-      maxBodyLength: Infinity,
-      headers: {
-        "Content-Type": `multipart/form-data; boundary=${formData.getBoundary()}`,
-        Authorization: `Bearer ${PINATA_JWT}`,
-      },
-    });
-
-    return res.data.IpfsHash;
-  } catch (error) {
-    console.error("Error uploading file to Pinata:", error);
-    throw error;
-  }
-}
-
-// Upload JSON to IPFS via Pinata
-async function uploadJsonToPinata(jsonData: any, name: string) {
-  try {
-    const data = JSON.stringify({
-      pinataOptions: {
-        cidVersion: 0,
-      },
-      pinataMetadata: {
-        name,
-      },
-      pinataContent: jsonData,
-    });
-
-    const res = await axios.post(`${PINATA_API_URL}/pinJSONToIPFS`, data, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${PINATA_JWT}`,
-      },
-    });
-
-    return res.data.IpfsHash;
-  } catch (error) {
-    console.error("Error uploading JSON to Pinata:", error);
-    throw error;
-  }
-}
 
 // Encode string for transaction
 function encodeString(str: string) {
@@ -340,37 +286,27 @@ export async function createBonkToken(
     const symbol = ticker;
     const imagePath = image;
 
-    async function fetchAndSaveImage(url: string, outputPath: string): Promise<void> {
-      const response = await axios.get(url, { responseType: "stream" });
-      const writer = fs.createWriteStream(outputPath);
-
-      return new Promise((resolve, reject) => {
-        response.data.pipe(writer);
-        writer.on("finish", resolve);
-        writer.on("error", reject);
-      });
-    }
-
     let imageUri = "";
     if (hasMedia) {
-      let localImagePath = imagePath;
       if (/^https?:\/\//i.test(imagePath)) {
+        console.log("\nStep 2: Downloading and uploading logo to IPFS...");
+        
+        // Download image as ArrayBuffer (same approach as PumpFun)
+        const response = await axios.get(imagePath, { responseType: "arraybuffer" });
+        
+        // Get file extension from URL or default to .png
         const ext = path.extname(imagePath) || ".png";
-        const fileName = `downloaded-token-logo${Math.floor(Math.random() * 1000)}${ext}`;
-        localImagePath = path.join(__dirname, fileName);
-        console.log(`Downloading remote image to: ${localImagePath}`);
-        await fetchAndSaveImage(imagePath, localImagePath);
+        const fileName = `token-logo-${Date.now()}${ext}`;
+        
+        // Upload directly to IPFS without saving to local file
+        const imageHash = await uploadFileToPinata(response.data, fileName);
+        imageUri = `${PINATA_GATEWAY}/ipfs/${imageHash}`;
+        
+        console.log(`Logo uploaded successfully: ${imageUri}`);
+      } else {
+        // If it's already a local path (shouldn't happen in this context)
+        throw new Error("Local image paths are not supported in this implementation");
       }
-
-      if (!fs.existsSync(localImagePath)) {
-        throw new Error(`Image file not found at ${localImagePath}`);
-      }
-      console.log("\nStep 2: Uploading logo to IPFS...");
-      const imageFileName = path.basename(localImagePath);
-      const imageHash = await uploadFileToPinata(localImagePath, imageFileName);
-      imageUri = `${PINATA_GATEWAY}/ipfs/${imageHash}`;
-
-      console.log(`Logo uploaded successfully: ${imageUri}`);
     }
 
     // Step 3: Create and upload metadata
