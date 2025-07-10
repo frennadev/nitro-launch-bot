@@ -507,27 +507,43 @@ export async function launchBonkToken(
       console.log(`Token symbol: ${token.symbol}`);
       console.log(`Metadata URI: ${token.tokenMetadataUrl}`);
 
-      // Step 2: Execute dev buy if specified
+      // Step 2: Execute dev buy if specified (immediately after token creation, no delay)
       let devBuySignature: string | undefined;
       if (devBuy > 0) {
-        console.log(`\nStep 2: Executing dev buy of ${devBuy} SOL...`);
+        console.log(`\nStep 2: Executing dev buy of ${devBuy} SOL (immediate execution)...`);
         
         try {
-          // Wait a moment for the token creation to propagate
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
           // Import required modules for dev buy
           const { VersionedTransaction, TransactionMessage, ComputeBudgetProgram, PublicKey, SystemProgram } = await import("@solana/web3.js");
           const { getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, NATIVE_MINT, createSyncNativeInstruction, TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
           const { getBonkPoolState } = await import("../../service/bonk-pool-service");
           
-          // Get Bonk pool state for this token
-          const poolState = await getBonkPoolState(tokenAddress);
-          if (!poolState) {
-            throw new Error(`No Bonk pool found for token ${tokenAddress}`);
+          // Get Bonk pool state for this token (with retry logic for immediate execution)
+          let poolState = null;
+          let retries = 0;
+          const maxRetries = 5;
+          
+          while (!poolState && retries < maxRetries) {
+            try {
+              poolState = await getBonkPoolState(tokenAddress);
+              if (poolState) {
+                console.log(`Found Bonk pool: ${poolState.poolId.toString()}`);
+                break;
+              }
+            } catch (error) {
+              console.log(`Pool not found yet, retry ${retries + 1}/${maxRetries}...`);
+            }
+            
+            if (!poolState && retries < maxRetries - 1) {
+              // Short delay between retries for immediate execution
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            retries++;
           }
           
-          console.log(`Found Bonk pool: ${poolState.poolId.toString()}`);
+          if (!poolState) {
+            throw new Error(`No Bonk pool found for token ${tokenAddress} after ${maxRetries} retries`);
+          }
           
           // Create WSOL and token ATAs for dev wallet
           const devWsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, wallet.publicKey);
@@ -652,45 +668,66 @@ export async function launchBonkToken(
         }
       }
 
-      const formattedLink = formatTokenLink(tokenAddress);
-      console.log(formattedLink);
-
-      // Update token state in database
-      await TokenModel.updateOne(
-        { _id: token._id },
-        { 
-          state: "launched",
-          "launchData.launchAttempt": (token.launchData?.launchAttempt || 0) + 1,
-          "launchData.devBuySignature": devBuySignature // Store dev buy signature if successful
+      // Record the token creation transaction
+      const { recordTransaction } = await import("../../backend/functions");
+      await recordTransaction(
+        tokenAddress,
+        wallet.publicKey.toString(),
+        "token_creation",
+        signature,
+        true,
+        token.launchData?.launchAttempt || 1,
+        {
+          amountSol: 0, // Token creation doesn't cost SOL
+          errorMessage: undefined,
         }
       );
 
-      // Archive the address with the actual transaction signature
-      await archiveAddress(tokenAddress, token.name, token.symbol, signature);
-
-      return {
-        transaction: signature,
-        devBuySignature: devBuySignature,
-        tokenAddress,
-        tokenName: token.name,
-        tokenSymbol: token.symbol,
-        link: formattedLink,
-        metadataUri: token.tokenMetadataUrl,
-      };
-    } catch (error) {
-      console.error("\nTransaction failed.");
-      console.error("Error details:", error);
-
-      // Update token state to reflect failure
+      // Update token state to launched
       await TokenModel.updateOne(
         { _id: token._id },
-        { state: "listed" } // Keep as listed for retry
+        { 
+          state: "LAUNCHED",
+          "launchData.launchAttempt": (token.launchData?.launchAttempt || 0) + 1
+        }
+      );
+
+      console.log("\n=== BONK TOKEN LAUNCH PROCESS COMPLETE ===");
+      console.log(`Token creation: ✅ Success`);
+      console.log(`Dev buy: ${devBuy > 0 ? (devBuySignature ? '✅ Success' : '❌ Failed') : '⏭️ Skipped'}`);
+      console.log(`Token state: LAUNCHED`);
+
+      return {
+        success: true,
+        signature: signature,
+        devBuySignature: devBuySignature,
+        tokenName: token.name,
+        tokenSymbol: token.symbol,
+      };
+
+    } catch (error: any) {
+      console.error("❌ Token creation failed:", error.message);
+      
+      // Record the failed token creation transaction
+      const { recordTransaction } = await import("../../backend/functions");
+      await recordTransaction(
+        tokenAddress,
+        wallet.publicKey.toString(),
+        "token_creation",
+        "FAILED",
+        false,
+        token.launchData?.launchAttempt || 1,
+        {
+          amountSol: 0,
+          errorMessage: error.message,
+        }
       );
 
       throw error;
     }
-  } catch (error) {
-    console.error("Error launching Bonk token:", error);
+
+  } catch (error: any) {
+    console.error("❌ Bonk token launch failed:", error.message);
     throw error;
   }
 }
