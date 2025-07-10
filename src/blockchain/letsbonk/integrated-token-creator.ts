@@ -153,12 +153,6 @@ const createTokenInstruction = (
   );
 
   console.log("Using name in instruction:", mintParams.name);
-
-  // Import SPL Token instructions
-  const { createInitializeMintInstruction, createMintToInstruction, getMinimumBalanceForRentExemptMint } = require("@solana/spl-token");
-
-  // Create the mint account
-  const mintRent = getMinimumBalanceForRentExemptMint();
   
   const keys = [
     { pubkey: payer.publicKey, isSigner: true, isWritable: true },
