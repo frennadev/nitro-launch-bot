@@ -112,6 +112,7 @@ export const allocateWalletsFromPool = originalFunctions.allocateWalletsFromPool
 export const getWalletPoolStats = originalFunctions.getWalletPoolStats;
 export const ensureWalletPoolHealth = originalFunctions.ensureWalletPoolHealth;
 export const calculateMaxBuyAmount = originalFunctions.calculateMaxBuyAmount;
+export const calculateMaxBuyAmountWithWallets = originalFunctions.calculateMaxBuyAmountWithWallets;
 export const calculateRequiredWallets = originalFunctions.calculateRequiredWallets;
 export const deleteToken = originalFunctions.deleteToken;
 export const handleTokenLaunchFailure = originalFunctions.handleTokenLaunchFailure;

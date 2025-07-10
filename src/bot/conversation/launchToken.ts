@@ -305,10 +305,25 @@ Would you like to enter new values or use previous ones?`,
     await clearRetryData(user.id, "launch_token");
   } else {
     // -------- GET BUY AMOUNT --------
+    // Calculate maximum buy amount based on current wallet count
+    const { calculateMaxBuyAmount, calculateMaxBuyAmountWithWallets } = await import("../../backend/functions-main");
+    const maxBuyAmount = calculateMaxBuyAmount();
+    const maxBuyAmountWithCurrentWallets = calculateMaxBuyAmountWithWallets(buyerWallets.length);
+    
     await sendMessage(
       ctx,
-      "💰 Enter the total SOL amount to buy tokens with (e.g., 1.5):",
-      { reply_markup: cancelKeyboard }
+      `💰 <b>Enter the total SOL amount to buy tokens with:</b>
+
+📊 <b>Your Wallet Capacity:</b>
+• Current wallets: ${buyerWallets.length}/20
+• Maximum buy amount: ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL
+• System maximum: ${maxBuyAmount.toFixed(1)} SOL (with 20 wallets)
+
+💡 <i>Enter a value between 0.1 and ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</i>`,
+      { 
+        parse_mode: "HTML",
+        reply_markup: cancelKeyboard 
+      }
     );
 
     buyAmountLoop: while (true) {
@@ -331,10 +346,16 @@ Would you like to enter new values or use previous ones?`,
             "❌ Invalid amount. Please enter a positive number:"
           );
           continue;
-        } else if (parsed > 46.5) {
+        } else if (parsed > maxBuyAmountWithCurrentWallets) {
           await sendMessage(
             ctx,
-            "⚠️ Maximum buy amount is 46.5 SOL due to our 20-wallet system limit. Please enter a smaller amount (0.1-46.5 SOL):"
+            `⚠️ <b>Buy Amount Too Large</b>
+
+💰 <b>Requested:</b> ${parsed} SOL
+📊 <b>Your Maximum:</b> ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL (with ${buyerWallets.length} wallets)
+
+Please enter a smaller amount between 0.1 and ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL:`,
+            { parse_mode: "HTML" }
           );
           continue;
         } else {

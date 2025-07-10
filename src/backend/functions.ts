@@ -2225,6 +2225,32 @@ export const calculateMaxBuyAmount = (): number => {
 };
 
 /**
+ * Calculate the maximum buy amount supported by a specific number of wallets
+ * @param walletCount - Number of wallets available
+ * @returns Maximum buy amount in SOL
+ */
+export const calculateMaxBuyAmountWithWallets = (walletCount: number): number => {
+  if (walletCount <= 0) return 0;
+  
+  const firstFifteenSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
+  const firstFifteenTotal = firstFifteenSequence.reduce((sum, amount) => sum + amount, 0);
+  
+  if (walletCount <= 15) {
+    // Use only the first N wallets from the sequence
+    let total = 0;
+    for (let i = 0; i < Math.min(walletCount, firstFifteenSequence.length); i++) {
+      total += firstFifteenSequence[i];
+    }
+    return total;
+  } else {
+    // Use all 15 sequence wallets + additional wallets from last 5 (4-5 SOL each)
+    const additionalWallets = Math.min(walletCount - 15, 5);
+    const additionalTotal = additionalWallets * 5.0; // 5.0 SOL per additional wallet
+    return firstFifteenTotal + additionalTotal;
+  }
+};
+
+/**
  * Generate buy distribution for sequential wallet buying with new 20 wallet system
  * First 15 wallets: incremental amounts 0.5-2.1 SOL
  * Last 5 wallets: 4.0-5.0 SOL each for larger purchases
