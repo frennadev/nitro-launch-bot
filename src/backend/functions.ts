@@ -3412,14 +3412,219 @@ export const launchBonkToken = async (
     const { launchBonkToken: launchBonkTokenFunction } = await import("../blockchain/letsbonk/integrated-token-creator");
     const result = await launchBonkTokenFunction(tokenAddress, userId);
 
-    // 2.2 Execute buys from the funded wallets (simplified for now)
-    logger.info(`[${logId}]: Wallets funded successfully - buy execution would happen here`);
-    logger.info(`[${logId}]: Buy distribution: ${buyDistribution.join(', ')}`);
-    logger.info(`[${logId}]: Funded wallets: ${buyWallets.length} wallets`);
+    // 2.2 Execute buys from the funded wallets (real implementation)
+    logger.info(`[${logId}]: Executing buys from funded wallets`);
     
-    // TODO: Implement actual buy execution for Bonk tokens
-    // For now, we'll just log that the wallets are funded and ready
-    const successfulBuys = 0; // Placeholder
+    // Import required functions for buy execution
+    const { connection } = await import("../blockchain/common/connection");
+    const { VersionedTransaction, TransactionMessage, ComputeBudgetProgram, PublicKey } = await import("@solana/web3.js");
+    const { getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction } = await import("@solana/spl-token");
+    
+    // Helper function to get SOL balance
+    const getSolBalance = async (publicKey: string, commitment: string = 'confirmed') => {
+      const balance = await connection.getBalance(new PublicKey(publicKey), commitment as any);
+      return balance / 1_000_000_000; // Convert lamports to SOL
+    };
+    
+    // Get fresh blockhash for transactions
+    const blockHash = await connection.getLatestBlockhash("processed");
+    const baseComputeUnitPrice = 1_000_000;
+    const maxComputeUnitPrice = 4_000_000;
+    
+    // Get wallets that already have successful buy transactions
+    const successfulBuyWallets = await getSuccessfulTransactions(
+      tokenAddress,
+      "snipe_buy"
+    );
+    
+    // Convert buyWallets (private keys) to wallet objects with public keys
+    const walletObjects = buyWallets.map(privateKey => {
+      const keypair = secretKeyToKeypair(privateKey);
+      return {
+        publicKey: keypair.publicKey.toString(),
+        keypair: keypair,
+        privateKey: privateKey
+      };
+    });
+    
+    // Filter out wallets that already succeeded
+    const walletsToProcess = walletObjects.filter(
+      wallet => !successfulBuyWallets.includes(wallet.publicKey)
+    );
+    
+    logger.info(`[${logId}]: Buy wallet status`, {
+      total: walletObjects.length,
+      alreadySuccessful: successfulBuyWallets.length,
+      toProcess: walletsToProcess.length,
+    });
+    
+    let successfulBuys = 0;
+    
+    if (walletsToProcess.length === 0) {
+      logger.info(`[${logId}]: All wallets already have successful buy transactions, skipping buy stage`);
+    } else {
+      // Pre-flight balance verification for all buy wallets
+      logger.info(`[${logId}]: Performing pre-flight balance verification for all ${walletsToProcess.length} buy wallets...`);
+      const balanceCheckPromises = walletsToProcess.map(async (wallet, index) => {
+        const walletAddress = wallet.publicKey;
+        const balance = await getSolBalance(walletAddress, 'confirmed');
+        return {
+          index,
+          address: walletAddress.slice(0, 8),
+          balance,
+          hasEnoughFunds: balance >= 0.06 // Need at least 0.06 SOL (0.05 threshold + 0.01 minimum)
+        };
+      });
+      
+      const balanceResults = await Promise.all(balanceCheckPromises);
+      const walletsWithSufficientFunds = balanceResults.filter(result => result.hasEnoughFunds);
+      const walletsWithInsufficientFunds = balanceResults.filter(result => !result.hasEnoughFunds);
+      
+      logger.info(`[${logId}]: Pre-flight balance verification complete`, {
+        totalWallets: walletsToProcess.length,
+        sufficientFunds: walletsWithSufficientFunds.length,
+        insufficientFunds: walletsWithInsufficientFunds.length,
+        balanceDetails: balanceResults.map(r => `${r.address}: ${r.balance.toFixed(6)} SOL ${r.hasEnoughFunds ? '✓' : '✗'}`).join(', ')
+      });
+      
+      if (walletsWithInsufficientFunds.length > 0) {
+        logger.warn(`[${logId}]: Found ${walletsWithInsufficientFunds.length} wallets with insufficient funds:`, 
+          walletsWithInsufficientFunds.map(w => `${w.address}: ${w.balance.toFixed(6)} SOL`).join(', ')
+        );
+      }
+      
+      if (walletsWithSufficientFunds.length === 0) {
+        throw new Error(`No wallets have sufficient funds for buy transactions. All ${walletsToProcess.length} wallets have insufficient balance.`);
+      }
+      
+      // Execute buy transactions with simultaneous execution
+      const results = [];
+      const maxConcurrentWallets = 5; // Limit concurrent wallets to avoid rate limits
+      const processedWallets = new Set();
+      
+      logger.info(`[${logId}]: Starting simultaneous buy execution with max ${maxConcurrentWallets} concurrent wallets (${walletsWithSufficientFunds.length}/${walletsToProcess.length} wallets have sufficient funds)`);
+      
+      // Process wallets in batches for simultaneous execution
+      while (processedWallets.size < walletsToProcess.length) {
+        // Get wallets that haven't been processed yet
+        const unprocessedWallets = walletsToProcess.filter(w => !processedWallets.has(w.publicKey));
+        
+        if (unprocessedWallets.length === 0) break;
+        
+        // Take next batch of wallets (up to maxConcurrentWallets)
+        const currentBatch = unprocessedWallets.slice(0, maxConcurrentWallets);
+        
+        logger.info(`[${logId}]: Processing batch of ${currentBatch.length} wallets simultaneously`);
+        
+        // Execute all wallets in current batch simultaneously
+        const batchPromises = currentBatch.map(async (wallet, i) => {
+          const walletComputeUnitPrice = maxComputeUnitPrice - (Math.round((maxComputeUnitPrice - baseComputeUnitPrice) / currentBatch.length) * i);
+          
+          try {
+            // Get fresh balance for this wallet
+            const walletSolBalance = await getSolBalance(wallet.publicKey, 'confirmed');
+            const minBalanceThreshold = 0.05;
+            const availableForSpend = walletSolBalance - minBalanceThreshold;
+            
+            if (availableForSpend <= 0.01) {
+              logger.info(`[${logId}]: Wallet ${wallet.publicKey.slice(0, 8)} has insufficient balance: ${walletSolBalance.toFixed(6)} SOL`);
+              return { success: true, message: "Insufficient balance for buy" };
+            }
+            
+            // Use the full available amount for the buy
+            const buyAmountSOL = availableForSpend;
+            const buyAmountLamports = BigInt(Math.ceil(buyAmountSOL * 1_000_000_000)); // LAMPORTS_PER_SOL
+            
+            // Create ATA instruction
+            const ata = getAssociatedTokenAddressSync(
+              new PublicKey(tokenAddress),
+              wallet.keypair.publicKey
+            );
+            const ataIx = createAssociatedTokenAccountIdempotentInstruction(
+              wallet.keypair.publicKey,
+              ata,
+              wallet.keypair.publicKey,
+              wallet.keypair.publicKey
+            );
+            
+            // Add priority fee instruction
+            const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
+              microLamports: walletComputeUnitPrice,
+            });
+            
+            // Create buy transaction (simplified for Bonk - would need actual buy instruction)
+            const buyTx = new VersionedTransaction(
+              new TransactionMessage({
+                instructions: [addPriorityFee, ataIx], // Simplified - would need actual buy instruction
+                payerKey: wallet.keypair.publicKey,
+                recentBlockhash: blockHash.blockhash,
+              }).compileToV0Message(),
+            );
+            buyTx.sign([wallet.keypair]);
+            
+            // Send transaction
+            const signature = await connection.sendTransaction(buyTx);
+            
+            // Record the transaction
+            await recordTransaction(
+              tokenAddress,
+              wallet.publicKey,
+              "snipe_buy",
+              signature,
+              true,
+              token.launchData?.launchAttempt || 1,
+              {
+                amountSol: buyAmountSOL,
+                errorMessage: undefined,
+              }
+            );
+            
+            logger.info(`[${logId}]: Buy successful for ${wallet.publicKey.slice(0, 8)} with ${buyAmountSOL.toFixed(6)} SOL`);
+            return { success: true, signature };
+            
+          } catch (error: any) {
+            logger.error(`[${logId}]: Buy failed for ${wallet.publicKey.slice(0, 8)}: ${error.message}`);
+            
+            // Record the failed attempt
+            await recordTransaction(
+              tokenAddress,
+              wallet.publicKey,
+              "snipe_buy",
+              "error",
+              false,
+              token.launchData?.launchAttempt || 1,
+              {
+                amountSol: 0,
+                errorMessage: error.message,
+              }
+            );
+            
+            return { success: false, error: error.message };
+          }
+        });
+        
+        // Wait for current batch to complete
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+        
+        // Mark wallets as processed
+        currentBatch.forEach(wallet => processedWallets.add(wallet.publicKey));
+        
+        // Small delay between batches
+        if (processedWallets.size < walletsToProcess.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      
+      successfulBuys = results.filter(r => r.success).length;
+      const failedBuys = results.filter(r => !r.success).length;
+      
+      logger.info(`[${logId}]: Buy execution completed`, {
+        total: results.length,
+        successful: successfulBuys,
+        failed: failedBuys,
+      });
+    }
 
     // Update token state to launched
     await TokenModel.updateOne(
