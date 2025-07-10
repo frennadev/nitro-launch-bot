@@ -2146,6 +2146,12 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
       }
     }
 
+    // CRITICAL FIX: Ensure we use at least 2 wallets for amounts > 0.5 SOL
+    // This ensures proper distribution and privacy
+    if (buyAmount > 0.5 && walletsNeeded < 2) {
+      walletsNeeded = 2;
+    }
+
     return Math.max(1, walletsNeeded); // At least 1 wallet
   } else {
     // Need all 15 sequence wallets + additional wallets from last 5 (4-5 SOL each)
@@ -2194,6 +2200,14 @@ export const generateBuyDistribution = (buyAmount: number, availableWallets: num
         distribution.push(remaining);
         remaining = 0;
       }
+    }
+
+    // CRITICAL FIX: Ensure proper distribution for amounts that need 2+ wallets
+    // For 0.9 SOL, we want [0.5, 0.4] instead of [0.9]
+    if (distribution.length === 1 && buyAmount > 0.5 && maxWallets >= 2) {
+      const firstAmount = Math.min(0.5, buyAmount * 0.6); // Use 60% for first wallet, max 0.5
+      const secondAmount = buyAmount - firstAmount;
+      return [firstAmount, secondAmount];
     }
 
     return distribution;

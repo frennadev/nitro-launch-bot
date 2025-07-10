@@ -697,6 +697,21 @@ export async function launchBonkToken(
       console.log(`Dev buy: ${devBuy > 0 ? (devBuySignature ? '✅ Success' : '❌ Failed') : '⏭️ Skipped'}`);
       console.log(`Token state: LAUNCHED`);
 
+      // Send success notification to user
+      try {
+        const { sendBonkLaunchSuccessNotification } = await import("../../bot/message");
+        await sendBonkLaunchSuccessNotification(
+          parseInt(userId), // Convert to number for Telegram chat ID
+          tokenAddress,
+          token.name,
+          token.symbol
+        );
+        console.log("✅ Success notification sent to user");
+      } catch (notificationError) {
+        console.error("❌ Failed to send success notification:", notificationError);
+        // Don't fail the launch if notification fails
+      }
+
       return {
         success: true,
         signature: signature,
