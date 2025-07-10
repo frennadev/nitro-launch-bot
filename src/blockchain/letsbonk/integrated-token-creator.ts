@@ -409,7 +409,8 @@ export async function createBonkToken(
 // Launch function for Bonk tokens (separate from creation)
 export async function launchBonkToken(
   tokenAddress: string,
-  userId: string
+  userId: string,
+  devBuy: number = 0 // Add devBuy parameter
 ) {
   try {
     console.log("=== Bonk Token Launch ===");
@@ -432,6 +433,7 @@ export async function launchBonkToken(
 
     console.log(`Launching token: ${token.name} (${token.symbol})`);
     console.log(`Token address: ${tokenAddress}`);
+    console.log(`Dev buy amount: ${devBuy} SOL`);
 
     // Get dev wallet for funding
     console.log("\nLoading wallet for funding...");
@@ -505,6 +507,151 @@ export async function launchBonkToken(
       console.log(`Token symbol: ${token.symbol}`);
       console.log(`Metadata URI: ${token.tokenMetadataUrl}`);
 
+      // Step 2: Execute dev buy if specified
+      let devBuySignature: string | undefined;
+      if (devBuy > 0) {
+        console.log(`\nStep 2: Executing dev buy of ${devBuy} SOL...`);
+        
+        try {
+          // Wait a moment for the token creation to propagate
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Import required modules for dev buy
+          const { VersionedTransaction, TransactionMessage, ComputeBudgetProgram, PublicKey, SystemProgram } = await import("@solana/web3.js");
+          const { getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, NATIVE_MINT, createSyncNativeInstruction, TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
+          const { getBonkPoolState } = await import("../../service/bonk-pool-service");
+          
+          // Get Bonk pool state for this token
+          const poolState = await getBonkPoolState(tokenAddress);
+          if (!poolState) {
+            throw new Error(`No Bonk pool found for token ${tokenAddress}`);
+          }
+          
+          console.log(`Found Bonk pool: ${poolState.poolId.toString()}`);
+          
+          // Create WSOL and token ATAs for dev wallet
+          const devWsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, wallet.publicKey);
+          const devTokenAta = getAssociatedTokenAddressSync(new PublicKey(tokenAddress), wallet.publicKey);
+          
+          // Create ATA instructions
+          const devWsolAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+            wallet.publicKey,
+            devWsolAta,
+            wallet.publicKey,
+            NATIVE_MINT
+          );
+          const devTokenAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+            wallet.publicKey,
+            devTokenAta,
+            wallet.publicKey,
+            new PublicKey(tokenAddress)
+          );
+          
+          // Convert dev buy amount to lamports
+          const devBuyLamports = BigInt(Math.ceil(devBuy * 1_000_000_000));
+          
+          // Transfer SOL to WSOL account
+          const transferSolIx = SystemProgram.transfer({
+            fromPubkey: wallet.publicKey,
+            toPubkey: devWsolAta,
+            lamports: Number(devBuyLamports),
+          });
+          
+          // Sync native instruction to convert SOL to WSOL
+          const syncNativeIx = createSyncNativeInstruction(devWsolAta);
+          
+          // Create Bonk buy instruction for dev wallet
+          const devBuyIx = await createBonkBuyInstruction({
+            pool: poolState,
+            payer: wallet.publicKey,
+            userBaseAta: devTokenAta,
+            userQuoteAta: devWsolAta,
+            amount_in: devBuyLamports,
+            minimum_amount_out: BigInt(1), // Minimum 1 token
+          });
+          
+          // Add priority fee instruction
+          const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
+            microLamports: 2_000_000, // High priority for dev buy
+          });
+          
+          // Get fresh blockhash for dev buy
+          const devBuyBlockHash = await connection.getLatestBlockhash("processed");
+          
+          // Create dev buy transaction
+          const devBuyTx = new VersionedTransaction(
+            new TransactionMessage({
+              instructions: [
+                addPriorityFee,
+                devWsolAtaIx,
+                devTokenAtaIx,
+                transferSolIx,
+                syncNativeIx,
+                devBuyIx
+              ],
+              payerKey: wallet.publicKey,
+              recentBlockhash: devBuyBlockHash.blockhash,
+            }).compileToV0Message(),
+          );
+          devBuyTx.sign([wallet]);
+          
+          // Send dev buy transaction
+          devBuySignature = await connection.sendTransaction(devBuyTx, {
+            skipPreflight: false,
+            preflightCommitment: "processed",
+            maxRetries: 3
+          });
+          
+          // Wait for confirmation
+          const confirmation = await connection.confirmTransaction({
+            signature: devBuySignature,
+            blockhash: devBuyBlockHash.blockhash,
+            lastValidBlockHeight: devBuyBlockHash.lastValidBlockHeight
+          }, "processed");
+          
+          if (confirmation.value.err) {
+            throw new Error(`Dev buy transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          }
+          
+          console.log(`✅ Dev buy successful! Signature: ${devBuySignature}`);
+          console.log(`Dev wallet bought tokens with ${devBuy} SOL`);
+          
+          // Record the dev buy transaction
+          const { recordTransaction } = await import("../../backend/functions");
+          await recordTransaction(
+            tokenAddress,
+            wallet.publicKey.toString(),
+            "dev_buy",
+            devBuySignature,
+            true,
+            token.launchData?.launchAttempt || 1,
+            {
+              amountSol: devBuy,
+              errorMessage: undefined,
+            }
+          );
+          
+        } catch (devBuyError: any) {
+          console.error(`❌ Dev buy failed: ${devBuyError.message}`);
+          console.log("Continuing with launch process...");
+          
+          // Record the failed dev buy transaction
+          const { recordTransaction } = await import("../../backend/functions");
+          await recordTransaction(
+            tokenAddress,
+            wallet.publicKey.toString(),
+            "dev_buy",
+            "FAILED",
+            false,
+            token.launchData?.launchAttempt || 1,
+            {
+              amountSol: devBuy,
+              errorMessage: devBuyError.message,
+            }
+          );
+        }
+      }
+
       const formattedLink = formatTokenLink(tokenAddress);
       console.log(formattedLink);
 
@@ -513,7 +660,8 @@ export async function launchBonkToken(
         { _id: token._id },
         { 
           state: "launched",
-          "launchData.launchAttempt": (token.launchData?.launchAttempt || 0) + 1
+          "launchData.launchAttempt": (token.launchData?.launchAttempt || 0) + 1,
+          "launchData.devBuySignature": devBuySignature // Store dev buy signature if successful
         }
       );
 
@@ -522,6 +670,7 @@ export async function launchBonkToken(
 
       return {
         transaction: signature,
+        devBuySignature: devBuySignature,
         tokenAddress,
         tokenName: token.name,
         tokenSymbol: token.symbol,
@@ -544,6 +693,67 @@ export async function launchBonkToken(
     console.error("Error launching Bonk token:", error);
     throw error;
   }
+}
+
+// Helper function to create Bonk buy instruction (same as in functions.ts)
+async function createBonkBuyInstruction({
+  pool,
+  payer,
+  userBaseAta,
+  userQuoteAta,
+  amount_in,
+  minimum_amount_out,
+}: {
+  pool: any;
+  payer: PublicKey;
+  userBaseAta: PublicKey;
+  userQuoteAta: PublicKey;
+  amount_in: bigint;
+  minimum_amount_out: bigint;
+}) {
+  const { TransactionInstruction, PublicKey } = await import("@solana/web3.js");
+  const { TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
+  
+  // Bonk program constants
+  const BONK_PROGRAM_ID = new PublicKey("LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj");
+  const raydim_authority = new PublicKey("WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh");
+  const global_config = new PublicKey("6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX");
+  const platform_config = new PublicKey("FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1");
+  const event_authority = new PublicKey("2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr");
+  
+  // Buy instruction discriminator (Bonk program, not PumpFun)
+  const BUY_DISCRIMINATOR = Buffer.from([250, 234, 13, 123, 213, 156, 19, 236]);
+  
+  const keys = [
+    { pubkey: payer, isSigner: true, isWritable: true },
+    { pubkey: raydim_authority, isSigner: false, isWritable: false },
+    { pubkey: global_config, isSigner: false, isWritable: false },
+    { pubkey: platform_config, isSigner: false, isWritable: false },
+    { pubkey: pool.poolId, isSigner: false, isWritable: true },
+    { pubkey: userBaseAta, isSigner: false, isWritable: true },
+    { pubkey: userQuoteAta, isSigner: false, isWritable: true },
+    { pubkey: pool.baseVault, isSigner: false, isWritable: true },
+    { pubkey: pool.quoteVault, isSigner: false, isWritable: true },
+    { pubkey: pool.baseMint, isSigner: false, isWritable: true },
+    { pubkey: pool.quoteMint, isSigner: false, isWritable: true },
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    { pubkey: event_authority, isSigner: false, isWritable: false },
+    { pubkey: BONK_PROGRAM_ID, isSigner: false, isWritable: false },
+  ];
+
+  const data = Buffer.alloc(32);
+  const discriminator = Buffer.from(BUY_DISCRIMINATOR);
+  discriminator.copy(data, 0);
+  data.writeBigUInt64LE(amount_in, 8);
+  data.writeBigUInt64LE(minimum_amount_out, 16);
+  data.writeBigUInt64LE(BigInt(0), 24); // share fee rate
+
+  return new TransactionInstruction({
+    keys,
+    programId: BONK_PROGRAM_ID,
+    data,
+  });
 }
 
 // // Execute the token creation process

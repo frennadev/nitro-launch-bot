@@ -3410,7 +3410,7 @@ export const launchBonkToken = async (
     
     // 2.1 Create the Bonk token on-chain
     const { launchBonkToken: launchBonkTokenFunction } = await import("../blockchain/letsbonk/integrated-token-creator");
-    const result = await launchBonkTokenFunction(tokenAddress, userId);
+    const result = await launchBonkTokenFunction(tokenAddress, userId, devBuy);
 
     // 2.2 Execute buys from the funded wallets (real implementation)
     logger.info(`[${logId}]: Executing buys from funded wallets`);
