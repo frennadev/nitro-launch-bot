@@ -3452,8 +3452,8 @@ export const launchBonkToken = async (
       const platform_config = new PublicKey("FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1");
       const event_authority = new PublicKey("2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr");
       
-      // Buy instruction discriminator
-      const BUY_DISCRIMINATOR = Buffer.from([102, 6, 61, 18, 1, 218, 235, 234]);
+      // Buy instruction discriminator (Bonk program, not PumpFun)
+      const BUY_DISCRIMINATOR = Buffer.from([250, 234, 13, 123, 213, 156, 19, 236]);
       
       const keys = [
         { pubkey: payer, isSigner: true, isWritable: true },
