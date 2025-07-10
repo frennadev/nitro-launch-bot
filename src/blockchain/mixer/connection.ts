@@ -218,7 +218,10 @@ export class SolanaConnectionManager {
   }
 
   /**
-   * Check if a wallet has sufficient balance for a transfer including fees
+   * Check if a wallet has sufficient balance for a transfer including fees and rent exemption
+   * @param publicKey - The wallet's public key
+   * @param transferAmount - The amount to transfer (in lamports)
+   * @returns Promise<boolean> - Whether the wallet has sufficient balance
    */
   async hasSufficientBalance(
     publicKey: PublicKey,
@@ -230,7 +233,15 @@ export class SolanaConnectionManager {
 
     // Need balance for transfer + fees + rent exemption
     const requiredBalance = transferAmount + estimatedFee + rentExemption;
-    return balance >= requiredBalance;
+    const hasSufficient = balance >= requiredBalance;
+
+    console.log(`💰 Balance check for ${publicKey.toString().slice(0, 8)}...:`);
+    console.log(`   Current balance: ${balance} lamports (${(balance / 1e9).toFixed(6)} SOL)`);
+    console.log(`   Transfer amount: ${transferAmount} lamports (${(transferAmount / 1e9).toFixed(6)} SOL)`);
+    console.log(`   Required total: ${requiredBalance} lamports (${(requiredBalance / 1e9).toFixed(6)} SOL)`);
+    console.log(`   Sufficient: ${hasSufficient ? '✅' : '❌'}`);
+
+    return hasSufficient;
   }
 
   /**
@@ -249,13 +260,25 @@ export class SolanaConnectionManager {
 
   /**
    * Calculate the maximum transferable amount from a wallet
+   * Accounts for transaction fees and rent exemption that must remain in the account
    */
   async getMaxTransferableAmount(publicKey: PublicKey): Promise<number> {
     const balance = await this.getBalance(publicKey);
     const estimatedFee = await this.estimateTransactionFee();
     const rentExemption = await this.getMinimumBalanceForRentExemption();
 
-    const maxTransferable = balance - estimatedFee - rentExemption;
+    // Calculate required reserves (fees + rent exemption)
+    const requiredReserves = estimatedFee + rentExemption;
+    const maxTransferable = balance - requiredReserves;
+
+    // Log detailed breakdown for debugging
+    console.log(`💰 Transfer calculation for ${publicKey.toString().slice(0, 8)}...:`);
+    console.log(`   Balance: ${balance} lamports (${(balance / 1e9).toFixed(6)} SOL)`);
+    console.log(`   Estimated fee: ${estimatedFee} lamports (${(estimatedFee / 1e9).toFixed(6)} SOL)`);
+    console.log(`   Rent exemption: ${rentExemption} lamports (${(rentExemption / 1e9).toFixed(6)} SOL)`);
+    console.log(`   Required reserves: ${requiredReserves} lamports (${(requiredReserves / 1e9).toFixed(6)} SOL)`);
+    console.log(`   Max transferable: ${maxTransferable} lamports (${(maxTransferable / 1e9).toFixed(6)} SOL)`);
+
     return Math.max(0, maxTransferable);
   }
 

@@ -260,8 +260,28 @@ export class MongoSolanaMixer {
           `🔄 Transfer ${i + 1}/${route.intermediates.length}: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${nextWallet.publicKey.toString().slice(0, 8)}...`
         );
 
-        // Calculate transfer amount with minimal fee deduction - ENSURE INTEGER
-        const transferAmount = Math.floor(Math.floor(remainingAmount * 0.998)); // Double Math.floor to ensure integer
+        // Calculate transfer amount properly accounting for fees and rent exemption
+        let transferAmount: number;
+        
+        if (this.config.feeFundingWallet && currentWallet !== route.source) {
+          // Use fee funding wallet for intermediate wallet transactions
+          // Can transfer almost all remaining amount since fees are paid by fee funding wallet
+          transferAmount = Math.floor(remainingAmount * 0.998); // Small buffer for safety
+        } else {
+          // Wallet pays its own fees - must account for fees and rent exemption
+          if (currentWallet === route.source) {
+            // Source wallet: use calculated amount with small buffer
+            transferAmount = Math.floor(remainingAmount * 0.998);
+          } else {
+            // Intermediate wallet: use max transferable amount to account for fees + rent exemption
+            const maxTransferable = await this.connectionManager.getMaxTransferableAmount(currentWallet.publicKey);
+            transferAmount = Math.floor(maxTransferable);
+            
+            if (transferAmount <= 0) {
+              throw new Error(`Intermediate wallet ${currentWallet.publicKey.toString().slice(0, 8)}... has insufficient funds for transfer after accounting for fees and rent exemption`);
+            }
+          }
+        }
 
         let signature: string;
 
@@ -279,7 +299,7 @@ export class MongoSolanaMixer {
             this.config.feeFundingWallet,
           ]);
         } else {
-          // Initial wallet pays its own fees
+          // Wallet pays its own fees
           const transaction = await this.connectionManager.createTransferTransaction(
             currentWallet.publicKey,
             nextWallet.publicKey,
@@ -345,9 +365,13 @@ export class MongoSolanaMixer {
           this.config.feeFundingWallet,
         ]);
       } else {
-        // Intermediate wallet pays its own fees - ENSURE INTEGER
-        const estimatedFee = await this.connectionManager.estimateTransactionFee();
-        const finalAmount = Math.floor(remainingAmount - estimatedFee); // Ensure integer
+        // Intermediate wallet pays its own fees - ENSURE INTEGER AND ACCOUNT FOR RENT EXEMPTION
+        const maxTransferable = await this.connectionManager.getMaxTransferableAmount(currentWallet.publicKey);
+        const finalAmount = Math.floor(maxTransferable); // This already accounts for fees + rent exemption
+
+        if (finalAmount <= 0) {
+          throw new Error(`Insufficient funds for final transfer. Wallet has no transferable balance after accounting for fees and rent exemption.`);
+        }
 
         const finalTransaction = await this.connectionManager.createTransferTransaction(
           currentWallet.publicKey,
