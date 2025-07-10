@@ -823,8 +823,27 @@ bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
 });
 bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
-  const tokenAddress = ctx.match![1];
-  await ctx.conversation.enter("walletSellConversation", tokenAddress);
+  const tokenAddressPrefix = ctx.match![1];
+
+  // Find token by address prefix
+  const user = await getUser(ctx.chat!.id!.toString());
+  if (!user) {
+    await ctx.reply("❌ User not found");
+    return;
+  }
+
+  const { TokenModel } = await import("../backend/models");
+  const token = await TokenModel.findOne({ 
+    user: user.id,
+    tokenAddress: { $regex: `^${tokenAddressPrefix}` }
+  });
+  
+  if (!token) {
+    await ctx.reply("❌ Token not found");
+    return;
+  }
+
+  await ctx.conversation.enter("walletSellConversation", token.tokenAddress);
 });
 
 bot.callbackQuery(/^delete_token_(.+)$/, async (ctx) => {

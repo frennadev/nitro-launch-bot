@@ -124,11 +124,30 @@ export const sellDevWorker = new Worker<SellDevJob>(
       // Update loading state - Phase 2: Executing transaction
       await updateLoadingState(loadingKey, 2);
       
-      const result = await executeDevSell(
-        data.tokenAddress,
-        data.devWallet,
-        data.sellPercent,
-      );
+      // Check token type to determine which sell mechanism to use
+      const { TokenModel } = await import("../backend/models");
+      const token = await TokenModel.findOne({ tokenAddress: data.tokenAddress });
+      
+      let result;
+      if (token?.launchData?.destination === "letsbonk") {
+        // Bonk token - use Bonk sell mechanism
+        logger.info(`[jobs-sell-dev]: Using Bonk sell mechanism for token ${data.tokenAddress}`);
+        const { executeBonkSell } = await import("../service/bonk-transaction-handler");
+        result = await executeBonkSell(
+          data.sellPercent,
+          data.devWallet,
+          data.tokenAddress
+        );
+      } else {
+        // PumpFun token - use PumpFun sell mechanism
+        logger.info(`[jobs-sell-dev]: Using PumpFun sell mechanism for token ${data.tokenAddress}`);
+        const { executeDevSell } = await import("../blockchain/pumpfun/sell");
+        result = await executeDevSell(
+          data.tokenAddress,
+          data.devWallet,
+          data.sellPercent,
+        );
+      }
       
       // Update loading state - Phase 3: Confirming
       await updateLoadingState(loadingKey, 3);
@@ -223,12 +242,51 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       // Update loading state - Phase 2: Executing transactions
       await updateLoadingState(loadingKey, 2);
       
-      const results = await executeWalletSell(
-        data.tokenAddress,
-        data.buyerWallets,
-        data.devWallet,
-        data.sellPercent,
-      );
+      // Check token type to determine which sell mechanism to use
+      const { TokenModel } = await import("../backend/models");
+      const token = await TokenModel.findOne({ tokenAddress: data.tokenAddress });
+      
+      let results;
+      if (token?.launchData?.destination === "letsbonk") {
+        // Bonk token - use Bonk sell mechanism for each wallet
+        logger.info(`[jobs-sell-wallet]: Using Bonk sell mechanism for token ${data.tokenAddress}`);
+        const { executeBonkSell } = await import("../service/bonk-transaction-handler");
+        
+        // Execute Bonk sells for each wallet
+        const sellPromises = data.buyerWallets.map(async (walletPrivateKey: string) => {
+          try {
+            const result = await executeBonkSell(
+              data.sellPercent,
+              walletPrivateKey,
+              data.tokenAddress
+            );
+            return {
+              success: result.success,
+              signature: result.signature,
+              error: result.error,
+              expectedSolOut: 0, // Bonk doesn't provide expected SOL out
+            };
+          } catch (error: any) {
+            return {
+              success: false,
+              error: error.message,
+              expectedSolOut: 0,
+            };
+          }
+        });
+        
+        results = await Promise.all(sellPromises);
+      } else {
+        // PumpFun token - use PumpFun sell mechanism
+        logger.info(`[jobs-sell-wallet]: Using PumpFun sell mechanism for token ${data.tokenAddress}`);
+        const { executeWalletSell } = await import("../blockchain/pumpfun/sell");
+        results = await executeWalletSell(
+          data.tokenAddress,
+          data.buyerWallets,
+          data.devWallet,
+          data.sellPercent,
+        );
+      }
       
       // Update loading state - Phase 3: Confirming
       await updateLoadingState(loadingKey, 3);
