@@ -645,10 +645,10 @@ bot.command("ratelimit", async (ctx) => {
 • Memory Usage: \`${(stats.memoryUsage / 1024 / 1024).toFixed(2)} MB\`
 
 ⏰ *Rate Limit Windows:*
-• General Commands: 10 requests per minute
-• Token Operations: 3 requests per 5 minutes
-• Wallet Operations: 5 requests per 2 minutes
-• Trading Operations: 3 requests per 30 seconds
+• General Commands: 20 requests per minute
+• Token Operations: 10 requests per minute
+• Wallet Operations: 1 request per 5 seconds
+• Trading Operations: 5 requests per 10 seconds
 • Admin Operations: 2 requests per 10 seconds
 • Message Handling: 5 requests per 10 seconds
 • Callback Queries: 10 requests per 5 seconds

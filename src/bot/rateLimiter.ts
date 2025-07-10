@@ -15,29 +15,29 @@ const DEFAULT_RATE_LIMITS: Record<string, RateLimitConfig> = {
   // General commands (start, menu, etc.)
   general: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 10,
+    maxRequests: 20,
     message: "⚠️ Too many requests. Please wait a moment before trying again.",
   },
   
   // Token creation and launching (resource intensive)
   token_operations: {
-    windowMs: 5 * 60 * 1000, // 5 minutes
-    maxRequests: 3,
-    message: "⚠️ Token operations are rate limited. Please wait 5 minutes between launches.",
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 10,
+    message: "⚠️ Token operations are rate limited. Please wait 1 minute between launches.",
   },
   
   // Wallet operations (sensitive operations)
   wallet_operations: {
-    windowMs: 2 * 60 * 1000, // 2 minutes
-    maxRequests: 5,
-    message: "⚠️ Wallet operations are rate limited. Please wait 2 minutes between operations.",
+    windowMs: 5 * 1000, // 5 seconds
+    maxRequests: 1,
+    message: "⚠️ Wallet operations are rate limited. Please wait 5 seconds between operations.",
   },
   
   // Trading operations (high frequency potential)
   trading_operations: {
-    windowMs: 30 * 1000, // 30 seconds
-    maxRequests: 3,
-    message: "⚠️ Trading operations are rate limited. Please wait 30 seconds between trades.",
+    windowMs: 10 * 1000, // 10 seconds
+    maxRequests: 5,
+    message: "⚠️ Trading operations are rate limited. Please wait 10 seconds between trades.",
   },
   
   // Admin commands (very sensitive)
