@@ -1,7 +1,12 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { createToken, getUser, getDefaultDevWallet, getOrCreateFundingWallet } from "../../backend/functions";
+import {
+  createToken,
+  getUser,
+  getDefaultDevWallet,
+  getOrCreateFundingWallet,
+} from "../../backend/functions";
 import { createBonkToken } from "../../blockchain/letsbonk/integrated-token-creator";
 import axios from "axios";
 import { CallBackQueries } from "../types";
@@ -9,9 +14,15 @@ import { env } from "../../config";
 import { sendLoadingMessage } from "../loading";
 import { sendErrorWithAutoDelete } from "../utils";
 
-const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", CallBackQueries.BACK);
+const cancelKeyboard = new InlineKeyboard().text(
+  "❌ Cancel",
+  CallBackQueries.BACK
+);
 
-const createTokenConversation = async (conversation: Conversation, ctx: Context) => {
+const createTokenConversation = async (
+  conversation: Conversation,
+  ctx: Context
+) => {
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
@@ -45,12 +56,16 @@ const createTokenConversation = async (conversation: Conversation, ctx: Context)
     await modeUpd.answerCallbackQuery();
     if (data === CallBackQueries.PUMPFUN) {
       mode = CallBackQueries.PUMPFUN;
-      await modeUpd.reply("✅ Launch mode set to *PumpFun*.", { parse_mode: "Markdown" });
+      await modeUpd.reply("✅ Launch mode set to *PumpFun*.", {
+        parse_mode: "Markdown",
+      });
       break;
     }
     if (data === CallBackQueries.LETSBONK) {
       mode = CallBackQueries.LETSBONK;
-      await modeUpd.reply("✅ Launch mode set to *LetsBonk*.", { parse_mode: "Markdown" });
+      await modeUpd.reply("✅ Launch mode set to *LetsBonk*.", {
+        parse_mode: "Markdown",
+      });
       break;
     }
   }
@@ -81,12 +96,28 @@ const createTokenConversation = async (conversation: Conversation, ctx: Context)
       return conversation.halt();
     }
     if (upd.message?.text) {
-      details = upd.message.text.split(",").map((s) => s.trim());
+      // details = upd.message.text.split(",").map((s) => s.trim());
+      const text = upd.message.text;
+      const firstCommaIndex = text.indexOf(",");
+      const secondCommaIndex = text.indexOf(",", firstCommaIndex + 1);
+      if (firstCommaIndex !== -1 && secondCommaIndex !== -1) {
+        const name = text.substring(0, firstCommaIndex).trim();
+        const symbol = text
+          .substring(firstCommaIndex + 1, secondCommaIndex)
+          .trim();
+        const description = text.substring(secondCommaIndex + 1).trim();
+        details = [name, symbol, description];
+      } else {
+        details = [];
+      }
       if (details.length === 3) break;
-      await ctx.reply("Invalid format. Please send again as <b>name,symbol,description</b>.", {
-        parse_mode: "HTML",
-        reply_markup: cancelKeyboard,
-      });
+      await ctx.reply(
+        "Invalid format. Please send again as <b>name,symbol,description</b>.",
+        {
+          parse_mode: "HTML",
+          reply_markup: cancelKeyboard,
+        }
+      );
     }
   }
   const [name, symbol, description] = details;
@@ -117,7 +148,9 @@ const createTokenConversation = async (conversation: Conversation, ctx: Context)
   }
 
   const imageUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-  const { data: fileData } = await axios.get<ArrayBuffer>(imageUrl, { responseType: "arraybuffer" });
+  const { data: fileData } = await axios.get<ArrayBuffer>(imageUrl, {
+    responseType: "arraybuffer",
+  });
 
   // === 5) Create token based on mode and show result ===
   const { update } = await sendLoadingMessage(
