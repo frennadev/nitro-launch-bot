@@ -297,9 +297,9 @@ export async function createBonkToken(
         
         // Upload directly to IPFS without saving to local file
         const imageHash = await uploadFileToPinata(response.data, fileName);
-      imageUri = `${PINATA_GATEWAY}/ipfs/${imageHash}`;
-
-      console.log(`Logo uploaded successfully: ${imageUri}`);
+        imageUri = `${PINATA_GATEWAY}/ipfs/${imageHash}`;
+        
+        console.log(`Logo uploaded successfully: ${imageUri}`);
       } else {
         // If it's already a local path (shouldn't happen in this context)
         throw new Error("Local image paths are not supported in this implementation");
