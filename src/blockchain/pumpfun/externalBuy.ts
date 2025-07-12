@@ -1,33 +1,27 @@
 import {
-  PublicKey,
   Keypair,
-  VersionedTransaction,
-  TransactionMessage,
+  PublicKey,
   LAMPORTS_PER_SOL,
+  VersionedTransaction,
 } from "@solana/web3.js";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { connection } from "../common/connection";
-import { secretKeyToKeypair } from "../common/utils";
-import { decryptPrivateKey } from "../../backend/utils";
 import { logger } from "../common/logger";
-import { sellInstruction } from "./instructions";
-import { getBondingCurve, getBondingCurveData, applySlippage } from "./utils";
-import { detectTokenPlatformWithCache } from "../../service/token-detection-service";
-import { TokenInfoService } from "../../service/token-info-service";
-import bs58 from "bs58";
-// import { ComputeBudgetProgram } from "@solana/web3.js";
-// import { sendAndConfirmTransactionWithRetry } from "../common/utils";
 import {
-  // getCachedPlatform,
+  detectTokenPlatformWithCache,
   markTokenAsPumpFun,
   markTokenAsPumpswap,
   isTokenGraduated,
 } from "../../service/token-detection-service";
+import { executeExternalPumpFunBuy } from "./buy";
+import PumpswapService from "../../service/pumpswap-service";
 import JupiterPumpswapService from "../../service/jupiter-pumpswap-service";
+import { TokenInfoService } from "../../service/token-info-service";
+import bs58 from "bs58";
+import { connection } from "../../service/config";
 import { collectTransactionFee } from "../../backend/functions-main";
 import { Context } from "grammy";
-import { sendMessage } from "../../backend/sender";
+import { executeBonkBuy } from "./bonkHandler";
 import axios from "axios";
+// import { executeBonkBuy } from "../../bot/transactionHandlers/bonkHandler";
 
 let solPriceCache = { price: 0, timestamp: 0 };
 const SOL_PRICE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -103,7 +97,7 @@ async function collectFeeAsync(
 async function getTokenInfoAsync(
   tokenAddress: string,
   logId: string
-): Promise<SimpleExternalSellResult["tokenInfo"]> {
+): Promise<ExternalBuyResult["tokenInfo"]> {
   try {
     const tokenInfoService = TokenInfoService.getInstance();
     const tokenInfo = await tokenInfoService.getTokenInfo(tokenAddress);
@@ -123,295 +117,15 @@ async function getTokenInfoAsync(
   return undefined;
 }
 
-interface ExternalSellResult {
+export interface ExternalBuyResult {
   success: boolean;
-  successfulSells: number;
-  failedSells: number;
-  totalSolReceived?: number;
+  signature: string;
   error?: string;
-}
-
-// Quote sell function - calculates SOL output for token input
-const quoteSell = (
-  tokenAmountIn: bigint,
-  virtualTokenReserves: bigint,
-  virtualSolReserves: bigint,
-  realTokenReserves: bigint
-) => {
-  if (tokenAmountIn > realTokenReserves) {
-    tokenAmountIn = realTokenReserves;
-  }
-
-  const virtualTokenAmount = virtualSolReserves * virtualTokenReserves;
-  const newVirtualTokenReserves = virtualTokenReserves + tokenAmountIn;
-  const newVirtualSolReserves =
-    virtualTokenAmount / newVirtualTokenReserves + BigInt(1);
-  const solOut = virtualSolReserves - newVirtualSolReserves;
-
-  return {
-    solOut,
-    newVirtualTokenReserves,
-    newVirtualSolReserves,
-    newRealTokenReserves: realTokenReserves - tokenAmountIn,
-  };
-};
-
-export const executeExternalTokenSell = async (
-  tokenAddress: string,
-  buyerWallets: string[],
-  sellPercent: number
-): Promise<ExternalSellResult> => {
-  const logIdentifier = `external-sell-${tokenAddress.substring(0, 8)}`;
-  logger.info(
-    `[${logIdentifier}]: Starting external token sell with ${buyerWallets.length} wallets (${sellPercent}% each)`
-  );
-
-  const start = performance.now();
-
-  try {
-    const mintPublicKey = new PublicKey(tokenAddress);
-    const buyerKeypairs = buyerWallets.map((w) =>
-      secretKeyToKeypair(decryptPrivateKey(w))
-    );
-
-    // Get bonding curve data for this specific token
-    const { bondingCurve } = getBondingCurve(mintPublicKey);
-    const bondingCurveData = await getBondingCurveData(bondingCurve);
-
-    if (!bondingCurveData) {
-      return {
-        success: false,
-        successfulSells: 0,
-        failedSells: 0,
-        error:
-          "Token bonding curve not found - token may not be a PumpFun token",
-      };
-    }
-
-    // Check wallet balances and prepare sell setups
-    const walletBalances = [];
-    for (const wallet of buyerKeypairs) {
-      try {
-        const ata = getAssociatedTokenAddressSync(
-          mintPublicKey,
-          wallet.publicKey
-        );
-        const balance = (await connection.getTokenAccountBalance(ata)).value
-          .amount;
-        if (BigInt(balance) > 0) {
-          walletBalances.push({
-            wallet,
-            ata,
-            balance: BigInt(balance),
-          });
-        }
-      } catch (error) {
-        logger.warn(
-          `[${logIdentifier}]: Error checking balance for wallet ${wallet.publicKey.toBase58()}:`,
-          error
-        );
-      }
-    }
-
-    if (walletBalances.length === 0) {
-      return {
-        success: false,
-        successfulSells: 0,
-        failedSells: 0,
-        error: "No tokens found in any buyer wallets",
-      };
-    }
-
-    const totalBalance = walletBalances.reduce(
-      (sum, { balance }) => sum + balance,
-      BigInt(0)
-    );
-
-    let tokensToSell =
-      sellPercent === 100
-        ? totalBalance
-        : (BigInt(sellPercent) * BigInt(100) * totalBalance) / BigInt(10_000);
-
-    const sellSetups: {
-      wallet: Keypair;
-      ata: PublicKey;
-      amount: bigint;
-    }[] = [];
-
-    // Distribute tokens to sell across wallets
-    for (const walletInfo of walletBalances) {
-      if (tokensToSell <= BigInt(0)) {
-        break;
-      }
-      if (tokensToSell <= walletInfo.balance) {
-        sellSetups.push({
-          wallet: walletInfo.wallet,
-          ata: walletInfo.ata,
-          amount: tokensToSell,
-        });
-        break;
-      }
-      tokensToSell -= walletInfo.balance;
-      sellSetups.push({
-        wallet: walletInfo.wallet,
-        ata: walletInfo.ata,
-        amount: walletInfo.balance,
-      });
-    }
-
-    logger.info(
-      `[${logIdentifier}]: Prepared ${sellSetups.length} sell transactions`
-    );
-
-    // Get latest blockhash
-    const blockHash = await connection.getLatestBlockhash("processed");
-
-    // Execute sells with retry logic
-    const sellPromises = sellSetups.map(async (setup, index) => {
-      const maxRetries = 3;
-      let baseSlippage = 50; // Start with 50% slippage
-      const maxSlippage = 90; // Maximum slippage cap
-
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const slippage = Math.min(
-            baseSlippage + (attempt - 1) * 20,
-            maxSlippage
-          ); // Increase slippage by 20% each retry, capped at 90%
-
-          logger.info(
-            `[${logIdentifier}]: Wallet ${index + 1} - Attempt ${attempt} with ${slippage}% slippage`
-          );
-
-          // Quote the sell using current bonding curve data
-          const { solOut } = quoteSell(
-            setup.amount,
-            bondingCurveData.virtualTokenReserves,
-            bondingCurveData.virtualSolReserves,
-            bondingCurveData.realTokenReserves
-          );
-
-          const solOutWithSlippage = applySlippage(solOut, slippage);
-
-          // Create sell instruction
-          const sellIx = sellInstruction(
-            mintPublicKey,
-            new PublicKey(bondingCurveData.creator),
-            setup.wallet.publicKey,
-            setup.amount,
-            solOutWithSlippage
-          );
-
-          // Create and send transaction
-          const sellTx = new VersionedTransaction(
-            new TransactionMessage({
-              instructions: [sellIx],
-              payerKey: setup.wallet.publicKey,
-              recentBlockhash: blockHash.blockhash,
-            }).compileToV0Message()
-          );
-
-          sellTx.sign([setup.wallet]);
-
-          const signature = await connection.sendTransaction(sellTx, {
-            skipPreflight: false,
-            preflightCommitment: "processed",
-          });
-
-          // Wait for confirmation
-          const confirmation = await connection.confirmTransaction(
-            {
-              signature,
-              blockhash: blockHash.blockhash,
-              lastValidBlockHeight: blockHash.lastValidBlockHeight,
-            },
-            "confirmed"
-          );
-
-          if (confirmation.value.err) {
-            throw new Error(`Transaction failed: ${confirmation.value.err}`);
-          }
-
-          const solReceived = Number(solOut) / LAMPORTS_PER_SOL;
-          logger.info(
-            `[${logIdentifier}]: Wallet ${index + 1} sell successful - ${solReceived.toFixed(6)} SOL received`
-          );
-
-          return {
-            success: true,
-            solReceived,
-            signature,
-            wallet: setup.wallet.publicKey.toBase58(),
-          };
-        } catch (error: any) {
-          logger.warn(
-            `[${logIdentifier}]: Wallet ${index + 1} - Attempt ${attempt} failed:`,
-            error.message
-          );
-
-          if (attempt === maxRetries) {
-            return {
-              success: false,
-              error: error.message,
-              wallet: setup.wallet.publicKey.toBase58(),
-            };
-          }
-
-          // Wait before retry
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-        }
-      }
-
-      return {
-        success: false,
-        error: "Max retries exceeded",
-        wallet: setup.wallet.publicKey.toBase58(),
-      };
-    });
-
-    // Wait for all sells to complete
-    const results = await Promise.all(sellPromises);
-
-    const successfulSells = results.filter((r) => r.success).length;
-    const failedSells = results.filter((r) => !r.success).length;
-    const totalSolReceived = results
-      .filter((r) => r.success)
-      .reduce((sum, r) => sum + (r.solReceived || 0), 0);
-
-    const end = performance.now();
-    logger.info(
-      `[${logIdentifier}]: External sell completed in ${(end - start).toFixed(2)}ms`,
-      {
-        successfulSells,
-        failedSells,
-        totalSolReceived: totalSolReceived.toFixed(6),
-      }
-    );
-
-    return {
-      success: successfulSells > 0,
-      successfulSells,
-      failedSells,
-      totalSolReceived,
-    };
-  } catch (error: any) {
-    logger.error(`[${logIdentifier}]: External sell failed:`, error);
-    return {
-      success: false,
-      successfulSells: 0,
-      failedSells: buyerWallets.length,
-      error: error.message,
-    };
-  }
-};
-
-export interface SimpleExternalSellResult {
-  success: boolean;
-  signature?: string;
-  error?: string;
-  platform?: "jupiter" | "pumpswap" | "pumpfun" | "unknown";
+  platform?: "jupiter" | "pumpswap" | "pumpfun" | "unknown" | "bonkFun";
   solReceived?: string;
-  tokensSold?: string;
+  tokensReceived?: string;
+  actualSolSpent?: string; // Actual SOL spent from transaction
+  priceImpact?: number; // Price impact from Jupiter
   tokenInfo?: {
     name?: string;
     symbol?: string;
@@ -421,229 +135,30 @@ export interface SimpleExternalSellResult {
   };
 }
 
-/**
- * Execute native PumpFun sell with keypair directly (no encryption/decryption)
- * Used for external sells where we already have the keypair
- */
-async function executeNativePumpFunSell(
-  tokenAddress: string,
-  sellerKeypair: Keypair,
-  tokenAmount: number,
-  ctx: Context
-): Promise<SimpleExternalSellResult> {
-  const logIdentifier = `native-pumpfun-sell-${tokenAddress.substring(0, 8)}`;
-  logger.info(
-    `[${logIdentifier}]: Starting native PumpFun sell for ${tokenAmount} tokens`
-  );
-
-  const start = performance.now();
-
-  try {
-    const mintPublicKey = new PublicKey(tokenAddress);
-
-    // Get bonding curve data for this specific token
-    const { bondingCurve } = getBondingCurve(mintPublicKey);
-    const bondingCurveData = await getBondingCurveData(bondingCurve);
-
-    if (!bondingCurveData) {
-      return {
-        success: false,
-        error:
-          "Token bonding curve not found - token may not be a PumpFun token",
-        platform: "pumpfun",
-      };
-    }
-
-    // Check token balance
-    const ata = getAssociatedTokenAddressSync(
-      mintPublicKey,
-      sellerKeypair.publicKey
-    );
-    let balance: bigint;
-
-    try {
-      const balanceInfo = await connection.getTokenAccountBalance(ata);
-      balance = BigInt(balanceInfo.value.amount);
-    } catch (error) {
-      return {
-        success: false,
-        error: "No token account found or no tokens to sell",
-        platform: "pumpfun",
-      };
-    }
-
-    if (balance <= BigInt(0)) {
-      return {
-        success: false,
-        error: "No tokens found in wallet",
-        platform: "pumpfun",
-      };
-    }
-
-    // Use the specified token amount or full balance if amount exceeds balance
-    const tokensToSell =
-      BigInt(tokenAmount) > balance ? balance : BigInt(tokenAmount);
-
-    logger.info(
-      `[${logIdentifier}]: Selling ${tokensToSell} tokens (balance: ${balance})`
-    );
-
-    // Get latest blockhash
-    const blockHash = await connection.getLatestBlockhash("processed");
-
-    // Execute sell with retry logic
-    const maxRetries = 3;
-    let baseSlippage = 50; // Start with 50% slippage
-    const maxSlippage = 90; // Maximum slippage cap
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const slippage = Math.min(
-          baseSlippage + (attempt - 1) * 20,
-          maxSlippage
-        );
-
-        logger.info(
-          `[${logIdentifier}]: Attempt ${attempt} with ${slippage}% slippage`
-        );
-
-        // Quote the sell using current bonding curve data
-        const { solOut } = quoteSell(
-          tokensToSell,
-          bondingCurveData.virtualTokenReserves,
-          bondingCurveData.virtualSolReserves,
-          bondingCurveData.realTokenReserves
-        );
-
-        const solOutWithSlippage = applySlippage(solOut, slippage);
-
-        // Create sell instruction
-        const sellIx = sellInstruction(
-          mintPublicKey,
-          new PublicKey(bondingCurveData.creator),
-          sellerKeypair.publicKey,
-          tokensToSell,
-          solOutWithSlippage
-        );
-
-        // Create and send transaction
-        const sellTx = new VersionedTransaction(
-          new TransactionMessage({
-            instructions: [sellIx],
-            payerKey: sellerKeypair.publicKey,
-            recentBlockhash: blockHash.blockhash,
-          }).compileToV0Message()
-        );
-
-        sellTx.sign([sellerKeypair]);
-
-        // Only send message if ctx and ctx.chat are available
-        if (ctx && ctx.chat) {
-          try {
-            await sendMessage(
-              ctx,
-              `🚀 Sell transaction sent! Processing ${tokensToSell} tokens with ${slippage}% slippage...`,
-              {
-                parse_mode: "HTML",
-              }
-            );
-          } catch (msgError) {
-            logger.warn(
-              `[${logIdentifier}] Failed to send status message: ${msgError}`
-            );
-          }
-        }
-
-        const signature = await connection.sendTransaction(sellTx, {
-          skipPreflight: false,
-          preflightCommitment: "processed",
-        });
-
-        // Wait for confirmation
-        const confirmation = await connection.confirmTransaction(
-          {
-            signature,
-            blockhash: blockHash.blockhash,
-            lastValidBlockHeight: blockHash.lastValidBlockHeight,
-          },
-          "confirmed"
-        );
-
-        if (confirmation.value.err) {
-          throw new Error(`Transaction failed: ${confirmation.value.err}`);
-        }
-
-        const solReceived = Number(solOut) / LAMPORTS_PER_SOL;
-        const end = performance.now();
-
-        logger.info(
-          `[${logIdentifier}]: Native PumpFun sell successful in ${(end - start).toFixed(2)}ms - ${solReceived.toFixed(6)} SOL received`
-        );
-
-        // Collect transaction fee after successful sell (non-blocking)
-        await collectFeeAsync(
-          bs58.encode(sellerKeypair.secretKey),
-          solReceived,
-          "sell",
-          logIdentifier
-        );
-
-        return {
-          success: true,
-          signature,
-          platform: "pumpfun",
-          solReceived: solReceived.toFixed(6),
-          tokensSold: tokenAmount.toString(), // Include the token amount sold
-        };
-      } catch (error: any) {
-        logger.warn(
-          `[${logIdentifier}]: Attempt ${attempt} failed:`,
-          error.message
-        );
-
-        if (attempt === maxRetries) {
-          return {
-            success: false,
-            error: error.message,
-            platform: "pumpfun",
-          };
-        }
-
-        // Wait before retry
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-      }
-    }
-
-    return {
-      success: false,
-      error: "Max retries exceeded",
-      platform: "pumpfun",
-    };
-  } catch (error: any) {
-    logger.error(`[${logIdentifier}]: Native PumpFun sell failed:`, error);
-    return {
-      success: false,
-      error: error.message,
-      platform: "pumpfun",
-    };
-  }
+interface PumpswapBuyResult {
+  success: boolean;
+  signature: string;
+  error?: string;
+  solReceived?: string;
 }
 
 /**
- * Execute external token sell with proper platform detection
+ * Execute external token buy with proper platform detection
  * - PumpFun tokens: Use native PumpFun bonding curve
  * - Graduated tokens: Use Jupiter for optimal routing
  * - PumpSwap tokens: Use PumpSwap directly
  */
-export async function executeExternalSell(
+export async function executeExternalBuy(
   tokenAddress: string,
-  sellerKeypair: Keypair,
-  tokenAmount: number,
+  buyerKeypair: Keypair,
+  solAmount: number,
+  slippage: number = 3, // Default slippage percentage
+  priorityFee: number = 0.001, // Default priority fee in SOL
   ctx: Context
-): Promise<SimpleExternalSellResult> {
-  const logId = `external-sell-${tokenAddress.substring(0, 8)}`;
+): Promise<ExternalBuyResult> {
+  const logId = `external-buy-${tokenAddress.substring(0, 8)}`;
   logger.info(
-    `[${logId}] Starting external sell for ${tokenAmount} tokens with platform detection`
+    `[${logId}] Starting external buy for ${solAmount} SOL with platform detection`
   );
 
   try {
@@ -656,50 +171,49 @@ export async function executeExternalSell(
 
     // Handle PumpFun tokens with native bonding curve
     if (platform === "pumpfun") {
-      logger.info(`[${logId}] Using native PumpFun bonding curve for sell`);
+      logger.info(`[${logId}] Using native PumpFun bonding curve for buy`);
 
       try {
-        // Use the dedicated native PumpFun sell function with keypair directly
-        const result = await executeNativePumpFunSell(
+        const result = await executeExternalPumpFunBuy(
           tokenAddress,
-          sellerKeypair,
-          tokenAmount,
+          bs58.encode(buyerKeypair.secretKey),
+          solAmount,
+          slippage,
           ctx
         );
 
-        if (result.success) {
-          // Only send message if ctx and ctx.chat are available
-          if (ctx && ctx.chat) {
-            try {
-              await sendMessage(
-                ctx,
-                "✅ Sell transaction confirmed! Processing details...",
-                {
-                  parse_mode: "HTML",
-                }
-              );
-            } catch (msgError) {
-              logger.warn(
-                `[${logId}] Failed to send status message: ${msgError}`
-              );
-            }
-          }
+        if (result.success && result.signature) {
           logger.info(
-            `[${logId}] Native PumpFun sell successful: ${result.signature}`
+            `[${logId}] Native PumpFun buy successful: ${result.signature}`
           );
           markTokenAsPumpFun(tokenAddress);
 
-          // Note: Fee collection already handled in executeNativePumpFunSell
+          // Collect transaction fee after successful buy (non-blocking)
+          await collectFeeAsync(
+            bs58.encode(buyerKeypair.secretKey),
+            solAmount,
+            "buy",
+            logId
+          );
+
           return {
-            ...result,
+            success: true,
+            signature: result.signature,
+            platform: "pumpfun",
+            solReceived: solAmount.toString(),
+            tokensReceived: (result as any).tokensReceived || "unknown", // Use actual token amount from PumpFun
+            actualSolSpent: solAmount.toString(),
+            priceImpact: 0,
             tokenInfo,
           };
         } else {
-          logger.warn(`[${logId}] Native PumpFun sell failed: ${result.error}`);
+          logger.warn(
+            `[${logId}] Native PumpFun buy failed: ${result.signature ? "Transaction failed" : "No signature returned"}`
+          );
         }
       } catch (pumpfunError: any) {
         logger.warn(
-          `[${logId}] Native PumpFun sell threw error: ${pumpfunError.message}`
+          `[${logId}] Native PumpFun buy threw error: ${pumpfunError.message}`
         );
       }
     }
@@ -709,171 +223,182 @@ export async function executeExternalSell(
       logger.info(
         `[${logId}] Token is graduated/external, using Jupiter for optimal routing`
       );
+      // Final fallback: Try PumpSwap directly
+      logger.info(`[${logId}] Trying PumpSwap as final fallback`);
+      try {
+        const sendVersionTx = async (tx: VersionedTransaction) => {
+          const rawTx = tx.serialize();
+          const signature = await connection.sendRawTransaction(rawTx, {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          });
+          return signature;
+        };
+
+        const pumpSwap = new PumpswapService();
+        const buyTxn = await pumpSwap.buyTx({
+          mint: new PublicKey(tokenAddress),
+          amount: BigInt(Math.floor(solAmount * LAMPORTS_PER_SOL)),
+          privateKey: bs58.encode(buyerKeypair.secretKey),
+        });
+
+        const signature = await sendVersionTx(buyTxn!);
+
+        const confirmation = await connection.confirmTransaction(
+          signature,
+          "confirmed"
+        );
+
+        if (!confirmation.value.err) {
+          logger.info(
+            `[${logId}] PumpSwap fallback buy successful: ${signature}`
+          );
+          markTokenAsPumpswap(tokenAddress);
+
+          // Collect transaction fee after successful buy (non-blocking)
+          await collectFeeAsync(
+            bs58.encode(buyerKeypair.secretKey),
+            solAmount,
+            "buy",
+            logId
+          );
+
+          return {
+            success: true,
+            signature,
+            platform: "pumpswap",
+            solReceived: solAmount.toString(),
+            tokensReceived: "unknown", // PumpSwap doesn't return exact token amount
+            actualSolSpent: solAmount.toString(),
+            priceImpact: 0,
+            tokenInfo,
+          };
+        }
+      } catch (pumpswapError: any) {
+        logger.error(
+          `[${logId}] PumpSwap fallback failed: ${pumpswapError.message}`
+        );
+      }
+
+      try {
+        const execBonkBuy = await executeBonkBuy(
+          bs58.encode(buyerKeypair.secretKey),
+          tokenAddress,
+          solAmount
+        );
+
+        if (execBonkBuy.success && execBonkBuy.signature) {
+          logger.info(
+            `[${logId}] PumpSwap fallback buy successful: ${execBonkBuy.signature}`
+          );
+          markTokenAsPumpswap(tokenAddress);
+
+          // Collect transaction fee after successful buy (non-blocking)
+          await collectFeeAsync(
+            bs58.encode(buyerKeypair.secretKey),
+            solAmount,
+            "buy",
+            logId
+          );
+
+          return {
+            success: true,
+            signature: execBonkBuy.signature,
+            platform: "bonkFun",
+            solReceived: solAmount.toString(),
+            tokensReceived: "unknown", // PumpSwap doesn't return exact token amount
+            actualSolSpent: solAmount.toString(),
+            priceImpact: 0,
+            tokenInfo,
+          };
+        }
+      } catch (bonkError) {
+        logger.error(
+          `[${logId}] Bonk fallback failed: ${(bonkError as Error).message}`
+        );
+      }
 
       try {
         const jupiterService = new JupiterPumpswapService();
-        const result = await jupiterService.executeSell(
+        const result = await jupiterService.executeBuy(
           tokenAddress,
-          sellerKeypair,
-          tokenAmount,
+          buyerKeypair,
+          solAmount,
+          slippage,
           ctx
         );
 
         if (result.success) {
-          // Only send message if ctx and ctx.chat are available
-          if (ctx && ctx.chat) {
-            try {
-              await sendMessage(
-                ctx,
-                "✅ Sell transaction confirmed! Processing details...",
-                {
-                  parse_mode: "HTML",
-                }
-              );
-            } catch (msgError) {
-              logger.warn(
-                `[${logId}] Failed to send status message: ${msgError}`
-              );
-            }
-          }
           logger.info(
-            `[${logId}] Jupiter sell successful via ${result.platform}: ${result.signature}`
+            `[${logId}] Jupiter buy successful via ${result.platform}: ${result.signature}`
           );
 
-          // Collect transaction fee after successful sell (non-blocking)
-          const solAmount = result.solReceived
-            ? parseFloat(result.solReceived)
-            : 0.01; // Fallback estimate
+          // Collect transaction fee after successful buy (non-blocking)
           await collectFeeAsync(
-            bs58.encode(sellerKeypair.secretKey),
+            bs58.encode(buyerKeypair.secretKey),
             solAmount,
-            "sell",
+            "buy",
             logId
           );
-
-          // Calculate SOL received based on token amount and prices
-          let calculatedSolReceived = solAmount;
-          if (tokenInfo?.price && tokenInfo.price > 0) {
-            const tokenValueInUSD =
-              (tokenAmount / Math.pow(10, tokenInfo.decimals || 6)) *
-              tokenInfo.price;
-            // Assuming SOL price is around $100-200, we need to get actual SOL price
-            // For now, using a rough estimation - ideally get SOL price from price API
-            const estimatedSolPrice = (await getSolPrice()) || 160; // This should be fetched from a price API
-            calculatedSolReceived = tokenValueInUSD / estimatedSolPrice;
-          }
 
           return {
             success: true,
             signature: result.signature,
             platform: result.platform,
-            solReceived: calculatedSolReceived,
-            tokensSold: tokenAmount.toString(), // Include the token amount sold
+            solReceived: solAmount.toString(),
+            tokensReceived: result.tokensReceived,
+            actualSolSpent: solAmount.toString(),
+            priceImpact: result.priceImpact,
             tokenInfo,
           };
         } else {
-          logger.warn(`[${logId}] Jupiter sell failed: ${result.error}`);
+          logger.warn(`[${logId}] Jupiter buy failed: ${result.error}`);
         }
       } catch (jupiterError: any) {
         logger.warn(
-          `[${logId}] Jupiter sell threw error: ${jupiterError.message}`
+          `[${logId}] Jupiter buy threw error: ${jupiterError.message}`
         );
       }
-    }
-
-    // Final fallback: Try PumpSwap directly
-    logger.info(`[${logId}] Trying PumpSwap as final fallback`);
-    try {
-      const pumpswapResult = await executePumpswapSell(
-        tokenAddress,
-        sellerKeypair,
-        tokenAmount
-      );
-
-      if (pumpswapResult.success) {
-        logger.info(
-          `[${logId}] PumpSwap fallback sell successful: ${pumpswapResult.signature}`
-        );
-        markTokenAsPumpswap(tokenAddress);
-
-        // Collect transaction fee after successful sell (non-blocking)
-        const solAmount = pumpswapResult.solReceived
-          ? parseFloat(pumpswapResult.solReceived)
-          : 0.01; // Fallback estimate
-        await collectFeeAsync(
-          bs58.encode(sellerKeypair.secretKey),
-          solAmount,
-          "sell",
-          logId
-        );
-
-        return {
-          ...pumpswapResult,
-          tokensSold: tokenAmount.toString(), // Include the token amount sold
-          tokenInfo,
-        };
-      } else {
-        logger.error(
-          `[${logId}] PumpSwap fallback failed: ${pumpswapResult.error}`
-        );
-      }
-    } catch (pumpswapError: any) {
-      logger.error(
-        `[${logId}] PumpSwap fallback failed: ${pumpswapError.message}`
-      );
     }
 
     return {
       success: false,
       signature: "",
       platform: "unknown",
-      error: "All sell methods failed",
+      error: "All buy methods failed",
     };
   } catch (error: any) {
-    logger.error(`[${logId}] External sell failed with error:`, error);
+    logger.error(`[${logId}] External buy failed with error:`, error);
     return {
       success: false,
       signature: "",
       platform: "unknown",
-      error: `External sell error: ${error.message}`,
+      error: `External buy error: ${error.message}`,
     };
   }
 }
 
-// Legacy functions kept for backward compatibility - now use Jupiter internally
-async function executePumpswapSell(
+// Legacy function kept for backward compatibility - now uses proper platform detection
+async function executePumpswapBuy(
   tokenAddress: string,
-  sellerKeypair: Keypair,
-  tokenAmount: number
-): Promise<SimpleExternalSellResult> {
-  const logId = `legacy-pumpswap-sell-${tokenAddress.substring(0, 8)}`;
+  buyerKeypair: Keypair,
+  solAmount: number
+): Promise<PumpswapBuyResult> {
+  const logId = `legacy-pumpswap-buy-${tokenAddress.substring(0, 8)}`;
   logger.info(
-    `[${logId}] Legacy PumpSwap sell called - redirecting to Jupiter service`
+    `[${logId}] Legacy PumpSwap buy called - using new platform detection`
   );
 
-  try {
-    const jupiterService = new JupiterPumpswapService();
-    const result = await jupiterService.executeSell(
-      tokenAddress,
-      sellerKeypair,
-      tokenAmount
-    );
+  const result = await executeExternalBuy(
+    tokenAddress,
+    buyerKeypair,
+    solAmount
+  );
 
-    return {
-      success: result.success,
-      signature: result.signature,
-      error: result.error,
-      platform: result.platform,
-      solReceived:
-        result.solReceived || (result.success ? "Success" : undefined),
-    };
-  } catch (error: any) {
-    logger.error(`[${logId}] Legacy PumpSwap sell error:`, error);
-    return {
-      success: false,
-      signature: "",
-      error: error.message,
-      platform: "unknown",
-    };
-  }
+  return {
+    success: result.success,
+    signature: result.signature,
+    error: result.error,
+    solReceived: result.success ? solAmount.toString() : undefined,
+  };
 }
