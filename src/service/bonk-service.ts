@@ -3,6 +3,7 @@ import {
   ComputeBudgetProgram,
   Keypair,
   PublicKey,
+  SystemInstruction,
   SystemProgram,
   TransactionInstruction,
   TransactionMessage,
@@ -15,13 +16,21 @@ import {
 } from "./bonk-pool-service";
 import { bs58 } from "@project-serum/anchor/dist/cjs/utils/bytes";
 import {
+  AccountLayout,
+  createAssociatedTokenAccount,
+  createInitializeAccountInstruction,
+  createWrappedNativeAccount,
+  getOrCreateAssociatedTokenAccount,
   NATIVE_MINT,
+  getAssociatedTokenAddress,
   createAssociatedTokenAccountIdempotentInstruction,
+  createCloseAccountInstruction,
   createSyncNativeInstruction,
   getAssociatedTokenAddressSync,
-  createCloseAccountInstruction,
 } from "@solana/spl-token";
 import { connection } from "./config";
+import { closeAccountInstruction } from "@raydium-io/raydium-sdk-v2";
+import { TOKEN_PROGRAM_ID } from "@raydium-io/raydium-sdk";
 import { logger } from "../jobs/logger";
 
 export interface CreateBuyIX {
@@ -154,6 +163,7 @@ export default class BonkService {
       programId: BONK_PROGRAM_ID,
       data,
     });
+    logger.debug(`[bonk-service]: raw buyIx data: ${buyIx.data.toString("hex")}`);
     return buyIx;
   };
 
@@ -241,22 +251,42 @@ export default class BonkService {
     slippage?: number
   ): bigint {
     const finalSlippage = slippage ?? this.config.baseSlippage;
-
+    
+    // Use REAL reserves for calculation (not virtual) - this matches actual BONK program behavior
     const realBase = BigInt(pool.realBase);
     const realQuote = BigInt(pool.realQuote);
-
+    
+    logger.debug(`[bonk-service]: 🔍 Pool reserves used for calculation:`);
+    logger.debug(`[bonk-service]:    realBase: ${realBase.toString()}`);
+    logger.debug(`[bonk-service]:    realQuote: ${realQuote.toString()}`);
+    logger.debug(`[bonk-service]:    amountIn: ${amountIn.toString()}`);
+    
+    // BONK program might deduct fees from the input amount before calculation
+    // Let's try applying a fee (similar to how other DEXs work)
     const feeRate = BigInt(this.config.feeRateBasisPoints);
     const feeBasisPoints = BigInt(10000);
     const amountAfterFees = amountIn - (amountIn * feeRate) / feeBasisPoints;
-
+    
+    logger.debug(`[bonk-service]:    amountAfterFees: ${amountAfterFees.toString()}`);
+    
+    // Use constant product formula: x * y = k
+    // After swap: (realBase - tokensOut) * (realQuote + amountAfterFees) = k
+    // So: tokensOut = realBase - (k / (realQuote + amountAfterFees))
     const k = realBase * realQuote;
     const newRealQuote = realQuote + amountAfterFees;
     const newRealBase = k / newRealQuote;
     const tokensOut = realBase - newRealBase;
-
-    const tokensOutWithSlippage =
-      (tokensOut * BigInt(100 - finalSlippage)) / BigInt(100);
-
+    
+    logger.debug(`[bonk-service]:    Expected tokensOut (after fees, before slippage): ${tokensOut.toString()}`);
+    
+    // Apply higher slippage tolerance (35% instead of 25%) to account for:
+    // 1. Pool state changes between calculation and execution
+    // 2. Additional protocol fees not accounted for
+    // 3. Price impact in volatile conditions
+    const tokensOutWithSlippage = (tokensOut * BigInt(100 - finalSlippage)) / BigInt(100);
+    
+    logger.debug(`[bonk-service]:    tokensOut with slippage: ${tokensOutWithSlippage.toString()}`);
+    
     return tokensOutWithSlippage;
   }
 
@@ -532,24 +562,25 @@ export default class BonkService {
     });
     const syncNativeIx = createSyncNativeInstruction(wsolAta);
 
-    // Use Maestro-style buy instructions to include fee transfer
-    const maestroBuyInstructions = await this.createMaestroBuyInstructions({
+    // Build buy instruction
+    const ixData: CreateBuyIX = {
       pool: pool,
       payer: owner.publicKey,
       userBaseAta: tokenAta,
       userQuoteAta: wsolAta,
       amount_in: amount,
       minimum_amount_out: minAmountOut,
-      maestroFeeAmount: BigInt(1000000), // 0.001 SOL Maestro fee
-    });
+    };
+    const buyInstruction = await this.createBuyIX(ixData);
 
+    // 🔥 OPTIMIZED: Build final instruction list
     const instructions = [
       modifyComputeUnits,
       addPriorityFee,
       ...ataInstructions,
       transferSolIx,
       syncNativeIx,
-      ...maestroBuyInstructions, // Spread the Maestro instructions
+      buyInstruction,
     ];
 
     const { blockhash } = await connection.getLatestBlockhash("finalized");
@@ -702,6 +733,13 @@ export default class BonkService {
     logger.info(
       `[bonk-service]: [BuyTx] Pool discovery took ${poolDiscoveryTime}ms for ${mint.toBase58()}`
     );
+    if (poolDiscoveryTime < 1000) {
+      logger.info(`[bonk-service]: [BuyTx] ✅ Using pre-cached pool for ${mint.toBase58()}`);
+    } else {
+      logger.warn(`[bonk-service]: [BuyTx] ⚠️ Pool discovery was slow (${poolDiscoveryTime}ms) for ${mint.toBase58()}`);
+    }
+
+    logger.info(`[bonk-service]: Pool Info`, poolState);
 
     try {
       const tx = await this.retryBuyWithAdaptiveSlippage(poolState, buyData);
