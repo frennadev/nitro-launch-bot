@@ -16,7 +16,7 @@ export interface TokenDetectionResult {
 export interface TokenLaunchStatus {
   isLaunched: boolean;
   isListed: boolean;
-  platform?: 'pumpswap' | 'pumpfun' | 'raydium' | 'jupiter' | 'unknown';
+  platform?: 'pumpswap' | 'pumpfun' | 'bonk' | 'cpmm' | 'raydium' | 'jupiter' | 'unknown';
   hasLiquidity: boolean;
   hasTradingVolume: boolean;
   lastActivity?: Date;
@@ -25,7 +25,7 @@ export interface TokenLaunchStatus {
 
 // Cache for platform detection results
 const platformCache = new Map<string, { 
-  platform: 'pumpswap' | 'pumpfun' | 'bonk' | 'unknown', 
+  platform: 'pumpswap' | 'pumpfun' | 'bonk' | 'cpmm' | 'unknown', 
   timestamp: number,
   permanent: boolean 
 }>();
@@ -43,7 +43,7 @@ const LAUNCH_STATUS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes for launch status
  * Fast lightweight platform detection for UI display
  * Skips expensive bonding curve checks for recently cached tokens
  */
-export async function detectTokenPlatformFast(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'bonk' | 'unknown'> {
+export async function detectTokenPlatformFast(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'bonk' | 'cpmm' | 'unknown'> {
   // Check cache first
   const cached = getCachedPlatform(tokenAddress);
   if (cached) {
@@ -64,8 +64,9 @@ export async function detectTokenPlatformFast(tokenAddress: string): Promise<'pu
  * If bonding curve data can be fetched successfully, it's a PumpFun token
  * If bonding curve data cannot be fetched, it's likely a Pumpswap token
  * If bonding curve is complete (graduated), it should use Pumpswap
+ * If Bonk pool is found, check if it's graduated to CPMM
  */
-export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'bonk' | 'unknown'> {
+export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'bonk' | 'cpmm' | 'unknown'> {
   const logId = `platform-detect-${tokenAddress.substring(0, 8)}`;
   logger.info(`[${logId}]: Starting platform detection using bonding curve approach`);
   
@@ -214,7 +215,29 @@ export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpsw
           logger.info(`[${logId}]: Base Mint: ${bonkPool.baseMint.toString()}`);
           logger.info(`[${logId}]: Quote Mint: ${bonkPool.quoteMint.toString()}`);
           logger.info(`[${logId}]: Pool Status: ${bonkPool.status}`);
-          return 'bonk';
+          
+          // Check if this Bonk token has graduated to CPMM (Raydium)
+          logger.info(`[${logId}]: Checking if Bonk token has graduated to CPMM...`);
+          try {
+            const { getCpmmPoolState } = await import("../backend/get-cpmm-poolinfo");
+            const cpmmPool = await getCpmmPoolState(tokenAddress);
+            
+            if (cpmmPool) {
+              logger.info(`[${logId}]: CPMM pool found - Bonk token has graduated to Raydium CPMM`);
+              logger.info(`[${logId}]: CPMM Pool ID: ${cpmmPool.poolId.toString()}`);
+              logger.info(`[${logId}]: Token 0 Mint: ${cpmmPool.token_0_mint.toString()}`);
+              logger.info(`[${logId}]: Token 1 Mint: ${cpmmPool.token_1_mint.toString()}`);
+              logger.info(`[${logId}]: Pool Status: ${cpmmPool.status}`);
+              return 'cpmm';
+            } else {
+              logger.info(`[${logId}]: No CPMM pool found - using Bonk pool`);
+              return 'bonk';
+            }
+          } catch (cpmmError: any) {
+            logger.warn(`[${logId}]: CPMM pool check failed: ${cpmmError.message}`);
+            logger.info(`[${logId}]: Using Bonk pool as fallback`);
+            return 'bonk';
+          }
         } else {
           logger.info(`[${logId}]: No Bonk pool found - token is likely native Pumpswap`);
           return 'pumpswap';
@@ -235,7 +258,7 @@ export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpsw
 /**
  * Get cached platform result or detect if not cached
  */
-export function getCachedPlatform(tokenAddress: string): 'pumpswap' | 'pumpfun' | 'bonk' | 'unknown' | null {
+export function getCachedPlatform(tokenAddress: string): 'pumpswap' | 'pumpfun' | 'bonk' | 'cpmm' | 'unknown' | null {
   const cached = platformCache.get(tokenAddress);
   if (!cached) return null;
   
@@ -251,7 +274,7 @@ export function getCachedPlatform(tokenAddress: string): 'pumpswap' | 'pumpfun' 
 /**
  * Cache platform detection result
  */
-export function setCachedPlatform(tokenAddress: string, platform: 'pumpswap' | 'pumpfun' | 'bonk' | 'unknown', permanent: boolean = false) {
+export function setCachedPlatform(tokenAddress: string, platform: 'pumpswap' | 'pumpfun' | 'bonk' | 'cpmm' | 'unknown', permanent: boolean = false) {
   platformCache.set(tokenAddress, {
     platform,
     timestamp: Date.now(),
@@ -277,7 +300,7 @@ export function markTokenAsPumpFun(tokenAddress: string) {
 /**
  * Detect platform with caching
  */
-export async function detectTokenPlatformWithCache(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'bonk' | 'unknown'> {
+export async function detectTokenPlatformWithCache(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'bonk' | 'cpmm' | 'unknown'> {
   // Check cache first
   const cached = getCachedPlatform(tokenAddress);
   if (cached) {

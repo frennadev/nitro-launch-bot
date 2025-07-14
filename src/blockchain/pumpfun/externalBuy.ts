@@ -8,7 +8,7 @@ export interface ExternalBuyResult {
   success: boolean;
   signature: string;
   error?: string;
-  platform?: 'jupiter' | 'pumpswap' | 'pumpfun' | 'bonk' | 'unknown';
+  platform?: 'jupiter' | 'pumpswap' | 'pumpfun' | 'bonk' | 'cpmm' | 'unknown';
   solReceived?: string;
 }
 
@@ -36,6 +36,9 @@ export async function executeExternalBuy(
     if (platform === 'bonk') {
       logger.info(`[${logId}] Using Bonk-specific buy logic`);
       return await executeBonkBuy(tokenAddress, buyerKeypair, solAmount, logId);
+    } else if (platform === 'cpmm') {
+      logger.info(`[${logId}] Using CPMM-specific buy logic`);
+      return await executeCpmmBuy(tokenAddress, buyerKeypair, solAmount, logId);
     } else {
       logger.info(`[${logId}] Using unified Jupiter-PumpSwap service for ${platform} platform`);
       // Use the unified Jupiter-Pumpswap service for PumpFun/PumpSwap/Jupiter tokens
@@ -168,6 +171,102 @@ async function executeBonkBuy(
       success: false,
       signature: '',
       error: `Bonk buy failed: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Execute CPMM-specific buy using RaydiumCpmmService
+ */
+async function executeCpmmBuy(
+  tokenAddress: string,
+  buyerKeypair: Keypair,
+  solAmount: number,
+  logId: string
+): Promise<ExternalBuyResult> {
+  try {
+    logger.info(`[${logId}] Starting CPMM buy for ${solAmount} SOL`);
+    
+    // Import RaydiumCpmmService
+    const RaydiumCpmmService = (await import("../../service/raydium-cpmm-service")).default;
+    
+    // Create RaydiumCpmmService instance
+    const cpmmService = new RaydiumCpmmService();
+    
+    // Convert SOL amount to lamports
+    const buyAmountLamports = BigInt(Math.floor(solAmount * 1_000_000_000));
+    
+    logger.info(`[${logId}] Creating CPMM buy transaction...`);
+    
+    // Create the buy transaction
+    const buyTx = await cpmmService.buyTx({
+      mint: tokenAddress,
+      privateKey: bs58.encode(buyerKeypair.secretKey),
+      amount_in: buyAmountLamports,
+    });
+    
+    logger.info(`[${logId}] Sending CPMM buy transaction...`);
+    
+    // Send the transaction
+    const signature = await connection.sendTransaction(buyTx, {
+      skipPreflight: false,
+      preflightCommitment: "confirmed",
+      maxRetries: 3,
+    });
+    
+    logger.info(`[${logId}] Waiting for CPMM transaction confirmation...`);
+    
+    // Wait for confirmation
+    const confirmation = await connection.confirmTransaction(signature, "confirmed");
+    
+    if (confirmation.value.err) {
+      const errorMsg = `CPMM transaction failed: ${JSON.stringify(confirmation.value.err)}`;
+      logger.error(`[${logId}] ${errorMsg}`);
+      return {
+        success: false,
+        signature: signature,
+        error: errorMsg
+      };
+    }
+    
+    logger.info(`[${logId}] CPMM buy successful: ${signature}`);
+    
+    // Record the successful CPMM buy transaction
+    try {
+      const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+      await recordTransactionWithActualAmounts(
+        tokenAddress,
+        buyerKeypair.publicKey.toBase58(),
+        "external_buy", // Use external_buy type for CPMM buys
+        signature,
+        true,
+        0, // CTO operations don't have launch attempts
+        {
+          amountSol: solAmount,
+          amountTokens: "0", // Will be parsed from blockchain
+          errorMessage: undefined,
+          retryAttempt: 0,
+        },
+        true // Parse actual amounts from blockchain
+      );
+      logger.info(`[${logId}] CPMM transaction recorded`);
+    } catch (recordError: any) {
+      logger.warn(`[${logId}] Failed to record CPMM transaction:`, recordError);
+    }
+    
+    return {
+      success: true,
+      signature: signature,
+      platform: "cpmm",
+      solReceived: solAmount.toString()
+    };
+    
+  } catch (error: any) {
+    logger.error(`[${logId}] CPMM buy error: ${error.message}`);
+    return {
+      success: false,
+      signature: '',
+      error: `CPMM buy failed: ${error.message}`
     };
   }
 } 

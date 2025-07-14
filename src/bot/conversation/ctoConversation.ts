@@ -132,6 +132,10 @@ export const ctoConversation = async (
         platformIcon = "🐕";
         platformDetails = "Bonk Pool (Raydium Launch Lab)";
         break;
+      case 'cpmm':
+        platformIcon = "🏊";
+        platformDetails = "Raydium CPMM (Graduated Bonk)";
+        break;
       case 'unknown':
         platformIcon = "❓";
         platformDetails = "Unknown Platform (Will try multiple DEXs)";
@@ -153,6 +157,7 @@ export const ctoConversation = async (
       `• ${platform === 'pumpfun' ? 'Direct bonding curve trading for best prices' : ''}` +
       `• ${platform === 'pumpswap' ? 'Jupiter → PumpSwap routing for liquidity' : ''}` +
       `• ${platform === 'bonk' ? 'Bonk pool trading via Raydium Launch Lab' : ''}` +
+      `• ${platform === 'cpmm' ? 'Raydium CPMM trading for graduated Bonk tokens' : ''}` +
       `• ${platform === 'unknown' ? 'Multi-platform fallback (Jupiter → PumpSwap → PumpFun)' : ''}` +
       `\n` +
       `🔄 **Proceeding automatically with optimal platform routing...**`,
