@@ -2,75 +2,74 @@ import { PublicKey } from "@solana/web3.js";
 import { PUMPFUN_PROGRAM, TOKEN_METADATA_PROGRAM } from "./constants";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { connection } from "../common/connection";
-import { BondingCurveCodec } from "./codecs";
+import { BondingCurveCodec, GlobalSettingCodec } from "./codecs";
 
-// Bonding curve data structure
-export interface BondingCurveData {
-  virtualTokenReserves: bigint;
-  virtualSolReserves: bigint;
-  realTokenReserves: bigint;
-  creator: string;
-}
-
-// Get bonding curve PDA for a token
 export const getBondingCurve = (mint: PublicKey) => {
   const [bondingCurve, _] = PublicKey.findProgramAddressSync(
-    [Buffer.from([98, 111, 110, 100, 105, 110, 103, 45, 99, 117, 114, 118, 101]), mint.toBuffer()],
-    PUMPFUN_PROGRAM
+    [
+      Buffer.from([
+        98, 111, 110, 100, 105, 110, 103, 45, 99, 117, 114, 118, 101,
+      ]),
+      mint.toBuffer(),
+    ],
+    PUMPFUN_PROGRAM,
   );
-  
-  const associatedBondingCurve = getAssociatedTokenAddressSync(mint, bondingCurve, true);
-  
+  const associatedBondingCurve = getAssociatedTokenAddressSync(
+    mint,
+    bondingCurve,
+    true,
+  );
   return {
     bondingCurve,
     associatedBondingCurve,
   };
 };
 
-// Get metadata PDA for a token
 export const getMetadataPDA = (mint: PublicKey) => {
   const [pda, _] = PublicKey.findProgramAddressSync(
     [
       Buffer.from([109, 101, 116, 97, 100, 97, 116, 97]),
-      Buffer.from([11, 112, 101, 177, 227, 209, 124, 69, 56, 157, 82, 127, 107, 4, 195, 205, 88, 184, 108, 115, 26, 160, 253, 181, 73, 182, 209, 188, 3, 248, 41, 70]),
+      Buffer.from([
+        11, 112, 101, 177, 227, 209, 124, 69, 56, 157, 82, 127, 107, 4, 195,
+        205, 88, 184, 108, 115, 26, 160, 253, 181, 73, 182, 209, 188, 3, 248,
+        41, 70,
+      ]),
       mint.toBuffer(),
     ],
-    TOKEN_METADATA_PROGRAM
+    TOKEN_METADATA_PROGRAM,
   );
   return pda;
 };
 
-// Get creator vault PDA
 export const getCreatorVault = (creator: PublicKey) => {
   const [vault, _] = PublicKey.findProgramAddressSync(
-    [Buffer.from([99, 114, 101, 97, 116, 111, 114, 45, 118, 97, 117, 108, 116]), creator.toBuffer()],
-    PUMPFUN_PROGRAM
+    [
+      Buffer.from([
+        99, 114, 101, 97, 116, 111, 114, 45, 118, 97, 117, 108, 116,
+      ]),
+      creator.toBuffer(),
+    ],
+    PUMPFUN_PROGRAM,
   );
   return vault;
 };
 
-// Get bonding curve data from blockchain
-export const getBondingCurveData = async (curve: PublicKey): Promise<BondingCurveData | null> => {
-  try {
-    const info = await connection.getAccountInfo(curve, "processed");
-    if (!info) return null;
-    
-    // Use proper codec to decode the data
-    const decodedData = BondingCurveCodec.decode(info.data);
-    
-    return {
-      virtualTokenReserves: decodedData.virtualTokenReserves,
-      virtualSolReserves: decodedData.virtualSolReserves,
-      realTokenReserves: decodedData.realTokenReserves,
-      creator: decodedData.creator,
-    };
-  } catch (error) {
-    console.error("Error fetching bonding curve data:", error);
-    return null;
-  }
+export const getGlobalSetting = async () => {
+  const [setting] = PublicKey.findProgramAddressSync(
+    [Buffer.from("global")],
+    PUMPFUN_PROGRAM,
+  );
+  const info = await connection.getAccountInfo(setting);
+  if (!info) throw new Error("Empty global settings data!!");
+  return GlobalSettingCodec.decode(Uint8Array.from(info.data));
 };
 
-// Calculate buy quote (tokens received for SOL input)
+export const getBondingCurveData = async (curve: PublicKey) => {
+  const info = await connection.getAccountInfo(curve, "processed");
+  if (!info) return null;
+  return BondingCurveCodec.decode(info.data);
+};
+
 export const quoteBuy = (
   amountIn: bigint,
   virtualTokenReserve: bigint,
@@ -79,7 +78,8 @@ export const quoteBuy = (
 ) => {
   const virtualTokenAmount = virtualSolReserve * virtualTokenReserve;
   const totalSolPlusAmount = virtualSolReserve + amountIn;
-  const currentTokenAmount = virtualTokenAmount / totalSolPlusAmount + BigInt(1);
+  const currentTokenAmount =
+    virtualTokenAmount / totalSolPlusAmount + BigInt(1);
   const tokenAmountLeft = virtualTokenReserve - currentTokenAmount;
 
   let tokenOut = tokenAmountLeft;
@@ -99,7 +99,6 @@ export const quoteBuy = (
   };
 };
 
-// Calculate sell quote (SOL received for token input)
 export const quoteSell = (
   tokenAmountIn: bigint,
   virtualTokenReserves: bigint,
@@ -123,20 +122,22 @@ export const quoteSell = (
   };
 };
 
-// Apply slippage to an amount
 export const applySlippage = (amount: bigint, slippage: number) => {
   const SlippageAdjustment = BigInt(1);
   const Big10000 = BigInt(10000);
 
-  let slippageBP = (BigInt(Math.floor(100 * slippage)) + BigInt(25)) * SlippageAdjustment;
+  let slippageBP =
+    (BigInt(Math.floor(100 * slippage)) + BigInt(25)) * SlippageAdjustment;
   const maxSlippage = Big10000 * SlippageAdjustment;
 
   if (slippageBP > maxSlippage) {
-    slippageBP = maxSlippage;
+    slippageBP = Big10000;
   }
 
-  const slippageNumeratorMul = maxSlippage - slippageBP;
+  const slippageBPBN = slippageBP;
+
+  const slippageNumeratorMul = maxSlippage - slippageBPBN;
   const slippageNumerator = amount * slippageNumeratorMul;
 
   return slippageNumerator / maxSlippage;
-}; 
+};

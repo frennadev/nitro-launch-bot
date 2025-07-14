@@ -1,13 +1,23 @@
 import {
   type Codec,
   getStructCodec,
+  addCodecSizePrefix,
+  getUtf8Codec,
+  getU32Codec,
   getU64Codec,
   getBase58Codec,
   getBooleanCodec,
   fixCodecSize,
 } from "@solana/codecs";
 
-// Instruction types
+type CreateToken = {
+  instruction: bigint;
+  name: string;
+  symbol: string;
+  uri: string;
+  creator: string;
+};
+
 type Buy = {
   instruction: bigint;
   amount: bigint;
@@ -20,27 +30,6 @@ type Sell = {
   minSolOutput: bigint;
 };
 
-type Create = {
-  instruction: bigint;
-  name: string;
-  symbol: string;
-  uri: string;
-  creator: string;
-};
-
-// Bonding curve data structure
-type BondingCurve = {
-  discriminator: bigint;
-  virtualTokenReserves: bigint;
-  virtualSolReserves: bigint;
-  realTokenReserves: bigint;
-  realSolReserves: bigint;
-  tokenTotalSupply: bigint;
-  complete: boolean;
-  creator: string;
-};
-
-// Global settings structure
 type GlobalSetting = {
   discriminator: bigint;
   initialized: boolean;
@@ -57,19 +46,37 @@ type GlobalSetting = {
   creatorFeeBasisPoints: bigint;
 };
 
-// Codec for bonding curve data
-export const BondingCurveCodec: Codec<BondingCurve> = getStructCodec([
-  ["discriminator", getU64Codec()],
-  ["virtualTokenReserves", getU64Codec()],
-  ["virtualSolReserves", getU64Codec()],
-  ["realTokenReserves", getU64Codec()],
-  ["realSolReserves", getU64Codec()],
-  ["tokenTotalSupply", getU64Codec()],
-  ["complete", getBooleanCodec()],
+type BondingCurve = {
+  discriminator: bigint;
+  virtualTokenReserves: bigint;
+  virtualSolReserves: bigint;
+  realTokenReserves: bigint;
+  realSolReserves: bigint;
+  tokenTotalSupply: bigint;
+  complete: boolean;
+  creator: string;
+};
+
+export const CreateCodec: Codec<CreateToken> = getStructCodec([
+  ["instruction", getU64Codec()],
+  ["name", addCodecSizePrefix(getUtf8Codec(), getU32Codec())],
+  ["symbol", addCodecSizePrefix(getUtf8Codec(), getU32Codec())],
+  ["uri", addCodecSizePrefix(getUtf8Codec(), getU32Codec())],
   ["creator", fixCodecSize(getBase58Codec(), 32)],
 ]);
 
-// Codec for global settings
+export const BuyCodec: Codec<Buy> = getStructCodec([
+  ["instruction", getU64Codec()],
+  ["amount", getU64Codec()],
+  ["maxSolCost", getU64Codec()],
+]);
+
+export const SellCodec: Codec<Sell> = getStructCodec([
+  ["instruction", getU64Codec()],
+  ["amount", getU64Codec()],
+  ["minSolOutput", getU64Codec()],
+]);
+
 export const GlobalSettingCodec: Codec<GlobalSetting> = getStructCodec([
   ["discriminator", getU64Codec()],
   ["initialized", getBooleanCodec()],
@@ -86,23 +93,13 @@ export const GlobalSettingCodec: Codec<GlobalSetting> = getStructCodec([
   ["creatorFeeBasisPoints", getU64Codec()],
 ]);
 
-// Instruction codecs
-export const BuyCodec: Codec<Buy> = getStructCodec([
-  ["instruction", getU64Codec()],
-  ["amount", getU64Codec()],
-  ["maxSolCost", getU64Codec()],
-]);
-
-export const SellCodec: Codec<Sell> = getStructCodec([
-  ["instruction", getU64Codec()],
-  ["amount", getU64Codec()],
-  ["minSolOutput", getU64Codec()],
-]);
-
-export const CreateCodec: Codec<Create> = getStructCodec([
-  ["instruction", getU64Codec()],
-  ["name", fixCodecSize(getBase58Codec(), 32)],
-  ["symbol", fixCodecSize(getBase58Codec(), 10)],
-  ["uri", fixCodecSize(getBase58Codec(), 200)],
+export const BondingCurveCodec: Codec<BondingCurve> = getStructCodec([
+  ["discriminator", getU64Codec()],
+  ["virtualTokenReserves", getU64Codec()],
+  ["virtualSolReserves", getU64Codec()],
+  ["realTokenReserves", getU64Codec()],
+  ["realSolReserves", getU64Codec()],
+  ["tokenTotalSupply", getU64Codec()],
+  ["complete", getBooleanCodec()],
   ["creator", fixCodecSize(getBase58Codec(), 32)],
-]); 
+]);

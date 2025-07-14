@@ -1,227 +1,256 @@
-import {
-  PublicKey,
-  Keypair,
-  VersionedTransaction,
-  TransactionMessage,
-  ComputeBudgetProgram,
-  LAMPORTS_PER_SOL,
-  SystemProgram,
-} from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { formatMilliseconds, secretKeyToKeypair, sendAndConfirmTransactionWithRetry } from "../common/utils";
+import { ComputeBudgetProgram, Keypair, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { logger } from "../common/logger";
+import { sellInstruction } from "./instructions";
 import { connection } from "../common/connection";
-import { getBondingCurve, getBondingCurveData, quoteSell, applySlippage } from "./utils";
-import { sellInstruction } from "./index";
-import {
-  MAESTRO_FEE_AMOUNT, 
-  PLATFORM_FEE_WALLET, 
-  DEFAULT_PLATFORM_FEE_PERCENTAGE 
-} from "./constants";
-
-export interface SellResult {
-  success: boolean;
-  signature?: string;
-  error?: string;
-  solReceived?: string;
-  tokensSold?: string;
-}
+import { executeExternalSell } from "./externalSell";
 
 /**
- * Execute a sell transaction on PumpFun
+ * Enhanced dev sell using external sell mechanism with platform detection
  */
-export const executePumpFunSell = async (
-  tokenAddress: string,
-  sellerKeypair: Keypair,
-  tokenAmount: number,
-  platformFeePercentage: number = DEFAULT_PLATFORM_FEE_PERCENTAGE
-): Promise<SellResult> => {
-  const logId = `pumpfun-sell-${tokenAddress.substring(0, 8)}`;
-  console.log(`[${logId}]: Starting PumpFun sell for ${tokenAmount} tokens with ${platformFeePercentage}% platform fee`);
+export const executeDevSell = async (tokenAddress: string, devWallet: string, sellPercent: number) => {
+  if (sellPercent < 1 || sellPercent > 100) {
+    throw new Error("Sell % cannot be less than 1 or greater than 100");
+  }
+  
+  // Validate devWallet parameter
+  if (!devWallet || typeof devWallet !== 'string') {
+    throw new Error("devWallet must be a non-empty string");
+  }
+  
+  const logIdentifier = `sell-dev-${tokenAddress}`;
+  logger.info(`[${logIdentifier}] Starting enhanced dev sell using external sell mechanism`);
+  const start = performance.now();
 
   try {
-    const mintPk = new PublicKey(tokenAddress);
-    console.log(`[${logId}]: Token address = ${mintPk.toBase58()}`);
-
-    // Get token balance
-    const ata = getAssociatedTokenAddressSync(mintPk, sellerKeypair.publicKey);
-    const tokenBalance = await connection.getTokenAccountBalance(ata);
-    const currentBalance = Number(tokenBalance.value.amount);
+    const mintPublicKey = new PublicKey(tokenAddress);
+    const devKeypair = secretKeyToKeypair(devWallet);
     
-    console.log(`[${logId}]: Current token balance: ${currentBalance}`);
+    // Get the current token balance to calculate amount to sell
+    const ata = getAssociatedTokenAddressSync(mintPublicKey, devKeypair.publicKey);
+    const devBalance = BigInt((await connection.getTokenAccountBalance(ata)).value.amount);
     
-    if (currentBalance < tokenAmount) {
-      return {
-        success: false,
-        error: `Insufficient token balance: ${currentBalance} available, trying to sell ${tokenAmount}`
-      };
+    // Calculate tokens to sell based on percentage
+    const tokensToSell = sellPercent === 100 ? devBalance : (BigInt(sellPercent) * BigInt(100) * devBalance) / BigInt(10_000);
+    
+    logger.info(`[${logIdentifier}] Dev balance: ${devBalance.toString()}, selling ${sellPercent}% = ${tokensToSell.toString()} tokens`);
+    
+    // Use external sell mechanism for better platform detection and robustness
+    const result = await executeExternalSell(tokenAddress, devKeypair, Number(tokensToSell));
+    
+    if (!result.success) {
+      throw new Error(`External sell failed: ${result.error}`);
     }
-
-    // Get bonding curve data
-    const { bondingCurve } = getBondingCurve(mintPk);
-    console.log(`[${logId}]: Bonding curve = ${bondingCurve.toBase58()}`);
-
-    const bondingCurveData = await getBondingCurveData(bondingCurve);
-    console.log(`[${logId}]: Bonding curve data fetched`);
     
-    if (!bondingCurveData) {
-      return {
-        success: false,
-        error: "Bonding curve data not found - token may not be a PumpFun token"
-      };
+    // Record the transaction with actual amounts from blockchain
+    try {
+      const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+      await recordTransactionWithActualAmounts(
+        tokenAddress,
+        devKeypair.publicKey.toBase58(),
+        "dev_sell",
+        result.signature || "",
+        result.success,
+        0, // Sells don't have launch attempts
+        {
+          sellPercent: sellPercent,
+          amountSol: 0, // Will be parsed from blockchain
+          amountTokens: tokensToSell.toString(), // Estimated amount
+          errorMessage: result.success ? undefined : "Sell failed",
+        },
+        true // Enable actual amount parsing
+      );
+      logger.info(`[${logIdentifier}] Dev sell transaction recorded`);
+    } catch (err: any) {
+      logger.error(`[${logIdentifier}] Error recording dev sell transaction`, err);
     }
-
-    // Calculate SOL amount to receive
-    const tokenAmountBigInt = BigInt(Math.floor(tokenAmount));
-    console.log(`[${logId}]: Token amount to sell = ${tokenAmountBigInt}`);
-
-    const { solOut } = quoteSell(
-      tokenAmountBigInt,
-      bondingCurveData.virtualTokenReserves,
-      bondingCurveData.virtualSolReserves,
-      bondingCurveData.realTokenReserves
-    );
-    console.log(`[${logId}]: Quoted SOL out = ${solOut.toString()}`);
-
-    // Calculate fees
-    const maestroFee = Number(MAESTRO_FEE_AMOUNT); // 0.001 SOL in lamports
-    const platformFee = Math.ceil((Number(solOut) * platformFeePercentage) / 100); // Platform fee percentage
-    const totalFees = maestroFee + platformFee;
-    const actualSolOut = Number(solOut) - totalFees;
     
-    console.log(`[${logId}]: Fee breakdown:`);
-    console.log(`[${logId}]:   - Maestro fee: ${maestroFee} lamports`);
-    console.log(`[${logId}]:   - Platform fee (${platformFeePercentage}%): ${platformFee} lamports`);
-    console.log(`[${logId}]:   - Total fees: ${totalFees} lamports`);
-    console.log(`[${logId}]:   - Actual SOL out (after fees): ${actualSolOut} lamports`);
-
-    // Apply slippage tolerance to the actual SOL out
-    const solWithSlippage = applySlippage(BigInt(actualSolOut), 5); // 5% slippage
-    console.log(`[${logId}]: SOL with slippage = ${solWithSlippage.toString()}`);
-
-    // Check if we have enough SOL for fees
-    const walletBalance = await connection.getBalance(sellerKeypair.publicKey, "confirmed");
-    const transactionFeeReserve = 0.01 * LAMPORTS_PER_SOL; // Priority fees + base fees
-    
-    if (walletBalance < transactionFeeReserve) {
-      return {
-        success: false,
-        error: `Insufficient SOL for transaction fees: ${walletBalance / LAMPORTS_PER_SOL} SOL available, need at least 0.01 SOL`
-      };
-    }
-
-    // Create transaction instructions
-    const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
-      units: 151595,
-    });
-
-    const sellIx = sellInstruction(
-      mintPk,
-      new PublicKey(bondingCurveData.creator),
-      sellerKeypair.publicKey,
-      tokenAmountBigInt,
-      solWithSlippage
-    );
-
-    // Add platform fee transfer (AFTER main sell instruction)
-    const platformFeeIx = SystemProgram.transfer({
-      fromPubkey: sellerKeypair.publicKey,
-      toPubkey: PLATFORM_FEE_WALLET,
-      lamports: platformFee,
-    });
-
-    const instructions = [modifyComputeUnits, sellIx, platformFeeIx];
-
-    // Get latest blockhash
-    const blockhash = await connection.getLatestBlockhash("processed");
-    console.log(`[${logId}]: Latest blockhash = ${blockhash.blockhash}`);
-
-    // Create and sign transaction
-    const tx = new VersionedTransaction(
-      new TransactionMessage({
-        instructions,
-        payerKey: sellerKeypair.publicKey,
-        recentBlockhash: blockhash.blockhash,
-      }).compileToV0Message()
-    );
-    tx.sign([sellerKeypair]);
-    console.log(`[${logId}]: Transaction signed`);
-
-    // Send and confirm transaction
-    const signature = await connection.sendTransaction(tx, {
-      skipPreflight: false,
-      preflightCommitment: "processed",
-    });
-
-    console.log(`[${logId}]: Transaction sent with signature: ${signature}`);
-
-    // Wait for confirmation
-    const confirmation = await connection.confirmTransaction(
-      {
-        signature,
-        blockhash: blockhash.blockhash,
-        lastValidBlockHeight: blockhash.lastValidBlockHeight,
-      },
-      "confirmed"
-    );
-
-    if (confirmation.value.err) {
-      throw new Error(`Transaction failed: ${confirmation.value.err}`);
-    }
-
-    console.log(`[${logId}]: Sell transaction confirmed successfully`);
-    
-    const solReceived = actualSolOut / LAMPORTS_PER_SOL;
+    logger.info(`[${logIdentifier}] Enhanced dev sell completed in ${formatMilliseconds(performance.now() - start)} via ${result.platform}`);
     
     return {
       success: true,
-      signature,
-      solReceived: solReceived.toString(),
-      tokensSold: tokenAmount.toString()
+      signature: result.signature,
+      platform: result.platform,
+      solReceived: result.solReceived,
+      expectedSolOut: 0 // External sell doesn't provide this info
     };
-
+    
   } catch (error: any) {
-    console.error(`[${logId}]: Sell failed:`, error);
-    return {
-      success: false,
-      error: error.message || "Unknown error occurred"
-    };
+    logger.error(`[${logIdentifier}] Enhanced dev sell failed:`, error);
+    throw error;
   }
 };
 
 /**
- * Sell all tokens for a given token address
+ * Enhanced wallet sell using external sell mechanism with platform detection
+ * Processes multiple wallets with improved reliability
  */
-export const executePumpFunSellAll = async (
+export const executeWalletSell = async (
   tokenAddress: string,
-  sellerKeypair: Keypair
-): Promise<SellResult> => {
-  const logId = `pumpfun-sell-all-${tokenAddress.substring(0, 8)}`;
-  console.log(`[${logId}]: Starting PumpFun sell all`);
+  buyWallets: string[],
+  devWallet: string,
+  sellPercent: number
+) => {
+  if (sellPercent < 1 || sellPercent > 100) {
+    throw new Error("Sell % cannot be less than 1 or greater than 100");
+  }
+  
+  // Validate buyWallets parameter
+  if (!Array.isArray(buyWallets)) {
+    throw new Error("buyWallets must be an array");
+  }
+  
+  if (buyWallets.length === 0) {
+    throw new Error("buyWallets cannot be empty");
+  }
+  
+  // Validate devWallet parameter
+  if (!devWallet || typeof devWallet !== 'string') {
+    throw new Error("devWallet must be a non-empty string");
+  }
+  
+  const logIdentifier = `sell-${tokenAddress}`;
+  logger.info(`[${logIdentifier}] Starting enhanced wallet sell using external sell mechanism for ${buyWallets.length} wallets`);
+  const start = performance.now();
 
   try {
-    const mintPk = new PublicKey(tokenAddress);
-    
-    // Get token balance
-    const ata = getAssociatedTokenAddressSync(mintPk, sellerKeypair.publicKey);
-    const tokenBalance = await connection.getTokenAccountBalance(ata);
-    const currentBalance = Number(tokenBalance.value.amount);
-    
-    console.log(`[${logId}]: Current token balance: ${currentBalance}`);
-    
-    if (currentBalance <= 0) {
-      return {
-        success: false,
-        error: "No tokens to sell"
-      };
+    const mintPublicKey = new PublicKey(tokenAddress);
+    const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
+
+    // Get wallet balances efficiently
+    const walletBalances = (
+      await Promise.all(
+        buyKeypairs.map(async (kp) => {
+          const ata = getAssociatedTokenAddressSync(mintPublicKey, kp.publicKey);
+          let balance = 0;
+          try {
+            balance = Number((await connection.getTokenAccountBalance(ata)).value.amount);
+          } catch (error) {
+            logger.error(
+              `[${logIdentifier}] Error fetching token balance for: ${kp.publicKey.toBase58()} with ATA: ${ata.toBase58()}`
+            );
+          }
+          return {
+            wallet: kp,
+            ata,
+            balance: BigInt(balance),
+          };
+        })
+      )
+    ).filter(({ balance }) => balance > BigInt(0));
+
+    if (walletBalances.length === 0) {
+      throw new Error("No wallet has tokens");
     }
 
-    // Sell all tokens
-    return await executePumpFunSell(tokenAddress, sellerKeypair, currentBalance);
+    logger.info(`[${logIdentifier}] Found ${walletBalances.length} wallets with tokens`);
+
+    // Sort by balance (ascending) for optimal distribution
+    walletBalances.sort((a, b) => Number(a.balance - b.balance));
+
+    const totalTokens = walletBalances.reduce((acc, { balance }) => acc + balance, BigInt(0));
+    let tokensToSell = sellPercent === 100 ? totalTokens : (BigInt(sellPercent) * BigInt(100) * totalTokens) / BigInt(10_000);
+
+    logger.info(`[${logIdentifier}] Total tokens: ${totalTokens.toString()}, selling ${sellPercent}% = ${tokensToSell.toString()}`);
+
+    // Calculate sell amounts per wallet
+    const sellSetups: { wallet: Keypair; amount: bigint }[] = [];
+    for (const walletInfo of walletBalances) {
+      if (tokensToSell <= BigInt(0)) {
+        break;
+      }
+      if (tokensToSell <= walletInfo.balance) {
+        sellSetups.push({
+          wallet: walletInfo.wallet,
+          amount: tokensToSell,
+        });
+        break;
+      }
+      tokensToSell -= walletInfo.balance;
+      sellSetups.push({
+        wallet: walletInfo.wallet,
+        amount: walletInfo.balance,
+      });
+    }
+
+    logger.info(`[${logIdentifier}] Prepared ${sellSetups.length} sell transactions using external sell mechanism`);
+
+    // Execute sells using external sell mechanism (with platform detection and retries)
+    const tasks = sellSetups.map(async ({ wallet, amount }, index) => {
+      try {
+        logger.info(`[${logIdentifier}] Processing wallet ${index + 1}/${sellSetups.length}: ${wallet.publicKey.toBase58().slice(0, 8)}...`);
+        
+        const result = await executeExternalSell(tokenAddress, wallet, Number(amount));
+        
+        if (result.success) {
+          logger.info(`[${logIdentifier}] Wallet ${index + 1} sell successful via ${result.platform}: ${result.signature}`);
+          
+          // Record the transaction with actual amounts from blockchain
+          try {
+            const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+            await recordTransactionWithActualAmounts(
+              tokenAddress,
+              wallet.publicKey.toBase58(),
+              "wallet_sell",
+              result.signature || "",
+              result.success,
+              0, // Sells don't have launch attempts
+              {
+                sellPercent: sellPercent,
+                amountSol: 0, // Will be parsed from blockchain
+                amountTokens: amount.toString(), // Estimated amount
+                errorMessage: result.success ? undefined : "Sell failed",
+              },
+              true // Enable actual amount parsing
+            );
+            logger.info(`[${logIdentifier}] Wallet ${index + 1} sell transaction recorded`);
+          } catch (err: any) {
+            logger.error(`[${logIdentifier}] Error recording wallet ${index + 1} sell transaction`, err);
+          }
+          
+          return {
+            success: true,
+            signature: result.signature,
+            platform: result.platform,
+            solReceived: result.solReceived,
+            expectedSolOut: 0, // External sell doesn't provide this info
+            walletAddress: wallet.publicKey.toBase58()
+          };
+        } else {
+          logger.error(`[${logIdentifier}] Wallet ${index + 1} sell failed: ${result.error}`);
+          return {
+            success: false,
+            error: result.error,
+            walletAddress: wallet.publicKey.toBase58()
+          };
+        }
+      } catch (error: any) {
+        logger.error(`[${logIdentifier}] Wallet ${index + 1} sell exception:`, error);
+        return {
+          success: false,
+          error: error.message,
+          walletAddress: wallet.publicKey.toBase58()
+        };
+      }
+    });
+
+    const results = await Promise.all(tasks);
+    
+    const successfulSells = results.filter((res) => res.success);
+    const failedSells = results.filter((res) => !res.success);
+    
+    logger.info(`[${logIdentifier}] Enhanced wallet sell completed in ${formatMilliseconds(performance.now() - start)}`);
+    logger.info(`[${logIdentifier}] Results: ${successfulSells.length} successful, ${failedSells.length} failed`);
+    
+    if (successfulSells.length === 0) {
+      throw new Error("All wallet sells failed");
+    }
+    
+    return results;
 
   } catch (error: any) {
-    console.error(`[${logId}]: Sell all failed:`, error);
-    return {
-      success: false,
-      error: error.message || "Unknown error occurred"
-    };
+    logger.error(`[${logIdentifier}] Enhanced wallet sell failed:`, error);
+    throw error;
   }
-}; 
+};
