@@ -25,7 +25,7 @@ export interface TokenLaunchStatus {
 
 // Cache for platform detection results
 const platformCache = new Map<string, { 
-  platform: 'pumpswap' | 'pumpfun' | 'unknown', 
+  platform: 'pumpswap' | 'pumpfun' | 'bonk' | 'unknown', 
   timestamp: number,
   permanent: boolean 
 }>();
@@ -43,7 +43,7 @@ const LAUNCH_STATUS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes for launch status
  * Fast lightweight platform detection for UI display
  * Skips expensive bonding curve checks for recently cached tokens
  */
-export async function detectTokenPlatformFast(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'unknown'> {
+export async function detectTokenPlatformFast(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'bonk' | 'unknown'> {
   // Check cache first
   const cached = getCachedPlatform(tokenAddress);
   if (cached) {
@@ -65,7 +65,7 @@ export async function detectTokenPlatformFast(tokenAddress: string): Promise<'pu
  * If bonding curve data cannot be fetched, it's likely a Pumpswap token
  * If bonding curve is complete (graduated), it should use Pumpswap
  */
-export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'unknown'> {
+export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'bonk' | 'unknown'> {
   const logId = `platform-detect-${tokenAddress.substring(0, 8)}`;
   logger.info(`[${logId}]: Starting platform detection using bonding curve approach`);
   
@@ -201,9 +201,29 @@ export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpsw
         return 'pumpfun';
       }
     } else {
-      // Could not fetch bonding curve data = likely Pumpswap token
-      logger.info(`[${logId}]: No bonding curve data found - token is likely native Pumpswap`);
-      return 'pumpswap';
+      // Could not fetch bonding curve data - check for Bonk pool first
+      logger.info(`[${logId}]: No bonding curve data found - checking for Bonk pool...`);
+      
+      try {
+        const { getBonkPoolState } = await import("../service/bonk-pool-service");
+        const bonkPool = await getBonkPoolState(tokenAddress);
+        
+        if (bonkPool) {
+          logger.info(`[${logId}]: Bonk pool found - token is a Bonk token`);
+          logger.info(`[${logId}]: Pool ID: ${bonkPool.poolId.toString()}`);
+          logger.info(`[${logId}]: Base Mint: ${bonkPool.baseMint.toString()}`);
+          logger.info(`[${logId}]: Quote Mint: ${bonkPool.quoteMint.toString()}`);
+          logger.info(`[${logId}]: Pool Status: ${bonkPool.status}`);
+          return 'bonk';
+        } else {
+          logger.info(`[${logId}]: No Bonk pool found - token is likely native Pumpswap`);
+          return 'pumpswap';
+        }
+      } catch (bonkError: any) {
+        logger.warn(`[${logId}]: Bonk pool check failed: ${bonkError.message}`);
+        logger.info(`[${logId}]: Falling back to Pumpswap assumption`);
+        return 'pumpswap';
+      }
     }
     
   } catch (error: any) {
@@ -215,7 +235,7 @@ export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpsw
 /**
  * Get cached platform result or detect if not cached
  */
-export function getCachedPlatform(tokenAddress: string): 'pumpswap' | 'pumpfun' | 'unknown' | null {
+export function getCachedPlatform(tokenAddress: string): 'pumpswap' | 'pumpfun' | 'bonk' | 'unknown' | null {
   const cached = platformCache.get(tokenAddress);
   if (!cached) return null;
   
@@ -231,7 +251,7 @@ export function getCachedPlatform(tokenAddress: string): 'pumpswap' | 'pumpfun' 
 /**
  * Cache platform detection result
  */
-export function setCachedPlatform(tokenAddress: string, platform: 'pumpswap' | 'pumpfun' | 'unknown', permanent: boolean = false) {
+export function setCachedPlatform(tokenAddress: string, platform: 'pumpswap' | 'pumpfun' | 'bonk' | 'unknown', permanent: boolean = false) {
   platformCache.set(tokenAddress, {
     platform,
     timestamp: Date.now(),
@@ -257,7 +277,7 @@ export function markTokenAsPumpFun(tokenAddress: string) {
 /**
  * Detect platform with caching
  */
-export async function detectTokenPlatformWithCache(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'unknown'> {
+export async function detectTokenPlatformWithCache(tokenAddress: string): Promise<'pumpswap' | 'pumpfun' | 'bonk' | 'unknown'> {
   // Check cache first
   const cached = getCachedPlatform(tokenAddress);
   if (cached) {

@@ -1,7 +1,7 @@
 import { struct, u16, u8, blob } from "@solana/buffer-layout";
 import { publicKey, u64 } from "@solana/buffer-layout-utils";
 import { PublicKey } from "@solana/web3.js";
-import { connection } from "./config";
+import { connection } from "../service/config";
 import { logger } from "../jobs/logger";
 
 export const BONK_PROGRAM_ID = new PublicKey(
@@ -293,4 +293,31 @@ export function getPoolCacheStats() {
     knownPoolsSize: KNOWN_POOLS.size,
     cacheDuration: CACHE_DURATION,
   };
+}
+
+// === QUICK TEST SCRIPT ===
+if (require.main === module) {
+  (async () => {
+    const { Connection, PublicKey } = require("@solana/web3.js");
+    const tokenMint = "35DgaTrLcUjgp5rfCHy2NSUVh88vFpuCrUYUa4zmbonk";
+    const heliusRpc = "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e";
+    
+    // Override connection for this test
+    const testConnection = new Connection(heliusRpc, "confirmed");
+    
+    // Patch the connection used in this module
+    module.exports.connection = testConnection;
+    
+    console.log(`Checking Bonk pool for token: ${tokenMint}`);
+    try {
+      const pool = await module.exports.getBonkPoolState(tokenMint);
+      if (pool) {
+        console.log("Bonk pool found:", pool);
+      } else {
+        console.log("No Bonk pool found for this token.");
+      }
+    } catch (err) {
+      console.error("Error checking Bonk pool:", err);
+    }
+  })();
 } 
