@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  new-launch-bot-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps  # Stop at deps stage for development
+    container_name: new-launch-bot-dev
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - LIGHTWEIGHT_MODE=false
+      - ENABLE_BACKGROUND_PRELOADING=false
+      # Development environment variables
+      # - TELEGRAM_BOT_TOKEN=your_bot_token_here
+      # - MONGODB_URI=your_mongodb_uri_here
+      # - REDIS_URI=redis://redis:6379
+      # - MIXER_HELIUS_RPC=your_mixer_rpc_here
+      # - ENCRYPTION_SECRET=your_encryption_secret_here
+    env_file:
+      - .env
+    volumes:
+      # Mount source code for hot reloading
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+      - ./tsconfig.json:/app/tsconfig.json
+      # Exclude node_modules from volume mount
+      - /app/node_modules
+    working_dir: /app
+    command: ["bun", "run", "src/index.ts"]
+    depends_on:
+      - redis
+    networks:
+      - bot-network-dev
+    ports:
+      - "3000:3000"  # Expose port for debugging
+
+  redis:
+    image: redis:7-alpine
+    container_name: new-launch-bot-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - bot-network-dev
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_dev_data:
+
+networks:
+  bot-network-dev:
+    driver: bridge 

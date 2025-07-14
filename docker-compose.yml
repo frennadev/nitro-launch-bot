@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  new-launch-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: new-launch-bot
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - LIGHTWEIGHT_MODE=false
+      - ENABLE_BACKGROUND_PRELOADING=true
+      # Add your environment variables here or use a .env file
+      # - TELEGRAM_BOT_TOKEN=your_bot_token_here
+      # - MONGODB_URI=your_mongodb_uri_here
+      # - REDIS_URI=redis://redis:6379
+      # - MIXER_HELIUS_RPC=your_mixer_rpc_here
+      # - ENCRYPTION_SECRET=your_encryption_secret_here
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    networks:
+      - bot-network
+    healthcheck:
+      test: ["CMD", "bun", "run", "build/index.js", "--health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: new-launch-bot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - bot-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  redis_data:
+
+networks:
+  bot-network:
+    driver: bridge 
