@@ -96,26 +96,234 @@ export const ctoConversation = async (
     return conversation.halt();
   }
 
-  // Show confirmation
-  await sendMessage(
+  // === PLATFORM DETECTION STEP ===
+  const platformDetectionMessage = await sendMessage(
     amountInput,
-    `🔍 **Confirm CTO Operation**\n\n` +
+    `🔍 **Detecting Token Platform...**\n\n` +
     `**Token:** \`${tokenAddress}\`\n` +
-    `**Buy Amount:** ${buyAmount.toFixed(6)} SOL\n` +
-    `**Funding Wallet Balance:** ${fundingBalance.toFixed(6)} SOL\n\n` +
-    `**Process:**\n` +
-    `1. Distribute ${buyAmount.toFixed(6)} SOL to buy wallets via mixer\n` +
-    `2. Execute coordinated buy transactions\n` +
-    `3. Create buying pressure on the token\n\n` +
-    `⚠️ **Important:** This operation cannot be undone.\n\n` +
-    `Do you want to proceed?`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: new InlineKeyboard()
-        .text("✅ Confirm CTO", "confirm_cto")
-        .text("❌ Cancel", CallBackQueries.CANCEL)
-    }
+    `⏳ Analyzing token to determine optimal trading platform...`,
+    { parse_mode: "Markdown" }
   );
+
+  let platform: string = 'unknown'; // Default platform
+  
+  try {
+    // Use the improved platform detection with Bonk support
+    const { detectTokenPlatformWithCache } = await import("../../service/token-detection-service");
+    platform = await detectTokenPlatformWithCache(tokenAddress);
+    
+    // Log the platform detection result for transparency
+    logger.info(`[CTO Platform Detection] Token ${tokenAddress} detected as ${platform} platform`);
+    
+    // Get additional platform details for better user information
+    let platformDetails = "";
+    let platformIcon = "";
+    
+    switch (platform) {
+      case 'pumpfun':
+        platformIcon = "🎯";
+        platformDetails = "PumpFun Bonding Curve (Active Launch)";
+        break;
+      case 'pumpswap':
+        platformIcon = "🔄";
+        platformDetails = "PumpSwap DEX (Graduated/Listed)";
+        break;
+      case 'bonk':
+        platformIcon = "🐕";
+        platformDetails = "Bonk Pool (Raydium Launch Lab)";
+        break;
+      case 'unknown':
+        platformIcon = "❓";
+        platformDetails = "Unknown Platform (Will try multiple DEXs)";
+        break;
+      default:
+        platformIcon = "❓";
+        platformDetails = "Unknown Platform";
+    }
+
+    // Update the message with platform detection results
+    await ctx.api.editMessageText(
+      ctx.chat!.id,
+      platformDetectionMessage.message_id,
+      `✅ **Platform Detection Complete**\n\n` +
+      `**Token:** \`${tokenAddress}\`\n` +
+      `**Detected Platform:** ${platformIcon} ${platformDetails}\n` +
+      `**Trading Strategy:** Will use optimal routing for ${platform} tokens\n\n` +
+      `📊 **Platform Details:**\n` +
+      `• ${platform === 'pumpfun' ? 'Direct bonding curve trading for best prices' : ''}` +
+      `• ${platform === 'pumpswap' ? 'Jupiter → PumpSwap routing for liquidity' : ''}` +
+      `• ${platform === 'bonk' ? 'Bonk pool trading via Raydium Launch Lab' : ''}` +
+      `• ${platform === 'unknown' ? 'Multi-platform fallback (Jupiter → PumpSwap → PumpFun)' : ''}` +
+      `\n` +
+      `⚠️ **Please confirm this platform detection is correct before proceeding.**`,
+      { parse_mode: "Markdown" }
+    );
+
+    // Ask user to confirm platform detection
+    const platformConfirmation = await sendMessage(
+      amountInput,
+      `🔍 **Confirm Platform Detection**\n\n` +
+      `**Detected Platform:** ${platformIcon} ${platformDetails}\n\n` +
+      `Is this platform detection correct for your token?\n\n` +
+      `• **PumpFun** = Active bonding curve launch\n` +
+      `• **PumpSwap** = Graduated/listed on DEX\n` +
+      `• **Bonk** = Raydium Launch Lab token\n` +
+      `• **Unknown** = Will try multiple platforms\n\n` +
+      `Please confirm:`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard()
+          .text("✅ Platform Correct", "platform_confirmed")
+          .text("❌ Wrong Platform", "platform_incorrect")
+          .row()
+          .text("❌ Cancel CTO", CallBackQueries.CANCEL)
+      }
+    );
+
+    // Wait for platform confirmation
+    const platformResponse = await conversation.waitFor("callback_query:data");
+    
+    if (platformResponse.callbackQuery?.data === CallBackQueries.CANCEL) {
+      await platformResponse.answerCallbackQuery();
+      await sendMessage(platformResponse, "❌ CTO operation cancelled.");
+      return conversation.halt();
+    }
+
+    if (platformResponse.callbackQuery?.data === "platform_incorrect") {
+      await platformResponse.answerCallbackQuery();
+      await sendMessage(
+        platformResponse,
+        `❌ **Platform Detection Issue**\n\n` +
+        `The detected platform (${platformIcon} ${platformDetails}) appears to be incorrect.\n\n` +
+        `**Possible reasons:**\n` +
+        `• Token is very new and not yet indexed\n` +
+        `• Token uses a different launch mechanism\n` +
+        `• Network connectivity issues\n\n` +
+        `**Recommendation:**\n` +
+        `• Wait a few minutes and try again\n` +
+        `• Contact support if the issue persists\n` +
+        `• The system will use fallback routing if needed\n\n` +
+        `CTO operation cancelled for safety.`,
+        { parse_mode: "Markdown" }
+      );
+      return conversation.halt();
+    }
+
+    if (platformResponse.callbackQuery?.data === "platform_confirmed") {
+      await platformResponse.answerCallbackQuery("✅ Platform confirmed");
+      
+      // Log the user confirmation
+      logger.info(`[CTO Platform Confirmation] User confirmed ${platform} platform for token ${tokenAddress}`);
+      
+      // Show final confirmation with platform information
+      await sendMessage(
+        platformResponse,
+        `🔍 **Final CTO Confirmation**\n\n` +
+        `**Token:** \`${tokenAddress}\`\n` +
+        `**Platform:** ${platformIcon} ${platformDetails}\n` +
+        `**Buy Amount:** ${buyAmount.toFixed(6)} SOL\n` +
+        `**Funding Wallet Balance:** ${fundingBalance.toFixed(6)} SOL\n\n` +
+        `**Process:**\n` +
+        `1. Distribute ${buyAmount.toFixed(6)} SOL to buy wallets via mixer\n` +
+        `2. Execute coordinated buy transactions on ${platform} platform\n` +
+        `3. Create buying pressure on the token\n\n` +
+        `⚠️ **Important:** This operation cannot be undone.\n\n` +
+        `Do you want to proceed with the CTO operation?`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: new InlineKeyboard()
+            .text("✅ Confirm CTO", "confirm_cto")
+            .text("❌ Cancel", CallBackQueries.CANCEL)
+        }
+      );
+    } else {
+      // Unknown callback - cancel for safety
+      await platformResponse.answerCallbackQuery();
+      await sendMessage(platformResponse, "❌ CTO operation cancelled due to invalid response.");
+      return conversation.halt();
+    }
+
+  } catch (platformError: any) {
+    logger.error(`[CTO Platform Detection Error] Failed to detect platform for ${tokenAddress}:`, platformError);
+    platform = 'unknown'; // Set to unknown for fallback routing
+    
+    // Update the detection message with error
+    await ctx.api.editMessageText(
+      ctx.chat!.id,
+      platformDetectionMessage.message_id,
+      `❌ **Platform Detection Failed**\n\n` +
+      `**Token:** \`${tokenAddress}\`\n` +
+      `**Error:** ${platformError.message || "Unknown error"}\n\n` +
+      `**Fallback Strategy:**\n` +
+      `The system will use multi-platform fallback routing:\n` +
+      `• Jupiter → PumpSwap → PumpFun\n` +
+      `• This ensures maximum compatibility\n\n` +
+      `⚠️ **Proceed with fallback routing?**`,
+      { parse_mode: "Markdown" }
+    );
+
+    // Ask user if they want to proceed with fallback
+    const fallbackConfirmation = await sendMessage(
+      amountInput,
+      `⚠️ **Platform Detection Failed**\n\n` +
+      `The system couldn't determine the optimal platform for your token.\n\n` +
+      `**Fallback Strategy:**\n` +
+      `• Will try Jupiter first (best for most tokens)\n` +
+      `• Then PumpSwap if Jupiter fails\n` +
+      `• Finally PumpFun as last resort\n\n` +
+      `This ensures maximum compatibility but may be slightly slower.\n\n` +
+      `Do you want to proceed with fallback routing?`,
+      {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard()
+          .text("✅ Proceed with Fallback", "platform_confirmed")
+          .text("❌ Cancel CTO", CallBackQueries.CANCEL)
+      }
+    );
+
+    // Wait for fallback confirmation
+    const fallbackResponse = await conversation.waitFor("callback_query:data");
+    
+    if (fallbackResponse.callbackQuery?.data === CallBackQueries.CANCEL) {
+      await fallbackResponse.answerCallbackQuery();
+      await sendMessage(fallbackResponse, "❌ CTO operation cancelled.");
+      return conversation.halt();
+    }
+
+    if (fallbackResponse.callbackQuery?.data === "platform_confirmed") {
+      await fallbackResponse.answerCallbackQuery("✅ Proceeding with fallback routing");
+      
+      // Log the fallback decision
+      logger.info(`[CTO Platform Fallback] User chose fallback routing for token ${tokenAddress} due to detection failure`);
+      
+      // Show final confirmation with fallback information
+      await sendMessage(
+        fallbackResponse,
+        `🔍 **Final CTO Confirmation (Fallback)**\n\n` +
+        `**Token:** \`${tokenAddress}\`\n` +
+        `**Platform:** ❓ Unknown (Fallback Routing)\n` +
+        `**Buy Amount:** ${buyAmount.toFixed(6)} SOL\n` +
+        `**Funding Wallet Balance:** ${fundingBalance.toFixed(6)} SOL\n\n` +
+        `**Process:**\n` +
+        `1. Distribute ${buyAmount.toFixed(6)} SOL to buy wallets via mixer\n` +
+        `2. Execute coordinated buy transactions with fallback routing\n` +
+        `3. Create buying pressure on the token\n\n` +
+        `⚠️ **Important:** This operation cannot be undone.\n\n` +
+        `Do you want to proceed with the CTO operation?`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: new InlineKeyboard()
+            .text("✅ Confirm CTO", "confirm_cto")
+            .text("❌ Cancel", CallBackQueries.CANCEL)
+        }
+      );
+    } else {
+      // Unknown callback - cancel for safety
+      await fallbackResponse.answerCallbackQuery();
+      await sendMessage(fallbackResponse, "❌ CTO operation cancelled due to invalid response.");
+      return conversation.halt();
+    }
+  }
 
   // Wait for confirmation
   const confirmation = await conversation.waitFor("callback_query:data");
@@ -146,9 +354,9 @@ export const ctoConversation = async (
         { parse_mode: "Markdown" }
       );
 
-      // Execute CTO operation
+      // Execute CTO operation with detected platform
       const { executeCTOOperation } = await import("../../blockchain/pumpfun/ctoOperation");
-      const result = await executeCTOOperation(tokenAddress, user.id, buyAmount);
+      const result = await executeCTOOperation(tokenAddress, user.id, buyAmount, platform);
 
       if (result.success) {
         // Success message with detailed results

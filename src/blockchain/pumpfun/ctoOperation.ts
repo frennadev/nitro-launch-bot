@@ -9,15 +9,17 @@ interface CTOResult {
   failedBuys?: number;
   mixerSuccessRate?: number;
   error?: string;
+  detectedPlatform?: string;
 }
 
 export const executeCTOOperation = async (
   tokenAddress: string,
   userId: string,
-  totalAmount: number
+  totalAmount: number,
+  detectedPlatform?: string
 ): Promise<CTOResult> => {
   try {
-    logger.info(`[CTO] Starting CTO operation for token ${tokenAddress}, user ${userId}, amount ${totalAmount} SOL`);
+    logger.info(`[CTO] Starting CTO operation for token ${tokenAddress}, user ${userId}, amount ${totalAmount} SOL, platform: ${detectedPlatform || 'auto-detected'}`);
 
     // Get buyer wallets with private keys
     const buyerWallets = await getAllTradingWallets(userId);
@@ -188,7 +190,8 @@ export const executeCTOOperation = async (
       success: successfulBuys > 0, // Consider success if at least one buy succeeded
       successfulBuys,
       failedBuys,
-      mixerSuccessRate: Math.round(((mixerResult.successCount || successfulRoutes.length) / (mixerResult.totalRoutes || mixerResult.results?.length || 1)) * 100)
+      mixerSuccessRate: Math.round(((mixerResult.successCount || successfulRoutes.length) / (mixerResult.totalRoutes || mixerResult.results?.length || 1)) * 100),
+      detectedPlatform
     };
 
   } catch (error: any) {
