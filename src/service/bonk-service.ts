@@ -1,5 +1,5 @@
-import {
-  AccountMeta,
+import solanaWeb3 from "@solana/web3.js";
+const {
   ComputeBudgetProgram,
   Keypair,
   PublicKey,
@@ -8,13 +8,12 @@ import {
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
-} from "@solana/web3.js";
+} = solanaWeb3;
 import {
   BONK_PROGRAM_ID,
-  getBonkPoolState,
-  PoolState,
-} from "./bonk-pool-service";
-import { bs58 } from "@project-serum/anchor/dist/cjs/utils/bytes";
+  getBonkPoolState
+} from "./bonk-pool-service.ts";
+import bs58 from "bs58";
 import {
   AccountLayout,
   createAssociatedTokenAccount,
@@ -28,37 +27,41 @@ import {
   createSyncNativeInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { connection } from "./config";
+import { connection } from "./config.ts";
 import { closeAccountInstruction } from "@raydium-io/raydium-sdk-v2";
 import { TOKEN_PROGRAM_ID } from "@raydium-io/raydium-sdk";
-import { logger } from "../jobs/logger";
+import { logger } from "../jobs/logger.ts";
+import { getCpmmPoolState } from "../backend/get-cpmm-poolinfo.ts";
+import RaydiumCpmmService from "./raydium-cpmm-service.ts";
+import { detectTokenPlatform } from "./token-detection-service.ts";
+import { collectTransactionFee } from "../backend/functions-main.ts";
 
 export interface CreateBuyIX {
-  pool: PoolState;
-  payer: PublicKey;
-  userBaseAta: PublicKey;
-  userQuoteAta: PublicKey;
+  pool: any;
+  payer: any;
+  userBaseAta: any;
+  userQuoteAta: any;
   amount_in: bigint;
   minimum_amount_out: bigint;
 }
 
 export interface CreateSellIX {
-  pool: PoolState;
-  payer: PublicKey;
-  userBaseAta: PublicKey;
-  userQuoteAta: PublicKey;
+  pool: any;
+  payer: any;
+  userBaseAta: any;
+  userQuoteAta: any;
   amount_in: bigint;
   minimum_amount_out: bigint;
 }
 
 export interface BuyData {
-  mint: PublicKey;
+  mint: any;
   amount: bigint;
   privateKey: string;
 }
 
 export interface SellData {
-  mint: PublicKey;
+  mint: any;
   amount: bigint;
   privateKey: string;
   percentage?: number; // Optional: sell percentage of holdings (1-100)
@@ -133,7 +136,7 @@ export default class BonkService {
     amount_in,
     minimum_amount_out,
   }: CreateBuyIX) => {
-    const keys: AccountMeta[] = [
+    const keys: any[] = [
       { pubkey: payer, isSigner: true, isWritable: true },
       { pubkey: raydim_authority, isSigner: false, isWritable: false },
       { pubkey: global_config, isSigner: false, isWritable: false },
@@ -210,7 +213,7 @@ export default class BonkService {
     amount_in,
     minimum_amount_out,
   }: CreateSellIX) => {
-    const keys: AccountMeta[] = [
+    const keys: any[] = [
       { pubkey: payer, isSigner: true, isWritable: true },
       { pubkey: raydim_authority, isSigner: false, isWritable: false },
       { pubkey: global_config, isSigner: false, isWritable: false },
@@ -246,7 +249,7 @@ export default class BonkService {
 
   // Helper to estimate output for a buy (constant product formula, minus slippage)
   private estimateBuyOutput(
-    pool: PoolState,
+    pool: any,
     amountIn: bigint,
     slippage?: number
   ): bigint {
@@ -292,7 +295,7 @@ export default class BonkService {
 
   // 🔥 NEW: Helper to estimate output for a sell (constant product formula, minus slippage)
   private estimateSellOutput(
-    pool: PoolState,
+    pool: any,
     amountIn: bigint,
     slippage?: number
   ): bigint {
@@ -336,7 +339,7 @@ export default class BonkService {
 
   // 🔥 UPDATED: Adaptive slippage calculation for both buy and sell
   private calculateAdaptiveSlippage(
-    pool: PoolState,
+    pool: any,
     amountIn: bigint,
     isSell: boolean = false
   ): number {
@@ -386,10 +389,10 @@ export default class BonkService {
 
   // 🔥 NEW: Retry logic for sell operations
   private async retrySellWithAdaptiveSlippage(
-    pool: PoolState,
+    pool: any,
     sellData: SellData,
     maxRetries?: number
-  ): Promise<VersionedTransaction> {
+  ): Promise<any> {
     const finalMaxRetries = maxRetries ?? this.config.maxRetries;
     let lastError: Error | null = null;
 
@@ -457,10 +460,10 @@ export default class BonkService {
 
   // 🔥 UPDATED: Retry logic with exponential backoff for pool state changes
   private async retryBuyWithAdaptiveSlippage(
-    pool: PoolState,
+    pool: any,
     buyData: BuyData,
     maxRetries?: number
-  ): Promise<VersionedTransaction> {
+  ): Promise<any> {
     const finalMaxRetries = maxRetries ?? this.config.maxRetries;
     let lastError: Error | null = null;
 
@@ -528,10 +531,10 @@ export default class BonkService {
 
   // 🔥 UPDATED: Separate transaction creation logic for better error handling
   private async createBuyTransaction(
-    pool: PoolState,
+    pool: any,
     buyData: BuyData,
     minAmountOut: bigint
-  ): Promise<VersionedTransaction> {
+  ): Promise<any> {
     const { mint, privateKey, amount } = buyData;
     const owner = Keypair.fromSecretKey(bs58.decode(privateKey));
 
@@ -598,10 +601,10 @@ export default class BonkService {
 
   // 🔥 NEW: Create sell transaction
   private async createSellTransaction(
-    pool: PoolState,
+    pool: any,
     sellData: SellData,
     minAmountOut: bigint
-  ): Promise<VersionedTransaction> {
+  ): Promise<any> {
     const { mint, privateKey, amount } = sellData;
     const owner = Keypair.fromSecretKey(bs58.decode(privateKey));
 
@@ -718,9 +721,25 @@ export default class BonkService {
   }
 
   buyTx = async (buyData: BuyData) => {
-    const { mint } = buyData;
+    const { mint, amount, privateKey } = buyData;
     logger.info(`[bonk-service]: 🚀 BONK Buy started with adaptive slippage & retry logic`);
     const start = Date.now();
+
+    // Use improved platform detection to check for graduation
+    const platform = await detectTokenPlatform(mint.toBase58());
+    logger.info(`[bonk-service]: Detected platform: ${platform} for token ${mint.toBase58()}`);
+    
+    // If token is graduated to CPMM, route to CPMM service
+    if (platform === 'cpmm') {
+      logger.info(`[bonk-service]: Token is graduated (CPMM platform detected), routing buy to RaydiumCpmmService`);
+      const cpmmService = new RaydiumCpmmService();
+      return await cpmmService.buyTx({ mint: mint.toBase58(), privateKey, amount_in: amount });
+    }
+    
+    // If not a Bonk token, throw error
+    if (platform !== 'bonk') {
+      throw new Error(`Token ${mint.toBase58()} is not a Bonk token (detected platform: ${platform})`);
+    }
 
     const poolDiscoveryStart = Date.now();
     const poolState = await getBonkPoolState(mint.toBase58());
@@ -804,4 +823,146 @@ export default class BonkService {
       throw error;
     }
   };
+
+  // Enhanced buy method with fee collection
+  async buyWithFeeCollection(buyData: BuyData) {
+    const logId = `bonk-buy-${buyData.mint.toBase58().substring(0, 8)}`;
+    logger.info(`[${logId}]: Starting Bonk buy with fee collection`);
+    
+    try {
+      // Create and send transaction
+      const transaction = await this.buyTx(buyData);
+      
+      // Send transaction
+      const signature = await connection.sendTransaction(transaction);
+      logger.info(`[${logId}]: Transaction sent: ${signature}`);
+      
+      // Wait for confirmation
+      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+      
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${confirmation.value.err}`);
+      }
+      
+      logger.info(`[${logId}]: Transaction confirmed: ${signature}`);
+      
+      // Get actual transaction amount from blockchain instead of using input amount
+      let actualTransactionAmountSol = Number(buyData.amount) / 1e9; // Fallback to input amount
+      try {
+        const { parseTransactionAmounts } = await import("../backend/utils");
+        const owner = Keypair.fromSecretKey(bs58.decode(buyData.privateKey));
+        const actualAmounts = await parseTransactionAmounts(
+          signature,
+          owner.publicKey.toBase58(),
+          buyData.mint.toBase58(),
+          "buy"
+        );
+        
+        if (actualAmounts.success && actualAmounts.actualSolSpent) {
+          actualTransactionAmountSol = actualAmounts.actualSolSpent;
+          logger.info(`[${logId}]: Actual SOL spent from blockchain: ${actualTransactionAmountSol} SOL`);
+        } else {
+          logger.warn(`[${logId}]: Failed to parse actual amounts, using input amount: ${actualAmounts.error}`);
+        }
+      } catch (parseError: any) {
+        logger.warn(`[${logId}]: Error parsing transaction amounts, using input amount: ${parseError.message}`);
+      }
+      
+      // Collect platform fee after successful transaction using actual amount
+      try {
+        logger.info(`[${logId}]: Collecting platform fee for ${actualTransactionAmountSol} SOL transaction`);
+        const feeResult = await collectTransactionFee(buyData.privateKey, actualTransactionAmountSol, "buy");
+        
+        if (feeResult.success) {
+          logger.info(`[${logId}]: Platform fee collected successfully: ${feeResult.feeAmount} SOL`);
+        } else {
+          logger.warn(`[${logId}]: Platform fee collection failed: ${feeResult.error}`);
+        }
+      } catch (feeError: any) {
+        logger.error(`[${logId}]: Error collecting platform fee:`, feeError.message);
+      }
+      
+      return {
+        success: true,
+        signature,
+        actualTransactionAmountSol,
+        feeCollected: true,
+      };
+      
+    } catch (error: any) {
+      logger.error(`[${logId}]: Buy transaction failed:`, error.message);
+      throw error;
+    }
+  }
+
+  // Enhanced sell method with fee collection
+  async sellWithFeeCollection(sellData: SellData) {
+    const logId = `bonk-sell-${sellData.mint.toBase58().substring(0, 8)}`;
+    logger.info(`[${logId}]: Starting Bonk sell with fee collection`);
+    
+    try {
+      // Create and send transaction
+      const transaction = await this.sellTx(sellData);
+      
+      // Send transaction
+      const signature = await connection.sendTransaction(transaction);
+      logger.info(`[${logId}]: Transaction sent: ${signature}`);
+      
+      // Wait for confirmation
+      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+      
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${confirmation.value.err}`);
+      }
+      
+      logger.info(`[${logId}]: Transaction confirmed: ${signature}`);
+      
+      // Get actual transaction amount from blockchain instead of using estimate
+      let actualTransactionAmountSol = 0.01; // Fallback estimate
+      try {
+        const { parseTransactionAmounts } = await import("../backend/utils");
+        const owner = Keypair.fromSecretKey(bs58.decode(sellData.privateKey));
+        const actualAmounts = await parseTransactionAmounts(
+          signature,
+          owner.publicKey.toBase58(),
+          sellData.mint.toBase58(),
+          "sell"
+        );
+        
+        if (actualAmounts.success && actualAmounts.actualSolReceived) {
+          actualTransactionAmountSol = actualAmounts.actualSolReceived;
+          logger.info(`[${logId}]: Actual SOL received from blockchain: ${actualTransactionAmountSol} SOL`);
+        } else {
+          logger.warn(`[${logId}]: Failed to parse actual amounts, using fallback estimate: ${actualAmounts.error}`);
+        }
+      } catch (parseError: any) {
+        logger.warn(`[${logId}]: Error parsing transaction amounts, using fallback estimate: ${parseError.message}`);
+      }
+      
+      // Collect platform fee after successful transaction using actual amount
+      try {
+        logger.info(`[${logId}]: Collecting platform fee for ${actualTransactionAmountSol} SOL transaction`);
+        const feeResult = await collectTransactionFee(sellData.privateKey, actualTransactionAmountSol, "sell");
+        
+        if (feeResult.success) {
+          logger.info(`[${logId}]: Platform fee collected successfully: ${feeResult.feeAmount} SOL`);
+        } else {
+          logger.warn(`[${logId}]: Platform fee collection failed: ${feeResult.error}`);
+        }
+      } catch (feeError: any) {
+        logger.error(`[${logId}]: Error collecting platform fee:`, feeError.message);
+      }
+      
+      return {
+        success: true,
+        signature,
+        actualTransactionAmountSol,
+        feeCollected: true,
+      };
+      
+    } catch (error: any) {
+      logger.error(`[${logId}]: Sell transaction failed:`, error.message);
+      throw error;
+    }
+  }
 } 

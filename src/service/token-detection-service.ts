@@ -2,9 +2,11 @@
 // Determines whether to use Pumpswap or PumpFun for a given token
 
 import { Connection, PublicKey } from "@solana/web3.js";
-import { connection } from "../blockchain/common/connection";
-import { getBondingCurve, getBondingCurveData } from "../blockchain/pumpfun/utils";
-import { logger } from "../blockchain/common/logger";
+import { connection } from "../blockchain/common/connection.ts";
+import { getBondingCurve, getBondingCurveData } from "../blockchain/pumpfun/utils.ts";
+import { logger } from "../blockchain/common/logger.ts";
+import { getBonkPoolState } from "./bonk-pool-service.ts";
+import { getCpmmPoolState } from "../backend/get-cpmm-poolinfo.ts";
 
 export interface TokenDetectionResult {
   isPumpswap: boolean;
@@ -206,7 +208,6 @@ export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpsw
       logger.info(`[${logId}]: No bonding curve data found - checking for Bonk pool...`);
       
       try {
-        const { getBonkPoolState } = await import("../service/bonk-pool-service");
         const bonkPool = await getBonkPoolState(tokenAddress);
         
         if (bonkPool) {
@@ -219,7 +220,6 @@ export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpsw
           // Check if this Bonk token has graduated to CPMM (Raydium)
           logger.info(`[${logId}]: Checking if Bonk token has graduated to CPMM...`);
           try {
-            const { getCpmmPoolState } = await import("../backend/get-cpmm-poolinfo");
             const cpmmPool = await getCpmmPoolState(tokenAddress);
             
             if (cpmmPool) {
@@ -245,7 +245,7 @@ export async function detectTokenPlatform(tokenAddress: string): Promise<'pumpsw
       } catch (bonkError: any) {
         logger.warn(`[${logId}]: Bonk pool check failed: ${bonkError.message}`);
         logger.info(`[${logId}]: Falling back to Pumpswap assumption`);
-        return 'pumpswap';
+      return 'pumpswap';
       }
     }
     
@@ -730,4 +730,79 @@ export function clearMultipleLaunchStatusCache(tokenAddresses: string[]) {
 export async function forceRefreshLaunchStatus(tokenAddress: string): Promise<TokenLaunchStatus> {
   clearLaunchStatusCache(tokenAddress);
   return await detectTokenLaunchStatus(tokenAddress);
+}
+
+/**
+ * Quick check if token is likely a Bonk token
+ * @param tokenAddress The token address to check
+ * @returns True if token appears to be on Bonk
+ */
+export async function isBonkToken(tokenAddress: string): Promise<boolean> {
+  try {
+    const result = await detectTokenPlatform(tokenAddress);
+    return result === 'bonk';
+  } catch (error) {
+    logger.error(`Error in isBonkToken check:`, error);
+    return false;
+  }
+}
+
+/**
+ * Quick check if token is likely a CPMM token
+ * @param tokenAddress The token address to check
+ * @returns True if token appears to be on CPMM
+ */
+export async function isCpmmToken(tokenAddress: string): Promise<boolean> {
+  try {
+    const result = await detectTokenPlatform(tokenAddress);
+    return result === 'cpmm';
+  } catch (error) {
+    logger.error(`Error in isCpmmToken check:`, error);
+    return false;
+  }
+}
+
+/**
+ * Check if a Bonk token has graduated to CPMM
+ * @param tokenAddress The token address to check
+ * @returns True if token has both Bonk and CPMM pools (graduated), false if only Bonk, null if neither
+ */
+export async function isBonkTokenGraduated(tokenAddress: string): Promise<boolean | null> {
+  const logId = `bonk-graduation-${tokenAddress.substring(0, 8)}`;
+  
+  try {
+    // Check for Bonk pool first
+    const bonkPool = await getBonkPoolState(tokenAddress);
+    if (!bonkPool) {
+      logger.info(`[${logId}]: No Bonk pool found - not a Bonk token`);
+      return null;
+    }
+    
+    // Check for CPMM pool
+    const cpmmPool = await getCpmmPoolState(tokenAddress);
+    if (cpmmPool) {
+      logger.info(`[${logId}]: CPMM pool found - Bonk token has graduated`);
+      return true;
+    } else {
+      logger.info(`[${logId}]: No CPMM pool found - Bonk token not graduated`);
+      return false;
+    }
+  } catch (error: any) {
+    logger.error(`[${logId}]: Error checking Bonk graduation status: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Mark a token as Bonk permanently (used after successful Bonk operations)
+ */
+export function markTokenAsBonk(tokenAddress: string) {
+  setCachedPlatform(tokenAddress, 'bonk', true);
+}
+
+/**
+ * Mark a token as CPMM permanently (used after successful CPMM operations)
+ */
+export function markTokenAsCpmm(tokenAddress: string) {
+  setCachedPlatform(tokenAddress, 'cpmm', true);
 } 

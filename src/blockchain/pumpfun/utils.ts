@@ -1,8 +1,8 @@
 import { PublicKey } from "@solana/web3.js";
-import { PUMPFUN_PROGRAM, TOKEN_METADATA_PROGRAM } from "./constants";
+import { PUMPFUN_PROGRAM, TOKEN_METADATA_PROGRAM } from "./constants.ts";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { connection } from "../common/connection";
-import { BondingCurveCodec, GlobalSettingCodec } from "./codecs";
+import { connection } from "../common/connection.ts";
+import { BondingCurveCodec, GlobalSettingCodec } from "./codecs.ts";
 
 export const getBondingCurve = (mint: PublicKey) => {
   const [bondingCurve, _] = PublicKey.findProgramAddressSync(

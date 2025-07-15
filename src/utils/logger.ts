@@ -1,5 +1,5 @@
 import { createLogger, format, transports, Logger } from "winston";
-import { env } from "../config";
+import { env } from "../config.ts";
 
 const { combine, timestamp, errors, json, printf, colorize } = format;
 
@@ -10,12 +10,30 @@ const baseFormat = combine(
   json()
 );
 
+// Helper to recursively convert BigInt values to strings
+function convertBigIntsToStrings(obj: any): any {
+  if (typeof obj === 'bigint') {
+    return obj.toString();
+  } else if (Array.isArray(obj)) {
+    return obj.map(convertBigIntsToStrings);
+  } else if (obj && typeof obj === 'object') {
+    const result: any = {};
+    for (const key of Object.keys(obj)) {
+      result[key] = convertBigIntsToStrings(obj[key]);
+    }
+    return result;
+  }
+  return obj;
+}
+
 // Console format for development
 const consoleFormat = combine(
   colorize({ all: true }),
   timestamp({ format: 'HH:mm:ss.SSS' }),
   printf(({ timestamp, level, message, service, ...meta }) => {
-    const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+    // Convert BigInts in meta to strings for safe JSON serialization
+    const safeMeta = convertBigIntsToStrings(meta);
+    const metaStr = Object.keys(safeMeta).length ? ` ${JSON.stringify(safeMeta)}` : '';
     return `${timestamp} [${service}] ${level}: ${message}${metaStr}`;
   })
 );

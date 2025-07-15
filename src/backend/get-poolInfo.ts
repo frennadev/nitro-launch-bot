@@ -4,8 +4,8 @@ import base58 from "bs58";
 
 import { struct, u16, u8, u32 } from "@solana/buffer-layout";
 import { publicKey, u64 } from "@solana/buffer-layout-utils";
-import { connection } from "../blockchain/common/connection";
-import { LIGHTWEIGHT_MODE, ENABLE_BACKGROUND_PRELOADING, MAX_POOL_CACHE_SIZE } from "../config";
+import { connection } from "../blockchain/common/connection.ts";
+import { LIGHTWEIGHT_MODE, ENABLE_BACKGROUND_PRELOADING, MAX_POOL_CACHE_SIZE } from "../config.ts";
 
 // Define the program ID directly to avoid circular imports
 const pumpswap_amm_program_id = new PublicKey("D1ZN9Wj1fRSUQfCjhvnu1hqDMT7hzjzBBpi12nVWqQhY");

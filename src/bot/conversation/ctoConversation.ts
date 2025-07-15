@@ -176,21 +176,21 @@ export const ctoConversation = async (
       `🔍 **CTO Confirmation**\n\n` +
       `**Token:** \`${tokenAddress}\`\n` +
       `**Platform:** ${platformIcon} ${platformDetails}\n` +
-      `**Buy Amount:** ${buyAmount.toFixed(6)} SOL\n` +
-      `**Funding Wallet Balance:** ${fundingBalance.toFixed(6)} SOL\n\n` +
-      `**Process:**\n` +
-      `1. Distribute ${buyAmount.toFixed(6)} SOL to buy wallets via mixer\n` +
+    `**Buy Amount:** ${buyAmount.toFixed(6)} SOL\n` +
+    `**Funding Wallet Balance:** ${fundingBalance.toFixed(6)} SOL\n\n` +
+    `**Process:**\n` +
+    `1. Distribute ${buyAmount.toFixed(6)} SOL to buy wallets via mixer\n` +
       `2. Execute coordinated buy transactions on ${platform} platform\n` +
-      `3. Create buying pressure on the token\n\n` +
-      `⚠️ **Important:** This operation cannot be undone.\n\n` +
+    `3. Create buying pressure on the token\n\n` +
+    `⚠️ **Important:** This operation cannot be undone.\n\n` +
       `Do you want to proceed with the CTO operation?`,
-      {
-        parse_mode: "Markdown",
-        reply_markup: new InlineKeyboard()
-          .text("✅ Confirm CTO", "confirm_cto")
-          .text("❌ Cancel", CallBackQueries.CANCEL)
-      }
-    );
+    {
+      parse_mode: "Markdown",
+      reply_markup: new InlineKeyboard()
+        .text("✅ Confirm CTO", "confirm_cto")
+        .text("❌ Cancel", CallBackQueries.CANCEL)
+    }
+  );
 
   } catch (platformError: any) {
     logger.error(`[CTO Platform Detection Error] Failed to detect platform for ${tokenAddress}:`, platformError);

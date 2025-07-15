@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import { struct, u8, blob } from "@solana/buffer-layout";
 import { publicKey, u64 } from "@solana/buffer-layout-utils";
-import { connection } from "../service/config";
+import { connection } from "../blockchain/common/connection.ts";
 
 export const CPMM_ID = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
 
