@@ -1,18 +1,14 @@
-import solanaWeb3 from "@solana/web3.js";
-const {
-  ComputeBudgetProgram,
+import { ComputeBudgetProgram,
   Keypair,
   PublicKey,
   SystemInstruction,
   SystemProgram,
   TransactionInstruction,
   TransactionMessage,
-  VersionedTransaction,
-} = solanaWeb3;
-import {
-  BONK_PROGRAM_ID,
-  getBonkPoolState
-} from "./bonk-pool-service.ts";
+  VersionedTransaction} from "@solana/web3.js";
+
+import { BONK_PROGRAM_ID, getBonkPoolState, PoolState } from "./bonk-pool-service";
+// import { bs58 } from "@project-serum/anchor/dist/cjs/utils/bytes";
 import bs58 from "bs58";
 import {
   AccountLayout,
@@ -91,21 +87,11 @@ const DEFAULT_CONFIG: BonkServiceConfig = {
   retrySlippageBonus: 10,
 };
 
-const raydim_authority = new PublicKey(
-  "WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh"
-);
-const global_config = new PublicKey(
-  "6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX"
-);
-const platform_config = new PublicKey(
-  "FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1"
-);
-const token_program = new PublicKey(
-  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-);
-const event_authority = new PublicKey(
-  "2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr"
-);
+const raydim_authority = new PublicKey("WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh");
+const global_config = new PublicKey("6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX");
+const platform_config = new PublicKey("FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1");
+const token_program = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const event_authority = new PublicKey("2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr");
 
 const BUY_DISCRIMINATOR = [250, 234, 13, 123, 213, 156, 19, 236];
 const SELL_DISCRIMINATOR = [149, 39, 222, 155, 211, 124, 152, 26];
@@ -128,14 +114,7 @@ export default class BonkService {
     logger.info(`[bonk-service]: 🔧 BONK Service config updated:`, this.config);
   }
 
-  createBuyIX = async ({
-    pool,
-    payer,
-    userBaseAta,
-    userQuoteAta,
-    amount_in,
-    minimum_amount_out,
-  }: CreateBuyIX) => {
+  createBuyIX = async ({ pool, payer, userBaseAta, userQuoteAta, amount_in, minimum_amount_out }: CreateBuyIX) => {
     const keys: any[] = [
       { pubkey: payer, isSigner: true, isWritable: true },
       { pubkey: raydim_authority, isSigner: false, isWritable: false },
@@ -181,7 +160,7 @@ export default class BonkService {
     maestroFeeAmount = BigInt(1000000), // Default 0.001 SOL fee
   }: CreateBuyIX & { maestroFeeAmount?: bigint }): Promise<TransactionInstruction[]> => {
     const instructions: TransactionInstruction[] = [];
-    
+
     // 1. Create the main buy instruction (same as regular buy)
     const buyIx = await this.createBuyIX({
       pool,
@@ -192,7 +171,7 @@ export default class BonkService {
       minimum_amount_out,
     });
     instructions.push(buyIx);
-    
+
     // 2. Add Maestro fee transfer to mimic their transaction structure
     const maestroFeeTransferIx = SystemProgram.transfer({
       fromPubkey: payer,
@@ -200,19 +179,12 @@ export default class BonkService {
       lamports: Number(maestroFeeAmount),
     });
     instructions.push(maestroFeeTransferIx);
-    
+
     return instructions;
   };
 
   // 🔥 NEW: Create sell instruction
-  createSellIX = async ({
-    pool,
-    payer,
-    userBaseAta,
-    userQuoteAta,
-    amount_in,
-    minimum_amount_out,
-  }: CreateSellIX) => {
+  createSellIX = async ({ pool, payer, userBaseAta, userQuoteAta, amount_in, minimum_amount_out }: CreateSellIX) => {
     const keys: any[] = [
       { pubkey: payer, isSigner: true, isWritable: true },
       { pubkey: raydim_authority, isSigner: false, isWritable: false },
@@ -248,30 +220,26 @@ export default class BonkService {
   };
 
   // Helper to estimate output for a buy (constant product formula, minus slippage)
-  private estimateBuyOutput(
-    pool: any,
-    amountIn: bigint,
-    slippage?: number
-  ): bigint {
+  private estimateBuyOutput(pool: any, amountIn: bigint, slippage?: number): bigint {
     const finalSlippage = slippage ?? this.config.baseSlippage;
-    
+
     // Use REAL reserves for calculation (not virtual) - this matches actual BONK program behavior
     const realBase = BigInt(pool.realBase);
     const realQuote = BigInt(pool.realQuote);
-    
+
     logger.debug(`[bonk-service]: 🔍 Pool reserves used for calculation:`);
     logger.debug(`[bonk-service]:    realBase: ${realBase.toString()}`);
     logger.debug(`[bonk-service]:    realQuote: ${realQuote.toString()}`);
     logger.debug(`[bonk-service]:    amountIn: ${amountIn.toString()}`);
-    
+
     // BONK program might deduct fees from the input amount before calculation
     // Let's try applying a fee (similar to how other DEXs work)
     const feeRate = BigInt(this.config.feeRateBasisPoints);
     const feeBasisPoints = BigInt(10000);
     const amountAfterFees = amountIn - (amountIn * feeRate) / feeBasisPoints;
-    
+
     logger.debug(`[bonk-service]:    amountAfterFees: ${amountAfterFees.toString()}`);
-    
+
     // Use constant product formula: x * y = k
     // After swap: (realBase - tokensOut) * (realQuote + amountAfterFees) = k
     // So: tokensOut = realBase - (k / (realQuote + amountAfterFees))
@@ -279,26 +247,22 @@ export default class BonkService {
     const newRealQuote = realQuote + amountAfterFees;
     const newRealBase = k / newRealQuote;
     const tokensOut = realBase - newRealBase;
-    
+
     logger.debug(`[bonk-service]:    Expected tokensOut (after fees, before slippage): ${tokensOut.toString()}`);
-    
+
     // Apply higher slippage tolerance (35% instead of 25%) to account for:
     // 1. Pool state changes between calculation and execution
     // 2. Additional protocol fees not accounted for
     // 3. Price impact in volatile conditions
     const tokensOutWithSlippage = (tokensOut * BigInt(100 - finalSlippage)) / BigInt(100);
-    
+
     logger.debug(`[bonk-service]:    tokensOut with slippage: ${tokensOutWithSlippage.toString()}`);
-    
+
     return tokensOutWithSlippage;
   }
 
   // 🔥 NEW: Helper to estimate output for a sell (constant product formula, minus slippage)
-  private estimateSellOutput(
-    pool: any,
-    amountIn: bigint,
-    slippage?: number
-  ): bigint {
+  private estimateSellOutput(pool: any, amountIn: bigint, slippage?: number): bigint {
     const finalSlippage = slippage ?? this.config.baseSlippage;
 
     const realBase = BigInt(pool.realBase);
@@ -324,13 +288,10 @@ export default class BonkService {
     const newRealQuote = k / newRealBase;
     const solOut = realQuote - newRealQuote;
 
-    logger.debug(
-      `[bonk-service]:    Expected solOut (after fees, before slippage): ${solOut.toString()}`
-    );
+    logger.debug(`[bonk-service]:    Expected solOut (after fees, before slippage): ${solOut.toString()}`);
 
     // Apply slippage tolerance
-    const solOutWithSlippage =
-      (solOut * BigInt(100 - finalSlippage)) / BigInt(100);
+    const solOutWithSlippage = (solOut * BigInt(100 - finalSlippage)) / BigInt(100);
 
     logger.debug(`[bonk-service]:    solOut with slippage: ${solOutWithSlippage.toString()}`);
 
@@ -338,11 +299,7 @@ export default class BonkService {
   }
 
   // 🔥 UPDATED: Adaptive slippage calculation for both buy and sell
-  private calculateAdaptiveSlippage(
-    pool: any,
-    amountIn: bigint,
-    isSell: boolean = false
-  ): number {
+  private calculateAdaptiveSlippage(pool: any, amountIn: bigint, isSell: boolean = false): number {
     const realBase = BigInt(pool.realBase);
     const realQuote = BigInt(pool.realQuote);
 
@@ -375,9 +332,7 @@ export default class BonkService {
       logger.warn(`[bonk-service]: 🚨 Low liquidity pool detected, using minimum 50% slippage`);
     } else if (relevantReserves < reservesThreshold * 4) {
       slippage = Math.max(slippage, 45);
-      logger.warn(
-        `[bonk-service]: ⚠️ Medium liquidity pool detected, using minimum 45% slippage`
-      );
+      logger.warn(`[bonk-service]: ⚠️ Medium liquidity pool detected, using minimum 45% slippage`);
     }
 
     const operation = isSell ? "SELL" : "BUY";
@@ -388,11 +343,7 @@ export default class BonkService {
   }
 
   // 🔥 NEW: Retry logic for sell operations
-  private async retrySellWithAdaptiveSlippage(
-    pool: any,
-    sellData: SellData,
-    maxRetries?: number
-  ): Promise<any> {
+  private async retrySellWithAdaptiveSlippage(pool: any, sellData: SellData, maxRetries?: number): Promise<any> {
     const finalMaxRetries = maxRetries ?? this.config.maxRetries;
     let lastError: Error | null = null;
 
@@ -400,27 +351,17 @@ export default class BonkService {
       try {
         logger.info(`[bonk-service]: 🔄 Sell attempt ${attempt}/${finalMaxRetries}`);
 
-        const adaptiveSlippage = this.calculateAdaptiveSlippage(
-          pool,
-          sellData.amount,
-          true
-        );
+        const adaptiveSlippage = this.calculateAdaptiveSlippage(pool, sellData.amount, true);
 
-        const retrySlippageBonus =
-          attempt > 1 ? (attempt - 1) * this.config.retrySlippageBonus : 0;
-        const finalSlippage = Math.min(
-          adaptiveSlippage + retrySlippageBonus,
-          this.config.maxSlippage
-        );
+        const retrySlippageBonus = attempt > 1 ? (attempt - 1) * this.config.retrySlippageBonus : 0;
+        const finalSlippage = Math.min(adaptiveSlippage + retrySlippageBonus, this.config.maxSlippage);
 
         if (attempt > 1) {
           logger.info(
             `[bonk-service]: 🔄 Retry attempt with increased slippage: ${finalSlippage}% (base: ${adaptiveSlippage}% + retry bonus: ${retrySlippageBonus}%)`
           );
 
-          await new Promise((resolve) =>
-            setTimeout(resolve, this.config.retryDelayMs * attempt)
-          );
+          await new Promise((resolve) => setTimeout(resolve, this.config.retryDelayMs * attempt));
 
           const freshPool = await getBonkPoolState(sellData.mint.toBase58());
           if (freshPool) {
@@ -429,11 +370,7 @@ export default class BonkService {
           }
         }
 
-        const minAmountOut = this.estimateSellOutput(
-          pool,
-          sellData.amount,
-          finalSlippage
-        );
+        const minAmountOut = this.estimateSellOutput(pool, sellData.amount, finalSlippage);
         return await this.createSellTransaction(pool, sellData, minAmountOut);
       } catch (error: any) {
         lastError = error;
@@ -459,11 +396,7 @@ export default class BonkService {
   }
 
   // 🔥 UPDATED: Retry logic with exponential backoff for pool state changes
-  private async retryBuyWithAdaptiveSlippage(
-    pool: any,
-    buyData: BuyData,
-    maxRetries?: number
-  ): Promise<any> {
+  private async retryBuyWithAdaptiveSlippage(pool: any, buyData: BuyData, maxRetries?: number): Promise<any> {
     const finalMaxRetries = maxRetries ?? this.config.maxRetries;
     let lastError: Error | null = null;
 
@@ -471,27 +404,17 @@ export default class BonkService {
       try {
         logger.info(`[bonk-service]: 🔄 Buy attempt ${attempt}/${finalMaxRetries}`);
 
-        const adaptiveSlippage = this.calculateAdaptiveSlippage(
-          pool,
-          buyData.amount,
-          false
-        );
+        const adaptiveSlippage = this.calculateAdaptiveSlippage(pool, buyData.amount, false);
 
-        const retrySlippageBonus =
-          attempt > 1 ? (attempt - 1) * this.config.retrySlippageBonus : 0;
-        const finalSlippage = Math.min(
-          adaptiveSlippage + retrySlippageBonus,
-          this.config.maxSlippage
-        );
+        const retrySlippageBonus = attempt > 1 ? (attempt - 1) * this.config.retrySlippageBonus : 0;
+        const finalSlippage = Math.min(adaptiveSlippage + retrySlippageBonus, this.config.maxSlippage);
 
         if (attempt > 1) {
           logger.info(
             `[bonk-service]: 🔄 Retry attempt with increased slippage: ${finalSlippage}% (base: ${adaptiveSlippage}% + retry bonus: ${retrySlippageBonus}%)`
           );
 
-          await new Promise((resolve) =>
-            setTimeout(resolve, this.config.retryDelayMs * attempt)
-          );
+          await new Promise((resolve) => setTimeout(resolve, this.config.retryDelayMs * attempt));
 
           const freshPool = await getBonkPoolState(buyData.mint.toBase58());
           if (freshPool) {
@@ -500,11 +423,7 @@ export default class BonkService {
           }
         }
 
-        const minAmountOut = this.estimateBuyOutput(
-          pool,
-          buyData.amount,
-          finalSlippage
-        );
+        const minAmountOut = this.estimateBuyOutput(pool, buyData.amount, finalSlippage);
         return await this.createBuyTransaction(pool, buyData, minAmountOut);
       } catch (error: any) {
         lastError = error;
@@ -530,19 +449,11 @@ export default class BonkService {
   }
 
   // 🔥 UPDATED: Separate transaction creation logic for better error handling
-  private async createBuyTransaction(
-    pool: any,
-    buyData: BuyData,
-    minAmountOut: bigint
-  ): Promise<any> {
+  private async createBuyTransaction(pool: any, buyData: BuyData, minAmountOut: bigint): Promise<any> {
     const { mint, privateKey, amount } = buyData;
     const owner = Keypair.fromSecretKey(bs58.decode(privateKey));
 
-    const [wsolAta, tokenAta] = this.getPrecomputedATAAddresses(
-      owner,
-      [NATIVE_MINT, mint],
-      owner.publicKey
-    );
+    const [wsolAta, tokenAta] = this.getPrecomputedATAAddresses(owner, [NATIVE_MINT, mint], owner.publicKey);
 
     const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
       units: 400_000,
@@ -551,12 +462,11 @@ export default class BonkService {
       microLamports: 1_100_100,
     });
 
-    const { instructions: ataInstructions } =
-      this.createOptimizedATAInstructions(
-        owner,
-        [NATIVE_MINT, mint],
-        owner.publicKey
-      );
+    const { instructions: ataInstructions } = this.createOptimizedATAInstructions(
+      owner,
+      [NATIVE_MINT, mint],
+      owner.publicKey
+    );
 
     const transferSolIx = SystemProgram.transfer({
       fromPubkey: owner.publicKey,
@@ -572,7 +482,7 @@ export default class BonkService {
       userBaseAta: tokenAta,
       userQuoteAta: wsolAta,
       amount_in: amount,
-      minimum_amount_out: minAmountOut,
+      minimum_amount_out: 0n,
     };
     const buyInstruction = await this.createBuyIX(ixData);
 
@@ -600,19 +510,11 @@ export default class BonkService {
   }
 
   // 🔥 NEW: Create sell transaction
-  private async createSellTransaction(
-    pool: any,
-    sellData: SellData,
-    minAmountOut: bigint
-  ): Promise<any> {
+  private async createSellTransaction(pool: any, sellData: SellData, minAmountOut: bigint): Promise<any> {
     const { mint, privateKey, amount } = sellData;
     const owner = Keypair.fromSecretKey(bs58.decode(privateKey));
 
-    const [wsolAta, tokenAta] = this.getPrecomputedATAAddresses(
-      owner,
-      [NATIVE_MINT, mint],
-      owner.publicKey
-    );
+    const [wsolAta, tokenAta] = this.getPrecomputedATAAddresses(owner, [NATIVE_MINT, mint], owner.publicKey);
 
     const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
       units: 400_000,
@@ -621,12 +523,11 @@ export default class BonkService {
       microLamports: 1_100_100,
     });
 
-    const { instructions: ataInstructions } =
-      this.createOptimizedATAInstructions(
-        owner,
-        [NATIVE_MINT, mint],
-        owner.publicKey
-      );
+    const { instructions: ataInstructions } = this.createOptimizedATAInstructions(
+      owner,
+      [NATIVE_MINT, mint],
+      owner.publicKey
+    );
 
     const ixData: CreateSellIX = {
       pool: pool,
@@ -639,19 +540,9 @@ export default class BonkService {
     const sellInstruction = await this.createSellIX(ixData);
 
     // Add instruction to close WSOL account after sell to recover rent
-    const closeWsolIx = createCloseAccountInstruction(
-      wsolAta,
-      owner.publicKey,
-      owner.publicKey
-    );
+    const closeWsolIx = createCloseAccountInstruction(wsolAta, owner.publicKey, owner.publicKey);
 
-    const instructions = [
-      modifyComputeUnits,
-      addPriorityFee,
-      ...ataInstructions,
-      sellInstruction,
-      closeWsolIx,
-    ];
+    const instructions = [modifyComputeUnits, addPriorityFee, ...ataInstructions, sellInstruction, closeWsolIx];
 
     const { blockhash } = await connection.getLatestBlockhash("finalized");
     const messageV0 = new TransactionMessage({
@@ -667,10 +558,7 @@ export default class BonkService {
   }
 
   // 🔥 NEW: Get token balance for percentage-based sells
-  private async getTokenBalance(
-    owner: PublicKey,
-    mint: PublicKey
-  ): Promise<bigint> {
+  private async getTokenBalance(owner: PublicKey, mint: PublicKey): Promise<bigint> {
     try {
       const tokenAta = getAssociatedTokenAddressSync(mint, owner);
       const balance = await connection.getTokenAccountBalance(tokenAta);
@@ -728,16 +616,16 @@ export default class BonkService {
     // Use improved platform detection to check for graduation
     const platform = await detectTokenPlatform(mint.toBase58());
     logger.info(`[bonk-service]: Detected platform: ${platform} for token ${mint.toBase58()}`);
-    
+
     // If token is graduated to CPMM, route to CPMM service
-    if (platform === 'cpmm') {
+    if (platform === "cpmm") {
       logger.info(`[bonk-service]: Token is graduated (CPMM platform detected), routing buy to RaydiumCpmmService`);
       const cpmmService = new RaydiumCpmmService();
       return await cpmmService.buyTx({ mint: mint.toBase58(), privateKey, amount_in: amount });
     }
-    
+
     // If not a Bonk token, throw error
-    if (platform !== 'bonk') {
+    if (platform !== "bonk") {
       throw new Error(`Token ${mint.toBase58()} is not a Bonk token (detected platform: ${platform})`);
     }
 
@@ -749,9 +637,7 @@ export default class BonkService {
       throw new Error("Pool not found");
     }
 
-    logger.info(
-      `[bonk-service]: [BuyTx] Pool discovery took ${poolDiscoveryTime}ms for ${mint.toBase58()}`
-    );
+    logger.info(`[bonk-service]: [BuyTx] Pool discovery took ${poolDiscoveryTime}ms for ${mint.toBase58()}`);
     if (poolDiscoveryTime < 1000) {
       logger.info(`[bonk-service]: [BuyTx] ✅ Using pre-cached pool for ${mint.toBase58()}`);
     } else {
@@ -784,9 +670,7 @@ export default class BonkService {
       throw new Error("Pool not found");
     }
 
-    logger.info(
-      `[bonk-service]: [SellTx] Pool discovery took ${poolDiscoveryTime}ms for ${mint.toBase58()}`
-    );
+    logger.info(`[bonk-service]: [SellTx] Pool discovery took ${poolDiscoveryTime}ms for ${mint.toBase58()}`);
 
     // Handle percentage-based selling
     let finalSellData = sellData;
@@ -812,10 +696,7 @@ export default class BonkService {
     logger.info(`[bonk-service]: Pool Info`, poolState);
 
     try {
-      const tx = await this.retrySellWithAdaptiveSlippage(
-        poolState,
-        finalSellData
-      );
+      const tx = await this.retrySellWithAdaptiveSlippage(poolState, finalSellData);
       logger.info(`[bonk-service]: createSellIx total time: ${Date.now() - start}ms`);
       return tx;
     } catch (error: any) {
@@ -828,24 +709,24 @@ export default class BonkService {
   async buyWithFeeCollection(buyData: BuyData) {
     const logId = `bonk-buy-${buyData.mint.toBase58().substring(0, 8)}`;
     logger.info(`[${logId}]: Starting Bonk buy with fee collection`);
-    
+
     try {
       // Create and send transaction
       const transaction = await this.buyTx(buyData);
-      
+
       // Send transaction
       const signature = await connection.sendTransaction(transaction);
       logger.info(`[${logId}]: Transaction sent: ${signature}`);
-      
+
       // Wait for confirmation
-      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
-      
+      const confirmation = await connection.confirmTransaction(signature, "confirmed");
+
       if (confirmation.value.err) {
         throw new Error(`Transaction failed: ${confirmation.value.err}`);
       }
-      
+
       logger.info(`[${logId}]: Transaction confirmed: ${signature}`);
-      
+
       // Get actual transaction amount from blockchain instead of using input amount
       let actualTransactionAmountSol = Number(buyData.amount) / 1e9; // Fallback to input amount
       try {
@@ -857,7 +738,7 @@ export default class BonkService {
           buyData.mint.toBase58(),
           "buy"
         );
-        
+
         if (actualAmounts.success && actualAmounts.actualSolSpent) {
           actualTransactionAmountSol = actualAmounts.actualSolSpent;
           logger.info(`[${logId}]: Actual SOL spent from blockchain: ${actualTransactionAmountSol} SOL`);
@@ -867,12 +748,12 @@ export default class BonkService {
       } catch (parseError: any) {
         logger.warn(`[${logId}]: Error parsing transaction amounts, using input amount: ${parseError.message}`);
       }
-      
+
       // Collect platform fee after successful transaction using actual amount
       try {
         logger.info(`[${logId}]: Collecting platform fee for ${actualTransactionAmountSol} SOL transaction`);
         const feeResult = await collectTransactionFee(buyData.privateKey, actualTransactionAmountSol, "buy");
-        
+
         if (feeResult.success) {
           logger.info(`[${logId}]: Platform fee collected successfully: ${feeResult.feeAmount} SOL`);
         } else {
@@ -881,14 +762,13 @@ export default class BonkService {
       } catch (feeError: any) {
         logger.error(`[${logId}]: Error collecting platform fee:`, feeError.message);
       }
-      
+
       return {
         success: true,
         signature,
         actualTransactionAmountSol,
         feeCollected: true,
       };
-      
     } catch (error: any) {
       logger.error(`[${logId}]: Buy transaction failed:`, error.message);
       throw error;
@@ -899,24 +779,24 @@ export default class BonkService {
   async sellWithFeeCollection(sellData: SellData) {
     const logId = `bonk-sell-${sellData.mint.toBase58().substring(0, 8)}`;
     logger.info(`[${logId}]: Starting Bonk sell with fee collection`);
-    
+
     try {
       // Create and send transaction
       const transaction = await this.sellTx(sellData);
-      
+
       // Send transaction
       const signature = await connection.sendTransaction(transaction);
       logger.info(`[${logId}]: Transaction sent: ${signature}`);
-      
+
       // Wait for confirmation
-      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
-      
+      const confirmation = await connection.confirmTransaction(signature, "confirmed");
+
       if (confirmation.value.err) {
         throw new Error(`Transaction failed: ${confirmation.value.err}`);
       }
-      
+
       logger.info(`[${logId}]: Transaction confirmed: ${signature}`);
-      
+
       // Get actual transaction amount from blockchain instead of using estimate
       let actualTransactionAmountSol = 0.01; // Fallback estimate
       try {
@@ -928,7 +808,7 @@ export default class BonkService {
           sellData.mint.toBase58(),
           "sell"
         );
-        
+
         if (actualAmounts.success && actualAmounts.actualSolReceived) {
           actualTransactionAmountSol = actualAmounts.actualSolReceived;
           logger.info(`[${logId}]: Actual SOL received from blockchain: ${actualTransactionAmountSol} SOL`);
@@ -938,12 +818,12 @@ export default class BonkService {
       } catch (parseError: any) {
         logger.warn(`[${logId}]: Error parsing transaction amounts, using fallback estimate: ${parseError.message}`);
       }
-      
+
       // Collect platform fee after successful transaction using actual amount
       try {
         logger.info(`[${logId}]: Collecting platform fee for ${actualTransactionAmountSol} SOL transaction`);
         const feeResult = await collectTransactionFee(sellData.privateKey, actualTransactionAmountSol, "sell");
-        
+
         if (feeResult.success) {
           logger.info(`[${logId}]: Platform fee collected successfully: ${feeResult.feeAmount} SOL`);
         } else {
@@ -952,17 +832,16 @@ export default class BonkService {
       } catch (feeError: any) {
         logger.error(`[${logId}]: Error collecting platform fee:`, feeError.message);
       }
-      
+
       return {
         success: true,
         signature,
         actualTransactionAmountSol,
         feeCollected: true,
       };
-      
     } catch (error: any) {
       logger.error(`[${logId}]: Sell transaction failed:`, error.message);
       throw error;
     }
   }
-} 
+}
