@@ -92,9 +92,15 @@ export const executeCTOOperation = async (
       const buyAmountLamports = actualAmountsFromMixer[index];
       const buyAmountSol = buyAmountLamports / 1e9; // Convert lamports to SOL for external buy
       
+      // CRITICAL FIX: Reserve 0.01 SOL in each wallet for future sell transactions
+      const sellReserve = 0.01; // Reserve 0.01 SOL for sell transaction fees
+      const adjustedBuyAmountSol = Math.max(0.001, buyAmountSol - sellReserve); // Ensure minimum 0.001 SOL for buy
+      
+      logger.info(`[CTO] Wallet ${index + 1}: Original amount ${buyAmountSol.toFixed(6)} SOL, Adjusted for sell reserve: ${adjustedBuyAmountSol.toFixed(6)} SOL (reserving ${sellReserve} SOL for sells)`);
+      
       try {
         const keypair = secretKeyToKeypair(wallet.privateKey);
-        const result = await executeExternalBuy(tokenAddress, keypair, buyAmountSol);
+        const result = await executeExternalBuy(tokenAddress, keypair, adjustedBuyAmountSol);
         
         if (result.success) {
           logger.info(`[CTO] Buy ${index + 1}/${selectedWallets.length} successful: ${result.signature}`);
@@ -110,7 +116,7 @@ export const executeCTOOperation = async (
               true,
               0, // CTO operations don't have launch attempts
               {
-                amountSol: buyAmountSol,
+                amountSol: adjustedBuyAmountSol,
                 amountTokens: "0", // Will be parsed from blockchain
                 errorMessage: undefined,
                 retryAttempt: 0,
@@ -137,7 +143,7 @@ export const executeCTOOperation = async (
               false,
               0,
               {
-                amountSol: buyAmountSol,
+                amountSol: adjustedBuyAmountSol,
                 amountTokens: "0",
                 errorMessage: result.error,
                 retryAttempt: 0,
@@ -163,7 +169,7 @@ export const executeCTOOperation = async (
             false,
             0,
             {
-              amountSol: buyAmountSol,
+              amountSol: adjustedBuyAmountSol,
               amountTokens: "0",
               errorMessage: error.message,
               retryAttempt: 0,
