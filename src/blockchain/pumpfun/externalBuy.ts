@@ -3,6 +3,7 @@ import { logger } from "../common/logger";
 import { connection } from "../common/connection";
 import JupiterPumpswapService from "../../service/jupiter-pumpswap-service";
 import bs58 from "bs58";
+import { getSolBalance } from "../../backend/utils";
 
 export interface ExternalBuyResult {
   success: boolean;
@@ -25,6 +26,8 @@ export async function executeExternalBuy(
   
   try {
     logger.info(`[${logId}] Starting external token buy for ${solAmount} SOL`);
+    const solBalance = await getSolBalance(buyerKeypair.publicKey.toString())
+    const solBuyAmount = 0.95 * solBalance // this is 95% of wallet sol balance
     
     // First, detect the platform to use the appropriate buy logic
     const { detectTokenPlatformWithCache } = await import("../../service/token-detection-service");
@@ -47,7 +50,7 @@ export async function executeExternalBuy(
       const result = await jupiterPumpswapService.executeBuy(
         tokenAddress,
         buyerKeypair,
-        solAmount,
+        solBuyAmount,
         3 // 3% slippage
       );
       
