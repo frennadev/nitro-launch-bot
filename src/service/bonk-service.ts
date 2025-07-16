@@ -613,6 +613,39 @@ export default class BonkService {
     logger.info(`[bonk-service]: 🚀 BONK Buy started with adaptive slippage & retry logic`);
     const start = Date.now();
 
+    // CRITICAL FIX: Check wallet balance and reserve SOL for transaction costs
+    const owner = Keypair.fromSecretKey(bs58.decode(privateKey));
+    const walletBalance = await connection.getBalance(owner.publicKey, "confirmed");
+    const walletBalanceSOL = walletBalance / 1_000_000_000;
+    
+    // Reserve fees for buy transaction AND account creation costs
+    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const accountCreationReserve = 0.005; // ATA creation costs (WSOL + token accounts)
+    const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+    const availableForTrade = walletBalanceSOL - totalFeeReserve;
+    
+    logger.info(`[bonk-service]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);
+    logger.info(`[bonk-service]: Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`);
+    logger.info(`[bonk-service]: Account creation reserve: ${accountCreationReserve.toFixed(6)} SOL`);
+    logger.info(`[bonk-service]: Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`);
+    logger.info(`[bonk-service]: Available for trade: ${availableForTrade.toFixed(6)} SOL`);
+    logger.info(`[bonk-service]: Requested amount: ${Number(amount) / 1_000_000_000} SOL`);
+    
+    // Validate we have enough balance
+    if (availableForTrade <= 0) {
+      const errorMsg = `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${accountCreationReserve.toFixed(6)} SOL account creation)`;
+      logger.error(`[bonk-service]: ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+    
+    // Check if requested amount exceeds available balance
+    const requestedAmountSOL = Number(amount) / 1_000_000_000;
+    if (requestedAmountSOL > availableForTrade) {
+      const errorMsg = `Requested amount ${requestedAmountSOL.toFixed(6)} SOL exceeds available balance ${availableForTrade.toFixed(6)} SOL (after reserving ${totalFeeReserve.toFixed(6)} SOL for fees)`;
+      logger.error(`[bonk-service]: ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+
     // Use improved platform detection to check for graduation
     const platform = await detectTokenPlatform(mint.toBase58());
     logger.info(`[bonk-service]: Detected platform: ${platform} for token ${mint.toBase58()}`);

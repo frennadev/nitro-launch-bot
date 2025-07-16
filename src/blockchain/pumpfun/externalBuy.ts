@@ -94,16 +94,50 @@ async function executeBonkBuy(
   try {
     logger.info(`[${logId}] Starting Bonk buy for ${solAmount} SOL`);
     
+    // CRITICAL FIX: Check wallet balance and reserve SOL for transaction costs
+    const walletBalance = await connection.getBalance(buyerKeypair.publicKey, "confirmed");
+    const walletBalanceSOL = walletBalance / 1_000_000_000;
+    
+    // Reserve fees for buy transaction AND account creation costs
+    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const accountCreationReserve = 0.005; // ATA creation costs (WSOL + token accounts)
+    const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+    const availableForTrade = walletBalanceSOL - totalFeeReserve;
+    
+    logger.info(`[${logId}] Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);
+    logger.info(`[${logId}] Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`);
+    logger.info(`[${logId}] Account creation reserve: ${accountCreationReserve.toFixed(6)} SOL`);
+    logger.info(`[${logId}] Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`);
+    logger.info(`[${logId}] Available for trade: ${availableForTrade.toFixed(6)} SOL`);
+    
+    // Validate we have enough balance
+    if (availableForTrade <= 0) {
+      const errorMsg = `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${accountCreationReserve.toFixed(6)} SOL account creation)`;
+      logger.error(`[${logId}] ${errorMsg}`);
+      return {
+        success: false,
+        signature: '',
+        error: errorMsg
+      };
+    }
+    
+    // Use the minimum of requested amount or available balance
+    const actualTradeAmount = Math.min(solAmount, availableForTrade);
+    
+    if (actualTradeAmount < solAmount) {
+      logger.warn(`[${logId}] Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations`);
+    }
+    
     // Import BonkService
     const BonkService = (await import("../../service/bonk-service")).default;
     
     // Create BonkService instance with default config
     const bonkService = new BonkService();
     
-    // Convert SOL amount to lamports
-    const buyAmountLamports = BigInt(Math.floor(solAmount * 1_000_000_000));
+    // Convert SOL amount to lamports using the adjusted amount
+    const buyAmountLamports = BigInt(Math.floor(actualTradeAmount * 1_000_000_000));
     
-    logger.info(`[${logId}] Creating Bonk buy transaction...`);
+    logger.info(`[${logId}] Creating Bonk buy transaction for ${actualTradeAmount.toFixed(6)} SOL (${buyAmountLamports} lamports)...`);
     
     // Create the buy transaction
     const buyTx = await bonkService.buyTx({
@@ -149,7 +183,7 @@ async function executeBonkBuy(
         true,
         0, // CTO operations don't have launch attempts
         {
-          amountSol: solAmount,
+          amountSol: actualTradeAmount, // Use the actual amount that was traded
           amountTokens: "0", // Will be parsed from blockchain
           errorMessage: undefined,
           retryAttempt: 0,
@@ -165,7 +199,7 @@ async function executeBonkBuy(
       success: true,
       signature: signature,
       platform: "bonk",
-      solReceived: solAmount.toString()
+      solReceived: actualTradeAmount.toString() // Return the actual amount that was traded
     };
     
   } catch (error: any) {
