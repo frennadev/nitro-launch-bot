@@ -602,21 +602,11 @@ export class JupiterPumpswapService {
         }
       }
 
-      // CRITICAL: Check SOL balance before attempting sell
+      // Check SOL balance for logging purposes only - let transaction fail naturally if insufficient
       const solBalance = await this.connection.getBalance(sellerKeypair.publicKey, "confirmed");
       const solBalanceSOL = solBalance / 1_000_000_000;
-      const minSolRequired = 0.01; // Minimum SOL required for transaction fees
       
       logger.info(`[${logId}] Wallet SOL balance: ${solBalanceSOL.toFixed(6)} SOL`);
-      
-      if (solBalanceSOL < minSolRequired) {
-        return {
-          success: false,
-          signature: "",
-          error: `Insufficient SOL for transaction fees. Required: ${minSolRequired} SOL, Available: ${solBalanceSOL.toFixed(6)} SOL`,
-        };
-      }
-
       logger.info(`[${logId}] Selling ${sellAmount} tokens`);
 
       // Try Jupiter first
