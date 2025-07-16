@@ -139,38 +139,26 @@ async function executeBonkBuy(
     
     logger.info(`[${logId}] Creating Bonk buy transaction for ${actualTradeAmount.toFixed(6)} SOL (${buyAmountLamports} lamports)...`);
     
-    // Create the buy transaction
-    const buyTx = await bonkService.buyTx({
+    // Use buyWithFeeCollection instead of buyTx to collect platform fees
+    const buyResult = await bonkService.buyWithFeeCollection({
       mint: new PublicKey(tokenAddress),
       amount: buyAmountLamports,
       privateKey: bs58.encode(buyerKeypair.secretKey),
     });
     
-    logger.info(`[${logId}] Sending Bonk buy transaction...`);
-    
-    // Send the transaction
-    const signature = await connection.sendTransaction(buyTx, {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
-      maxRetries: 3,
-    });
-    
-    logger.info(`[${logId}] Waiting for Bonk transaction confirmation...`);
-    
-    // Wait for confirmation
-    const confirmation = await connection.confirmTransaction(signature, "confirmed");
-    
-    if (confirmation.value.err) {
-      const errorMsg = `Bonk transaction failed: ${JSON.stringify(confirmation.value.err)}`;
+    if (!buyResult.success) {
+      const errorMsg = `Bonk buy transaction failed`;
       logger.error(`[${logId}] ${errorMsg}`);
       return {
         success: false,
-        signature: signature,
+        signature: '',
         error: errorMsg
       };
     }
     
-    logger.info(`[${logId}] Bonk buy successful: ${signature}`);
+    logger.info(`[${logId}] Bonk buy successful: ${buyResult.signature}`);
+    logger.info(`[${logId}] Actual SOL spent: ${buyResult.actualTransactionAmountSol} SOL`);
+    logger.info(`[${logId}] Platform fee collected: ${buyResult.feeCollected}`);
     
     // Record the successful Bonk buy transaction
     try {
@@ -179,7 +167,7 @@ async function executeBonkBuy(
         tokenAddress,
         buyerKeypair.publicKey.toBase58(),
         "external_buy", // Use external_buy type for Bonk buys
-        signature,
+        buyResult.signature,
         true,
         0, // CTO operations don't have launch attempts
         {
@@ -197,7 +185,7 @@ async function executeBonkBuy(
     
     return {
       success: true,
-      signature: signature,
+      signature: buyResult.signature,
       platform: "bonk",
       solReceived: actualTradeAmount.toString() // Return the actual amount that was traded
     };
