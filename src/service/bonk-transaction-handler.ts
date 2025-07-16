@@ -1,6 +1,6 @@
 import { Keypair, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import BonkService from "./bonk-service";
-import { bs58 } from "@project-serum/anchor/dist/cjs/utils/bytes";
+import bs58 from "bs58"
 import { connection } from "./config";
 import { logger } from "../jobs/logger";
 
