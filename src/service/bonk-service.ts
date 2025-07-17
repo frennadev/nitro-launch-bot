@@ -348,61 +348,9 @@ export default class BonkService {
   }
 
   // 🔥 NEW: Retry logic for sell operations
-  private async retrySellWithAdaptiveSlippageEx(pool: any, sellData: SellData, maxRetries?: number): Promise<any> {
-    const finalMaxRetries = maxRetries ?? this.config.maxRetries;
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= finalMaxRetries; attempt++) {
-      try {
-        logger.info(`[bonk-service]: 🔄 Sell attempt ${attempt}/${finalMaxRetries}`);
-
-        const adaptiveSlippage = this.calculateAdaptiveSlippage(pool, sellData.amount, true);
-
-        const retrySlippageBonus = attempt > 1 ? (attempt - 1) * this.config.retrySlippageBonus : 0;
-        const finalSlippage = Math.min(adaptiveSlippage + retrySlippageBonus, this.config.maxSlippage);
-
-        if (attempt > 1) {
-          logger.info(
-            `[bonk-service]: 🔄 Retry attempt with increased slippage: ${finalSlippage}% (base: ${adaptiveSlippage}% + retry bonus: ${retrySlippageBonus}%)`
-          );
-
-          await new Promise((resolve) => setTimeout(resolve, this.config.retryDelayMs * attempt));
-
-          const freshPool = await getBonkPoolState(sellData.mint.toBase58());
-          if (freshPool) {
-            Object.assign(pool, freshPool);
-            logger.info(`[bonk-service]: 🔄 Pool state refreshed for retry`);
-          }
-        }
-
-        const minAmountOut = this.estimateSellOutput(pool, sellData.amount, finalSlippage);
-        return await this.createSellTransaction(pool, sellData, minAmountOut);
-      } catch (error: any) {
-        lastError = error;
-        logger.warn(`[bonk-service]: ❌ Sell attempt ${attempt} failed: ${error.message}`);
-
-        if (
-          error.message?.includes("Insufficient funds") ||
-          error.message?.includes("Pool not found") ||
-          error.message?.includes("Invalid mint")
-        ) {
-          logger.warn(`[bonk-service]: 🚫 Non-retryable error detected, stopping retries`);
-          throw error;
-        }
-
-        if (attempt === finalMaxRetries) {
-          logger.error(`[bonk-service]: 🚫 All ${finalMaxRetries} attempts failed`);
-          throw lastError;
-        }
-      }
-    }
-
-    throw lastError || new Error("Unexpected retry loop exit");
-  }
-
   private async retrySellWithAdaptiveSlippage(
     pool: PoolState,
-    buyData: BuyData,
+    sellData: SellData,
     maxRetries?: number
   ): Promise<VersionedTransaction> {
     const finalMaxRetries = maxRetries ?? this.config.maxRetries;
@@ -410,10 +358,10 @@ export default class BonkService {
 
     for (let attempt = 1; attempt <= finalMaxRetries; attempt++) {
       try {
-        console.log(`🔄 Buy attempt ${attempt}/${finalMaxRetries}`);
+        console.log(`🔄 Sell attempt ${attempt}/${finalMaxRetries}`);
 
         // Recalculate slippage for each attempt (in case pool state changed)
-        const adaptiveSlippage = this.calculateAdaptiveSlippage(pool, buyData.amount);
+        const adaptiveSlippage = this.calculateAdaptiveSlippage(pool, sellData.amount, true);
 
         // If this is a retry, add extra slippage buffer
         const retrySlippageBonus = attempt > 1 ? (attempt - 1) * this.config.retrySlippageBonus : 0;
@@ -428,24 +376,25 @@ export default class BonkService {
           await new Promise((resolve) => setTimeout(resolve, this.config.retryDelayMs * attempt));
 
           // Refresh pool state for retries
-          const freshPool = await getBonkPoolState(buyData.mint.toBase58());
+          const freshPool = await getBonkPoolState(sellData.mint.toBase58());
           if (freshPool) {
             Object.assign(pool, freshPool);
             console.log("🔄 Pool state refreshed for retry");
           }
         }
 
-        const minAmountOut = this.estimateBuyOutput(pool, buyData.amount, finalSlippage);
-        return await this.createSellTransaction(pool, buyData, minAmountOut);
+        const minAmountOut = this.estimateSellOutput(pool, sellData.amount, finalSlippage);
+        return await this.createSellTransaction(pool, sellData, minAmountOut);
       } catch (error: any) {
         lastError = error;
-        console.log(`❌ Buy attempt ${attempt} failed: ${error.message}`);
+        console.log(`❌ Sell attempt ${attempt} failed: ${error.message}`);
 
         // Don't retry certain types of errors
         if (
           error.message?.includes("Insufficient funds") ||
           error.message?.includes("Pool not found") ||
-          error.message?.includes("Invalid mint")
+          error.message?.includes("Invalid mint") ||
+          error.message?.includes("No tokens to sell")
         ) {
           console.log("🚫 Non-retryable error detected, stopping retries");
           throw error;
@@ -575,60 +524,12 @@ export default class BonkService {
     return tx;
   }
 
-  // 🔥 NEW: Create sell transaction
-  // private async createSellTransaction(pool: any, sellData: SellData, minAmountOut: bigint): Promise<any> {
-  //   const { mint, privateKey, amount } = sellData;
-  //   const owner = Keypair.fromSecretKey(bs58.decode(privateKey));
-
-  //   const [wsolAta, tokenAta] = this.getPrecomputedATAAddresses(owner, [NATIVE_MINT, mint], owner.publicKey);
-
-  //   const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
-  //     units: 400_000,
-  //   });
-  //   const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-  //     microLamports: 1_100_100,
-  //   });
-
-  //   const { instructions: ataInstructions } = this.createOptimizedATAInstructions(
-  //     owner,
-  //     [NATIVE_MINT, mint],
-  //     owner.publicKey
-  //   );
-
-  //   const ixData: CreateSellIX = {
-  //     pool: pool,
-  //     payer: owner.publicKey,
-  //     userBaseAta: tokenAta,
-  //     userQuoteAta: wsolAta,
-  //     amount_in: amount,
-  //     minimum_amount_out: minAmountOut,
-  //   };
-  //   const sellInstruction = await this.createSellIX(ixData);
-
-  //   // Add instruction to close WSOL account after sell to recover rent
-  //   const closeWsolIx = createCloseAccountInstruction(wsolAta, owner.publicKey, owner.publicKey);
-
-  //   const instructions = [modifyComputeUnits, addPriorityFee, ...ataInstructions, sellInstruction, closeWsolIx];
-
-  //   const { blockhash } = await connection.getLatestBlockhash("finalized");
-  //   const messageV0 = new TransactionMessage({
-  //     payerKey: owner.publicKey,
-  //     recentBlockhash: blockhash,
-  //     instructions,
-  //   }).compileToV0Message();
-
-  //   const tx = new VersionedTransaction(messageV0);
-  //   tx.sign([owner]);
-
-  //   return tx;
-  // }
-
   private async createSellTransaction(
     pool: PoolState,
-    buyData: BuyData,
+    sellData: SellData,
     minAmountOut: bigint
   ): Promise<VersionedTransaction> {
-    const { mint, privateKey, amount } = buyData;
+    const { mint, privateKey, amount } = sellData;
     const owner = Keypair.fromSecretKey(bs58.decode(privateKey));
 
     // 🔥 OPTIMIZED: Pre-compute ATA addresses (no network calls needed)
@@ -645,23 +546,17 @@ export default class BonkService {
       owner.publicKey
     );
 
-    // Transfer SOL to WSOL ATA
-    // const transferSolIx = SystemProgram.transfer({
-    //   fromPubkey: owner.publicKey,
-    //   toPubkey: wsolAta,
-    //   lamports: Number(amount),
-    // });
     // Sync WSOL
     const syncNativeIx = createSyncNativeInstruction(wsolAta);
 
-    // Build buy instruction
-    const ixData: CreateBuyIX = {
+    // Build sell instruction
+    const ixData: CreateSellIX = {
       pool: pool,
       payer: owner.publicKey,
       userBaseAta: tokenAta,
       userQuoteAta: wsolAta,
       amount_in: amount,
-      minimum_amount_out: 0n,
+      minimum_amount_out: minAmountOut,
     };
     const sellInstruction = await this.createSellIX(ixData);
 
@@ -670,7 +565,6 @@ export default class BonkService {
       modifyComputeUnits,
       addPriorityFee,
       ...ataInstructions,
-      // transferSolIx,
       syncNativeIx,
       sellInstruction,
     ];
@@ -822,11 +716,12 @@ export default class BonkService {
   };
 
   // 🔥 NEW: Sell transaction method
-  sellTxBefore = async (sellData: SellData) => {
+  sellTx = async (sellData: SellData) => {
     const { mint, percentage } = sellData;
-    logger.info(`[bonk-service]: 🚀 BONK Sell started with adaptive slippage & retry logic`);
+    console.log("🚀 BONK Sell started with adaptive slippage & retry logic");
     const start = Date.now();
 
+    // 🔥 OPTIMIZED: Check if pool is pre-cached
     const poolDiscoveryStart = Date.now();
     const poolState = await getBonkPoolState(mint.toBase58());
     const poolDiscoveryTime = Date.now() - poolDiscoveryStart;
@@ -835,7 +730,12 @@ export default class BonkService {
       throw new Error("Pool not found");
     }
 
-    logger.info(`[bonk-service]: [SellTx] Pool discovery took ${poolDiscoveryTime}ms for ${mint.toBase58()}`);
+    console.log(`[SellTx] Pool discovery took ${poolDiscoveryTime}ms for ${mint.toBase58()}`);
+    if (poolDiscoveryTime < 1000) {
+      console.log(`[SellTx] ✅ Using pre-cached pool for ${mint.toBase58()}`);
+    } else {
+      console.log(`[SellTx] ⚠️ Pool discovery was slow (${poolDiscoveryTime}ms) for ${mint.toBase58()}`);
+    }
 
     // Handle percentage-based selling
     let finalSellData = sellData;
@@ -853,53 +753,26 @@ export default class BonkService {
         amount: amountToSell,
       };
 
-      logger.info(
-        `[bonk-service]: 📊 Percentage sell: ${percentage}% of ${balance.toString()} = ${amountToSell.toString()} tokens`
+      console.log(
+        `📊 Percentage sell: ${percentage}% of ${balance.toString()} = ${amountToSell.toString()} tokens`
       );
     }
 
-    logger.info(`[bonk-service]: Pool Info`, poolState);
-
-    try {
-      const tx = await this.retrySellWithAdaptiveSlippage(poolState, finalSellData);
-      logger.info(`[bonk-service]: createSellIx total time: ${Date.now() - start}ms`);
-      return tx;
-    } catch (error: any) {
-      logger.error(`[bonk-service]: 🚫 All sell attempts failed: ${error.message}`);
-      throw error;
-    }
-  };
-
-  sellTx = async (buyData: SellData) => {
-    const { mint } = buyData;
-    console.log("🚀 BONK Sell started with adaptive slippage & retry logic");
-    const start = Date.now();
-
-    // 🔥 OPTIMIZED: Check if pool is pre-cached
-    const poolDiscoveryStart = Date.now();
-    const poolState = await getBonkPoolState(mint.toBase58());
-    const poolDiscoveryTime = Date.now() - poolDiscoveryStart;
-
-    if (!poolState) {
-      throw new Error("Pool not found");
-    }
-
-    console.log(`[BuyTx] Pool discovery took ${poolDiscoveryTime}ms for ${mint.toBase58()}`);
-    if (poolDiscoveryTime < 1000) {
-      console.log(`[BuyTx] ✅ Using pre-cached pool for ${mint.toBase58()}`);
-    } else {
-      console.log(`[BuyTx] ⚠️ Pool discovery was slow (${poolDiscoveryTime}ms) for ${mint.toBase58()}`);
+    // Validate sell amount
+    if (finalSellData.amount <= BigInt(0)) {
+      throw new Error("Amount to sell must be greater than 0");
     }
 
     console.log("Pool Info", poolState);
 
     try {
       // 🔥 NEW: Use retry logic with adaptive slippage
-      const tx = await this.retrySellWithAdaptiveSlippage(poolState, buyData);
-      console.log("createSwapIx total time:", `${Date.now() - start}ms`);
+      const tx = await this.retrySellWithAdaptiveSlippage(poolState, finalSellData);
+      console.log("createSellIx total time:", `${Date.now() - start}ms`);
       return tx;
     } catch (error: any) {
-      console.error("🚫 All buy attempts failed:", error.message);
+      console.error("🚫 All sell attempts failed:", error.message);
+      logger.error(`[bonk-service]: 🚫 All sell attempts failed: ${error.message}`);
       throw error;
     }
   };
