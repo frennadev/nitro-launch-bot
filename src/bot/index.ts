@@ -1286,6 +1286,72 @@ bot.callbackQuery(/^buy_external_token_(.+)$/, async (ctx) => {
   await ctx.conversation.enter("buyExternalTokenConversation");
 });
 
+// Handle fund wallet button clicks
+bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔄 Funding wallet...");
+  const [, walletAddress, tokenAddress] = ctx.match!;
+
+  logger.info(`[FundWallet] Funding wallet ${walletAddress} for token ${tokenAddress}`);
+
+  try {
+    // Get user
+    const user = await getUser(ctx.chat!.id!.toString());
+    if (!user) {
+      await ctx.reply("❌ User not found");
+      return;
+    }
+
+    // Get funding wallet
+    const { getFundingWallet, getWalletBalance } = await import("../backend/functions");
+    const fundingWallet = await getFundingWallet(user.id);
+    if (!fundingWallet) {
+      await ctx.reply("❌ No funding wallet found. Please configure a funding wallet first.");
+      return;
+    }
+
+    // Check funding wallet balance
+    const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
+    if (fundingBalance < 0.011) { // 0.01 SOL + 0.001 SOL for transaction fee
+      await ctx.reply(
+        `❌ **Insufficient funding wallet balance**\n\n**Required:** 0.011 SOL (0.01 SOL + 0.001 SOL fee)\n**Available:** ${fundingBalance.toFixed(6)} SOL\n\nPlease add more SOL to your funding wallet first.`,
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    // Send 0.01 SOL to the wallet
+    const { SystemProgram, Transaction, PublicKey } = await import("@solana/web3.js");
+    const { connection } = await import("../blockchain/common/connection");
+    const { secretKeyToKeypair } = await import("../blockchain/common/utils");
+    
+    const fundingKeypair = secretKeyToKeypair(fundingWallet.privateKey);
+    const targetWallet = new PublicKey(walletAddress);
+    
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: fundingKeypair.publicKey,
+        toPubkey: targetWallet,
+        lamports: 0.01 * 1_000_000_000, // 0.01 SOL in lamports
+      })
+    );
+    
+    const signature = await connection.sendTransaction(transaction, [fundingKeypair]);
+    await connection.confirmTransaction(signature, "confirmed");
+    
+    await ctx.reply(
+      `✅ **Wallet funded successfully!**\n\n💰 **0.01 SOL sent to:** \`${walletAddress}\`\n📝 **Transaction:** \`${signature}\`\n\nYou can now try selling your tokens again.`,
+      { parse_mode: "Markdown" }
+    );
+    
+  } catch (error: any) {
+    logger.error("Error funding wallet:", error);
+    await ctx.reply(
+      `❌ **Failed to fund wallet**\n\nError: ${error.message}\n\nPlease try again or contact support.`,
+      { parse_mode: "Markdown" }
+    );
+  }
+});
+
 // Fast cancel button handler - must be before generic callback handler
 bot.callbackQuery(CallBackQueries.CANCEL, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "❌ Cancelled");

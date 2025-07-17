@@ -1,7 +1,7 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { getUser, getFundingWallet, getAllTradingWallets } from "../../backend/functions";
+import { getUser, getFundingWallet, getAllTradingWallets, getWalletBalance } from "../../backend/functions";
 import { getTokenBalance, getTokenInfo } from "../../backend/utils";
 import { sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
@@ -54,14 +54,18 @@ const externalTokenSellConversation = async (
       try {
         const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
         if (balance > 0) {
+          // Also get SOL balance for this wallet
+          const solBalance = await getWalletBalance(wallet.publicKey);
+          
           totalTokenBalance += balance;
           walletsWithBalance.push({
             publicKey: wallet.publicKey,
             privateKey: wallet.privateKey,
-            balance: balance
+            balance: balance, // token balance
+            solBalance: solBalance // SOL balance
           });
           logger.info(
-            `[ExternalTokenSell] Wallet ${wallet.publicKey}: ${balance} tokens`
+            `[ExternalTokenSell] Wallet ${wallet.publicKey}: ${balance} tokens, ${solBalance.toFixed(6)} SOL`
           );
         }
       } catch (error) {
@@ -200,11 +204,119 @@ const externalTokenSellConversation = async (
             { parse_mode: "Markdown" }
           );
         } else {
-          await sendMessage(
-            response,
-            `❌ **External token sell failed**\n\n${result.error || "Insufficient funds, please fund buyer wallets"}`,
-            { parse_mode: "Markdown" }
-          );
+          // Check if the error is about insufficient funds
+          const isInsufficientFundsError = result.error?.includes("Insufficient funds") || 
+                                         result.error?.includes("please fund buyer wallets");
+          
+          if (isInsufficientFundsError) {
+            // Get the first wallet that has tokens but insufficient SOL
+            const walletWithTokens = walletsWithBalance.find(w => {
+              const tokenBalance = w.balance || 0; // Use 'balance' property for token balance
+              const solBalance = w.solBalance || 0;
+              return tokenBalance > 0 && solBalance < 0.01; // Less than 0.01 SOL
+            });
+            
+            if (walletWithTokens) {
+              const keyboard = new InlineKeyboard()
+                .text("💰 Fund Wallet (0.01 SOL)", `fund_wallet_${walletWithTokens.publicKey}_${tokenAddress}`)
+                .row()
+                .text("❌ Cancel", "cancel_fund_wallet");
+              
+              await sendMessage(
+                response,
+                `❌ **External token sell failed**\n\n${result.error}\n\n💡 **Solution:** Your wallet needs SOL for transaction fees.\n\n**Wallet:** \`${walletWithTokens.publicKey}\`\n**Token Balance:** ${(walletWithTokens.balance / 1e6).toFixed(2)} tokens\n**SOL Balance:** ${walletWithTokens.solBalance?.toFixed(6) || '0.000000'} SOL\n\nWould you like to send 0.01 SOL from your funding wallet to cover transaction fees?`,
+                { 
+                  parse_mode: "Markdown",
+                  reply_markup: keyboard
+                }
+              );
+              
+              // Wait for user response
+              const fundResponse = await conversation.waitFor("callback_query:data");
+              await fundResponse.answerCallbackQuery();
+              
+              if (fundResponse.callbackQuery?.data === "cancel_fund_wallet") {
+                await sendMessage(fundResponse, "❌ Wallet funding cancelled.");
+                await conversation.halt();
+                return;
+              }
+              
+              if (fundResponse.callbackQuery?.data?.startsWith("fund_wallet_")) {
+                const [, , walletAddress, tokenAddr] = fundResponse.callbackQuery.data.split("_");
+                
+                await sendMessage(fundResponse, "🔄 Funding wallet with 0.01 SOL...");
+                
+                try {
+                  // Get funding wallet
+                  const fundingWallet = await getFundingWallet(user.id);
+                  if (!fundingWallet) {
+                    await sendMessage(fundResponse, "❌ No funding wallet found. Please configure a funding wallet first.");
+                    await conversation.halt();
+                    return;
+                  }
+                  
+                  // Check funding wallet balance
+                  const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
+                  if (fundingBalance < 0.011) { // 0.01 SOL + 0.001 SOL for transaction fee
+                    await sendMessage(
+                      fundResponse, 
+                      `❌ **Insufficient funding wallet balance**\n\n**Required:** 0.011 SOL (0.01 SOL + 0.001 SOL fee)\n**Available:** ${fundingBalance.toFixed(6)} SOL\n\nPlease add more SOL to your funding wallet first.`,
+                      { parse_mode: "Markdown" }
+                    );
+                    await conversation.halt();
+                    return;
+                  }
+                  
+                  // Send 0.01 SOL to the wallet
+                  const { SystemProgram, Transaction, PublicKey } = await import("@solana/web3.js");
+                  const { connection } = await import("../../blockchain/common/connection");
+                  const { secretKeyToKeypair } = await import("../../blockchain/common/utils");
+                  
+                  const fundingKeypair = secretKeyToKeypair(fundingWallet.privateKey);
+                  const targetWallet = new PublicKey(walletAddress);
+                  
+                  const transaction = new Transaction().add(
+                    SystemProgram.transfer({
+                      fromPubkey: fundingKeypair.publicKey,
+                      toPubkey: targetWallet,
+                      lamports: 0.01 * 1_000_000_000, // 0.01 SOL in lamports
+                    })
+                  );
+                  
+                  const signature = await connection.sendTransaction(transaction, [fundingKeypair]);
+                  await connection.confirmTransaction(signature, "confirmed");
+                  
+                  await sendMessage(
+                    fundResponse,
+                    `✅ **Wallet funded successfully!**\n\n💰 **0.01 SOL sent to:** \`${walletAddress}\`\n📝 **Transaction:** \`${signature}\`\n\nYou can now try selling your tokens again.`,
+                    { parse_mode: "Markdown" }
+                  );
+                  
+                } catch (fundError: any) {
+                  logger.error("Error funding wallet:", fundError);
+                  await sendMessage(
+                    fundResponse,
+                    `❌ **Failed to fund wallet**\n\nError: ${fundError.message}\n\nPlease try again or contact support.`,
+                    { parse_mode: "Markdown" }
+                  );
+                }
+              }
+            } else {
+              // Fallback if we can't identify the specific wallet
+              await sendMessage(
+                response,
+                `❌ **External token sell failed**\n\n${result.error}\n\n💡 **Solution:** Your buyer wallets need SOL for transaction fees. Please add SOL to your buyer wallets or use the funding feature.`,
+                { parse_mode: "Markdown" }
+              );
+            }
+          } else {
+            // Regular error handling for non-funding related errors
+            await sendMessage(
+              response,
+              `❌ **External token sell failed**\n\n${result.error || "Insufficient funds, please fund buyer wallets"}`,
+              { parse_mode: "Markdown" }
+            );
+          }
         }
       } catch (error: any) {
         logger.error("Error executing external token sell:", error);
