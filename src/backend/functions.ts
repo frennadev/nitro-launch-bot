@@ -35,6 +35,7 @@ import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
 import { sendAndConfirmTransaction } from "@solana/web3.js";
 import { getExternalPumpAddressService } from "../service/external-pump-address-service";
+import bs58 from "bs58";
 
 export const getUser = async (telegramId: String) => {
   const user = await UserModel.findOne({
@@ -4556,6 +4557,21 @@ export const launchBonkToken = async (
               }
             );
 
+            // Collect platform fee after successful transaction (no minimum threshold)
+            try {
+              logger.info(`[${logId}]: Collecting platform fee for ${buyAmountSOL.toFixed(6)} SOL transaction from ${wallet.publicKey.slice(0, 8)}`);
+              const { collectTransactionFee } = await import("../backend/functions-main");
+              const feeResult = await collectTransactionFee(bs58.encode(wallet.keypair.secretKey), buyAmountSOL, "buy");
+
+              if (feeResult.success) {
+                logger.info(`[${logId}]: Platform fee collected successfully: ${feeResult.feeAmount} SOL from ${wallet.publicKey.slice(0, 8)}`);
+              } else {
+                logger.warn(`[${logId}]: Platform fee collection failed for ${wallet.publicKey.slice(0, 8)}: ${feeResult.error}`);
+              }
+            } catch (feeError: any) {
+              logger.error(`[${logId}]: Error collecting platform fee for ${wallet.publicKey.slice(0, 8)}:`, feeError.message);
+            }
+
             logger.info(
               `[${logId}]: Buy successful for ${wallet.publicKey.slice(0, 8)} with ${buyAmountSOL.toFixed(6)} SOL (attempt ${attempt + 1})`
             );
@@ -4598,8 +4614,9 @@ export const launchBonkToken = async (
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
-      successfulBuys = results.filter((r) => r.success).length;
-      const failedBuys = results.filter((r) => !r.success).length;
+      const filteredResults = results.filter((r) => r !== undefined);
+      successfulBuys = filteredResults.filter((r) => r.success).length;
+      const failedBuys = filteredResults.filter((r) => !r.success).length;
 
       logger.info(`[${logId}]: Buy execution completed`, {
         total: results.length,
