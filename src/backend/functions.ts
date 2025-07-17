@@ -85,8 +85,16 @@ export const getUserTokenWithBuyWallets = async (
     user: userId,
     tokenAddress,
   })
-    .populate(["launchData.buyWallets", "launchData.devWallet"])
+    .populate({
+      path: "launchData.buyWallets",
+      model: "Wallet",
+    })
+    .populate({
+      path: "launchData.devWallet",
+      model: "Wallet",
+    })
     .lean();
+  console.log(token);
   return token;
 };
 

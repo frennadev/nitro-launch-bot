@@ -35,7 +35,6 @@ import JupiterPumpswapService from "../../service/jupiter-pumpswap-service";
 import { collectTransactionFee } from "../../backend/functions-main";
 import { Context } from "grammy";
 import { sendMessage } from "../../backend/sender";
-import { getSolPrice } from "./externalBuy";
 
 // Helper function to collect transaction fees (non-blocking)
 async function collectFeeAsync(
@@ -722,7 +721,7 @@ export async function executeExternalSell(
               tokenInfo.price;
             // Assuming SOL price is around $100-200, we need to get actual SOL price
             // For now, using a rough estimation - ideally get SOL price from price API
-            const estimatedSolPrice = (await getSolPrice()) || 160; // This should be fetched from a price API
+            const estimatedSolPrice = 170; // This should be fetched from a price API
             calculatedSolReceived = tokenValueInUSD / estimatedSolPrice;
           }
 
