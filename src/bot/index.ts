@@ -1352,6 +1352,148 @@ bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
   }
 });
 
+// Handle fund all wallets button clicks
+bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔄 Funding all wallets...");
+  const [, tokenAddress] = ctx.match!;
+
+  logger.info(`[FundAllWallets] Funding all wallets for token ${tokenAddress}`);
+
+  try {
+    // Get user
+    const user = await getUser(ctx.chat!.id!.toString());
+    if (!user) {
+      await ctx.reply("❌ User not found");
+      return;
+    }
+
+    // Get funding wallet
+    const { getFundingWallet, getWalletBalance, getAllTradingWallets } = await import("../backend/functions");
+    const { getTokenBalance } = await import("../backend/utils");
+    const fundingWallet = await getFundingWallet(user.id);
+    if (!fundingWallet) {
+      await ctx.reply("❌ No funding wallet found. Please configure a funding wallet first.");
+      return;
+    }
+
+    // Get all buyer wallets and check which ones need funding
+    const buyerWallets = await getAllTradingWallets(user.id);
+    const walletsNeedingFunding = [];
+    
+    for (const wallet of buyerWallets) {
+      try {
+        const tokenBalance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        const solBalance = await getWalletBalance(wallet.publicKey);
+        
+        if (tokenBalance > 0 && solBalance < 0.01) {
+          walletsNeedingFunding.push({
+            publicKey: wallet.publicKey,
+            privateKey: wallet.privateKey,
+            tokenBalance,
+            solBalance
+          });
+        }
+      } catch (error) {
+        logger.warn(`Error checking wallet ${wallet.publicKey}:`, error);
+      }
+    }
+
+    if (walletsNeedingFunding.length === 0) {
+      await ctx.reply("❌ No wallets found that need funding.");
+      return;
+    }
+
+    // Check funding wallet balance for all transfers
+    const totalFundingNeeded = walletsNeedingFunding.length * 0.01;
+    const totalFeesNeeded = walletsNeedingFunding.length * 0.001; // Transaction fees
+    const totalRequired = totalFundingNeeded + totalFeesNeeded;
+    
+    const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
+    if (fundingBalance < totalRequired) {
+      await ctx.reply(
+        `❌ **Insufficient funding wallet balance**\n\n**Required:** ${totalRequired.toFixed(6)} SOL (${totalFundingNeeded.toFixed(6)} SOL funding + ${totalFeesNeeded.toFixed(6)} SOL fees)\n**Available:** ${fundingBalance.toFixed(6)} SOL\n\nPlease add more SOL to your funding wallet first.`,
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    // Send 0.01 SOL to each wallet
+    const { SystemProgram, Transaction, PublicKey } = await import("@solana/web3.js");
+    const { connection } = await import("../blockchain/common/connection");
+    const { secretKeyToKeypair } = await import("../blockchain/common/utils");
+    
+    const fundingKeypair = secretKeyToKeypair(fundingWallet.privateKey);
+    const results = [];
+    
+    for (const wallet of walletsNeedingFunding) {
+      try {
+        const targetWallet = new PublicKey(wallet.publicKey);
+        
+        const transaction = new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: fundingKeypair.publicKey,
+            toPubkey: targetWallet,
+            lamports: 0.01 * 1_000_000_000, // 0.01 SOL in lamports
+          })
+        );
+        
+        const signature = await connection.sendTransaction(transaction, [fundingKeypair]);
+        await connection.confirmTransaction(signature, "confirmed");
+        
+        results.push({
+          wallet: wallet.publicKey,
+          success: true,
+          signature
+        });
+        
+        // Small delay between transactions
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error: any) {
+        results.push({
+          wallet: wallet.publicKey,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+    
+    // Show results
+    const successfulTransfers = results.filter(r => r.success);
+    const failedTransfers = results.filter(r => !r.success);
+    
+    let resultMessage = `✅ **Bulk funding completed!**\n\n`;
+    resultMessage += `💰 **Successfully funded:** ${successfulTransfers.length}/${walletsNeedingFunding.length} wallets\n`;
+    
+    if (successfulTransfers.length > 0) {
+      resultMessage += `\n**Successful transfers:**\n`;
+      successfulTransfers.forEach((result, index) => {
+        const shortAddress = `${result.wallet.slice(0, 6)}...${result.wallet.slice(-4)}`;
+        resultMessage += `${index + 1}. \`${shortAddress}\` - \`${result.signature}\`\n`;
+      });
+    }
+    
+    if (failedTransfers.length > 0) {
+      resultMessage += `\n**Failed transfers:**\n`;
+      failedTransfers.forEach((result, index) => {
+        const shortAddress = `${result.wallet.slice(0, 6)}...${result.wallet.slice(-4)}`;
+        resultMessage += `${index + 1}. \`${shortAddress}\` - ${result.error}\n`;
+      });
+    }
+    
+    resultMessage += `\nYou can now try selling your tokens again.`;
+    
+    await ctx.reply(resultMessage, { parse_mode: "Markdown" });
+    
+  } catch (error: any) {
+    logger.error("Error funding all wallets:", error);
+    await ctx.reply(
+      `❌ **Failed to fund wallets**\n\nError: ${error.message}\n\nPlease try again or contact support.`,
+      { parse_mode: "Markdown" }
+    );
+  }
+});
+
 // Fast cancel button handler - must be before generic callback handler
 bot.callbackQuery(CallBackQueries.CANCEL, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "❌ Cancelled");
