@@ -560,6 +560,9 @@ export default class BonkService {
     };
     const sellInstruction = await this.createSellIX(ixData);
 
+    // Add instruction to close WSOL account after sell to recover rent
+    const closeWsolIx = createCloseAccountInstruction(wsolAta, owner.publicKey, owner.publicKey);
+
     // 🔥 OPTIMIZED: Build final instruction list
     const instructions = [
       modifyComputeUnits,
@@ -567,6 +570,7 @@ export default class BonkService {
       ...ataInstructions,
       syncNativeIx,
       sellInstruction,
+      closeWsolIx, // Close WSOL account to recover rent
     ];
 
     // Get fresh blockhash
