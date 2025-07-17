@@ -20,10 +20,10 @@ import { VersionedTransaction } from "@solana/web3.js";
 import { ComputeBudgetProgram } from "@solana/web3.js";
 import { SystemProgram } from "@solana/web3.js";
 import { struct, u8 } from "@solana/buffer-layout";
-import { Signer } from "@solana/web3.js";
-import { getBuyAmountOut, getSellAmountOut, getTokenPoolInfo, PoolInfo } from "../backend/get-poolInfo";
-import { connection } from "./config";
-import { getCreatorVaultAuthority } from "../backend/creator-authority";
+import { getBuyAmountOut, getSellAmountOut, getTokenPoolInfo } from "../backend/get-poolInfo.ts";
+import type { PoolInfo } from "../backend/get-poolInfo.ts";
+import { connection } from "./config.ts";
+import { getCreatorVaultAuthority } from "../backend/creator-authority.ts";
 // import { connection } from "../blockchain/common/connection";
 
 interface CreateBuyIXParams {
@@ -842,7 +842,7 @@ export function createCloseAccountInstruction(
   account: PublicKey,
   destination: PublicKey,
   authority: PublicKey,
-  multiSigners: (Signer | PublicKey)[] = [],
+  multiSigners: (Keypair | PublicKey)[] = [],
   programId = TOKEN_PROGRAM_ID
 ): TransactionInstruction {
   const keys = addSigners(
@@ -863,7 +863,7 @@ export function createCloseAccountInstruction(
 function addSigners(
   keys: AccountMeta[],
   ownerOrAuthority: PublicKey,
-  multiSigners: (Signer | PublicKey)[]
+  multiSigners: (Keypair | PublicKey)[]
 ): AccountMeta[] {
   if (multiSigners.length) {
     keys.push({ pubkey: ownerOrAuthority, isSigner: false, isWritable: false });

@@ -1,5 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
-import { pumpswap_amm_program_id } from "../service/pumpswap-service";
+import { pumpswap_amm_program_id } from "../service/pumpswap-service.ts";
 
 // TEMPORARY: Use hardcoded creator vault authority to test if this works
 // The dynamic derivation isn't matching what the Pumpswap program expects

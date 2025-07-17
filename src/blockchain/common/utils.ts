@@ -7,8 +7,8 @@ import {
 } from "@solana/web3.js";
 import bs58 from "bs58";
 import type { TransactionSetup } from "./types";
-import { connection } from "./connection";
-import { logger } from "./logger";
+import { connection } from "./connection.ts";
+import { logger } from "./logger.ts";
 
 export const generateKeypairs = (count: number) => {
   const keys = [];

@@ -339,12 +339,33 @@ export class JupiterPumpswapService {
               const solSpentLamports = quote.inAmount;
               const actualSolSpent = (parseInt(solSpentLamports) / 1_000_000_000).toString();
               
-              // Collect 1% transaction fee after successful buy
+              // Get actual transaction amount from blockchain for more accurate fee collection
+              let actualTransactionAmountSol = parseFloat(actualSolSpent); // Fallback to quote amount
+              try {
+                const { parseTransactionAmounts } = await import("../backend/utils");
+                const actualAmounts = await parseTransactionAmounts(
+                  signature,
+                  buyerKeypair.publicKey.toBase58(),
+                  tokenAddress,
+                  "buy"
+                );
+                
+                if (actualAmounts.success && actualAmounts.actualSolSpent) {
+                  actualTransactionAmountSol = actualAmounts.actualSolSpent;
+                  logger.info(`[${logId}] Actual SOL spent from blockchain: ${actualTransactionAmountSol} SOL`);
+                } else {
+                  logger.warn(`[${logId}] Failed to parse actual amounts, using quote amount: ${actualAmounts.error}`);
+                }
+              } catch (parseError: any) {
+                logger.warn(`[${logId}] Error parsing transaction amounts, using quote amount: ${parseError.message}`);
+              }
+              
+              // Collect 1% transaction fee after successful buy using actual amount
               try {
                 const { collectTransactionFee } = await import("../backend/functions-main");
                 const feeResult = await collectTransactionFee(
                   bs58.encode(buyerKeypair.secretKey),
-                  parseFloat(actualSolSpent),
+                  actualTransactionAmountSol,
                   "buy"
                 );
                 
@@ -362,7 +383,7 @@ export class JupiterPumpswapService {
                 signature,
                 platform: "jupiter",
                 tokensReceived,
-                actualSolSpent,
+                actualSolSpent: actualTransactionAmountSol.toString(),
                 priceImpact: quote.priceImpactPct,
               };
             } else {
@@ -433,12 +454,33 @@ export class JupiterPumpswapService {
           if (!confirmation.value.err) {
             logger.info(`[${logId}] PumpSwap buy successful: ${signature}`);
           
-          // Collect 1% transaction fee after successful PumpSwap buy
+          // Get actual transaction amount from blockchain for more accurate fee collection
+          let actualTransactionAmountSol = actualTradeAmount; // Fallback to input amount
+          try {
+            const { parseTransactionAmounts } = await import("../backend/utils");
+            const actualAmounts = await parseTransactionAmounts(
+              signature,
+              buyerKeypair.publicKey.toBase58(),
+              tokenAddress,
+              "buy"
+            );
+            
+            if (actualAmounts.success && actualAmounts.actualSolSpent) {
+              actualTransactionAmountSol = actualAmounts.actualSolSpent;
+              logger.info(`[${logId}] Actual SOL spent from blockchain: ${actualTransactionAmountSol} SOL`);
+            } else {
+              logger.warn(`[${logId}] Failed to parse actual amounts, using input amount: ${actualAmounts.error}`);
+            }
+          } catch (parseError: any) {
+            logger.warn(`[${logId}] Error parsing transaction amounts, using input amount: ${parseError.message}`);
+          }
+          
+          // Collect 1% transaction fee after successful PumpSwap buy using actual amount
           try {
             const { collectTransactionFee } = await import("../backend/functions-main");
             const feeResult = await collectTransactionFee(
               bs58.encode(buyerKeypair.secretKey),
-              actualTradeAmount,
+              actualTransactionAmountSol,
               "buy"
             );
             
@@ -456,7 +498,7 @@ export class JupiterPumpswapService {
               signature,
               platform: "pumpswap",
             tokensReceived: "unknown",
-            actualSolSpent: actualTradeAmount.toString(),
+            actualSolSpent: actualTransactionAmountSol.toString(),
           };
         } else {
           logger.warn(`[${logId}] PumpSwap transaction failed: ${JSON.stringify(confirmation.value.err)}`);
@@ -560,21 +602,11 @@ export class JupiterPumpswapService {
         }
       }
 
-      // CRITICAL: Check SOL balance before attempting sell
+      // Check SOL balance for logging purposes only - let transaction fail naturally if insufficient
       const solBalance = await this.connection.getBalance(sellerKeypair.publicKey, "confirmed");
       const solBalanceSOL = solBalance / 1_000_000_000;
-      const minSolRequired = 0.01; // Minimum SOL required for transaction fees
       
       logger.info(`[${logId}] Wallet SOL balance: ${solBalanceSOL.toFixed(6)} SOL`);
-      
-      if (solBalanceSOL < minSolRequired) {
-        return {
-          success: false,
-          signature: "",
-          error: `Insufficient SOL for transaction fees. Required: ${minSolRequired} SOL, Available: ${solBalanceSOL.toFixed(6)} SOL`,
-        };
-      }
-
       logger.info(`[${logId}] Selling ${sellAmount} tokens`);
 
       // Try Jupiter first
@@ -643,12 +675,33 @@ export class JupiterPumpswapService {
                 solReceivedLamports / 1_000_000_000
               ).toString(); // Convert lamports to SOL
               
-              // Collect 1% transaction fee after successful Jupiter sell
+              // Get actual transaction amount from blockchain for more accurate fee collection
+              let actualTransactionAmountSol = parseFloat(solReceived); // Fallback to quote amount
+              try {
+                const { parseTransactionAmounts } = await import("../backend/utils");
+                const actualAmounts = await parseTransactionAmounts(
+                  signature,
+                  sellerKeypair.publicKey.toBase58(),
+                  tokenAddress,
+                  "sell"
+                );
+                
+                if (actualAmounts.success && actualAmounts.actualSolReceived) {
+                  actualTransactionAmountSol = actualAmounts.actualSolReceived;
+                  logger.info(`[${logId}] Actual SOL received from blockchain: ${actualTransactionAmountSol} SOL`);
+                } else {
+                  logger.warn(`[${logId}] Failed to parse actual amounts, using quote amount: ${actualAmounts.error}`);
+                }
+              } catch (parseError: any) {
+                logger.warn(`[${logId}] Error parsing transaction amounts, using quote amount: ${parseError.message}`);
+              }
+              
+              // Collect 1% transaction fee after successful Jupiter sell using actual amount
               try {
                 const { collectTransactionFee } = await import("../backend/functions-main");
                 const feeResult = await collectTransactionFee(
                   bs58.encode(sellerKeypair.secretKey),
-                  parseFloat(solReceived),
+                  actualTransactionAmountSol,
                   "sell"
                 );
                 
@@ -665,7 +718,7 @@ export class JupiterPumpswapService {
                 success: true,
                 signature,
                 platform: "jupiter",
-                solReceived,
+                solReceived: actualTransactionAmountSol.toString(),
               };
             }
           } catch (txError: any) {
@@ -701,16 +754,33 @@ export class JupiterPumpswapService {
         if (!confirmation.value.err) {
           logger.info(`[${logId}] PumpSwap sell successful: ${signature}`);
           
-          // Collect 1% transaction fee after successful PumpSwap sell
+          // Get actual transaction amount from blockchain for more accurate fee collection
+          let actualTransactionAmountSol = 0.01; // Fallback estimate
+          try {
+            const { parseTransactionAmounts } = await import("../backend/utils");
+            const actualAmounts = await parseTransactionAmounts(
+              signature,
+              sellerKeypair.publicKey.toBase58(),
+              tokenAddress,
+              "sell"
+            );
+            
+            if (actualAmounts.success && actualAmounts.actualSolReceived) {
+              actualTransactionAmountSol = actualAmounts.actualSolReceived;
+              logger.info(`[${logId}] Actual SOL received from blockchain: ${actualTransactionAmountSol} SOL`);
+            } else {
+              logger.warn(`[${logId}] Failed to parse actual amounts, using fallback estimate: ${actualAmounts.error}`);
+            }
+          } catch (parseError: any) {
+            logger.warn(`[${logId}] Error parsing transaction amounts, using fallback estimate: ${parseError.message}`);
+          }
+          
+          // Collect 1% transaction fee after successful PumpSwap sell using actual amount
           try {
             const { collectTransactionFee } = await import("../backend/functions-main");
-            // For PumpSwap sells, we need to estimate SOL received since it's unknown
-            // Use a conservative estimate based on token amount and current price
-            const estimatedSolReceived = await this.estimateSolFromTokenSell(tokenAddress, sellAmount);
-            
             const feeResult = await collectTransactionFee(
               bs58.encode(sellerKeypair.secretKey),
-              estimatedSolReceived,
+              actualTransactionAmountSol,
               "sell"
             );
             
@@ -727,7 +797,7 @@ export class JupiterPumpswapService {
             success: true,
             signature,
             platform: "pumpswap",
-            solReceived: "unknown",
+            solReceived: actualTransactionAmountSol.toString(),
           };
         }
       } catch (pumpswapError: any) {
@@ -797,12 +867,33 @@ export class JupiterPumpswapService {
             const solReceived = (Number(solOut) / 1_000_000_000).toString();
             logger.info(`[${logId}] PumpFun direct sell successful: ${signature}`);
             
-            // Collect 1% transaction fee after successful PumpFun sell
+            // Get actual transaction amount from blockchain for more accurate fee collection
+            let actualTransactionAmountSol = parseFloat(solReceived); // Fallback to calculated amount
+            try {
+              const { parseTransactionAmounts } = await import("../backend/utils");
+              const actualAmounts = await parseTransactionAmounts(
+                signature,
+                sellerKeypair.publicKey.toBase58(),
+                tokenAddress,
+                "sell"
+              );
+              
+              if (actualAmounts.success && actualAmounts.actualSolReceived) {
+                actualTransactionAmountSol = actualAmounts.actualSolReceived;
+                logger.info(`[${logId}] Actual SOL received from blockchain: ${actualTransactionAmountSol} SOL`);
+              } else {
+                logger.warn(`[${logId}] Failed to parse actual amounts, using calculated amount: ${actualAmounts.error}`);
+              }
+            } catch (parseError: any) {
+              logger.warn(`[${logId}] Error parsing transaction amounts, using calculated amount: ${parseError.message}`);
+            }
+            
+            // Collect 1% transaction fee after successful PumpFun sell using actual amount
             try {
               const { collectTransactionFee } = await import("../backend/functions-main");
               const feeResult = await collectTransactionFee(
                 bs58.encode(sellerKeypair.secretKey),
-                parseFloat(solReceived),
+                actualTransactionAmountSol,
                 "sell"
               );
               
@@ -819,7 +910,7 @@ export class JupiterPumpswapService {
               success: true,
               signature,
               platform: "pumpfun",
-              solReceived,
+              solReceived: actualTransactionAmountSol.toString(),
             };
           }
         } else {

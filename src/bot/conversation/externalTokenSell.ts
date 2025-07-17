@@ -202,7 +202,7 @@ const externalTokenSellConversation = async (
         } else {
           await sendMessage(
             response,
-            `❌ **External token sell failed**\n\n${result.error || "Unknown error occurred"}`,
+            `❌ **External token sell failed**\n\n${result.error || "Insufficient funds, please fund buyer wallets"}`,
             { parse_mode: "Markdown" }
           );
         }

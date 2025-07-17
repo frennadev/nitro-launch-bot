@@ -2,7 +2,7 @@ import { Raydium, TxVersion, parseTokenAccountResp } from "@raydium-io/raydium-s
 import { Connection, Keypair, clusterApiUrl } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import bs58 from "bs58";
-import { env } from "../config";
+import { env } from "../config.ts";
 
 export const initializeOwner = (privakeKey: string) => {
   return Keypair.fromSecretKey(

@@ -1,8 +1,8 @@
 import { struct, u16, u8, blob } from "@solana/buffer-layout";
 import { publicKey, u64 } from "@solana/buffer-layout-utils";
 import { PublicKey } from "@solana/web3.js";
-import { connection } from "./config";
-import { logger } from "../jobs/logger";
+import { connection } from "./config.ts";
+import { logger } from "../jobs/logger.ts";
 
 export const BONK_PROGRAM_ID = new PublicKey(
   "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj"
@@ -294,3 +294,7 @@ export function getPoolCacheStats() {
     cacheDuration: CACHE_DURATION,
   };
 } 
+
+// === QUICK TEST SCRIPT ===
+// Note: This test script is disabled for ES module compatibility
+// To test, use the dedicated test files instead 

@@ -247,7 +247,32 @@ export class MongoSolanaMixer {
       console.log(`💰 Amount: ${(route.amount / 1e9).toFixed(6)} SOL`);
 
       let currentWallet = route.source;
-      let remainingAmount = route.amount;
+      // FLEXIBLE: Get actual available amount from source wallet instead of using pre-calculated route.amount
+      let remainingAmount: number;
+      if (currentWallet === route.source) {
+        // For source wallet, get the actual available balance and use the minimum of route.amount or available balance
+        const sourceBalance = await this.connectionManager.getBalance(route.source.publicKey);
+        const maxTransferableFromSource = await this.connectionManager.getMaxTransferableAmount(route.source.publicKey);
+        remainingAmount = Math.min(route.amount, maxTransferableFromSource);
+        
+        // If no funds available, skip this route
+        if (remainingAmount <= 0) {
+          console.log(`⚠️  Skipping route: source wallet has insufficient funds (${sourceBalance} lamports available)`);
+          return {
+            success: false,
+            transactionSignatures: [],
+            feeFundingSignatures: [],
+            error: "Source wallet has insufficient funds for this route",
+            route,
+            usedWalletIds: [],
+          };
+        }
+        
+        console.log(`💰 Using flexible amount: ${(remainingAmount / 1e9).toFixed(6)} SOL (requested: ${(route.amount / 1e9).toFixed(6)} SOL, available: ${(maxTransferableFromSource / 1e9).toFixed(6)} SOL)`);
+      } else {
+        remainingAmount = route.amount;
+      }
+      
       let localTransactionIndex = currentTransactionIndex;
 
       // Optimized delays - much shorter for speed
@@ -270,7 +295,7 @@ export class MongoSolanaMixer {
         } else {
           // Wallet pays its own fees - must account for fees and rent exemption
           if (currentWallet === route.source) {
-            // Source wallet: use calculated amount with small buffer
+            // Source wallet: use the flexible amount we calculated above
             transferAmount = Math.floor(remainingAmount * 0.998);
           } else {
             // Intermediate wallet: use max transferable amount to account for fees + rent exemption
@@ -281,6 +306,11 @@ export class MongoSolanaMixer {
               throw new Error(`Intermediate wallet ${currentWallet.publicKey.toString().slice(0, 8)}... has insufficient funds for transfer after accounting for fees and rent exemption`);
             }
           }
+        }
+        
+        // VALIDATION: Ensure transfer amount is valid (not NaN or negative)
+        if (isNaN(transferAmount) || transferAmount <= 0) {
+          throw new Error(`Invalid transfer amount calculated: ${transferAmount} (original remainingAmount: ${remainingAmount})`);
         }
 
         let signature: string;
@@ -352,6 +382,10 @@ export class MongoSolanaMixer {
       if (this.config.feeFundingWallet) {
         // Use fee funding wallet for final intermediate wallet transaction - ENSURE INTEGER
         const finalAmount = Math.floor(remainingAmount); // Ensure integer
+        
+        if (finalAmount <= 0) {
+          throw new Error(`Invalid final transfer amount: ${remainingAmount} (floored to ${finalAmount})`);
+        }
         
         const finalTransaction = await this.connectionManager.createTransferTransactionWithFeePayer(
           currentWallet.publicKey,
@@ -524,7 +558,7 @@ export class MongoSolanaMixer {
     });
 
     // Fund each intermediate wallet
-    for (const publicKey of allIntermediates) {
+    for (const publicKey of Array.from(allIntermediates)) {
       try {
         // Check if wallet already has sufficient balance for fees
         const hasFees = await this.connectionManager.hasSufficientBalanceForFees(new PublicKey(publicKey), 1);
