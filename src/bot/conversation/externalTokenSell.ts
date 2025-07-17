@@ -206,7 +206,8 @@ const externalTokenSellConversation = async (
         } else {
           // Check if the error is about insufficient funds
           const isInsufficientFundsError = result.error?.includes("Insufficient funds") || 
-                                         result.error?.includes("please fund buyer wallets");
+                                         result.error?.includes("please fund buyer wallets") ||
+                                         result.error?.includes("Insufficient funds for fee");
           
           if (isInsufficientFundsError) {
             // Get all wallets that have tokens but insufficient SOL
