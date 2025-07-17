@@ -206,7 +206,7 @@ export async function executeBonkSell(
   configMode: string = CONFIG_MODE
 ) {
   const logId = `bonk-sell-${tokenMint.substring(0, 8)}`;
-  logger.info(`[${logId}]: 🚀 Starting BONK sell test...`);
+  logger.info(`[${logId}]: 🚀 Starting BONK sell with fee collection...`);
   logger.info(`[${logId}]: 🪙 Token mint: ${tokenMint}`);
   logger.info(`[${logId}]: ⚙️  Config mode: ${configMode}`);
 
@@ -226,29 +226,20 @@ export async function executeBonkSell(
     const poolDiscoveryPromise = new Promise((resolve, reject) => {
       (async () => {
         try {
-          const tx = await bonkService.sellTx({
+          // Use sellWithFeeCollection instead of sellTx to collect platform fees
+          const result = await bonkService.sellWithFeeCollection({
             mint: new PublicKey(tokenMint),
             amount: BigInt(tokenAmount || 0), // Will be calculated from percentage
             privateKey: privateKey,
             percentage: percentage,
           });
 
-          const signature = await connection.sendTransaction(tx);
-          logger.info(`[${logId}]: 📡 Sell transaction sent, waiting for confirmation...`);
+          logger.info(`[${logId}]: ✅ Sell transaction successful with fee collection!`);
+          logger.info(`[${logId}]: 📝 Signature: ${result.signature}`);
+          logger.info(`[${logId}]: 💰 SOL received: ${result.actualTransactionAmountSol} SOL`);
+          logger.info(`[${logId}]: 💸 Fee collected: ${result.feeCollected ? 'Yes' : 'No'}`);
 
-          const confirmation = await connection.confirmTransaction(
-            signature,
-            "confirmed"
-          );
-          if (confirmation.value.err) {
-            reject(
-              new Error(
-                `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
-              )
-            );
-          } else {
-            resolve(signature);
-          }
+          resolve(result.signature);
         } catch (error) {
           reject(error);
         }
@@ -275,7 +266,7 @@ export async function executeBonkSell(
       success: true,
       signature: result,
       explorerUrl: "https://solscan.io/tx/" + result,
-      message: "Sell transaction executed successfully",
+      message: "Sell transaction executed successfully with platform fees collected",
     };
   } catch (error: any) {
     logger.error(`[${logId}]: ❌ Sell test failed: ${error.message}`);
