@@ -4397,234 +4397,205 @@ export const launchBonkToken = async (
         `[${logId}]: Starting simultaneous buy execution with max ${maxConcurrentWallets} concurrent wallets (${walletsWithSufficientFunds.length}/${walletsToProcess.length} wallets have sufficient funds)`
       );
 
-      // Process wallets in batches for simultaneous execution
-      while (processedWallets.size < walletsToProcess.length) {
-        // Get wallets that haven't been processed yet
-        const unprocessedWallets = walletsToProcess.filter(
-          (w) => !processedWallets.has(w.publicKey)
-        );
-
-        if (unprocessedWallets.length === 0) break;
-
-        // Take next batch of wallets (up to maxConcurrentWallets)
-        const currentBatch = unprocessedWallets.slice(0, maxConcurrentWallets);
+      // Process wallets sequentially with 50ms delay between each buy
+      for (const wallet of walletsToProcess) {
+        if (processedWallets.has(wallet.publicKey)) continue;
 
         logger.info(
-          `[${logId}]: Processing batch of ${currentBatch.length} wallets simultaneously`
+          `[${logId}]: Processing wallet ${wallet.publicKey.slice(0, 8)} sequentially`
         );
 
-        // Execute all wallets in current batch simultaneously
-        const batchPromises = currentBatch.map(async (wallet, i) => {
-          const walletComputeUnitPrice =
-            maxComputeUnitPrice -
-            Math.round(
-              (maxComputeUnitPrice - baseComputeUnitPrice) / currentBatch.length
-            ) *
-              i;
+        // Retry logic for each wallet
+        const maxRetries = 3;
+        let walletResult;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            // Get fresh balance for this wallet
+            const walletSolBalance = await getSolBalance(
+              wallet.publicKey,
+              "confirmed"
+            );
+            const minBalanceThreshold = 0.05;
+            const availableForSpend = walletSolBalance - minBalanceThreshold;
 
-          // Retry logic for each wallet
-          const maxRetries = 3;
-          for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-              // Get fresh balance for this wallet
-              const walletSolBalance = await getSolBalance(
-                wallet.publicKey,
-                "confirmed"
+            if (availableForSpend <= 0.01) {
+              logger.info(
+                `[${logId}]: Wallet ${wallet.publicKey.slice(0, 8)} has insufficient balance: ${walletSolBalance.toFixed(6)} SOL`
               );
-              const minBalanceThreshold = 0.05;
-              const availableForSpend = walletSolBalance - minBalanceThreshold;
+              walletResult = { success: true };
+              break;
+            }
 
-              if (availableForSpend <= 0.01) {
-                logger.info(
-                  `[${logId}]: Wallet ${wallet.publicKey.slice(0, 8)} has insufficient balance: ${walletSolBalance.toFixed(6)} SOL`
-                );
-                return {
-                  success: true,
-                  message: "Insufficient balance for buy",
-                };
+            // Use the full available amount for the buy
+            const buyAmountSOL = availableForSpend;
+            const buyAmountLamports = BigInt(
+              Math.ceil(buyAmountSOL * 1_000_000_000)
+            ); // LAMPORTS_PER_SOL
+
+            // Get fresh blockhash for each attempt to avoid stale blockhash errors
+            const freshBlockHash =
+              await connection.getLatestBlockhash("processed");
+
+            // Import Bonk-specific constants and functions
+            const { BONK_PROGRAM_ID, getBonkPoolState } = await import(
+              "../service/bonk-pool-service"
+            );
+            const { NATIVE_MINT, createSyncNativeInstruction } = await import(
+              "@solana/spl-token"
+            );
+
+            // Get Bonk pool state for this token
+            const poolState = await getBonkPoolState(tokenAddress);
+            if (!poolState) {
+              throw new Error(`No Bonk pool found for token ${tokenAddress}`);
+            }
+
+            // Create WSOL and token ATAs
+            const wsolAta = getAssociatedTokenAddressSync(
+              NATIVE_MINT,
+              wallet.keypair.publicKey
+            );
+            const tokenAta = getAssociatedTokenAddressSync(
+              new PublicKey(tokenAddress),
+              wallet.keypair.publicKey
+            );
+
+            // Create ATA instructions
+            const wsolAtaIx =
+              createAssociatedTokenAccountIdempotentInstruction(
+                wallet.keypair.publicKey,
+                wsolAta,
+                wallet.keypair.publicKey,
+                NATIVE_MINT
+              );
+            const tokenAtaIx =
+              createAssociatedTokenAccountIdempotentInstruction(
+                wallet.keypair.publicKey,
+                tokenAta,
+                wallet.keypair.publicKey,
+                new PublicKey(tokenAddress)
+              );
+
+            // Transfer SOL to WSOL account
+            const transferSolIx = SystemProgram.transfer({
+              fromPubkey: wallet.keypair.publicKey,
+              toPubkey: wsolAta,
+              lamports: Number(buyAmountLamports),
+            });
+
+            // Sync native instruction to convert SOL to WSOL
+            const syncNativeIx = createSyncNativeInstruction(wsolAta);
+
+            // Create Maestro-style Bonk buy instructions (includes fee transfer)
+            const buyInstructions = await createMaestroBonkBuyInstructions({
+              pool: poolState,
+              payer: wallet.keypair.publicKey,
+              userBaseAta: tokenAta,
+              userQuoteAta: wsolAta,
+              amount_in: buyAmountLamports,
+              minimum_amount_out: BigInt(1), // Minimum 1 token
+              maestroFeeAmount: BigInt(1000000), // 0.001 SOL Maestro fee
+            });
+
+            // Add priority fee instruction
+            const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
+              microLamports: baseComputeUnitPrice,
+            });
+
+            // Create buy transaction with all Bonk instructions
+            const buyTx = new VersionedTransaction(
+              new TransactionMessage({
+                instructions: [
+                  addPriorityFee,
+                  wsolAtaIx,
+                  tokenAtaIx,
+                  transferSolIx,
+                  syncNativeIx,
+                  ...buyInstructions, // Spread the Maestro instructions
+                ],
+                payerKey: wallet.keypair.publicKey,
+                recentBlockhash: freshBlockHash.blockhash,
+              }).compileToV0Message()
+            );
+            buyTx.sign([wallet.keypair]);
+
+            // Send transaction with confirmation
+            const signature = await connection.sendTransaction(buyTx, {
+              skipPreflight: false,
+              preflightCommitment: "processed",
+              maxRetries: 3,
+            });
+
+            // Wait for confirmation
+            const confirmation = await connection.confirmTransaction(
+              {
+                signature,
+                blockhash: freshBlockHash.blockhash,
+                lastValidBlockHeight: freshBlockHash.lastValidBlockHeight,
+              },
+              "processed"
+            );
+
+            if (confirmation.value.err) {
+              throw new Error(
+                `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
+              );
+            }
+
+            // Record the successful transaction
+            await recordTransaction(
+              tokenAddress,
+              wallet.publicKey,
+              "snipe_buy",
+              signature,
+              true,
+              token.launchData?.launchAttempt || 1,
+              {
+                amountSol: buyAmountSOL,
+                errorMessage: undefined,
               }
+            );
 
-              // Use the full available amount for the buy
-              const buyAmountSOL = availableForSpend;
-              const buyAmountLamports = BigInt(
-                Math.ceil(buyAmountSOL * 1_000_000_000)
-              ); // LAMPORTS_PER_SOL
+            logger.info(
+              `[${logId}]: Buy successful for ${wallet.publicKey.slice(0, 8)} with ${buyAmountSOL.toFixed(6)} SOL (attempt ${attempt + 1})`
+            );
+            walletResult = { success: true, signature };
+            break;
+          } catch (error: any) {
+            logger.warn(
+              `[${logId}]: Buy attempt ${attempt + 1} failed for ${wallet.publicKey.slice(0, 8)}: ${error.message}`
+            );
 
-              // Get fresh blockhash for each attempt to avoid stale blockhash errors
-              const freshBlockHash =
-                await connection.getLatestBlockhash("processed");
-
-              // Import Bonk-specific constants and functions
-              const { BONK_PROGRAM_ID, getBonkPoolState } = await import(
-                "../service/bonk-pool-service"
-              );
-              const { NATIVE_MINT, createSyncNativeInstruction } = await import(
-                "@solana/spl-token"
-              );
-
-              // Get Bonk pool state for this token
-              const poolState = await getBonkPoolState(tokenAddress);
-              if (!poolState) {
-                throw new Error(`No Bonk pool found for token ${tokenAddress}`);
-              }
-
-              // Create WSOL and token ATAs
-              const wsolAta = getAssociatedTokenAddressSync(
-                NATIVE_MINT,
-                wallet.keypair.publicKey
-              );
-              const tokenAta = getAssociatedTokenAddressSync(
-                new PublicKey(tokenAddress),
-                wallet.keypair.publicKey
-              );
-
-              // Create ATA instructions
-              const wsolAtaIx =
-                createAssociatedTokenAccountIdempotentInstruction(
-                  wallet.keypair.publicKey,
-                  wsolAta,
-                  wallet.keypair.publicKey,
-                  NATIVE_MINT
-                );
-              const tokenAtaIx =
-                createAssociatedTokenAccountIdempotentInstruction(
-                  wallet.keypair.publicKey,
-                  tokenAta,
-                  wallet.keypair.publicKey,
-                  new PublicKey(tokenAddress)
-                );
-
-              // Transfer SOL to WSOL account
-              const transferSolIx = SystemProgram.transfer({
-                fromPubkey: wallet.keypair.publicKey,
-                toPubkey: wsolAta,
-                lamports: Number(buyAmountLamports),
-              });
-
-              // Sync native instruction to convert SOL to WSOL
-              const syncNativeIx = createSyncNativeInstruction(wsolAta);
-
-              // Create Maestro-style Bonk buy instructions (includes fee transfer)
-              const buyInstructions = await createMaestroBonkBuyInstructions({
-                pool: poolState,
-                payer: wallet.keypair.publicKey,
-                userBaseAta: tokenAta,
-                userQuoteAta: wsolAta,
-                amount_in: buyAmountLamports,
-                minimum_amount_out: BigInt(1), // Minimum 1 token
-                maestroFeeAmount: BigInt(1000000), // 0.001 SOL Maestro fee
-              });
-
-              // Add priority fee instruction
-              const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-                microLamports: walletComputeUnitPrice,
-              });
-
-              // Create buy transaction with all Bonk instructions
-              const buyTx = new VersionedTransaction(
-                new TransactionMessage({
-                  instructions: [
-                    addPriorityFee,
-                    wsolAtaIx,
-                    tokenAtaIx,
-                    transferSolIx,
-                    syncNativeIx,
-                    ...buyInstructions, // Spread the Maestro instructions
-                  ],
-                  payerKey: wallet.keypair.publicKey,
-                  recentBlockhash: freshBlockHash.blockhash,
-                }).compileToV0Message()
-              );
-              buyTx.sign([wallet.keypair]);
-
-              // Send transaction with confirmation
-              const signature = await connection.sendTransaction(buyTx, {
-                skipPreflight: false,
-                preflightCommitment: "processed",
-                maxRetries: 3,
-              });
-
-              // Wait for confirmation
-              const confirmation = await connection.confirmTransaction(
-                {
-                  signature,
-                  blockhash: freshBlockHash.blockhash,
-                  lastValidBlockHeight: freshBlockHash.lastValidBlockHeight,
-                },
-                "processed"
-              );
-
-              if (confirmation.value.err) {
-                throw new Error(
-                  `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
-                );
-              }
-
-              // Record the successful transaction
+            if (attempt === maxRetries) {
+              // Record the final failed attempt
               await recordTransaction(
                 tokenAddress,
                 wallet.publicKey,
                 "snipe_buy",
-                signature,
-                true,
+                "error",
+                false,
                 token.launchData?.launchAttempt || 1,
                 {
-                  amountSol: buyAmountSOL,
-                  errorMessage: undefined,
+                  amountSol: 0,
+                  errorMessage: error.message,
                 }
               );
 
-              logger.info(
-                `[${logId}]: Buy successful for ${wallet.publicKey.slice(0, 8)} with ${buyAmountSOL.toFixed(6)} SOL (attempt ${attempt + 1})`
+              logger.error(
+                `[${logId}]: All buy attempts failed for ${wallet.publicKey.slice(0, 8)}`
               );
-              return { success: true, signature };
-            } catch (error: any) {
-              logger.warn(
-                `[${logId}]: Buy attempt ${attempt + 1} failed for ${wallet.publicKey.slice(0, 8)}: ${error.message}`
-              );
-
-              if (attempt === maxRetries) {
-                // Record the final failed attempt
-                await recordTransaction(
-                  tokenAddress,
-                  wallet.publicKey,
-                  "snipe_buy",
-                  "error",
-                  false,
-                  token.launchData?.launchAttempt || 1,
-                  {
-                    amountSol: 0,
-                    errorMessage: error.message,
-                  }
-                );
-
-                logger.error(
-                  `[${logId}]: All buy attempts failed for ${wallet.publicKey.slice(0, 8)}`
-                );
-                return { success: false, error: error.message };
-              }
-
-              // Wait before retry
-              await new Promise((resolve) => setTimeout(resolve, 500));
+              walletResult = { success: false, error: error.message };
+              break;
             }
+
+            // Wait before retry (100ms)
+            await new Promise((resolve) => setTimeout(resolve, 100));
           }
-
-          return { success: false, error: "Max retries exceeded" };
-        });
-
-        // Wait for current batch to complete
-        const batchResults = await Promise.all(batchPromises);
-        results.push(...batchResults);
-
-        // Mark wallets as processed
-        currentBatch.forEach((wallet) =>
-          processedWallets.add(wallet.publicKey)
-        );
-
-        // Small delay between batches
-        if (processedWallets.size < walletsToProcess.length) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
         }
+        results.push(walletResult);
+        processedWallets.add(wallet.publicKey);
+        // Wait 50ms before next wallet
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
       successfulBuys = results.filter((r) => r.success).length;
