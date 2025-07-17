@@ -1773,16 +1773,21 @@ export async function formatTokenMessage(
   }
 
   let walletsBalanceSection = "";
+  let supplyData: any = null;
+  
   try {
-    const { getFundingWallet } = await import("../backend/functions");
-    const [fundingWalletResult] = await Promise.allSettled([
+    const { getFundingWallet, calculateUserTokenSupplyPercentage } = await import("../backend/functions");
+    const [fundingWalletResult, supplyDataResult] = await Promise.allSettled([
       getFundingWallet(user.id),
+      calculateUserTokenSupplyPercentage(user.id, token.address),
     ]);
 
     const fundingWallet =
       fundingWalletResult.status === "fulfilled"
         ? fundingWalletResult.value
         : null;
+
+    supplyData = supplyDataResult.status === "fulfilled" ? supplyDataResult.value : null;
 
     const allWallets = [];
 
@@ -1861,6 +1866,14 @@ ${balanceLines.join("\n")}
     second: "2-digit",
   });
 
+  // Add supply percentage information if available
+  let supplyPercentageSection = "";
+  if (supplyData && supplyData.totalBalance > 0) {
+    supplyPercentageSection = `
+📊 <b>Your Supply Ownership:</b> ${supplyData.supplyPercentageFormatted} of total supply
+💰 <b>Total Holdings:</b> ${supplyData.totalBalanceFormatted} tokens across ${supplyData.walletsWithBalance} wallet(s)`;
+  }
+
   return `
 🪙 ${token.name} $${token.symbol} ${verifiedBadge}
 <code>${token.address}</code>
@@ -1871,6 +1884,7 @@ ${balanceLines.join("\n")}
 📊 <b>Volume 24h:</b> ${volumeText}
 💧 <b>Liquidity:</b>  ${liquidityText}
 
+${supplyPercentageSection}
 ${walletsBalanceSection}
 ${linksHtml}
 📱 <b>Quick Actions:</b> Use the buttons below to buy or sell this token.
@@ -2066,40 +2080,18 @@ bot.on("message:text", async (ctx) => {
             try {
               const user = await getUser(ctx.chat.id.toString());
               if (user) {
-                const buyerWallets = await getAllBuyerWallets(user.id);
-                let totalTokenBalance = 0;
-                let walletsWithBalance = 0;
+                // Use the new function to calculate supply percentage
+                const { calculateUserTokenSupplyPercentage } = await import("../backend/functions");
+                const supplyData = await calculateUserTokenSupplyPercentage(user.id, text);
+                
+                let totalTokenBalance = supplyData.totalBalance;
+                let walletsWithBalance = supplyData.walletsWithBalance;
                 let devWalletBalance = 0;
+                let supplyPercentageText = "";
 
-                // Check buyer wallets
-                if (buyerWallets && buyerWallets.length > 0) {
-                  const balancePromises = buyerWallets.map(
-                    async (wallet: any) => {
-                      try {
-                        const balance = await getTokenBalance(
-                          text,
-                          wallet.publicKey
-                        );
-                        if (balance > 0) {
-                          walletsWithBalance++;
-                          return balance;
-                        }
-                        return 0;
-                      } catch (error) {
-                        logger.warn(
-                          `Error checking balance for wallet ${wallet.publicKey}:`,
-                          error
-                        );
-                        return 0;
-                      }
-                    }
-                  );
-
-                  const balances = await Promise.all(balancePromises);
-                  totalTokenBalance = balances.reduce(
-                    (sum, balance) => sum + balance,
-                    0
-                  );
+                // Add supply percentage information if user has tokens
+                if (supplyData.totalBalance > 0) {
+                  supplyPercentageText = `\n📊 **Supply Ownership:** ${supplyData.supplyPercentageFormatted} of total supply`;
                 }
 
                 // Check dev wallet
@@ -2124,6 +2116,7 @@ bot.on("message:text", async (ctx) => {
                   balance: totalTokenBalance,
                   walletsWithBalance: walletsWithBalance,
                   devWalletBalance: devWalletBalance,
+                  supplyPercentageText,
                 };
               }
               return {
@@ -2229,15 +2222,17 @@ bot.on("message:text", async (ctx) => {
                     // Check if dev wallet has tokens
                     const devWalletBalance =
                       (data as any).devWalletBalance || 0;
+                    const supplyPercentageText = (data as any).supplyPercentageText || "";
+                    
                     if (devWalletBalance > 0) {
                       const formattedDevBalance = (
                         devWalletBalance / 1e6
                       ).toLocaleString(undefined, {
                         maximumFractionDigits: 2,
                       });
-                      holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} wallet(s) (including dev wallet: ${formattedDevBalance})`;
+                      holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} wallet(s) (including dev wallet: ${formattedDevBalance})${supplyPercentageText}`;
                     } else {
-                      holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)`;
+                      holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)${supplyPercentageText}`;
                     }
                   } else {
                     holdingsText = `📌 No tokens found in your buyer wallets`;

@@ -4678,3 +4678,121 @@ export const launchBonkToken = async (
     };
   }
 };
+
+/**
+ * Calculate the total percentage of token supply a user holds across all buy wallets
+ * @param userId - User ID
+ * @param tokenAddress - Token address
+ * @returns Object with total balance, percentage of supply, and wallet breakdown
+ */
+export const calculateUserTokenSupplyPercentage = async (
+  userId: string,
+  tokenAddress: string
+): Promise<{
+  totalBalance: number;
+  totalBalanceFormatted: string;
+  supplyPercentage: number;
+  supplyPercentageFormatted: string;
+  walletsWithBalance: number;
+  totalWallets: number;
+  tokenSupply: string;
+  walletBreakdown: Array<{
+    publicKey: string;
+    balance: number;
+    balanceFormatted: string;
+    percentage: number;
+    shortAddress: string;
+  }>;
+}> => {
+  try {
+    // Get token info to get total supply
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    if (!tokenInfo) {
+      throw new Error("Token not found");
+    }
+
+    // Get total token supply
+    const totalSupply = tokenInfo.supply ? BigInt(tokenInfo.supply) : BigInt(0);
+    const totalSupplyFormatted = totalSupply.toString();
+
+    // Get all buyer wallets
+    const buyerWallets = await getAllBuyerWallets(userId);
+    const totalWallets = buyerWallets.length;
+
+    if (totalWallets === 0) {
+      return {
+        totalBalance: 0,
+        totalBalanceFormatted: "0",
+        supplyPercentage: 0,
+        supplyPercentageFormatted: "0%",
+        walletsWithBalance: 0,
+        totalWallets: 0,
+        tokenSupply: totalSupplyFormatted,
+        walletBreakdown: []
+      };
+    }
+
+    // Check balances for all wallets
+    const walletBreakdown = [];
+    let totalBalance = 0;
+    let walletsWithBalance = 0;
+
+    for (const wallet of buyerWallets) {
+      try {
+        const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        
+        if (balance > 0) {
+          walletsWithBalance++;
+          totalBalance += balance;
+          
+          const balanceFormatted = (balance / 1e6).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          });
+          
+          const percentage = totalSupply > 0 ? (Number(balance) / Number(totalSupply)) * 100 : 0;
+          
+          walletBreakdown.push({
+            publicKey: wallet.publicKey,
+            balance: balance,
+            balanceFormatted: balanceFormatted,
+            percentage: percentage,
+            shortAddress: wallet.publicKey.slice(0, 6) + "…" + wallet.publicKey.slice(-4)
+          });
+        }
+      } catch (error) {
+        console.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
+      }
+    }
+
+    // Calculate total percentage of supply
+    const supplyPercentage = totalSupply > 0 ? (totalBalance / Number(totalSupply)) * 100 : 0;
+    const supplyPercentageFormatted = supplyPercentage.toFixed(4) + "%";
+    const totalBalanceFormatted = (totalBalance / 1e6).toLocaleString(undefined, {
+      maximumFractionDigits: 2,
+    });
+
+    return {
+      totalBalance,
+      totalBalanceFormatted,
+      supplyPercentage,
+      supplyPercentageFormatted,
+      walletsWithBalance,
+      totalWallets,
+      tokenSupply: totalSupplyFormatted,
+      walletBreakdown
+    };
+
+  } catch (error) {
+    console.error(`Error calculating token supply percentage for ${tokenAddress}:`, error);
+    return {
+      totalBalance: 0,
+      totalBalanceFormatted: "0",
+      supplyPercentage: 0,
+      supplyPercentageFormatted: "0%",
+      walletsWithBalance: 0,
+      totalWallets: 0,
+      tokenSupply: "0",
+      walletBreakdown: []
+    };
+  }
+};
