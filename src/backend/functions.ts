@@ -4711,9 +4711,40 @@ export const calculateUserTokenSupplyPercentage = async (
       throw new Error("Token not found");
     }
 
-    // Get total token supply
-    const totalSupply = tokenInfo.supply ? BigInt(tokenInfo.supply) : BigInt(0);
+    // Get total token supply from different possible sources
+    let totalSupply = BigInt(0);
+    
+    // Try different supply sources based on data structure
+    if (tokenInfo.supply) {
+      // Direct supply field (DexScreener format)
+      totalSupply = BigInt(tokenInfo.supply);
+    } else if (tokenInfo.birdeye?.totalSupply) {
+      // Birdeye format
+      totalSupply = BigInt(tokenInfo.birdeye.totalSupply);
+    } else if (tokenInfo.baseToken?.decimals) {
+      // Try to get from on-chain mint info as fallback
+      try {
+        const { getMint } = await import("@solana/spl-token");
+        const { PublicKey } = await import("@solana/web3.js");
+        const { connection } = await import("../blockchain/common/connection");
+        
+        const mintPubkey = new PublicKey(tokenAddress);
+        const mintInfo = await getMint(connection, mintPubkey);
+        totalSupply = BigInt(mintInfo.supply.toString());
+      } catch (error) {
+        console.warn(`Could not fetch on-chain supply for ${tokenAddress}:`, error);
+      }
+    }
+    
     const totalSupplyFormatted = totalSupply.toString();
+    
+    // Debug logging
+    console.log(`[calculateUserTokenSupplyPercentage] Token supply sources for ${tokenAddress}:`, {
+      directSupply: tokenInfo.supply,
+      birdeyeSupply: tokenInfo.birdeye?.totalSupply,
+      totalSupplyCalculated: totalSupply.toString(),
+      totalSupplyFormatted
+    });
 
     // Get all buyer wallets
     const buyerWallets = await getAllBuyerWallets(userId);
