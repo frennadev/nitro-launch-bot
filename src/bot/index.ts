@@ -850,10 +850,28 @@ bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  const token = await TokenModel.findOne({
+  
+  // Try to find token with multiple lookup strategies
+  let token = await TokenModel.findOne({
     user: user.id,
     tokenAddress: { $regex: `^${tokenAddressPrefix}` },
   });
+
+  // If not found with prefix match, try exact match (for full addresses)
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: tokenAddressPrefix,
+    });
+  }
+
+  // If still not found, try case-insensitive match
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+    });
+  }
 
   if (!token) {
     await ctx.reply("❌ Token not found");
@@ -875,10 +893,28 @@ bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  const token = await TokenModel.findOne({
+  
+  // Try to find token with multiple lookup strategies
+  let token = await TokenModel.findOne({
     user: user.id,
     tokenAddress: { $regex: `^${tokenAddressPrefix}` },
   });
+
+  // If not found with prefix match, try exact match (for full addresses)
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: tokenAddressPrefix,
+    });
+  }
+
+  // If still not found, try case-insensitive match
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+    });
+  }
 
   if (!token) {
     await ctx.reply("❌ Token not found");
@@ -906,10 +942,28 @@ bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  const token = await TokenModel.findOne({
+  
+  // Try to find token with multiple lookup strategies
+  let token = await TokenModel.findOne({
     user: user.id,
     tokenAddress: { $regex: `^${tokenAddressPrefix}` },
   });
+
+  // If not found with prefix match, try exact match (for full addresses)
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: tokenAddressPrefix,
+    });
+  }
+
+  // If still not found, try case-insensitive match
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+    });
+  }
 
   if (!token) {
     await ctx.reply("❌ Token not found");
@@ -934,10 +988,28 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  const token = await TokenModel.findOne({
+  
+  // Try to find token with multiple lookup strategies
+  let token = await TokenModel.findOne({
     user: user.id,
     tokenAddress: { $regex: `^${tokenAddressPrefix}` },
   });
+
+  // If not found with prefix match, try exact match (for full addresses)
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: tokenAddressPrefix,
+    });
+  }
+
+  // If still not found, try case-insensitive match
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+    });
+  }
 
   if (!token) {
     await ctx.reply("❌ Token not found");
@@ -1049,10 +1121,28 @@ bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  const token = await TokenModel.findOne({
+  
+  // Try to find token with multiple lookup strategies
+  let token = await TokenModel.findOne({
     user: user.id,
     tokenAddress: { $regex: `^${tokenAddressPrefix}` },
   });
+
+  // If not found with prefix match, try exact match (for full addresses)
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: tokenAddressPrefix,
+    });
+  }
+
+  // If still not found, try case-insensitive match
+  if (!token) {
+    token = await TokenModel.findOne({
+      user: user.id,
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+    });
+  }
 
   if (!token) {
     await ctx.reply("❌ Token not found");
