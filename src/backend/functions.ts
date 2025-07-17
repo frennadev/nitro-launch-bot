@@ -3972,15 +3972,56 @@ export const launchBonkToken = async (
     // Get dev wallet
     const devWallet = await getCurrentDevWalletPrivateKey(userId);
 
-    // Calculate required wallets and allocate from pool
-    const {
-      calculateRequiredWallets,
-      allocateWalletsFromPool,
-      generateBuyDistribution,
-    } = await import("./functions");
+    // Calculate required wallets and prioritize existing user wallets
     const walletCount = calculateRequiredWallets(buyAmount);
-    const allocatedWallets = await allocateWalletsFromPool(userId, walletCount);
-    const buyWallets = allocatedWallets.map((w) => w.privateKey);
+    const existingBuyerWallets = await getAllBuyerWallets(userId);
+    
+    let buyWallets: string[];
+    let allocatedWallets: any[] = [];
+    
+    if (existingBuyerWallets.length >= walletCount) {
+      // Use existing wallets - no need to allocate from pool
+      logger.info(`[${logId}]: Using ${walletCount} existing buyer wallets (${existingBuyerWallets.length} available)`);
+      
+      // Get private keys for existing wallets
+      const existingWalletKeys = await Promise.all(
+        existingBuyerWallets.slice(0, walletCount).map(async (w) => {
+          const privateKey = await getBuyerWalletPrivateKey(userId, w.id);
+          return {
+            id: w.id,
+            publicKey: w.publicKey,
+            privateKey: privateKey
+          };
+        })
+      );
+      
+      buyWallets = existingWalletKeys.map(w => w.privateKey);
+      allocatedWallets = existingWalletKeys;
+    } else {
+      // Need additional wallets from pool
+      const additionalWalletsNeeded = walletCount - existingBuyerWallets.length;
+      logger.info(`[${logId}]: Using ${existingBuyerWallets.length} existing wallets + allocating ${additionalWalletsNeeded} from pool`);
+      
+      // Get private keys for existing wallets
+      const existingWalletKeys = await Promise.all(
+        existingBuyerWallets.map(async (w) => {
+          const privateKey = await getBuyerWalletPrivateKey(userId, w.id);
+          return {
+            id: w.id,
+            publicKey: w.publicKey,
+            privateKey: privateKey
+          };
+        })
+      );
+      
+      // Allocate additional wallets from pool
+      const poolWallets = await allocateWalletsFromPool(userId, additionalWalletsNeeded);
+      
+      // Combine existing and new wallets
+      buyWallets = [...existingWalletKeys.map(w => w.privateKey), ...poolWallets.map(w => w.privateKey)];
+      allocatedWallets = [...existingWalletKeys, ...poolWallets];
+    }
+    
     const buyWalletsOrder = buyWallets;
     const buyDistribution = generateBuyDistribution(buyAmount, walletCount);
 
