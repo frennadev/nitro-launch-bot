@@ -184,7 +184,7 @@ export const executeCTOOperation = async (
   }
 };
 
-// NEW: Helper function to confirm and record transactions in background
+// NEW: Helper function to confirm and record transactions in background WITH fee collection
 async function confirmAndRecordTransaction(
   tokenAddress: string,
   walletPublicKey: string,
@@ -226,6 +226,27 @@ async function confirmAndRecordTransaction(
       return { success: false, error: errorMsg };
     }
     
+    // Get actual transaction amount from blockchain for accurate fee collection
+    let actualTransactionAmountSol = amountSol; // Fallback to input amount
+    try {
+      const { parseTransactionAmounts } = await import("../../backend/utils");
+      const actualAmounts = await parseTransactionAmounts(
+        signature,
+        walletPublicKey,
+        tokenAddress,
+        "buy"
+      );
+      
+      if (actualAmounts.success && actualAmounts.actualSolSpent) {
+        actualTransactionAmountSol = actualAmounts.actualSolSpent;
+        logger.info(`[CTO Background] Actual SOL spent from blockchain: ${actualTransactionAmountSol} SOL`);
+      } else {
+        logger.warn(`[CTO Background] Failed to parse actual amounts, using input amount: ${actualAmounts.error}`);
+      }
+    } catch (parseError: any) {
+      logger.warn(`[CTO Background] Error parsing transaction amounts, using input amount: ${parseError.message}`);
+    }
+    
     // Record successful transaction
     try {
       const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
@@ -237,7 +258,7 @@ async function confirmAndRecordTransaction(
         true,
         0,
         {
-          amountSol: amountSol,
+          amountSol: actualTransactionAmountSol, // Use actual amount from blockchain
           amountTokens: "0", // Will be parsed from blockchain
           errorMessage: undefined,
           retryAttempt: 0,
@@ -247,6 +268,31 @@ async function confirmAndRecordTransaction(
       logger.info(`[CTO Background] Transaction recorded successfully: ${signature}`);
     } catch (recordError: any) {
       logger.warn(`[CTO Background] Failed to record successful transaction:`, recordError);
+    }
+    
+    // NEW: Collect transaction fee after successful transaction using actual amount
+    try {
+      logger.info(`[CTO Background] Collecting transaction fee for ${actualTransactionAmountSol} SOL transaction`);
+      const { collectTransactionFee } = await import("../../backend/functions-main");
+      
+      // Find the wallet private key for fee collection
+      const { getAllTradingWallets } = await import("../../backend/functions");
+      const allWallets = await getAllTradingWallets(""); // Empty string to get all wallets
+      const wallet = allWallets?.find(w => w.publicKey === walletPublicKey);
+      
+      if (wallet) {
+        const feeResult = await collectTransactionFee(wallet.privateKey, actualTransactionAmountSol, "buy");
+        
+        if (feeResult.success) {
+          logger.info(`[CTO Background] Transaction fee collected successfully: ${feeResult.feeAmount} SOL`);
+        } else {
+          logger.warn(`[CTO Background] Transaction fee collection failed: ${feeResult.error}`);
+        }
+      } else {
+        logger.warn(`[CTO Background] Could not find wallet private key for fee collection: ${walletPublicKey}`);
+      }
+    } catch (feeError: any) {
+      logger.error(`[CTO Background] Error collecting transaction fee:`, feeError.message);
     }
     
     return { success: true };
