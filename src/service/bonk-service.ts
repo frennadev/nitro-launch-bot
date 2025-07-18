@@ -27,7 +27,7 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { connection } from "./config.ts";
-import { closeAccountInstruction } from "@raydium-io/raydium-sdk-v2";
+// import { closeAccountInstruction } from "@raydium-io/raydium-sdk-v2"; // ❌ REMOVED: Conflicting import
 import { TOKEN_PROGRAM_ID } from "@raydium-io/raydium-sdk";
 import { logger } from "../jobs/logger.ts";
 import { getCpmmPoolState } from "../backend/get-cpmm-poolinfo.ts";
@@ -501,11 +501,7 @@ export default class BonkService {
     };
     const buyInstruction = await this.createBuyIX(ixData);
 
-    const closeTokenAccount = closeAccountInstruction({
-      tokenAccount: wsolAta,
-      payer: owner.publicKey,
-      owner: owner.publicKey,
-    });
+    const closeTokenAccount = createCloseAccountInstruction(wsolAta, owner.publicKey, owner.publicKey);
 
     // 🔥 OPTIMIZED: Build final instruction list
     const instructions = [
