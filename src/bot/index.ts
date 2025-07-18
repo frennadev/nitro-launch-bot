@@ -2357,27 +2357,47 @@ bot.on("message:text", async (ctx) => {
           await ctx.reply("❌ Token not found or invalid address.");
           return;
         }
-        const tokenMessage = await formatTokenMessage(
-          tokenInfo,
-          ctx,
-          ctx.chat.id.toString(),
-          "2"
-        );
-
-        const message = await ctx.reply(tokenMessage, {
-          parse_mode: "HTML",
-          reply_markup: new InlineKeyboard()
-            .url("📊 Chart", `https://dexscreener.com/solana/${text}`)
-            .url("🔗 Contract", `https://solscan.io/token/${text}`)
-            .text("💸 Sell", `sell_token_${text}`)
-            .row()
-            .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
-            .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
-            .text("🔄 Refresh", `refresh_ca_${text}`)
-            .row()
-            .text("🏠 Menu", CallBackQueries.BACK),
-        });
-
+        
+        logger.info(`[token-display] Token info retrieved successfully for ${text}, calling formatTokenMessage...`);
+        
+        let tokenMessage: string;
+        try {
+          tokenMessage = await formatTokenMessage(
+            tokenInfo,
+            ctx,
+            ctx.chat.id.toString(),
+            "2"
+          );
+          logger.info(`[token-display] formatTokenMessage completed, message length: ${tokenMessage.length}, sending to user...`);
+        } catch (formatError: any) {
+          logger.error(`[token-display] formatTokenMessage failed: ${formatError.message}`, formatError);
+          await ctx.reply("❌ Error formatting token information. Please try again.");
+          return;
+        }
+        
+        let message: any;
+        try {
+          message = await ctx.reply(tokenMessage, {
+            parse_mode: "HTML",
+            reply_markup: new InlineKeyboard()
+              .url("📊 Chart", `https://dexscreener.com/solana/${text}`)
+              .url("🔗 Contract", `https://solscan.io/token/${text}`)
+              .text("💸 Sell", `sell_token_${text}`)
+              .row()
+              .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
+              .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
+              .text("🔄 Refresh", `refresh_ca_${text}`)
+              .row()
+              .text("🏠 Menu", CallBackQueries.BACK),
+          });
+          
+          logger.info(`[token-display] Message sent successfully to user, message_id: ${message.message_id}`);
+        } catch (replyError: any) {
+          logger.error(`[token-display] ctx.reply failed: ${replyError.message}`, replyError);
+          await ctx.reply("❌ Error sending token information. Please try again.");
+          return;
+        }
+        
         // **BACKGROUND UPDATES: ALL data fetching happens in background, including user checks**
         const updatePromises = [
           // User and token info fetch (moved to background)
