@@ -73,7 +73,7 @@ Configure and manage your wallets for token operations
 <code>${fundingWalletAddress}</code>
 💰 ${fundingBalance.toFixed(4)} SOL
 
-<b>👥 Buyer Wallets:</b> ${buyerWallets.length}/20 wallets
+<b>👥 Buyer Wallets:</b> ${buyerWallets.length}/40 wallets
 ${buyerWallets.length > 0 ? "✅ Ready for launches" : "⚠️ No buyer wallets configured"}
 
 <i>💡 Tip: Ensure your funding wallet has sufficient SOL for token launches!</i>

@@ -289,9 +289,9 @@ Would you like to enter new values or use previous ones?`,
       `💰 <b>Enter the total SOL amount to buy tokens with:</b>
 
 📊 <b>Your Wallet Capacity:</b>
-• Current wallets: ${buyerWallets.length}/20
+• Current wallets: ${buyerWallets.length}/40
 • Maximum buy amount: ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL
-• System maximum: ${maxBuyAmount.toFixed(1)} SOL (with 20 wallets)
+• System maximum: ${maxBuyAmount.toFixed(1)} SOL (with 40 wallets)
 
 💡 <i>Enter a value between 0.1 and ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</i>`,
       {

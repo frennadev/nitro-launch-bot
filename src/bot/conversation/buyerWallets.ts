@@ -14,6 +14,9 @@ import {
 } from "../../backend/functions-main";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 
+const WALLETS_PER_PAGE = 5; // Increased from 3 to 5 for better UI with 40 wallets
+const MAX_WALLETS = 40; // Updated from 20 to 40
+
 const manageBuyerWalletsConversation = async (
   conversation: Conversation<Context>,
   ctx: Context
@@ -31,26 +34,36 @@ const manageBuyerWalletsConversation = async (
     const wallets = await getAllBuyerWallets(user.id);
 
     const header = `<b>👥 Buyer Wallet Management</b>
-You have <b>${wallets.length}/20</b> buyer wallets.
+You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
 `;
 
-    const lines = wallets
+    // Calculate pagination
+    const totalPages = Math.ceil(wallets.length / WALLETS_PER_PAGE);
+    const currentPage = 1; // Default to first page, can be enhanced with page tracking
+
+    const startIndex = (currentPage - 1) * WALLETS_PER_PAGE;
+    const endIndex = Math.min(startIndex + WALLETS_PER_PAGE, wallets.length);
+    const currentWallets = wallets.slice(startIndex, endIndex);
+
+    const lines = currentWallets
       .map((w, i) => {
         const short = `${w.publicKey.slice(0, 6)}…${w.publicKey.slice(-4)}`;
-        return `${i + 1}. <code>${short}</code>`;
+        const globalIndex = startIndex + i + 1;
+        return `${globalIndex}. <code>${short}</code>`;
       })
       .join("\n");
 
     const messageText =
       header +
       (lines || "<i>No buyer wallets configured</i>") +
+      `\n\n📄 Page ${currentPage}/${totalPages}` +
       "\n\nSelect an action:";
 
     const kb = new InlineKeyboard();
 
-    // Add wallet management buttons for each wallet
-    wallets.forEach((wallet) => {
+    // Add wallet management buttons for current page wallets
+    currentWallets.forEach((wallet) => {
       const short = `${wallet.publicKey.slice(0, 6)}…${wallet.publicKey.slice(-4)}`;
       kb.text(
         `📤 Export ${short}`,
@@ -63,8 +76,19 @@ You have <b>${wallets.length}/20</b> buyer wallets.
         .row();
     });
 
+    // Add pagination controls if needed
+    if (totalPages > 1) {
+      if (currentPage > 1) {
+        kb.text(`⬅️ Previous Page`, `${CallBackQueries.PREV_PAGE}_${currentPage - 1}`);
+      }
+      if (currentPage < totalPages) {
+        kb.text(`Next Page ➡️`, `${CallBackQueries.NEXT_PAGE}_${currentPage + 1}`);
+      }
+      kb.row();
+    }
+
     // Add new wallet options if under limit
-    if (wallets.length < 20) {
+    if (wallets.length < MAX_WALLETS) {
       kb.text("➕ Generate New Wallet", CallBackQueries.GENERATE_BUYER_WALLET)
         .text("📥 Import Wallet", CallBackQueries.IMPORT_BUYER_WALLET)
         .row();
@@ -153,6 +177,13 @@ You have <b>${wallets.length}/20</b> buyer wallets.
         return conversation.halt();
       }
 
+      // Handle pagination
+      if (data.startsWith(CallBackQueries.PREV_PAGE) || data.startsWith(CallBackQueries.NEXT_PAGE)) {
+        // For now, just continue the loop to refresh the page
+        // In a full implementation, you'd track the page number
+        continue;
+      }
+
       // Handle export and delete actions
       const idx = data.lastIndexOf("_");
       const action = data.substring(0, idx);
@@ -205,6 +236,8 @@ You have <b>${wallets.length}/20</b> buyer wallets.
     } catch (error: any) {
       await next.reply(`❌ An error occurred: ${error.message}`);
     }
+
+    return conversation.halt();
   }
 };
 

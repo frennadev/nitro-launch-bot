@@ -80,7 +80,7 @@ After creating your token, you need to launch it on Pump.fun:
 
 **Launch Parameters:**
 • **Dev Buy Amount**: Your initial investment
-• **Buyer Wallets**: 1-20 wallets for token distribution
+• **Buyer Wallets**: 1-40 wallets for token distribution
 • **Buy Amounts**: Customize per wallet or use equal distribution
 
 **Important Notes:**

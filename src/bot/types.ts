@@ -55,6 +55,8 @@ export enum CallBackQueries {
   // ←–– Newly added callbacks for pagination and generic cancel
   PREV_TOKEN = "prev_token",
   NEXT_TOKEN = "next_token",
+  PREV_PAGE = "prev_page",
+  NEXT_PAGE = "next_page",
   NOOP = "noop",
   CANCEL = "cancel",
 
