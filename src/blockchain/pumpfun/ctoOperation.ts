@@ -1,8 +1,7 @@
 import { logger } from "../common/logger";
 import { getAllTradingWallets, getFundingWallet } from "../../backend/functions";
-import { executeExternalBuy } from "./externalBuy";
 import { secretKeyToKeypair } from "../common/utils";
-import { type Context } from "grammy";
+import { Context } from "grammy";
 
 interface CTOResult {
   success: boolean;
@@ -84,12 +83,18 @@ export const executeCTOOperation = async (
 
     // Use only the wallets that were actually funded by the mixer
     const walletsToUse = successfulRoutes.length;
-    const selectedWallets = buyerWallets.slice(0, walletsToUse);
+    const fundedWallets = buyerWallets.slice(0, walletsToUse);
 
     logger.info(`[CTO] Using ${walletsToUse} wallets that were successfully funded by mixer`);
 
-    // Execute buy transactions in parallel
-    const buyPromises = selectedWallets.map(async (wallet, index) => {
+    // NEW: Execute buy transactions sequentially with 50ms delays (no confirmation waiting)
+    logger.info(`[CTO] Starting sequential buy execution with 50ms delays between wallets`);
+    
+    const buyResults = [];
+    const transactionPromises = []; // Store promises for background confirmation
+    
+    for (let index = 0; index < fundedWallets.length; index++) {
+      const wallet = fundedWallets[index];
       const buyAmountLamports = actualAmountsFromMixer[index];
       const buyAmountSol = buyAmountLamports / 1e9; // Convert lamports to SOL for external buy
       
@@ -97,101 +102,70 @@ export const executeCTOOperation = async (
       const sellReserve = 0.01; // Reserve 0.01 SOL for sell transaction fees
       const adjustedBuyAmountSol = Math.max(0.001, buyAmountSol - sellReserve); // Ensure minimum 0.001 SOL for buy
       
-      logger.info(`[CTO] Wallet ${index + 1}/${selectedWallets.length}: Original amount ${buyAmountSol.toFixed(6)} SOL, Adjusted for sell reserve: ${adjustedBuyAmountSol.toFixed(6)} SOL (reserving ${sellReserve} SOL for sells)`);
+      logger.info(`[CTO] Wallet ${index + 1}/${fundedWallets.length}: Original amount ${buyAmountSol.toFixed(6)} SOL, Adjusted for sell reserve: ${adjustedBuyAmountSol.toFixed(6)} SOL (reserving ${sellReserve} SOL for sells)`);
       
       try {
         const keypair = secretKeyToKeypair(wallet.privateKey);
-        const result = await executeExternalBuy(tokenAddress, keypair, adjustedBuyAmountSol, 3, 0.001, {} as Context);
+        
+        // NEW: Use non-confirmation version for fast sequential execution
+        const { executeExternalBuyNoConfirmation } = await import("./externalBuyNoConfirmation");
+        const result = await executeExternalBuyNoConfirmation(tokenAddress, keypair, adjustedBuyAmountSol, 3, 0.001, {} as Context);
         
         if (result.success) {
-          logger.info(`[CTO] Buy ${index + 1}/${selectedWallets.length} successful: ${result.signature}`);
+          logger.info(`[CTO] Buy ${index + 1}/${fundedWallets.length} sent successfully: ${result.signature}`);
           
-          // Record the successful CTO buy transaction
-          try {
-            const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
-            await recordTransactionWithActualAmounts(
+          // Store the transaction for background confirmation and recording
+          transactionPromises.push(
+            confirmAndRecordTransaction(
               tokenAddress,
               wallet.publicKey,
-              "external_buy", // New transaction type for CTO buys
               result.signature,
-              true,
-              0, // CTO operations don't have launch attempts
-              {
-                amountSol: adjustedBuyAmountSol,
-                amountTokens: "0", // Will be parsed from blockchain
-                errorMessage: undefined,
-                retryAttempt: 0,
-              },
-              true // Parse actual amounts from blockchain
-            );
-            logger.info(`[CTO] Transaction recorded for wallet ${wallet.publicKey}`);
-          } catch (recordError: any) {
-            logger.warn(`[CTO] Failed to record transaction for wallet ${wallet.publicKey}:`, recordError);
-          }
+              adjustedBuyAmountSol,
+              result.platform || "unknown"
+            )
+          );
           
-          return { success: true, signature: result.signature, walletAddress: wallet.publicKey };
+          buyResults.push({ success: true, signature: result.signature, walletAddress: wallet.publicKey });
         } else {
-          logger.warn(`[CTO] Buy ${index + 1}/${selectedWallets.length} failed: ${result.error}`);
-          
-          // Record the failed CTO buy transaction
-          try {
-            const { recordTransaction } = await import("../../backend/functions");
-            await recordTransaction(
-              tokenAddress,
-              wallet.publicKey,
-              "external_buy",
-              result.signature || "failed_cto_buy", // Provide a default signature for failed transactions
-              false,
-              0,
-              {
-                amountSol: adjustedBuyAmountSol,
-                amountTokens: "0",
-                errorMessage: result.error,
-                retryAttempt: 0,
-              }
-            );
-          } catch (recordError: any) {
-            logger.warn(`[CTO] Failed to record failed transaction for wallet ${wallet.publicKey}:`, recordError);
-          }
-          
-          return { success: false, error: result.error, walletAddress: wallet.publicKey };
+          logger.warn(`[CTO] Buy ${index + 1}/${fundedWallets.length} failed to send: ${result.error}`);
+          buyResults.push({ success: false, error: result.error, walletAddress: wallet.publicKey });
         }
       } catch (error: any) {
-        logger.error(`[CTO] Buy ${index + 1}/${selectedWallets.length} error:`, error);
-        
-        // Record the error transaction
-        try {
-          const { recordTransaction } = await import("../../backend/functions");
-          await recordTransaction(
-            tokenAddress,
-            wallet.publicKey,
-            "external_buy",
-            "error_cto_buy", // Provide a default signature for error transactions
-            false,
-            0,
-            {
-              amountSol: adjustedBuyAmountSol,
-              amountTokens: "0",
-              errorMessage: error.message,
-              retryAttempt: 0,
-            }
-          );
-        } catch (recordError: any) {
-          logger.warn(`[CTO] Failed to record error transaction for wallet ${wallet.publicKey}:`, recordError);
-        }
-        
-        return { success: false, error: error.message, walletAddress: wallet.publicKey };
+        logger.error(`[CTO] Buy ${index + 1}/${fundedWallets.length} error:`, error);
+        buyResults.push({ success: false, error: error.message, walletAddress: wallet.publicKey });
+      }
+      
+      // Add 50ms delay between wallets (except for the last one)
+      if (index < fundedWallets.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+    
+    logger.info(`[CTO] All ${fundedWallets.length} buy transactions sent sequentially. Starting background confirmation...`);
+
+    // Wait for all background confirmations to complete
+    const confirmationResults = await Promise.allSettled(transactionPromises);
+    
+    // Update results based on confirmation outcomes
+    let confirmedSuccesses = 0;
+    let confirmedFailures = 0;
+    
+    confirmationResults.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value.success) {
+        confirmedSuccesses++;
+        logger.info(`[CTO] Background confirmation successful for wallet ${index + 1}`);
+      } else {
+        confirmedFailures++;
+        const error = result.status === 'rejected' ? result.reason : result.value?.error;
+        logger.warn(`[CTO] Background confirmation failed for wallet ${index + 1}: ${error}`);
       }
     });
 
-    // Wait for all buy transactions to complete
-    const buyResults = await Promise.all(buyPromises);
-
     // Count successful and failed buys
-    const successfulBuys = buyResults.filter(r => r.success).length;
-    const failedBuys = buyResults.filter(r => !r.success).length;
+    const successfulBuys = confirmedSuccesses;
+    const failedBuys = confirmedFailures;
 
-    logger.info(`[CTO] CTO operation completed: ${successfulBuys} successful, ${failedBuys} failed`);
+    logger.info(`[CTO] CTO operation completed: ${successfulBuys} confirmed successful, ${failedBuys} confirmed failed`);
 
     return {
       success: successfulBuys > 0, // Consider success if at least one buy succeeded
@@ -208,4 +182,77 @@ export const executeCTOOperation = async (
       error: error.message || "Unknown error occurred"
     };
   }
-}; 
+};
+
+// NEW: Helper function to confirm and record transactions in background
+async function confirmAndRecordTransaction(
+  tokenAddress: string,
+  walletPublicKey: string,
+  signature: string,
+  amountSol: number,
+  platform: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { connection } = await import("../../service/config");
+    
+    // Wait for confirmation in background
+    const confirmation = await connection.confirmTransaction(signature, "confirmed");
+    
+    if (confirmation.value.err) {
+      const errorMsg = `Transaction failed: ${JSON.stringify(confirmation.value.err)}`;
+      logger.warn(`[CTO Background] ${errorMsg}`);
+      
+      // Record failed transaction
+      try {
+        const { recordTransaction } = await import("../../backend/functions");
+        await recordTransaction(
+          tokenAddress,
+          walletPublicKey,
+          "external_buy",
+          signature,
+          false,
+          0,
+          {
+            amountSol: amountSol,
+            amountTokens: "0",
+            errorMessage: errorMsg,
+            retryAttempt: 0,
+          }
+        );
+      } catch (recordError: any) {
+        logger.warn(`[CTO Background] Failed to record failed transaction:`, recordError);
+      }
+      
+      return { success: false, error: errorMsg };
+    }
+    
+    // Record successful transaction
+    try {
+      const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+      await recordTransactionWithActualAmounts(
+        tokenAddress,
+        walletPublicKey,
+        "external_buy",
+        signature,
+        true,
+        0,
+        {
+          amountSol: amountSol,
+          amountTokens: "0", // Will be parsed from blockchain
+          errorMessage: undefined,
+          retryAttempt: 0,
+        },
+        true // Parse actual amounts from blockchain
+      );
+      logger.info(`[CTO Background] Transaction recorded successfully: ${signature}`);
+    } catch (recordError: any) {
+      logger.warn(`[CTO Background] Failed to record successful transaction:`, recordError);
+    }
+    
+    return { success: true };
+    
+  } catch (error: any) {
+    logger.error(`[CTO Background] Confirmation error:`, error);
+    return { success: false, error: error.message };
+  }
+}

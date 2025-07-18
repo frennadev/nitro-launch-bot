@@ -1,10 +1,10 @@
-import { Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import { Context } from "grammy";
+import { connection } from "../../service/config";
 import { logger } from "../common/logger";
-import { connection } from "../common/connection";
-import JupiterPumpswapService from "../../service/jupiter-pumpswap-service";
-import bs58 from "bs58";
 import { getSolBalance } from "../../backend/utils";
-import { type Context } from "grammy";
+import { JupiterPumpswapService } from "../../service/jupiter-pumpswap-service";
+import bs58 from "bs58";
 
 export interface ExternalBuyResult {
   success: boolean;
@@ -15,10 +15,10 @@ export interface ExternalBuyResult {
 }
 
 /**
- * Execute external token buy using platform-specific services
+ * Execute external token buy WITHOUT waiting for confirmation (for CTO operations)
  * Automatically detects platform and uses appropriate buy logic
  */
-export async function executeExternalBuy(
+export async function executeExternalBuyNoConfirmation(
   tokenAddress: string,
   buyerKeypair: Keypair,
   solAmount: number,
@@ -26,10 +26,10 @@ export async function executeExternalBuy(
   priorityFee: number = 0.001, // Default priority fee in SOL
   ctx: Context
 ): Promise<ExternalBuyResult> {
-  const logId = `external-buy-${tokenAddress.substring(0, 8)}`;
+  const logId = `external-buy-no-confirm-${tokenAddress.substring(0, 8)}`;
 
   try {
-    logger.info(`[${logId}] Starting external token buy for ${solAmount} SOL`);
+    logger.info(`[${logId}] Starting external token buy (no confirmation) for ${solAmount} SOL`);
     const solBalance = await getSolBalance(buyerKeypair.publicKey.toString());
     const solBuyAmount = 0.95 * solBalance; // this is 95% of wallet sol balance
 
@@ -45,14 +45,14 @@ export async function executeExternalBuy(
 
     // Use platform-specific buy logic
     if (platform === "bonk") {
-      logger.info(`[${logId}] Using Bonk-specific buy logic`);
-      return await executeBonkBuy(tokenAddress, buyerKeypair, solAmount, logId);
+      logger.info(`[${logId}] Using Bonk-specific buy logic (no confirmation)`);
+      return await executeBonkBuyNoConfirmation(tokenAddress, buyerKeypair, solAmount, logId);
     } else if (platform === "cpmm") {
-      logger.info(`[${logId}] Using CPMM-specific buy logic`);
-      return await executeCpmmBuy(tokenAddress, buyerKeypair, solAmount, logId);
+      logger.info(`[${logId}] Using CPMM-specific buy logic (no confirmation)`);
+      return await executeCpmmBuyNoConfirmation(tokenAddress, buyerKeypair, solAmount, logId);
     } else {
       logger.info(
-        `[${logId}] Using unified Jupiter-PumpSwap service for ${platform} platform`
+        `[${logId}] Using unified Jupiter-PumpSwap service for ${platform} platform (no confirmation)`
       );
       // Use the unified Jupiter-Pumpswap service for PumpFun/PumpSwap/Jupiter tokens
       const jupiterPumpswapService = new JupiterPumpswapService();
@@ -66,7 +66,7 @@ export async function executeExternalBuy(
 
       if (result.success) {
         logger.info(
-          `[${logId}] External buy successful via ${result.platform}: ${result.signature}`
+          `[${logId}] External buy sent successfully via ${result.platform}: ${result.signature}`
         );
         return {
           success: true,
@@ -75,7 +75,7 @@ export async function executeExternalBuy(
           solReceived: result.actualSolSpent || solAmount.toString(),
         };
       } else {
-        logger.error(`[${logId}] External buy failed: ${result.error}`);
+        logger.error(`[${logId}] External buy failed to send: ${result.error}`);
         return {
           success: false,
           signature: "",
@@ -95,16 +95,16 @@ export async function executeExternalBuy(
 }
 
 /**
- * Execute Bonk-specific buy using BonkService
+ * Execute Bonk-specific buy using BonkService (WITHOUT confirmation)
  */
-async function executeBonkBuy(
+async function executeBonkBuyNoConfirmation(
   tokenAddress: string,
   buyerKeypair: Keypair,
   solAmount: number,
   logId: string
 ): Promise<ExternalBuyResult> {
   try {
-    logger.info(`[${logId}] Starting Bonk buy for ${solAmount} SOL`);
+    logger.info(`[${logId}] Starting Bonk buy (no confirmation) for ${solAmount} SOL`);
     
     // CRITICAL FIX: Check wallet balance and reserve SOL for transaction costs
     const walletBalance = await connection.getBalance(buyerKeypair.publicKey, "confirmed");
@@ -158,54 +158,16 @@ async function executeBonkBuy(
       privateKey: bs58.encode(buyerKeypair.secretKey),
     });
     
-    logger.info(`[${logId}] Sending Bonk buy transaction...`);
+    logger.info(`[${logId}] Sending Bonk buy transaction (no confirmation wait)...`);
     
-    // Send the transaction
+    // Send the transaction WITHOUT waiting for confirmation
     const signature = await connection.sendTransaction(buyTx, {
       skipPreflight: false,
       preflightCommitment: "confirmed",
       maxRetries: 3,
     });
     
-    logger.info(`[${logId}] Waiting for Bonk transaction confirmation...`);
-    
-    // Wait for confirmation
-    const confirmation = await connection.confirmTransaction(signature, "confirmed");
-    
-    if (confirmation.value.err) {
-      const errorMsg = `Bonk transaction failed: ${JSON.stringify(confirmation.value.err)}`;
-      logger.error(`[${logId}] ${errorMsg}`);
-      return {
-        success: false,
-        signature: signature,
-        error: errorMsg
-      };
-    }
-    
-    logger.info(`[${logId}] Bonk buy successful: ${signature}`);
-    
-    // Record the successful Bonk buy transaction
-    try {
-      const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
-      await recordTransactionWithActualAmounts(
-        tokenAddress,
-        buyerKeypair.publicKey.toBase58(),
-        "external_buy", // Use external_buy type for Bonk buys
-        signature,
-        true,
-        0, // CTO operations don't have launch attempts
-        {
-          amountSol: actualTradeAmount, // Use the actual amount that was traded
-          amountTokens: "0", // Will be parsed from blockchain
-          errorMessage: undefined,
-          retryAttempt: 0,
-        },
-        true // Parse actual amounts from blockchain
-      );
-      logger.info(`[${logId}] Bonk transaction recorded`);
-    } catch (recordError: any) {
-      logger.warn(`[${logId}] Failed to record Bonk transaction:`, recordError);
-    }
+    logger.info(`[${logId}] Bonk buy transaction sent successfully: ${signature} (confirmation will happen in background)`);
     
     return {
       success: true,
@@ -225,16 +187,16 @@ async function executeBonkBuy(
 }
 
 /**
- * Execute CPMM-specific buy using RaydiumCpmmService
+ * Execute CPMM-specific buy using RaydiumCpmmService (WITHOUT confirmation)
  */
-async function executeCpmmBuy(
+async function executeCpmmBuyNoConfirmation(
   tokenAddress: string,
   buyerKeypair: Keypair,
   solAmount: number,
   logId: string
 ): Promise<ExternalBuyResult> {
   try {
-    logger.info(`[${logId}] Starting CPMM buy for ${solAmount} SOL`);
+    logger.info(`[${logId}] Starting CPMM buy (no confirmation) for ${solAmount} SOL`);
 
     // Import RaydiumCpmmService
     const RaydiumCpmmService = (
@@ -256,59 +218,16 @@ async function executeCpmmBuy(
       amount_in: buyAmountLamports,
     });
 
-    logger.info(`[${logId}] Sending CPMM buy transaction...`);
+    logger.info(`[${logId}] Sending CPMM buy transaction (no confirmation wait)...`);
 
-    // Send the transaction
+    // Send the transaction WITHOUT waiting for confirmation
     const signature = await connection.sendTransaction(buyTx, {
       skipPreflight: false,
       preflightCommitment: "confirmed",
       maxRetries: 3,
     });
 
-    logger.info(`[${logId}] Waiting for CPMM transaction confirmation...`);
-
-    // Wait for confirmation
-    const confirmation = await connection.confirmTransaction(
-      signature,
-      "confirmed"
-    );
-
-    if (confirmation.value.err) {
-      const errorMsg = `CPMM transaction failed: ${JSON.stringify(confirmation.value.err)}`;
-      logger.error(`[${logId}] ${errorMsg}`);
-      return {
-        success: false,
-        signature: signature,
-        error: errorMsg,
-      };
-    }
-
-    logger.info(`[${logId}] CPMM buy successful: ${signature}`);
-
-    // Record the successful CPMM buy transaction
-    try {
-      const { recordTransactionWithActualAmounts } = await import(
-        "../../backend/utils"
-      );
-      await recordTransactionWithActualAmounts(
-        tokenAddress,
-        buyerKeypair.publicKey.toBase58(),
-        "external_buy", // Use external_buy type for CPMM buys
-        signature,
-        true,
-        0, // CTO operations don't have launch attempts
-        {
-          amountSol: solAmount,
-          amountTokens: "0", // Will be parsed from blockchain
-          errorMessage: undefined,
-          retryAttempt: 0,
-        },
-        true // Parse actual amounts from blockchain
-      );
-      logger.info(`[${logId}] CPMM transaction recorded`);
-    } catch (recordError: any) {
-      logger.warn(`[${logId}] Failed to record CPMM transaction:`, recordError);
-    }
+    logger.info(`[${logId}] CPMM buy transaction sent successfully: ${signature} (confirmation will happen in background)`);
 
     return {
       success: true,
@@ -324,4 +243,4 @@ async function executeCpmmBuy(
       error: `CPMM buy failed: ${error.message}`,
     };
   }
-}
+} 
