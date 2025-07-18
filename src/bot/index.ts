@@ -695,6 +695,9 @@ bot.command("removetoken", async (ctx) => {
   }
 });
 
+bot.command("wallets", async (ctx) => {
+  await ctx.conversation.enter("walletConfigConversation");
+});
 bot.command("ratelimit", async (ctx) => {
   // Simple admin check
   const adminIds = env.ADMIN_IDS
@@ -1304,7 +1307,9 @@ bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Funding wallet...");
   const [, walletAddress, tokenAddress] = ctx.match!;
 
-  logger.info(`[FundWallet] Funding wallet ${walletAddress} for token ${tokenAddress}`);
+  logger.info(
+    `[FundWallet] Funding wallet ${walletAddress} for token ${tokenAddress}`
+  );
 
   try {
     // Get user
@@ -1315,16 +1320,21 @@ bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
     }
 
     // Get funding wallet
-    const { getFundingWallet, getWalletBalance } = await import("../backend/functions");
+    const { getFundingWallet, getWalletBalance } = await import(
+      "../backend/functions"
+    );
     const fundingWallet = await getFundingWallet(user.id);
     if (!fundingWallet) {
-      await ctx.reply("❌ No funding wallet found. Please configure a funding wallet first.");
+      await ctx.reply(
+        "❌ No funding wallet found. Please configure a funding wallet first."
+      );
       return;
     }
 
     // Check funding wallet balance
     const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
-    if (fundingBalance < 0.011) { // 0.01 SOL + 0.001 SOL for transaction fee
+    if (fundingBalance < 0.011) {
+      // 0.01 SOL + 0.001 SOL for transaction fee
       await ctx.reply(
         `❌ **Insufficient funding wallet balance**\n\n**Required:** 0.011 SOL (0.01 SOL + 0.001 SOL fee)\n**Available:** ${fundingBalance.toFixed(6)} SOL\n\nPlease add more SOL to your funding wallet first.`,
         { parse_mode: "Markdown" }
@@ -1333,13 +1343,15 @@ bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
     }
 
     // Send 0.01 SOL to the wallet
-    const { SystemProgram, Transaction, PublicKey } = await import("@solana/web3.js");
+    const { SystemProgram, Transaction, PublicKey } = await import(
+      "@solana/web3.js"
+    );
     const { connection } = await import("../blockchain/common/connection");
     const { secretKeyToKeypair } = await import("../blockchain/common/utils");
-    
+
     const fundingKeypair = secretKeyToKeypair(fundingWallet.privateKey);
     const targetWallet = new PublicKey(walletAddress);
-    
+
     const transaction = new Transaction().add(
       SystemProgram.transfer({
         fromPubkey: fundingKeypair.publicKey,
@@ -1347,15 +1359,16 @@ bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
         lamports: 0.01 * 1_000_000_000, // 0.01 SOL in lamports
       })
     );
-    
-    const signature = await connection.sendTransaction(transaction, [fundingKeypair]);
+
+    const signature = await connection.sendTransaction(transaction, [
+      fundingKeypair,
+    ]);
     await connection.confirmTransaction(signature, "confirmed");
-    
+
     await ctx.reply(
       `✅ **Wallet funded successfully!**\n\n💰 **0.01 SOL sent to:** \`${walletAddress}\`\n📝 **Transaction:** \`${signature}\`\n\nYou can now try selling your tokens again.`,
       { parse_mode: "Markdown" }
     );
-    
   } catch (error: any) {
     logger.error("Error funding wallet:", error);
     await ctx.reply(
@@ -1381,29 +1394,35 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
     }
 
     // Get funding wallet
-    const { getFundingWallet, getWalletBalance, getAllTradingWallets } = await import("../backend/functions");
+    const { getFundingWallet, getWalletBalance, getAllTradingWallets } =
+      await import("../backend/functions");
     const { getTokenBalance } = await import("../backend/utils");
     const fundingWallet = await getFundingWallet(user.id);
     if (!fundingWallet) {
-      await ctx.reply("❌ No funding wallet found. Please configure a funding wallet first.");
+      await ctx.reply(
+        "❌ No funding wallet found. Please configure a funding wallet first."
+      );
       return;
     }
 
     // Get all buyer wallets and check which ones need funding
     const buyerWallets = await getAllTradingWallets(user.id);
     const walletsNeedingFunding = [];
-    
+
     for (const wallet of buyerWallets) {
       try {
-        const tokenBalance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        const tokenBalance = await getTokenBalance(
+          tokenAddress,
+          wallet.publicKey
+        );
         const solBalance = await getWalletBalance(wallet.publicKey);
-        
+
         if (tokenBalance > 0 && solBalance < 0.01) {
           walletsNeedingFunding.push({
             publicKey: wallet.publicKey,
             privateKey: wallet.privateKey,
             tokenBalance,
-            solBalance
+            solBalance,
           });
         }
       } catch (error) {
@@ -1420,7 +1439,7 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
     const totalFundingNeeded = walletsNeedingFunding.length * 0.01;
     const totalFeesNeeded = walletsNeedingFunding.length * 0.001; // Transaction fees
     const totalRequired = totalFundingNeeded + totalFeesNeeded;
-    
+
     const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
     if (fundingBalance < totalRequired) {
       await ctx.reply(
@@ -1431,17 +1450,19 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
     }
 
     // Send 0.01 SOL to each wallet
-    const { SystemProgram, Transaction, PublicKey } = await import("@solana/web3.js");
+    const { SystemProgram, Transaction, PublicKey } = await import(
+      "@solana/web3.js"
+    );
     const { connection } = await import("../blockchain/common/connection");
     const { secretKeyToKeypair } = await import("../blockchain/common/utils");
-    
+
     const fundingKeypair = secretKeyToKeypair(fundingWallet.privateKey);
     const results = [];
-    
+
     for (const wallet of walletsNeedingFunding) {
       try {
         const targetWallet = new PublicKey(wallet.publicKey);
-        
+
         const transaction = new Transaction().add(
           SystemProgram.transfer({
             fromPubkey: fundingKeypair.publicKey,
@@ -1449,35 +1470,36 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
             lamports: 0.01 * 1_000_000_000, // 0.01 SOL in lamports
           })
         );
-        
-        const signature = await connection.sendTransaction(transaction, [fundingKeypair]);
+
+        const signature = await connection.sendTransaction(transaction, [
+          fundingKeypair,
+        ]);
         await connection.confirmTransaction(signature, "confirmed");
-        
+
         results.push({
           wallet: wallet.publicKey,
           success: true,
-          signature
+          signature,
         });
-        
+
         // Small delay between transactions
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (error: any) {
         results.push({
           wallet: wallet.publicKey,
           success: false,
-          error: error.message
+          error: error.message,
         });
       }
     }
-    
+
     // Show results
-    const successfulTransfers = results.filter(r => r.success);
-    const failedTransfers = results.filter(r => !r.success);
-    
+    const successfulTransfers = results.filter((r) => r.success);
+    const failedTransfers = results.filter((r) => !r.success);
+
     let resultMessage = `✅ **Bulk funding completed!**\n\n`;
     resultMessage += `💰 **Successfully funded:** ${successfulTransfers.length}/${walletsNeedingFunding.length} wallets\n`;
-    
+
     if (successfulTransfers.length > 0) {
       resultMessage += `\n**Successful transfers:**\n`;
       successfulTransfers.forEach((result, index) => {
@@ -1485,7 +1507,7 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
         resultMessage += `${index + 1}. \`${shortAddress}\` - \`${result.signature}\`\n`;
       });
     }
-    
+
     if (failedTransfers.length > 0) {
       resultMessage += `\n**Failed transfers:**\n`;
       failedTransfers.forEach((result, index) => {
@@ -1493,11 +1515,10 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
         resultMessage += `${index + 1}. \`${shortAddress}\` - ${result.error}\n`;
       });
     }
-    
+
     resultMessage += `\nYou can now try selling your tokens again.`;
-    
+
     await ctx.reply(resultMessage, { parse_mode: "Markdown" });
-    
   } catch (error: any) {
     logger.error("Error funding all wallets:", error);
     await ctx.reply(
@@ -1596,11 +1617,11 @@ bot.callbackQuery(CallBackQueries.CANCEL_BUYER_WALLET, async (ctx) => {
 });
 
 // Callback handler for refresh button
-bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
-  await safeAnswerCallbackQuery(ctx);
-  const tokenAddress = ctx.match![1];
-  await handleTokenAddressMessage(ctx, tokenAddress);
-});
+// bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
+//   await safeAnswerCallbackQuery(ctx);
+//   const tokenAddress = ctx.match![1];
+//   await handleTokenAddressMessage(ctx, tokenAddress);
+// });
 
 // Callback handler for launch data refresh button
 bot.callbackQuery(/^refresh_launch_data_(.+)$/, async (ctx) => {
@@ -1669,8 +1690,63 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Refreshing token data...");
   const tokenAddress = ctx.match![1];
 
-  // Resend the token address to trigger a fresh display
-  await handleTokenAddressMessage(ctx, tokenAddress);
+  try {
+    // Validate the token address
+    new PublicKey(tokenAddress);
+
+    logger.info(`[refresh] Refreshing token data for: ${tokenAddress}`);
+
+    // Get the existing message to update
+    const messageId = ctx.callbackQuery?.message?.message_id;
+    if (!messageId) {
+      await ctx.reply("❌ Unable to refresh - message not found.");
+      return;
+    }
+
+    // **INSTANT REFRESH: Show updated token page immediately**
+    const tokenInfoService = TokenInfoService.getInstance();
+
+    // Force fresh data by bypassing cache
+    const tokenInfo = await tokenInfoService.getTokenInfo(tokenAddress, true); // true = force refresh
+    if (!tokenInfo) {
+      await ctx.reply("❌ Token not found or invalid address.");
+      return;
+    }
+
+    const tokenMessage = await formatTokenMessage(
+      tokenInfo,
+      ctx,
+      ctx.chat!.id.toString(),
+      "2"
+    );
+
+    // Update the existing message with refreshed data
+    await ctx.api.editMessageText(ctx.chat!.id, messageId, tokenMessage, {
+      parse_mode: "HTML",
+      reply_markup: new InlineKeyboard()
+        .url("📊 Chart", `https://dexscreener.com/solana/${tokenAddress}`)
+        .url("🔗 Contract", `https://solscan.io/token/${tokenAddress}`)
+        .text("💸 Sell", `sell_token_${tokenAddress}`)
+        .row()
+        .text(
+          "📊 Monitor",
+          `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`
+        )
+        .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
+        .text("🔄 Refresh", `refresh_ca_${tokenAddress}`)
+        .row()
+        .text("🏠 Menu", CallBackQueries.BACK),
+    });
+
+    logger.info(
+      `[refresh] Successfully refreshed token data for ${tokenAddress}`
+    );
+  } catch (error) {
+    logger.error(
+      `[refresh] Error refreshing token data: ${(error as Error).message}`
+    );
+    await ctx.reply("❌ Error refreshing token data. Please try again.");
+  }
 });
 
 // Callback handler for CTO button
@@ -1771,82 +1847,48 @@ bot.callbackQuery(
 
       // TODO fetch actual trade history
       const pnl = "-65.92%";
-      const pi = "-0.02%";
       const age = "35:00";
       const initial = 1.5;
       const payout = 2.0;
       const marketCap = formatUSD(tokenInfo.marketCap);
       const price = tokenInfo.priceUsd;
-      const curveProgress = "50%"; // Placeholder
+      const botUsername = bot.botInfo.username;
+      const referralLink = await generateReferralLink(user.id, botUsername);
 
       const message = await ctx.reply(
         `
-🌑 $${tokenInfo.baseToken.symbol} 🕛 ${age} 🌟<a href="">Refererral</a> 
+🌟 <b>${tokenInfo.baseToken.symbol}</b> • ⏰ ${age} • 🎯 <a href="${referralLink}">Referral</a>
 
-💳 Main 🚀 ${pnl} PI: ${pi}
-Initial: ${initial.toFixed(2)} SOL | Payout: ${payout.toFixed(2)} SOL
-Tokens: 2.3% | Worth: ${payout.toFixed(2)} SOL
-<a href="">Reset P/L</a> | No Orders
+💰 <b>Main Position</b> • 📈 <b>${pnl}</b>
+┌─ Initial: <b>${initial.toFixed(3)} SOL</b>
+├─ Payout: <b>${payout.toFixed(3)} SOL</b>
+├─ Tokens: <b>2.3%</b>
+└─ Worth: <b>${payout.toFixed(3)} SOL</b>
 
-💸 Price: $${price} | Market Cap: ${marketCap}
+💎 <b>Market Data</b>
+├─ Price: <b>$${price}</b>
+└─ Market Cap: <b>${marketCap}</b>
 
-📈 Bonding Curve Progress: <b>${curveProgress}</b>
-
-⚠️ Automatic updates are disabled and can be resumed by clicking the 🔄 Refresh button. Limit orders are not impacted.`,
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔄 <i>Auto-updates disabled • Click refresh to resume</i>
+⚠️ <i>Limit orders are not impacted</i>
+<i>Updated: ${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}</i>
+`,
         {
           parse_mode: "HTML",
           reply_markup: new InlineKeyboard()
-            .text("🔙 Back", `sell_external_token_`)
-            .text("🔃 Refresh", `launch_token_`)
-            .text("⏭️ Next", `${CallBackQueries.VIEW_TOKEN_TRADES}_`)
+            .text("🔄 Refresh", `remonitor_data_${tokenAddress}`)
+            .url("📊 Chart", `https://dexscreener.com/solana/${tokenAddress}`)
             .row()
-            .text(`Copy CA`, `launch_token_`)
-            .text(`↔️ Go to Buy`, `launch_token_`)
+            .text("💸 25%", `sell_ca_25_${tokenAddress}`)
+            .text("💸 50%", `sell_ca_50_${tokenAddress}`)
+            .text("💸 75%", `sell_ca_75_${tokenAddress}`)
+            .text("💸 100%", `sell_ca_100_${tokenAddress}`)
             .row()
-            .text(`💳 Main 🔄`, `launch_token_`)
-            .text(`🔴 Multi`, `launch_token_`)
             .row()
-            .text(
-              "Sell initials",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "☢️ Sell All",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "Sell X %",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .row()
-            .text(
-              "25%",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "50%",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "75%",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "100%",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .row()
-            .text(
-              "💸 Generate PNL",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-            .text(
-              "📊 Chart",
-              `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`
-            )
-
-            .row()
-            .text("❌ Cancel", CallBackQueries.CANCEL),
+            .url("🔗 Contract", `https://solscan.io/token/${tokenAddress}`)
+            .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
+            .text("🏠 Menu", CallBackQueries.BACK),
         }
       );
 
@@ -1860,8 +1902,99 @@ Tokens: 2.3% | Worth: ${payout.toFixed(2)} SOL
   }
 );
 
+bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔄 Refreshing monitor data...");
+  const tokenAddress = ctx.match![1];
+  logger.info(
+    `[RefreshMonitorData] Refreshing data for token: ${tokenAddress}`
+  );
+
+  // Get user ID from context
+  const userId = ctx?.chat!.id.toString();
+  const user = await getUser(userId);
+  if (!user) {
+    await ctx.reply("Unrecognized user ❌");
+    return;
+  }
+
+  try {
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    if (!tokenInfo) {
+      await ctx.reply("❌ Token not found.");
+      return;
+    }
+
+    // TODO fetch actual trade history
+    const pnl = "-65.92%";
+    const pi = "-0.02%";
+    const age = "35:00";
+    const initial = 1.5;
+    const payout = 2.0;
+    const marketCap = formatUSD(tokenInfo.marketCap);
+    const price = tokenInfo.priceUsd;
+    const botUsername = bot.botInfo.username;
+    const referralLink = await generateReferralLink(user.id, botUsername);
+
+    const monitorText = `
+🌟 <b>${tokenInfo.baseToken.symbol}</b> • ⏰ ${age} • 🎯 <a href="${referralLink}">Referral</a>
+
+💰 <b>Main Position</b> • 📈 <b>${pnl}</b>
+┌─ Initial: <b>${initial.toFixed(3)} SOL</b>
+├─ Payout: <b>${payout.toFixed(3)} SOL</b>
+├─ Tokens: <b>2.3%</b>
+└─ Worth: <b>${payout.toFixed(3)} SOL</b>
+
+💎 <b>Market Data</b>
+├─ Price: <b>$${price}</b>
+└─ Market Cap: <b>${marketCap}</b>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔄 <i>Auto-updates disabled • Click refresh to resume</i>
+⚠️ <i>Limit orders are not impacted</i>
+<i>Updated: ${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}</i>
+`;
+
+    const monitorKeyboard = new InlineKeyboard()
+      .text("🔄 Refresh", `remonitor_data_${tokenAddress}`)
+      .url("📊 Chart", `https://dexscreener.com/solana/${tokenAddress}`)
+      .row()
+      .text("💸 25%", `sell_ca_25_${tokenAddress}`)
+      .text("💸 50%", `sell_ca_50_${tokenAddress}`)
+      .text("💸 75%", `sell_ca_75_${tokenAddress}`)
+      .text("💸 100%", `sell_ca_100_${tokenAddress}`)
+      .row()
+      .row()
+      .url("🔗 Contract", `https://solscan.io/token/${tokenAddress}`)
+      .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
+      .text("🏠 Menu", CallBackQueries.BACK);
+
+    // Edit the existing message with refreshed data
+    const messageId = ctx.callbackQuery?.message?.message_id;
+    if (messageId) {
+      await ctx.api.editMessageText(ctx.chat!.id, messageId, monitorText, {
+        parse_mode: "HTML",
+        reply_markup: monitorKeyboard,
+      });
+    } else {
+      // If message not found, send a new one
+      const message = await ctx.reply(monitorText, {
+        parse_mode: "HTML",
+        reply_markup: monitorKeyboard,
+      });
+      await bot.api.pinChatMessage(userId, message.message_id);
+    }
+  } catch (error) {
+    logger.error("Error refreshing monitor data:", error);
+    await ctx.reply(
+      "❌ Error refreshing monitor data. Please try again later."
+    );
+  }
+});
+
 bot.api.setMyCommands([
+  { command: "start", description: "Start the bot" },
   { command: "menu", description: "Bot Menu" },
+  { command: "wallets", description: "Manage Wallets" },
   { command: "help", description: "Get help with the bot" },
 ]);
 
@@ -1973,7 +2106,7 @@ export async function formatTokenMessage(
   const botInfo = await ctx.api.getMe();
   const botUsername = botInfo.username;
   const [referralLinkResult] = await Promise.allSettled([
-    generateReferralLink(userId, botUsername),
+    generateReferralLink(user.id, botUsername),
   ]);
 
   const referralLink =
@@ -1982,18 +2115,23 @@ export async function formatTokenMessage(
   if (stage === "1") {
     // Additional formatting or data fetching for stage 1
     return `
-🪙 ${token.name} $${token.symbol} ${verifiedBadge}
+🌟 <b>${token.name}</b> • $${token.symbol} ${verifiedBadge}
 <code>${token.address}</code>
-🤑 <a href="${referralLink}">Share Token & Earn</a>
+🤑 <a href="${referralLink}">🎁 Share & Earn Rewards</a>
 
-💰 <b>Price:</b>  ${priceText} | 📈 24h:  ${priceChangeEmoji} ${priceChangeText}
-🏦 <b>Market Cap:</b> ${marketCapText}
-📊 <b>Volume 24h:</b> ${volumeText}
-💧 <b>Liquidity:</b>  ${liquidityText}
+💎 <b>Market Data</b>
+├─ 💰 Price: <code>${priceText}</code>
+├─ 📊 24h Change: ${priceChangeEmoji} <code>${priceChangeText}</code>
+├─ 🏦 Market Cap: <code>${marketCapText}</code>
+├─ 📈 Volume (24h): <code>${volumeText}</code>
+└─ 💧 Liquidity: <code>${liquidityText}</code>
 
-🔄 <b>Fetching additional data...</b>
+🔗 <b>External Links</b>
+${linksHtml}
 
-📱 <b>Quick Actions:</b> Use the buttons below to buy or sell this token.`;
+🎯 <b>Quick Actions</b>
+Use the buttons below to interact with this token
+<i>⏱ Loading additional data...</i>`;
   }
 
   let walletsBalanceSection = "";
@@ -2065,15 +2203,13 @@ export async function formatTokenMessage(
       const balanceLines = await Promise.all(balancePromises);
 
       walletsBalanceSection = `
-<pre>
-<b>💰 Balances</b>
+<blockquote expandable><b>💰 Balances - Tap to expand</b>
 <code>Wallet   | ${token.symbol.padEnd(8)} | SOL</code>
 <code>─────────|${Array(token.symbol.length + 3)
         .fill("─")
         .join("")}|──────</code>
 ${balanceLines.join("\n")}
-
-</pre>`;
+</blockquote>`;
     } else {
       walletsBalanceSection = `<pre class="tg-spoiler"><b>💰 Balances</b>
   <code>No wallets found</code>
@@ -2104,19 +2240,23 @@ ${balanceLines.join("\n")}
   }
 
   return `
-🪙 ${token.name} $${token.symbol} ${verifiedBadge}
+🌟 <b>${token.name}</b> • $${token.symbol} ${verifiedBadge}
 <code>${token.address}</code>
-🤑 <a href="${referralLink}">Share Token & Earn233</a>
+🤑 <a href="${referralLink}">🎁 Share & Earn Rewards</a>
 
-💰 <b>Price:</b>  ${priceText} | 📈 24h:  ${priceChangeEmoji} ${priceChangeText}
-🏦 <b>Market Cap:</b> ${marketCapText}
-📊 <b>Volume 24h:</b> ${volumeText}
-💧 <b>Liquidity:</b>  ${liquidityText}
-${supplyPercentageSection}
-${walletsBalanceSection}
+💎 <b>Market Data</b>
+├─ 💰 Price: <code>${priceText}</code>
+├─ 📊 24h Change: ${priceChangeEmoji} <code>${priceChangeText}</code>
+├─ 🏦 Market Cap: <code>${marketCapText}</code>
+├─ 📈 Volume (24h): <code>${volumeText}</code>
+└─ 💧 Liquidity: <code>${liquidityText}</code>
+${supplyPercentageSection ? `\n📊 <b>Holdings</b>\n${supplyPercentageSection.replace(/📊.*?:\s*/g, "├─ Ownership: ").replace(/💰.*?:\s*/g, "└─ Total: ")}` : ""}${walletsBalanceSection}
+🔗 <b>External Links</b>
 ${linksHtml}
-📱 <b>Quick Actions:</b> Use the buttons below to buy or sell this token.
-🕓 <b>${refreshTime}</b>`;
+
+🎯 <b>Quick Actions</b>
+Use the buttons below to interact with this token
+<i>⏱ Updated: ${refreshTime}</i>`;
 }
 
 bot.on("message:text", async (ctx) => {
@@ -2227,16 +2367,15 @@ bot.on("message:text", async (ctx) => {
         const message = await ctx.reply(tokenMessage, {
           parse_mode: "HTML",
           reply_markup: new InlineKeyboard()
-            .text("👀 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
-            .text("🔃 Refresh", `refresh_ca_${text}`)
+            .url("📊 Chart", `https://dexscreener.com/solana/${text}`)
+            .url("🔗 Contract", `https://solscan.io/token/${text}`)
+            .text("💸 Sell", `sell_token_${text}`)
             .row()
-            .text(
-              "💸 Sell Token",
-              `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`
-            )
-            .text("🔙 Back", CallBackQueries.BACK)
+            .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
+            .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
+            .text("🔄 Refresh", `refresh_ca_${text}`)
             .row()
-            .text("📈 CTO", `${CallBackQueries.CTO}_${text}`),
+            .text("🏠 Menu", CallBackQueries.BACK),
         });
 
         // **BACKGROUND UPDATES: ALL data fetching happens in background, including user checks**
@@ -2510,19 +2649,18 @@ bot.on("message:text", async (ctx) => {
               {
                 parse_mode: "HTML",
                 reply_markup: new InlineKeyboard()
+                  .url("📊 Chart", `https://dexscreener.com/solana/${text}`)
+                  .url("🔗 Contract", `https://solscan.io/token/${text}`)
+                  .text("💸 Sell", `sell_token_${text}`)
+                  .row()
                   .text(
-                    "👀 Monitor",
+                    "📊 Monitor",
                     `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`
                   )
-                  .text("🔃 Refresh", `refresh_ca_${text}`)
+                  .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
+                  .text("🔄 Refresh", `refresh_ca_${text}`)
                   .row()
-                  .text(
-                    "💸 Sell Token",
-                    `${CallBackQueries.SELL_EXTERNAL_TOKEN}_${text}`
-                  )
-                  .text("🔙 Back", CallBackQueries.BACK)
-                  .row()
-                  .text("📈 CTO", `${CallBackQueries.CTO}_${text}`),
+                  .text("🏠 Menu", CallBackQueries.BACK),
               }
             );
 
