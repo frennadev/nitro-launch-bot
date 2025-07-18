@@ -96,6 +96,11 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
     }
   }
   
+  // Pad the amounts array with zeros for unused destinations to maintain array length
+  while (amounts.length < destinationCount) {
+    amounts.push(0);
+  }
+  
   // Validate total matches (within rounding tolerance)
   const actualTotal = amounts.reduce((sum, amount) => sum + amount, 0);
   if (Math.abs(actualTotal - totalLamports) > walletsToUse) {
@@ -307,9 +312,16 @@ async function createCustomMixingRoutes(
 ) {
   const routes = [];
 
-  for (let i = 0; i < destinationWallets.length; i++) {
+  // Only create routes for destinations that have amounts (non-zero and non-undefined)
+  for (let i = 0; i < amounts.length && i < destinationWallets.length; i++) {
     const destination = destinationWallets[i];
     const amount = amounts[i];
+
+    // Skip routes with invalid amounts
+    if (!amount || amount <= 0 || isNaN(amount)) {
+      console.log(`⚠️  Skipping route ${i + 1}: Invalid amount ${amount}`);
+      continue;
+    }
 
     // Get intermediate wallets from MongoDB
     const walletManager = mixer.getWalletManager();
@@ -336,6 +348,7 @@ async function createCustomMixingRoutes(
     routes.push(route);
   }
 
+  console.log(`🎯 Created ${routes.length} routes for ${amounts.length} amounts`);
   return routes;
 }
 
