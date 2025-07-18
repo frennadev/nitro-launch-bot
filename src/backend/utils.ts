@@ -71,6 +71,7 @@ export async function uploadFileToPinata(file: ArrayBuffer, fileName: string) {
       body: formData,
     });
     if (resp.status != 200) {
+      console.log(resp)
       throw Error(`Failed to upload File: ${await resp.text()}`);
     }
     const data = JSON.parse(await resp.text());

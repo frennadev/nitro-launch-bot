@@ -552,6 +552,12 @@ export default class BonkService {
     };
     const buyInstruction = await this.createBuyIX(ixData);
 
+    const closeTokenAccount = closeAccountInstruction({
+      tokenAccount: wsolAta,
+      payer: owner.publicKey,
+      owner: owner.publicKey,
+    });
+
     // 🔥 OPTIMIZED: Build final instruction list
     const instructions = [
       modifyComputeUnits,
@@ -560,6 +566,7 @@ export default class BonkService {
       transferSolIx,
       syncNativeIx,
       buyInstruction,
+      closeTokenAccount,
     ];
 
     const { blockhash } = await connection.getLatestBlockhash("finalized");
@@ -664,6 +671,11 @@ export default class BonkService {
       minimum_amount_out: 0n,
     };
     const sellInstruction = await this.createSellIX(ixData);
+    const closeTokenAccount = closeAccountInstruction({
+      tokenAccount: wsolAta,
+      payer: owner.publicKey,
+      owner: owner.publicKey,
+    });
 
     // 🔥 OPTIMIZED: Build final instruction list
     const instructions = [
@@ -673,6 +685,7 @@ export default class BonkService {
       // transferSolIx,
       syncNativeIx,
       sellInstruction,
+      closeTokenAccount,
     ];
 
     // Get fresh blockhash
