@@ -40,10 +40,11 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
     
     // Reserve fees for buy transaction AND future sell transactions
     const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
     const sellFeeReserve = 0.01; // Reserve 0.01 SOL for future sell transaction fees
     const buyFeePercent = 0.01; // 1% buy fee
     const estimatedBuyFee = solAmount * buyFeePercent;
-    const totalFeeReserve = transactionFeeReserve + sellFeeReserve + estimatedBuyFee;
+    const totalFeeReserve = transactionFeeReserve + accountCreationReserve + sellFeeReserve + estimatedBuyFee;
     const availableForTrade = walletBalanceSOL - totalFeeReserve;
     
     console.log(`[${logId}]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);
@@ -196,10 +197,11 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
     
     // Reserve fees for buy transaction AND future sell transactions
     const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
     const sellFeeReserve = 0.01; // Reserve 0.01 SOL for future sell transaction fees
     const buyFeePercent = 0.01; // 1% buy fee
     const estimatedBuyFee = solAmount * buyFeePercent;
-    const totalFeeReserve = transactionFeeReserve + sellFeeReserve + estimatedBuyFee;
+    const totalFeeReserve = transactionFeeReserve + accountCreationReserve + sellFeeReserve + estimatedBuyFee;
     const availableForTrade = walletBalanceSOL - totalFeeReserve;
     
     console.log(`[${logId}]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);
