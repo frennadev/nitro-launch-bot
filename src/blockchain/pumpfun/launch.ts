@@ -785,15 +785,21 @@ export const executeTokenLaunch = async (
             logger.info(`[${logIdentifier}]: Fetching fresh balance for wallet ${keypair.publicKey.toBase58().slice(0, 8)} (attempt ${attempt + 1}/${maxRetries + 1})`);
             const walletSolBalance = await getSolBalance(keypair.publicKey.toBase58(), 'confirmed');
             
-            // Keep buying until balance drops below 0.05 SOL
-            const minBalanceThreshold = 0.05;
-            const availableForSpend = walletSolBalance - minBalanceThreshold;
+            // CRITICAL FIX: Enhanced fee calculations for rent exemption
+            const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+            const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
+            const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+            const availableForSpend = walletSolBalance - totalFeeReserve;
             
-            logger.info(`[${logIdentifier}]: Wallet ${keypair.publicKey.toBase58().slice(0, 8)} balance verification - Current: ${walletSolBalance.toFixed(6)} SOL, Available: ${availableForSpend.toFixed(6)} SOL`);
+            logger.info(`[${logIdentifier}]: Wallet ${keypair.publicKey.toBase58().slice(0, 8)} balance verification - Current: ${walletSolBalance.toFixed(6)} SOL`);
+            logger.info(`[${logIdentifier}]: Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`);
+            logger.info(`[${logIdentifier}]: Account creation reserve: ${accountCreationReserve.toFixed(6)} SOL`);
+            logger.info(`[${logIdentifier}]: Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`);
+            logger.info(`[${logIdentifier}]: Available for spend: ${availableForSpend.toFixed(6)} SOL`);
             
             // Check if wallet has enough balance to buy
-            if (availableForSpend <= 0.01) { // Need at least 0.01 SOL to attempt a buy
-              logger.info(`[${logIdentifier}]: Wallet ${keypair.publicKey.toBase58().slice(0, 8)} has insufficient balance: ${walletSolBalance.toFixed(6)} SOL (need > ${minBalanceThreshold + 0.01} SOL)`);
+            if (availableForSpend <= 0.001) { // Need at least 0.001 SOL to attempt a buy
+              logger.info(`[${logIdentifier}]: Wallet ${keypair.publicKey.toBase58().slice(0, 8)} has insufficient balance: ${walletSolBalance.toFixed(6)} SOL (need > ${totalFeeReserve + 0.001} SOL)`);
               return { success: true, message: "Insufficient balance for further buys" }; // Mark as success to avoid retries
             }
             
