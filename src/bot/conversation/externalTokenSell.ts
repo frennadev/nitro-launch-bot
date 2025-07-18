@@ -480,68 +480,156 @@ const executeExternalTokenSellWithJupiter = async (
     let failedSells = 0;
     let totalSolReceived = 0;
 
-    // Process each wallet that has tokens
-    for (let i = 0; i < buyerWalletPrivateKeys.length; i++) {
-      try {
-        const walletKeypair = secretKeyToKeypair(buyerWalletPrivateKeys[i]);
+    // Check if we have multiple wallets or just one
+    if (buyerWalletPrivateKeys.length === 1) {
+      // Single wallet - execute sequentially (no change needed)
+      logger.info(`[${logIdentifier}]: Single wallet detected, executing sequentially`);
+      
+      const walletKeypair = secretKeyToKeypair(buyerWalletPrivateKeys[0]);
+      
+      // Check wallet's token balance
+      const walletBalance = await getTokenBalance(tokenAddress, walletKeypair.publicKey.toBase58());
+      if (walletBalance <= 0) {
+        logger.info(`[${logIdentifier}]: Wallet has no tokens, skipping`);
+        return {
+          success: false,
+          successfulSells: 0,
+          failedSells: 1,
+          error: "No tokens to sell"
+        };
+      }
+
+      // Calculate tokens to sell from this wallet
+      const tokensToSell = Math.floor((walletBalance * sellPercent) / 100);
+      if (tokensToSell <= 0) {
+        logger.info(`[${logIdentifier}]: Wallet has insufficient tokens to sell, skipping`);
+        return {
+          success: false,
+          successfulSells: 0,
+          failedSells: 1,
+          error: "Insufficient tokens to sell"
+        };
+      }
+
+      logger.info(`[${logIdentifier}]: Selling ${tokensToSell} tokens (${sellPercent}% of ${walletBalance})`);
+
+      // Execute sell using Jupiter-Pumpswap service
+      const result = await jupiterPumpswapService.executeSell(
+        tokenAddress,
+        walletKeypair,
+        tokensToSell
+      );
+
+      if (result.success) {
+        successfulSells++;
+        const solReceived = parseFloat(result.solReceived || "0");
+        totalSolReceived += solReceived;
         
-        // Check wallet's token balance
-        const walletBalance = await getTokenBalance(tokenAddress, walletKeypair.publicKey.toBase58());
-        if (walletBalance <= 0) {
-          logger.info(`[${logIdentifier}]: Wallet ${i + 1} has no tokens, skipping`);
-          continue;
-        }
-
-        // Calculate tokens to sell from this wallet
-        const tokensToSell = Math.floor((walletBalance * sellPercent) / 100);
-        if (tokensToSell <= 0) {
-          logger.info(`[${logIdentifier}]: Wallet ${i + 1} has insufficient tokens to sell, skipping`);
-          continue;
-        }
-
-        logger.info(`[${logIdentifier}]: Wallet ${i + 1} selling ${tokensToSell} tokens (${sellPercent}% of ${walletBalance})`);
-
-        // Execute sell using Jupiter-Pumpswap service
-        const result = await jupiterPumpswapService.executeSell(
-          tokenAddress,
-          walletKeypair,
-          tokensToSell
-        );
-
-        if (result.success) {
-          successfulSells++;
-          const solReceived = parseFloat(result.solReceived || "0");
-          totalSolReceived += solReceived;
-          
-          logger.info(`[${logIdentifier}]: Wallet ${i + 1} sell successful via ${result.platform}: ${result.signature}`);
-          logger.info(`[${logIdentifier}]: Wallet ${i + 1} received ${solReceived} SOL`);
-          
-          results.push({
-            success: true,
-            wallet: walletKeypair.publicKey.toBase58(),
-            signature: result.signature,
-            platform: result.platform,
-            solReceived
-          });
-        } else {
-          failedSells++;
-          logger.warn(`[${logIdentifier}]: Wallet ${i + 1} sell failed: ${result.error}`);
-          
-          results.push({
-            success: false,
-            wallet: walletKeypair.publicKey.toBase58(),
-            error: result.error
-          });
-        }
-      } catch (error: any) {
+        logger.info(`[${logIdentifier}]: Sell successful via ${result.platform}: ${result.signature}`);
+        logger.info(`[${logIdentifier}]: Received ${solReceived} SOL`);
+        
+        results.push({
+          success: true,
+          wallet: walletKeypair.publicKey.toBase58(),
+          signature: result.signature,
+          platform: result.platform,
+          solReceived
+        });
+      } else {
         failedSells++;
-        logger.error(`[${logIdentifier}]: Wallet ${i + 1} error: ${error.message}`);
+        logger.warn(`[${logIdentifier}]: Sell failed: ${result.error}`);
         
         results.push({
           success: false,
-          wallet: "unknown",
-          error: error.message
+          wallet: walletKeypair.publicKey.toBase58(),
+          error: result.error
         });
+      }
+    } else {
+      // Multiple wallets - execute simultaneously
+      logger.info(`[${logIdentifier}]: Multiple wallets detected (${buyerWalletPrivateKeys.length}), executing simultaneously`);
+      
+      // Create sell promises for all wallets
+      const sellPromises = buyerWalletPrivateKeys.map(async (privateKey, index) => {
+        try {
+          const walletKeypair = secretKeyToKeypair(privateKey);
+          
+          // Check wallet's token balance
+          const walletBalance = await getTokenBalance(tokenAddress, walletKeypair.publicKey.toBase58());
+          if (walletBalance <= 0) {
+            logger.info(`[${logIdentifier}]: Wallet ${index + 1} has no tokens, skipping`);
+            return {
+              success: false,
+              wallet: walletKeypair.publicKey.toBase58(),
+              error: "No tokens to sell"
+            };
+          }
+
+          // Calculate tokens to sell from this wallet
+          const tokensToSell = Math.floor((walletBalance * sellPercent) / 100);
+          if (tokensToSell <= 0) {
+            logger.info(`[${logIdentifier}]: Wallet ${index + 1} has insufficient tokens to sell, skipping`);
+            return {
+              success: false,
+              wallet: walletKeypair.publicKey.toBase58(),
+              error: "Insufficient tokens to sell"
+            };
+          }
+
+          logger.info(`[${logIdentifier}]: Wallet ${index + 1} selling ${tokensToSell} tokens (${sellPercent}% of ${walletBalance})`);
+
+          // Execute sell using Jupiter-Pumpswap service
+          const result = await jupiterPumpswapService.executeSell(
+            tokenAddress,
+            walletKeypair,
+            tokensToSell
+          );
+
+          if (result.success) {
+            const solReceived = parseFloat(result.solReceived || "0");
+            
+            logger.info(`[${logIdentifier}]: Wallet ${index + 1} sell successful via ${result.platform}: ${result.signature}`);
+            logger.info(`[${logIdentifier}]: Wallet ${index + 1} received ${solReceived} SOL`);
+            
+            return {
+              success: true,
+              wallet: walletKeypair.publicKey.toBase58(),
+              signature: result.signature,
+              platform: result.platform,
+              solReceived
+            };
+          } else {
+            logger.warn(`[${logIdentifier}]: Wallet ${index + 1} sell failed: ${result.error}`);
+            
+            return {
+              success: false,
+              wallet: walletKeypair.publicKey.toBase58(),
+              error: result.error
+            };
+          }
+        } catch (error: any) {
+          logger.error(`[${logIdentifier}]: Wallet ${index + 1} error: ${error.message}`);
+          
+          return {
+            success: false,
+            wallet: "unknown",
+            error: error.message
+          };
+        }
+      });
+
+      // Execute all sells simultaneously
+      const sellResults = await Promise.all(sellPromises);
+      
+      // Process results
+      for (const result of sellResults) {
+        if (result.success) {
+          successfulSells++;
+          totalSolReceived += result.solReceived || 0;
+        } else {
+          failedSells++;
+        }
+        results.push(result);
       }
     }
 
