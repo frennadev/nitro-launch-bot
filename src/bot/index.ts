@@ -89,6 +89,7 @@ import { executeFundingBuy } from "../blockchain/pumpfun/buy";
 import { buyCustonConversation } from "./conversation/buyCustom";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { sellIndividualToken } from "./conversation/sellIndividualToken";
+import helpConversation from "./conversation/help";
 import {
   getCachedPlatform,
   setCachedPlatform,
@@ -412,6 +413,7 @@ bot.use(createConversation(ctoMonitorConversation));
 bot.use(createConversation(buyCustonConversation));
 bot.use(createConversation(sellIndividualToken));
 bot.use(createConversation(sellPercentageMessage));
+bot.use(createConversation(helpConversation));
 
 // Middleware to patch reply/sendMessage and hook deletion
 bot.use(async (ctx, next) => {
@@ -519,7 +521,8 @@ Choose an option below to get started ⬇️
     .text("🔑 Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
     .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
     .row()
-    .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS);
+    .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
+    .text("🆘 Help", CallBackQueries.HELP);
   // .text("Add Wallet", CallBackQueries.ADD_WALLET)
   // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
@@ -570,7 +573,8 @@ Choose an option below to get started ⬇️
     .text("🔑 Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
     .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
     .row()
-    .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS);
+    .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
+    .text("🆘 Help", CallBackQueries.HELP);
   // .text("Add Wallet", CallBackQueries.ADD_WALLET)
   // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
@@ -578,6 +582,10 @@ Choose an option below to get started ⬇️
     parse_mode: "Markdown",
     reply_markup: inlineKeyboard,
   });
+});
+
+bot.command("help", async (ctx) => {
+  await ctx.conversation.enter("helpConversation");
 });
 
 bot.command("admin", async (ctx) => {
@@ -850,7 +858,7 @@ bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  
+
   // Try to find token with multiple lookup strategies
   let token = await TokenModel.findOne({
     user: user.id,
@@ -869,7 +877,7 @@ bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
   if (!token) {
     token = await TokenModel.findOne({
       user: user.id,
-      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, "i") },
     });
   }
 
@@ -893,7 +901,7 @@ bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  
+
   // Try to find token with multiple lookup strategies
   let token = await TokenModel.findOne({
     user: user.id,
@@ -912,7 +920,7 @@ bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
   if (!token) {
     token = await TokenModel.findOne({
       user: user.id,
-      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, "i") },
     });
   }
 
@@ -942,7 +950,7 @@ bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  
+
   // Try to find token with multiple lookup strategies
   let token = await TokenModel.findOne({
     user: user.id,
@@ -961,7 +969,7 @@ bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   if (!token) {
     token = await TokenModel.findOne({
       user: user.id,
-      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, "i") },
     });
   }
 
@@ -988,7 +996,7 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  
+
   // Try to find token with multiple lookup strategies
   let token = await TokenModel.findOne({
     user: user.id,
@@ -1007,7 +1015,7 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
   if (!token) {
     token = await TokenModel.findOne({
       user: user.id,
-      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, "i") },
     });
   }
 
@@ -1083,6 +1091,11 @@ bot.callbackQuery(CallBackQueries.VIEW_REFERRALS, async (ctx) => {
   await ctx.conversation.enter("referralsConversation");
 });
 
+bot.callbackQuery(CallBackQueries.HELP, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("helpConversation");
+});
+
 // Callback handlers for token CA sell buttons
 bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
   const sellPercent = parseInt(ctx.match![1]);
@@ -1121,7 +1134,7 @@ bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   }
 
   const { TokenModel } = await import("../backend/models");
-  
+
   // Try to find token with multiple lookup strategies
   let token = await TokenModel.findOne({
     user: user.id,
@@ -1140,7 +1153,7 @@ bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   if (!token) {
     token = await TokenModel.findOne({
       user: user.id,
-      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, 'i') },
+      tokenAddress: { $regex: new RegExp(`^${tokenAddressPrefix}`, "i") },
     });
   }
 
@@ -1639,7 +1652,10 @@ Tokens: 2.3% | Worth: ${payout.toFixed(2)} SOL
   }
 );
 
-bot.api.setMyCommands([{ command: "menu", description: "Bot Menu" }]);
+bot.api.setMyCommands([
+  { command: "menu", description: "Bot Menu" },
+  { command: "help", description: "Get help with the bot" },
+]);
 
 // Message handler for token contract addresses
 
@@ -1774,9 +1790,10 @@ export async function formatTokenMessage(
 
   let walletsBalanceSection = "";
   let supplyData: any = null;
-  
+
   try {
-    const { getFundingWallet, calculateUserTokenSupplyPercentage } = await import("../backend/functions");
+    const { getFundingWallet, calculateUserTokenSupplyPercentage } =
+      await import("../backend/functions");
     const [fundingWalletResult, supplyDataResult] = await Promise.allSettled([
       getFundingWallet(user.id),
       calculateUserTokenSupplyPercentage(user.id, token.address),
@@ -1787,7 +1804,8 @@ export async function formatTokenMessage(
         ? fundingWalletResult.value
         : null;
 
-    supplyData = supplyDataResult.status === "fulfilled" ? supplyDataResult.value : null;
+    supplyData =
+      supplyDataResult.status === "fulfilled" ? supplyDataResult.value : null;
 
     const allWallets = [];
 
@@ -1867,6 +1885,9 @@ ${balanceLines.join("\n")}
   });
 
   // Add supply percentage information if available
+  logger.info(
+    `Supply data for ${token.name} (${token.address}): ${JSON.stringify(supplyData)}`
+  );
   let supplyPercentageSection = "";
   if (supplyData && supplyData.totalBalance > 0) {
     supplyPercentageSection = `
@@ -1877,13 +1898,12 @@ ${balanceLines.join("\n")}
   return `
 🪙 ${token.name} $${token.symbol} ${verifiedBadge}
 <code>${token.address}</code>
-🤑 <a href="${referralLink}">Share Token & Earn</a>
+🤑 <a href="${referralLink}">Share Token & Earn233</a>
 
 💰 <b>Price:</b>  ${priceText} | 📈 24h:  ${priceChangeEmoji} ${priceChangeText}
 🏦 <b>Market Cap:</b> ${marketCapText}
 📊 <b>Volume 24h:</b> ${volumeText}
 💧 <b>Liquidity:</b>  ${liquidityText}
-
 ${supplyPercentageSection}
 ${walletsBalanceSection}
 ${linksHtml}
@@ -2081,9 +2101,14 @@ bot.on("message:text", async (ctx) => {
               const user = await getUser(ctx.chat.id.toString());
               if (user) {
                 // Use the new function to calculate supply percentage
-                const { calculateUserTokenSupplyPercentage } = await import("../backend/functions");
-                const supplyData = await calculateUserTokenSupplyPercentage(user.id, text);
-                
+                const { calculateUserTokenSupplyPercentage } = await import(
+                  "../backend/functions"
+                );
+                const supplyData = await calculateUserTokenSupplyPercentage(
+                  user.id,
+                  text
+                );
+
                 let totalTokenBalance = supplyData.totalBalance;
                 let walletsWithBalance = supplyData.walletsWithBalance;
                 let devWalletBalance = 0;
@@ -2222,8 +2247,9 @@ bot.on("message:text", async (ctx) => {
                     // Check if dev wallet has tokens
                     const devWalletBalance =
                       (data as any).devWalletBalance || 0;
-                    const supplyPercentageText = (data as any).supplyPercentageText || "";
-                    
+                    const supplyPercentageText =
+                      (data as any).supplyPercentageText || "";
+
                     if (devWalletBalance > 0) {
                       const formattedDevBalance = (
                         devWalletBalance / 1e6

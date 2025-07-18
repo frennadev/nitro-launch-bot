@@ -60,6 +60,7 @@ export enum CallBackQueries {
 
   // Affiliate system
   VIEW_REFERRALS = "view_referrals",
+  HELP = "help",
   CANCEL_EXTERNAL_BUY = "cancel_external_buy",
   BUY_EXTERNAL_TOKEN = "buy_token",
   SELL_EXTERNAL_TOKEN = "sell_token",

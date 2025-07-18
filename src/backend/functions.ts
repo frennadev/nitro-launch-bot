@@ -3984,14 +3984,16 @@ export const launchBonkToken = async (
     // Calculate required wallets and prioritize existing user wallets
     const walletCount = calculateRequiredWallets(buyAmount);
     const existingBuyerWallets = await getAllBuyerWallets(userId);
-    
+
     let buyWallets: string[];
     let allocatedWallets: any[] = [];
-    
+
     if (existingBuyerWallets.length >= walletCount) {
       // Use existing wallets - no need to allocate from pool
-      logger.info(`[${logId}]: Using ${walletCount} existing buyer wallets (${existingBuyerWallets.length} available)`);
-      
+      logger.info(
+        `[${logId}]: Using ${walletCount} existing buyer wallets (${existingBuyerWallets.length} available)`
+      );
+
       // Get private keys for existing wallets
       const existingWalletKeys = await Promise.all(
         existingBuyerWallets.slice(0, walletCount).map(async (w) => {
@@ -3999,18 +4001,20 @@ export const launchBonkToken = async (
           return {
             id: w.id,
             publicKey: w.publicKey,
-            privateKey: privateKey
+            privateKey: privateKey,
           };
         })
       );
-      
-      buyWallets = existingWalletKeys.map(w => w.privateKey);
+
+      buyWallets = existingWalletKeys.map((w) => w.privateKey);
       allocatedWallets = existingWalletKeys;
     } else {
       // Need additional wallets from pool
       const additionalWalletsNeeded = walletCount - existingBuyerWallets.length;
-      logger.info(`[${logId}]: Using ${existingBuyerWallets.length} existing wallets + allocating ${additionalWalletsNeeded} from pool`);
-      
+      logger.info(
+        `[${logId}]: Using ${existingBuyerWallets.length} existing wallets + allocating ${additionalWalletsNeeded} from pool`
+      );
+
       // Get private keys for existing wallets
       const existingWalletKeys = await Promise.all(
         existingBuyerWallets.map(async (w) => {
@@ -4018,19 +4022,25 @@ export const launchBonkToken = async (
           return {
             id: w.id,
             publicKey: w.publicKey,
-            privateKey: privateKey
+            privateKey: privateKey,
           };
         })
       );
-      
+
       // Allocate additional wallets from pool
-      const poolWallets = await allocateWalletsFromPool(userId, additionalWalletsNeeded);
-      
+      const poolWallets = await allocateWalletsFromPool(
+        userId,
+        additionalWalletsNeeded
+      );
+
       // Combine existing and new wallets
-      buyWallets = [...existingWalletKeys.map(w => w.privateKey), ...poolWallets.map(w => w.privateKey)];
+      buyWallets = [
+        ...existingWalletKeys.map((w) => w.privateKey),
+        ...poolWallets.map((w) => w.privateKey),
+      ];
       allocatedWallets = [...existingWalletKeys, ...poolWallets];
     }
-    
+
     const buyWalletsOrder = buyWallets;
     const buyDistribution = generateBuyDistribution(buyAmount, walletCount);
 
@@ -4470,13 +4480,12 @@ export const launchBonkToken = async (
             );
 
             // Create ATA instructions
-            const wsolAtaIx =
-              createAssociatedTokenAccountIdempotentInstruction(
-                wallet.keypair.publicKey,
-                wsolAta,
-                wallet.keypair.publicKey,
-                NATIVE_MINT
-              );
+            const wsolAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+              wallet.keypair.publicKey,
+              wsolAta,
+              wallet.keypair.publicKey,
+              NATIVE_MINT
+            );
             const tokenAtaIx =
               createAssociatedTokenAccountIdempotentInstruction(
                 wallet.keypair.publicKey,
@@ -4567,17 +4576,32 @@ export const launchBonkToken = async (
 
             // Collect platform fee after successful transaction (no minimum threshold)
             try {
-              logger.info(`[${logId}]: Collecting platform fee for ${buyAmountSOL.toFixed(6)} SOL transaction from ${wallet.publicKey.slice(0, 8)}`);
-              const { collectTransactionFee } = await import("../backend/functions-main");
-              const feeResult = await collectTransactionFee(bs58.encode(wallet.keypair.secretKey), buyAmountSOL, "buy");
+              logger.info(
+                `[${logId}]: Collecting platform fee for ${buyAmountSOL.toFixed(6)} SOL transaction from ${wallet.publicKey.slice(0, 8)}`
+              );
+              const { collectTransactionFee } = await import(
+                "../backend/functions-main"
+              );
+              const feeResult = await collectTransactionFee(
+                bs58.encode(wallet.keypair.secretKey),
+                buyAmountSOL,
+                "buy"
+              );
 
               if (feeResult.success) {
-                logger.info(`[${logId}]: Platform fee collected successfully: ${feeResult.feeAmount} SOL from ${wallet.publicKey.slice(0, 8)}`);
+                logger.info(
+                  `[${logId}]: Platform fee collected successfully: ${feeResult.feeAmount} SOL from ${wallet.publicKey.slice(0, 8)}`
+                );
               } else {
-                logger.warn(`[${logId}]: Platform fee collection failed for ${wallet.publicKey.slice(0, 8)}: ${feeResult.error}`);
+                logger.warn(
+                  `[${logId}]: Platform fee collection failed for ${wallet.publicKey.slice(0, 8)}: ${feeResult.error}`
+                );
               }
             } catch (feeError: any) {
-              logger.error(`[${logId}]: Error collecting platform fee for ${wallet.publicKey.slice(0, 8)}:`, feeError.message);
+              logger.error(
+                `[${logId}]: Error collecting platform fee for ${wallet.publicKey.slice(0, 8)}:`,
+                feeError.message
+              );
             }
 
             logger.info(
@@ -4708,39 +4732,57 @@ export const calculateUserTokenSupplyPercentage = async (
     }
 
     // Get total token supply from different possible sources
-    let totalSupply = BigInt(0);
-    
+    let totalSupply = 0;
+
+    logger.info(JSON.stringify(tokenInfo, null, 2));
+    logger.info(
+      `[calculateUserTokenSupplyPercentage] Token info for ${tokenAddress}: ${tokenInfo.birdeye.totalSupply} SUPPLY`
+    );
     // Try different supply sources based on data structure
     if (tokenInfo.supply) {
       // Direct supply field (DexScreener format)
-      totalSupply = BigInt(tokenInfo.supply);
+      const supplyValue = Number(tokenInfo.supply);
+      logger.info(
+        `[calculateUserTokenSupplyPercentage] Using direct supply: ${supplyValue}`
+      );
+      totalSupply = supplyValue;
     } else if (tokenInfo.birdeye?.totalSupply) {
       // Birdeye format
-      totalSupply = BigInt(tokenInfo.birdeye.totalSupply);
+      const supplyValue = Number(tokenInfo.birdeye.totalSupply);
+      logger.info(
+        `[calculateUserTokenSupplyPercentage] Using Birdeye supply: ${supplyValue}`
+      );
+      totalSupply = supplyValue;
     } else if (tokenInfo.baseToken?.decimals) {
       // Try to get from on-chain mint info as fallback
       try {
         const { getMint } = await import("@solana/spl-token");
         const { PublicKey } = await import("@solana/web3.js");
         const { connection } = await import("../blockchain/common/connection");
-        
+
         const mintPubkey = new PublicKey(tokenAddress);
         const mintInfo = await getMint(connection, mintPubkey);
         totalSupply = BigInt(mintInfo.supply.toString());
       } catch (error) {
-        console.warn(`Could not fetch on-chain supply for ${tokenAddress}:`, error);
+        console.warn(
+          `Could not fetch on-chain supply for ${tokenAddress}:`,
+          error
+        );
       }
     }
-    
+
     const totalSupplyFormatted = totalSupply.toString();
-    
+
     // Debug logging
-    console.log(`[calculateUserTokenSupplyPercentage] Token supply sources for ${tokenAddress}:`, {
-      directSupply: tokenInfo.supply,
-      birdeyeSupply: tokenInfo.birdeye?.totalSupply,
-      totalSupplyCalculated: totalSupply.toString(),
-      totalSupplyFormatted
-    });
+    console.log(
+      `[calculateUserTokenSupplyPercentage] Token supply sources for ${tokenAddress}:`,
+      {
+        directSupply: tokenInfo.supply,
+        birdeyeSupply: tokenInfo.birdeye?.totalSupply,
+        totalSupplyCalculated: totalSupply.toString(),
+        totalSupplyFormatted,
+      }
+    );
 
     // Get all buyer wallets
     const buyerWallets = await getAllBuyerWallets(userId);
@@ -4755,7 +4797,7 @@ export const calculateUserTokenSupplyPercentage = async (
         walletsWithBalance: 0,
         totalWallets: 0,
         tokenSupply: totalSupplyFormatted,
-        walletBreakdown: []
+        walletBreakdown: [],
       };
     }
 
@@ -4767,36 +4809,45 @@ export const calculateUserTokenSupplyPercentage = async (
     for (const wallet of buyerWallets) {
       try {
         const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
-        
+
         if (balance > 0) {
           walletsWithBalance++;
           totalBalance += balance;
-          
+
           const balanceFormatted = (balance / 1e6).toLocaleString(undefined, {
             maximumFractionDigits: 2,
           });
-          
-          const percentage = totalSupply > 0 ? (Number(balance) / Number(totalSupply)) * 100 : 0;
-          
+
+          const percentage =
+            totalSupply > 0 ? (Number(balance) / Number(totalSupply)) * 100 : 0;
+
           walletBreakdown.push({
             publicKey: wallet.publicKey,
             balance: balance,
             balanceFormatted: balanceFormatted,
             percentage: percentage,
-            shortAddress: wallet.publicKey.slice(0, 6) + "…" + wallet.publicKey.slice(-4)
+            shortAddress:
+              wallet.publicKey.slice(0, 6) + "…" + wallet.publicKey.slice(-4),
           });
         }
       } catch (error) {
-        console.warn(`Error checking balance for wallet ${wallet.publicKey}:`, error);
+        console.warn(
+          `Error checking balance for wallet ${wallet.publicKey}:`,
+          error
+        );
       }
     }
 
     // Calculate total percentage of supply
-    const supplyPercentage = totalSupply > 0 ? (totalBalance / Number(totalSupply)) * 100 : 0;
+    const supplyPercentage =
+      totalSupply > 0 ? (totalBalance / Number(totalSupply)) * 100 : 0;
     const supplyPercentageFormatted = supplyPercentage.toFixed(4) + "%";
-    const totalBalanceFormatted = (totalBalance / 1e6).toLocaleString(undefined, {
-      maximumFractionDigits: 2,
-    });
+    const totalBalanceFormatted = (totalBalance / 1e6).toLocaleString(
+      undefined,
+      {
+        maximumFractionDigits: 2,
+      }
+    );
 
     return {
       totalBalance,
@@ -4806,11 +4857,13 @@ export const calculateUserTokenSupplyPercentage = async (
       walletsWithBalance,
       totalWallets,
       tokenSupply: totalSupplyFormatted,
-      walletBreakdown
+      walletBreakdown,
     };
-
   } catch (error) {
-    console.error(`Error calculating token supply percentage for ${tokenAddress}:`, error);
+    console.error(
+      `Error calculating token supply percentage for ${tokenAddress}:`,
+      error
+    );
     return {
       totalBalance: 0,
       totalBalanceFormatted: "0",
@@ -4819,7 +4872,7 @@ export const calculateUserTokenSupplyPercentage = async (
       walletsWithBalance: 0,
       totalWallets: 0,
       tokenSupply: "0",
-      walletBreakdown: []
+      walletBreakdown: [],
     };
   }
 };
