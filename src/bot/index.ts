@@ -1707,7 +1707,7 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
     const tokenInfoService = TokenInfoService.getInstance();
 
     // Force fresh data by bypassing cache
-    const tokenInfo = await tokenInfoService.getTokenInfo(tokenAddress, true); // true = force refresh
+    const tokenInfo = await tokenInfoService.getTokenInfo(tokenAddress); // TokenInfoService doesn't support force refresh parameter
     if (!tokenInfo) {
       await ctx.reply("❌ Token not found or invalid address.");
       return;
@@ -2086,8 +2086,8 @@ export async function formatTokenMessage(
 ): Promise<string> {
   const user = await getUser(userId);
   if (!user) {
-    await ctx.reply("Unrecognized user ❌");
-    return "";
+    // Don't send a message here, just return an error message that will be handled by the caller
+    throw new Error("Unrecognized user");
   }
   const priceText = token.price ? `$${token.price.toFixed(8)}` : "N/A";
   const priceChangeText = token.priceChange24h
@@ -2682,6 +2682,12 @@ bot.on("message:text", async (ctx) => {
     // If not a token address, do nothing or handle other text commands
   } catch (error) {
     logger.error("Error handling token address message:", error);
+    // Send a user-friendly error message
+    try {
+      await ctx.reply("❌ Error displaying token information. Please try again or contact support if the issue persists.");
+    } catch (replyError) {
+      logger.error("Failed to send error message to user:", replyError);
+    }
   }
 });
 
