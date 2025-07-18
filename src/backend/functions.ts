@@ -4416,7 +4416,7 @@ export const launchBonkToken = async (
         `[${logId}]: Starting simultaneous buy execution with max ${maxConcurrentWallets} concurrent wallets (${walletsWithSufficientFunds.length}/${walletsToProcess.length} wallets have sufficient funds)`
       );
 
-      // Process wallets sequentially with 50ms delay between each buy
+      // Process wallets sequentially with 50ms delay between each buy (non-blocking, no confirmation wait)
       for (const wallet of walletsToProcess) {
         if (processedWallets.has(wallet.publicKey)) continue;
 
@@ -4537,30 +4537,14 @@ export const launchBonkToken = async (
             );
             buyTx.sign([wallet.keypair]);
 
-            // Send transaction with confirmation
+            // Send transaction (do not wait for confirmation)
             const signature = await connection.sendTransaction(buyTx, {
               skipPreflight: false,
               preflightCommitment: "processed",
               maxRetries: 3,
             });
 
-            // Wait for confirmation
-            const confirmation = await connection.confirmTransaction(
-              {
-                signature,
-                blockhash: freshBlockHash.blockhash,
-                lastValidBlockHeight: freshBlockHash.lastValidBlockHeight,
-              },
-              "processed"
-            );
-
-            if (confirmation.value.err) {
-              throw new Error(
-                `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
-              );
-            }
-
-            // Record the successful transaction
+            // Record the transaction immediately (success assumed, will be updated if needed)
             await recordTransaction(
               tokenAddress,
               wallet.publicKey,
@@ -4574,7 +4558,7 @@ export const launchBonkToken = async (
               }
             );
 
-            // Collect platform fee after successful transaction (no minimum threshold)
+            // Collect platform fee after sending transaction (no minimum threshold)
             try {
               logger.info(
                 `[${logId}]: Collecting platform fee for ${buyAmountSOL.toFixed(6)} SOL transaction from ${wallet.publicKey.slice(0, 8)}`
@@ -4605,7 +4589,7 @@ export const launchBonkToken = async (
             }
 
             logger.info(
-              `[${logId}]: Buy successful for ${wallet.publicKey.slice(0, 8)} with ${buyAmountSOL.toFixed(6)} SOL (attempt ${attempt + 1})`
+              `[${logId}]: Buy sent for ${wallet.publicKey.slice(0, 8)} with ${buyAmountSOL.toFixed(6)} SOL (attempt ${attempt + 1})`
             );
             walletResult = { success: true, signature };
             break;
@@ -4642,7 +4626,7 @@ export const launchBonkToken = async (
         }
         results.push(walletResult);
         processedWallets.add(wallet.publicKey);
-        // Wait 50ms before next wallet
+        // Wait 50ms before next wallet (do not wait for confirmation)
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
@@ -4762,7 +4746,7 @@ export const calculateUserTokenSupplyPercentage = async (
 
         const mintPubkey = new PublicKey(tokenAddress);
         const mintInfo = await getMint(connection, mintPubkey);
-        totalSupply = BigInt(mintInfo.supply.toString());
+        totalSupply = Number(mintInfo.supply.toString());
       } catch (error) {
         console.warn(
           `Could not fetch on-chain supply for ${tokenAddress}:`,
