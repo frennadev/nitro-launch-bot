@@ -17,6 +17,7 @@ export interface ExternalBuyResult {
 /**
  * Execute external token buy WITHOUT waiting for confirmation (for CTO operations)
  * Automatically detects platform and uses appropriate buy logic
+ * Fee collection happens in background after confirmation
  */
 export async function executeExternalBuyNoConfirmation(
   tokenAddress: string,
@@ -43,16 +44,16 @@ export async function executeExternalBuyNoConfirmation(
       `[${logId}] Detected platform: ${platform} for token ${tokenAddress}`
     );
 
-    // Use platform-specific buy logic
+    // Use platform-specific buy logic (fee collection happens in background)
     if (platform === "bonk") {
-      logger.info(`[${logId}] Using Bonk-specific buy logic (no confirmation)`);
+      logger.info(`[${logId}] Using Bonk-specific buy logic (no confirmation, fees in background)`);
       return await executeBonkBuyNoConfirmation(tokenAddress, buyerKeypair, solAmount, logId);
     } else if (platform === "cpmm") {
-      logger.info(`[${logId}] Using CPMM-specific buy logic (no confirmation)`);
+      logger.info(`[${logId}] Using CPMM-specific buy logic (no confirmation, fees in background)`);
       return await executeCpmmBuyNoConfirmation(tokenAddress, buyerKeypair, solAmount, logId);
     } else {
       logger.info(
-        `[${logId}] Using unified Jupiter-PumpSwap service for ${platform} platform (no confirmation)`
+        `[${logId}] Using unified Jupiter-PumpSwap service for ${platform} platform (no confirmation, fees in background)`
       );
       
       // CRITICAL FIX: Check wallet balance and reserve SOL for transaction costs
@@ -130,7 +131,7 @@ export async function executeExternalBuyNoConfirmation(
 }
 
 /**
- * Execute Bonk-specific buy using BonkService (WITHOUT confirmation)
+ * Execute Bonk-specific buy using BonkService (WITHOUT confirmation, fees in background)
  */
 async function executeBonkBuyNoConfirmation(
   tokenAddress: string,
@@ -139,7 +140,7 @@ async function executeBonkBuyNoConfirmation(
   logId: string
 ): Promise<ExternalBuyResult> {
   try {
-    logger.info(`[${logId}] Starting Bonk buy (no confirmation) for ${solAmount} SOL`);
+    logger.info(`[${logId}] Starting Bonk buy (no confirmation, fees in background) for ${solAmount} SOL`);
     
     // CRITICAL FIX: Pre-adjust amount to match BonkService's balance requirements
     const walletBalance = await connection.getBalance(buyerKeypair.publicKey, "confirmed");
@@ -183,14 +184,14 @@ async function executeBonkBuyNoConfirmation(
     
     logger.info(`[${logId}] Creating Bonk buy transaction for ${actualTradeAmount.toFixed(6)} SOL...`);
     
-    // Create the buy transaction with the adjusted amount
+    // Create the buy transaction with the adjusted amount (fee collection happens in background)
     const buyTx = await bonkService.buyTx({
       mint: new PublicKey(tokenAddress),
       amount: BigInt(Math.floor(actualTradeAmount * 1_000_000_000)), // Use adjusted amount
       privateKey: bs58.encode(buyerKeypair.secretKey),
     });
     
-    logger.info(`[${logId}] Sending Bonk buy transaction (no confirmation wait)...`);
+    logger.info(`[${logId}] Sending Bonk buy transaction (no confirmation wait, fees in background)...`);
     
     // Send the transaction WITHOUT waiting for confirmation
     const signature = await connection.sendTransaction(buyTx, {
@@ -199,7 +200,7 @@ async function executeBonkBuyNoConfirmation(
       maxRetries: 3,
     });
     
-    logger.info(`[${logId}] Bonk buy transaction sent successfully: ${signature} (confirmation will happen in background)`);
+    logger.info(`[${logId}] Bonk buy transaction sent successfully: ${signature} (confirmation and fee collection will happen in background)`);
     
     return {
       success: true,
@@ -219,7 +220,7 @@ async function executeBonkBuyNoConfirmation(
 }
 
 /**
- * Execute CPMM-specific buy using RaydiumCpmmService (WITHOUT confirmation)
+ * Execute CPMM-specific buy using RaydiumCpmmService (WITHOUT confirmation, fees in background)
  */
 async function executeCpmmBuyNoConfirmation(
   tokenAddress: string,
@@ -228,7 +229,7 @@ async function executeCpmmBuyNoConfirmation(
   logId: string
 ): Promise<ExternalBuyResult> {
   try {
-    logger.info(`[${logId}] Starting CPMM buy (no confirmation) for ${solAmount} SOL`);
+    logger.info(`[${logId}] Starting CPMM buy (no confirmation, fees in background) for ${solAmount} SOL`);
 
     // CRITICAL FIX: Check wallet balance and reserve SOL for transaction costs
     const walletBalance = await connection.getBalance(buyerKeypair.publicKey, "confirmed");
@@ -277,14 +278,14 @@ async function executeCpmmBuyNoConfirmation(
 
     logger.info(`[${logId}] Creating CPMM buy transaction for ${actualTradeAmount.toFixed(6)} SOL...`);
 
-    // Create the buy transaction with the adjusted amount
+    // Create the buy transaction with the adjusted amount (fee collection happens in background)
     const buyTx = await cpmmService.buyTx({
       mint: tokenAddress,
       privateKey: bs58.encode(buyerKeypair.secretKey),
       amount_in: buyAmountLamports,
     });
 
-    logger.info(`[${logId}] Sending CPMM buy transaction (no confirmation wait)...`);
+    logger.info(`[${logId}] Sending CPMM buy transaction (no confirmation wait, fees in background)...`);
 
     // Send the transaction WITHOUT waiting for confirmation
     const signature = await connection.sendTransaction(buyTx, {
@@ -293,7 +294,7 @@ async function executeCpmmBuyNoConfirmation(
       maxRetries: 3,
     });
 
-    logger.info(`[${logId}] CPMM buy transaction sent successfully: ${signature} (confirmation will happen in background)`);
+    logger.info(`[${logId}] CPMM buy transaction sent successfully: ${signature} (confirmation and fee collection will happen in background)`);
 
     return {
       success: true,
