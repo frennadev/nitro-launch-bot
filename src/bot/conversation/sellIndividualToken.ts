@@ -21,7 +21,7 @@ type WalletHolder = {
   shortAddress: string;
 };
 
-export const sellIndividualToken = async (conversation: Conversation<Context>, ctx: Context, address: string) => {
+export const sellIndividualToken = async (conversation: Conversation<Context>, ctx: Context, address: string, page: number = 0) => {
   console.log("sellIndividualToken conversation started for token:", address);
   
   const user = await getUser(ctx.chat!.id.toString());
@@ -81,6 +81,13 @@ export const sellIndividualToken = async (conversation: Conversation<Context>, c
     maximumFractionDigits: 2,
   });
 
+  // Pagination settings
+  const WALLETS_PER_PAGE = 3; // Limit to 3 wallets per page to prevent keyboard overflow
+  const totalPages = Math.ceil(walletHolders.length / WALLETS_PER_PAGE);
+  const startIndex = page * WALLETS_PER_PAGE;
+  const endIndex = Math.min(startIndex + WALLETS_PER_PAGE, walletHolders.length);
+  const currentPageWallets = walletHolders.slice(startIndex, endIndex);
+
   const header = `
 💊 *${token.name} (${token.symbol})*
 🔑 Address: \`${token.tokenAddress}\`
@@ -94,27 +101,27 @@ export const sellIndividualToken = async (conversation: Conversation<Context>, c
 ${tokenPrice > 0 ? `💵 Token Price: $${tokenPrice.toFixed(8)}` : ''}
   `.trim();
 
-  // Build wallet breakdown
-  const walletDetails = walletHolders
+  // Build wallet breakdown for current page
+  const walletDetails = currentPageWallets
     .map((w, index) => {
       const walletTokensFormatted = (w.balance / 1e6).toLocaleString(undefined, {
         maximumFractionDigits: 2,
       });
-      return `${index + 1}. \`${w.shortAddress}\` | ${walletTokensFormatted} ${token.symbol} | $${abbreviateNumber(w.tokenPrice)} | 💎 ${w.solBalance.toFixed(4)} SOL`;
+      return `${startIndex + index + 1}. \`${w.shortAddress}\` | ${walletTokensFormatted} ${token.symbol} | $${abbreviateNumber(w.tokenPrice)} | 💎 ${w.solBalance.toFixed(4)} SOL`;
     })
     .join("\n");
 
   const message = `${header}
 
-*Individual Wallet Breakdown:*
+*Individual Wallet Breakdown (Page ${page + 1}/${totalPages}):*
 ${walletDetails}
 
 *Select a wallet to sell from:*`;
 
-  // Build keyboard with wallet options
+  // Build keyboard with wallet options (limited to current page)
   const kb = new InlineKeyboard();
   
-  walletHolders.forEach((wallet, index) => {
+  currentPageWallets.forEach((wallet, index) => {
     const walletTokensFormatted = (wallet.balance / 1e6).toLocaleString(undefined, {
       maximumFractionDigits: 2,
     });
@@ -152,16 +159,33 @@ ${walletDetails}
       }
     );
     
-    // Add separator between wallets
-    if (index < walletHolders.length - 1) {
+    // Add separator between wallets (but not after the last one)
+    if (index < currentPageWallets.length - 1) {
       kb.row({ text: "━━━━━━━━━━━━━━━━━━━━", callback_data: "noop" });
     }
   });
 
+  // Add pagination controls if needed
+  if (totalPages > 1) {
+    const paginationRow = [];
+    
+    if (page > 0) {
+      paginationRow.push({ text: "⬅️ Previous", callback_data: `page_${page - 1}_${address}` });
+    }
+    
+    if (page < totalPages - 1) {
+      paginationRow.push({ text: "Next ➡️", callback_data: `page_${page + 1}_${address}` });
+    }
+    
+    if (paginationRow.length > 0) {
+      kb.row(...paginationRow);
+    }
+  }
+
   // Add back button
   kb.row({ text: "🔙 Back", callback_data: CallBackQueries.BACK });
 
-  console.log("About to send wallet breakdown message with", walletHolders.length, "wallets");
+  console.log("About to send wallet breakdown message with", currentPageWallets.length, "wallets on page", page + 1, "of", totalPages);
   console.log("Message content:", message.substring(0, 200) + "...");
 
   await sendMessage(ctx, message, {
@@ -181,8 +205,17 @@ ${walletDetails}
     return conversation.halt();
   }
 
-  // Handle wallet sell actions
+  // Handle pagination
   const data = response.callbackQuery?.data;
+  if (data && data.startsWith('page_')) {
+    const parts = data.split('_');
+    const newPage = parseInt(parts[1]);
+    const tokenAddr = parts[2];
+    // Recursively call with new page
+    return sellIndividualToken(conversation, ctx, tokenAddr, newPage);
+  }
+
+  // Handle wallet sell actions
   if (data) {
     await handleWalletSellAction(conversation, response, data, address);
   }

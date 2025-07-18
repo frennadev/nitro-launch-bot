@@ -1,8 +1,8 @@
 import { Keypair, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
-import BonkService from "./bonk-service";
-import bs58 from "bs58"
-import { connection } from "./config";
-import { logger } from "../jobs/logger";
+import BonkService from "../../service/bonk-service";
+import { bs58 } from "@project-serum/anchor/dist/cjs/utils/bytes";
+import { connection } from "../../service/config";
+import { logger } from "../../jobs/logger";
 
 const CONFIG_MODE = "default";
 
@@ -60,40 +60,38 @@ const getConfigForMode = (mode: string) => {
 export async function executeBonkBuy(
   privateKey: string,
   tokenMint: string,
-  buyAmountInSol: number = 0.001,
-  configMode: string = CONFIG_MODE
+  buyAmountInSol: number = 0.001
 ) {
-  const logId = `bonk-buy-${tokenMint.substring(0, 8)}`;
-  logger.info(`[${logId}]: 🚀 Starting BONK buy test...`);
-  logger.info(`[${logId}]: 🪙 Token mint: ${tokenMint}`);
-  logger.info(`[${logId}]: ⚙️  Config mode: ${configMode}`);
+  console.log("🚀 Starting BONK buy test...");
+  console.log("🪙 Token mint:", tokenMint);
+  console.log("⚙️  Config mode:", CONFIG_MODE);
 
   // Create wallet from private key (base58 format)
   const privateKeyBytes = bs58.decode(privateKey);
   const wallet = Keypair.fromSecretKey(privateKeyBytes);
 
-  logger.info(`[${logId}]: 👛 Wallet address: ${wallet.publicKey.toBase58()}`);
+  console.log("👛 Wallet address:", wallet.publicKey.toBase58());
 
   try {
     // Check balance
     const balance = await connection.getBalance(wallet.publicKey);
-    logger.info(`[${logId}]: 💰 SOL balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+    console.log("💰 SOL balance:", balance / LAMPORTS_PER_SOL, "SOL");
 
     if (balance < 0.01 * LAMPORTS_PER_SOL) {
-      logger.error(`[${logId}]: ❌ Insufficient SOL balance (need at least 0.01 SOL)`);
+      console.error("❌ Insufficient SOL balance (need at least 0.01 SOL)");
       throw new Error("Insufficient SOL balance. Please top up your wallet.");
     }
 
     // Get configuration for the specified mode
-    const config = getConfigForMode(configMode);
-    logger.info(`[${logId}]: 🔧 Using configuration: ${configMode} mode`);
+    const config = getConfigForMode(CONFIG_MODE);
+    console.log("🔧 Using configuration:", CONFIG_MODE, "mode");
 
     // Create BonkService instance with the selected configuration
     const bonkService = new BonkService(config);
     const buyAmount = BigInt(buyAmountInSol * LAMPORTS_PER_SOL); // 0.001 SOL
 
     logger.info(
-      `[${logId}]: [bonkhandler] ${buyAmount} SOL for ${privateKey.substring(0, 8)}..., ${tokenMint}`
+      `[bonkhandker] ${buyAmount} SOL for ${[privateKey]}, ${tokenMint}`
     );
 
     // Set timeout for pool discovery
@@ -108,7 +106,7 @@ export async function executeBonkBuy(
 
           // Send the transaction
           const signature = await connection.sendTransaction(tx);
-          logger.info(`[${logId}]: 📡 Transaction sent, waiting for confirmation...`);
+          console.log("📡 Transaction sent, waiting for confirmation...");
 
           const confirmation = await connection.confirmTransaction(
             signature,
@@ -144,10 +142,9 @@ export async function executeBonkBuy(
       throw new Error("Buy transaction failed to complete");
     }
 
-    logger.info(`[${logId}]: ✅ Transaction successful!`);
-    logger.info(`[${logId}]: 📝 Signature: ${result}`);
-    logger.info(`[${logId}]: 🔗 Explorer: https://solscan.io/tx/${result}`);
-    
+    console.log("✅ Transaction successful!");
+    console.log("📝 Signature:", result);
+    console.log("🔗 Explorer: https://solscan.io/tx/" + result);
     return {
       success: true,
       signature: result as string,
@@ -155,34 +152,34 @@ export async function executeBonkBuy(
       message: "Buy transaction executed successfully",
     };
   } catch (error: any) {
-    logger.error(`[${logId}]: ❌ Test failed: ${error.message}`);
+    console.error("❌ Test failed:", error.message);
 
     if (error.message.includes("timeout")) {
-      logger.info(`[${logId}]: 💡 Suggestions:`);
-      logger.info(`[${logId}]:    - Try using a different RPC endpoint`);
-      logger.info(`[${logId}]:    - Check your internet connection`);
-      logger.info(`[${logId}]:    - Try again in a few minutes`);
+      console.log("💡 Suggestions:");
+      console.log("   - Try using a different RPC endpoint");
+      console.log("   - Check your internet connection");
+      console.log("   - Try again in a few minutes");
       return {
         error: "Timeout",
         message:
           "Transaction timed out. Try using a different RPC endpoint or try again later",
       };
     } else if (error.message.includes("429")) {
-      logger.info(`[${logId}]: 💡 RPC rate limit exceeded - try again later`);
+      console.log("💡 RPC rate limit exceeded - try again later");
       return {
         error: "RateLimit",
         message: "RPC rate limit exceeded - try again later",
       };
     } else if (error.message.includes("pool not found")) {
-      logger.info(`[${logId}]: 💡 Token may not have a BONK pool or pool is inactive`);
+      console.log("💡 Token may not have a BONK pool or pool is inactive");
       return {
         error: "PoolNotFound",
         message: "Token may not have a BONK pool or pool is inactive",
       };
     } else if (error.message.includes("ExceededSlippage")) {
-      logger.info(`[${logId}]: 💡 Try using a more aggressive config mode:`);
-      logger.info(`[${logId}]:    - 'aggressive' for volatile tokens`);
-      logger.info(`[${logId}]:    - 'maximum' for extremely volatile tokens`);
+      console.log("💡 Try using a more aggressive config mode:");
+      console.log("   - 'aggressive' for volatile tokens");
+      console.log("   - 'maximum' for extremely volatile tokens");
       return {
         error: "ExceededSlippage",
         message:
@@ -202,44 +199,50 @@ export async function executeBonkSell(
   percentage: number,
   privateKey: string,
   tokenMint: string,
-  tokenAmount?: number,
-  configMode: string = CONFIG_MODE
+  tokenAmount?: number
 ) {
-  const logId = `bonk-sell-${tokenMint.substring(0, 8)}`;
-  logger.info(`[${logId}]: 🚀 Starting BONK sell with fee collection...`);
-  logger.info(`[${logId}]: 🪙 Token mint: ${tokenMint}`);
-  logger.info(`[${logId}]: ⚙️  Config mode: ${configMode}`);
+  console.log("🚀 Starting BONK sell test...");
+  console.log("🪙 Token mint:", tokenMint);
+  console.log("⚙️  Config mode:", CONFIG_MODE);
 
   const privateKeyBytes = bs58.decode(privateKey);
   const wallet = Keypair.fromSecretKey(privateKeyBytes);
 
   try {
     const balance = await connection.getBalance(wallet.publicKey);
-    logger.info(`[${logId}]: 💰 SOL balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+    console.log("💰 SOL balance:", balance / LAMPORTS_PER_SOL, "SOL");
 
-    const config = getConfigForMode(configMode);
-    logger.info(`[${logId}]: 🔧 Using configuration: ${configMode} mode`);
+    const config = getConfigForMode(CONFIG_MODE);
+    console.log("🔧 Using configuration:", CONFIG_MODE, "mode");
 
     const bonkService = new BonkService(config);
-    
     // Set timeout for pool discovery
     const poolDiscoveryPromise = new Promise((resolve, reject) => {
       (async () => {
         try {
-          // Use sellWithFeeCollection instead of sellTx to collect platform fees
-          const result = await bonkService.sellWithFeeCollection({
+          const tx = await bonkService.sellTx({
             mint: new PublicKey(tokenMint),
             amount: BigInt(tokenAmount || 0), // Will be calculated from percentage
             privateKey: privateKey,
             percentage: percentage,
           });
 
-          logger.info(`[${logId}]: ✅ Sell transaction successful with fee collection!`);
-          logger.info(`[${logId}]: 📝 Signature: ${result.signature}`);
-          logger.info(`[${logId}]: 💰 SOL received: ${result.actualTransactionAmountSol} SOL`);
-          logger.info(`[${logId}]: 💸 Fee collected: ${result.feeCollected ? 'Yes' : 'No'}`);
+          const signature = await connection.sendTransaction(tx);
+          console.log("📡 Sell transaction sent, waiting for confirmation...");
 
-          resolve(result.signature);
+          const confirmation = await connection.confirmTransaction(
+            signature,
+            "confirmed"
+          );
+          if (confirmation.value.err) {
+            reject(
+              new Error(
+                `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
+              )
+            );
+          } else {
+            resolve(signature);
+          }
         } catch (error) {
           reject(error);
         }
@@ -258,18 +261,18 @@ export async function executeBonkSell(
       throw new Error("Sell transaction failed to complete");
     }
 
-    logger.info(`[${logId}]: ✅ Sell transaction successful!`);
-    logger.info(`[${logId}]: 📝 Signature: ${result}`);
-    logger.info(`[${logId}]: 🔗 Explorer: https://solscan.io/tx/${result}`);
+    console.log("✅ Sell transaction successful!");
+    console.log("📝 Signature:", result);
+    console.log("🔗 Explorer: https://solscan.io/tx/" + result);
 
     return {
       success: true,
       signature: result,
       explorerUrl: "https://solscan.io/tx/" + result,
-      message: "Sell transaction executed successfully with platform fees collected",
+      message: "Sell transaction executed successfully",
     };
   } catch (error: any) {
-    logger.error(`[${logId}]: ❌ Sell test failed: ${error.message}`);
+    console.error("❌ Sell test failed:", error.message);
 
     if (error.message.includes("No token balance found")) {
       return {
@@ -307,60 +310,3 @@ export async function executeBonkSell(
     };
   }
 }
-
-/**
- * Get available configuration modes
- */
-export function getAvailableConfigModes() {
-  return [
-    {
-      name: "conservative",
-      description: "Lower slippage, fewer retries - safer but may fail more often",
-      settings: getConfigForMode("conservative"),
-    },
-    {
-      name: "default",
-      description: "Balanced settings for most tokens",
-      settings: getConfigForMode("default"),
-    },
-    {
-      name: "aggressive",
-      description: "Higher slippage, more retries - better success rate for volatile tokens",
-      settings: getConfigForMode("aggressive"),
-    },
-    {
-      name: "maximum",
-      description: "Very high slippage for extremely volatile tokens",
-      settings: getConfigForMode("maximum"),
-    },
-    {
-      name: "ultra",
-      description: "Maximum settings for the most volatile tokens",
-      settings: getConfigForMode("ultra"),
-    },
-  ];
-}
-
-/**
- * Validate token mint address
- */
-export function validateTokenMint(mintAddress: string): boolean {
-  try {
-    new PublicKey(mintAddress);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Validate private key format
- */
-export function validatePrivateKey(privateKey: string): boolean {
-  try {
-    bs58.decode(privateKey);
-    return true;
-  } catch {
-    return false;
-  }
-} 

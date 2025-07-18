@@ -733,37 +733,38 @@ export default class PumpswapService {
       pool_base_token_ata: poolInfo.poolBaseTokenAccount,
       pool_quote_token_ata: poolInfo.poolQuoteTokenAccount,
       protocol_fee_ata: protocolFeeAta,
-      base_amount_in: sellAmount ?? amountToSell,
+      base_amount_in: amountToSell,
       min_quote_amount_out: minQuoteOut,
       coin_creator_vault_ata: creatorVault.ata,
       coin_creator_vault_authority: creatorVault.authority,
     };
 
     const sellInstruction = await this.createSellIX(ixData);
-
     const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
       microLamports: 1_100_100,
     });
 
-    const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
-      units: 151591,
-    });
-
-    const tokenAccountInstruction = createAssociatedTokenAccountIdempotentInstruction(
+    const createTokenAccountWsol = buildAssociatedTokenAccountInstruction(
       payer.publicKey,
       associatedTokenAccounts.wsolAta,
       payer.publicKey,
-      NATIVE_MINT
+      NATIVE_MINT,
+      Buffer.from([1])
     );
 
-    // Close account instruction to close WSOL account and get SOL back
-    const closeAccount = createCloseAccountInstruction(
-      associatedTokenAccounts.wsolAta,
+    const createTokenAccountBase = createAssociatedTokenAccountIdempotentInstruction(
       payer.publicKey,
-      payer.publicKey
+      associatedTokenAccounts.tokenAta,
+      payer.publicKey,
+      mint
     );
 
-    const instructions = [modifyComputeUnits, addPriorityFee, tokenAccountInstruction, sellInstruction, closeAccount];
+    const instructions = [
+      addPriorityFee,
+      createTokenAccountBase,
+      createTokenAccountWsol,
+      sellInstruction,
+    ];
 
     console.log(`[PumpswapService] Getting blockhash and building transaction...`);
     const { blockhash } = await connection.getLatestBlockhash("finalized");
@@ -779,6 +780,148 @@ export default class PumpswapService {
     console.log(`[PumpswapService] Optimized sell transaction created in ${Date.now() - start}ms`);
     return tx;
   };
+
+  // Enhanced buy method with fee collection
+  async buyWithFeeCollection(buyData: BuyData) {
+    const logId = `pumpswap-buy-${buyData.mint.toBase58().substring(0, 8)}`;
+    console.log(`[${logId}]: Starting PumpSwap buy with fee collection`);
+
+    try {
+      // Create and send transaction
+      const transaction = await this.buyTx(buyData);
+
+      // Send transaction
+      const signature = await connection.sendTransaction(transaction);
+      console.log(`[${logId}]: Transaction sent: ${signature}`);
+
+      // Wait for confirmation
+      const confirmation = await connection.confirmTransaction(signature, "confirmed");
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${confirmation.value.err}`);
+      }
+
+      console.log(`[${logId}]: Transaction confirmed: ${signature}`);
+
+      // Get actual transaction amount from blockchain instead of using input amount
+      let actualTransactionAmountSol = Number(buyData.amount) / 1e9; // Fallback to input amount
+      try {
+        const { parseTransactionAmounts } = await import("../backend/utils");
+        const owner = Keypair.fromSecretKey(base58.decode(buyData.privateKey));
+        const actualAmounts = await parseTransactionAmounts(
+          signature,
+          owner.publicKey.toBase58(),
+          buyData.mint.toBase58(),
+          "buy"
+        );
+
+        if (actualAmounts.success && actualAmounts.actualSolSpent) {
+          actualTransactionAmountSol = actualAmounts.actualSolSpent;
+          console.log(`[${logId}]: Actual SOL spent from blockchain: ${actualTransactionAmountSol} SOL`);
+        } else {
+          console.warn(`[${logId}]: Failed to parse actual amounts, using input amount: ${actualAmounts.error}`);
+        }
+      } catch (parseError: any) {
+        console.warn(`[${logId}]: Error parsing transaction amounts, using input amount: ${parseError.message}`);
+      }
+
+      // Collect platform fee after successful transaction using actual amount
+      try {
+        console.log(`[${logId}]: Collecting platform fee for ${actualTransactionAmountSol} SOL transaction`);
+        const { collectTransactionFee } = await import("../backend/functions-main");
+        const feeResult = await collectTransactionFee(buyData.privateKey, actualTransactionAmountSol, "buy");
+
+        if (feeResult.success) {
+          console.log(`[${logId}]: Platform fee collected successfully: ${feeResult.feeAmount} SOL`);
+        } else {
+          console.warn(`[${logId}]: Platform fee collection failed: ${feeResult.error}`);
+        }
+      } catch (feeError: any) {
+        console.error(`[${logId}]: Error collecting platform fee:`, feeError.message);
+      }
+
+      return {
+        success: true,
+        signature,
+        actualTransactionAmountSol,
+        feeCollected: true,
+      };
+    } catch (error: any) {
+      console.error(`[${logId}]: Buy transaction failed:`, error.message);
+      throw error;
+    }
+  }
+
+  // Enhanced sell method with fee collection
+  async sellWithFeeCollection(sellData: SellData) {
+    const logId = `pumpswap-sell-${sellData.mint.toBase58().substring(0, 8)}`;
+    console.log(`[${logId}]: Starting PumpSwap sell with fee collection`);
+
+    try {
+      // Create and send transaction
+      const transaction = await this.sellTx(sellData);
+
+      // Send transaction
+      const signature = await connection.sendTransaction(transaction);
+      console.log(`[${logId}]: Transaction sent: ${signature}`);
+
+      // Wait for confirmation
+      const confirmation = await connection.confirmTransaction(signature, "confirmed");
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${confirmation.value.err}`);
+      }
+
+      console.log(`[${logId}]: Transaction confirmed: ${signature}`);
+
+      // Get actual transaction amount from blockchain instead of using estimate
+      let actualTransactionAmountSol = 0.01; // Fallback estimate
+      try {
+        const { parseTransactionAmounts } = await import("../backend/utils");
+        const owner = Keypair.fromSecretKey(base58.decode(sellData.privateKey));
+        const actualAmounts = await parseTransactionAmounts(
+          signature,
+          owner.publicKey.toBase58(),
+          sellData.mint.toBase58(),
+          "sell"
+        );
+
+        if (actualAmounts.success && actualAmounts.actualSolReceived) {
+          actualTransactionAmountSol = actualAmounts.actualSolReceived;
+          console.log(`[${logId}]: Actual SOL received from blockchain: ${actualTransactionAmountSol} SOL`);
+        } else {
+          console.warn(`[${logId}]: Failed to parse actual amounts, using fallback estimate: ${actualAmounts.error}`);
+        }
+      } catch (parseError: any) {
+        console.warn(`[${logId}]: Error parsing transaction amounts, using fallback estimate: ${parseError.message}`);
+      }
+
+      // Collect platform fee after successful transaction using actual amount
+      try {
+        console.log(`[${logId}]: Collecting platform fee for ${actualTransactionAmountSol} SOL transaction`);
+        const { collectTransactionFee } = await import("../backend/functions-main");
+        const feeResult = await collectTransactionFee(sellData.privateKey, actualTransactionAmountSol, "sell");
+
+        if (feeResult.success) {
+          console.log(`[${logId}]: Platform fee collected successfully: ${feeResult.feeAmount} SOL`);
+        } else {
+          console.warn(`[${logId}]: Platform fee collection failed: ${feeResult.error}`);
+        }
+      } catch (feeError: any) {
+        console.error(`[${logId}]: Error collecting platform fee:`, feeError.message);
+      }
+
+      return {
+        success: true,
+        signature,
+        actualTransactionAmountSol,
+        feeCollected: true,
+      };
+    } catch (error: any) {
+      console.error(`[${logId}]: Sell transaction failed:`, error.message);
+      throw error;
+    }
+  }
 }
 
 function buildAssociatedTokenAccountInstruction(

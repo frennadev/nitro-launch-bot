@@ -42,7 +42,7 @@ export interface JupiterPumpswapResult {
   success: boolean;
   signature: string;
   error?: string;
-  platform?: "jupiter" | "pumpswap" | "pumpfun";
+  platform?: "jupiter" | "pumpswap" | "pumpfun" | "bonk";
   tokensReceived?: string;
   solReceived?: string;
   actualSolSpent?: string;
@@ -609,7 +609,42 @@ export class JupiterPumpswapService {
       logger.info(`[${logId}] Wallet SOL balance: ${solBalanceSOL.toFixed(6)} SOL`);
       logger.info(`[${logId}] Selling ${sellAmount} tokens`);
 
-      // Try Jupiter first
+      // NEW: Platform detection for optimal sell routing
+      const platform = await detectTokenPlatformWithCache(tokenAddress);
+      logger.info(`[${logId}] Detected platform: ${platform} for token ${tokenAddress}`);
+
+      // Route Bonk tokens to Bonk sell method
+      if (platform === 'bonk') {
+        logger.info(`[${logId}] Routing Bonk token to Bonk sell method`);
+        try {
+          const { executeBonkSell } = await import("./bonk-transaction-handler");
+          const bonkResult = await executeBonkSell(
+            100, // Sell 100% of the specified amount
+            bs58.encode(sellerKeypair.secretKey),
+            tokenAddress,
+            sellAmount
+          );
+
+          if (bonkResult.success) {
+            logger.info(`[${logId}] Bonk sell successful: ${bonkResult.signature}`);
+            return {
+              success: true,
+              signature: bonkResult.signature,
+              platform: "bonk",
+              actualSolSpent: "0", // Bonk doesn't provide this info
+              tokensReceived: sellAmount.toString(),
+            };
+          } else {
+            logger.warn(`[${logId}] Bonk sell failed: ${bonkResult.error || bonkResult.message}`);
+            // Fall through to Jupiter/PumpSwap methods
+          }
+        } catch (bonkError: any) {
+          logger.warn(`[${logId}] Bonk sell error: ${bonkError.message}`);
+          // Fall through to Jupiter/PumpSwap methods
+        }
+      }
+
+      // Try Jupiter first for non-Bonk tokens or if Bonk sell failed
       const quote = await this.getQuote(tokenAddress, WSOL, sellAmount, "sell");
 
       if (quote) {

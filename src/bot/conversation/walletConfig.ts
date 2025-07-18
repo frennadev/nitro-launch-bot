@@ -12,12 +12,16 @@ import {
 import { CallBackQueries } from "../types";
 import type { ParseMode } from "grammy/types";
 import { sendMessage } from "../../backend/sender";
+import { safeAnswerCallbackQuery } from "../utils";
 
 const walletConfigConversation = async (
   conversation: Conversation<Context>,
   ctx: Context
 ): Promise<void> => {
-  await ctx.answerCallbackQuery();
+  if (ctx.callbackQuery) {
+    await safeAnswerCallbackQuery(ctx);
+  }
+
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
     await sendMessage(ctx, "Unrecognized user ❌");
@@ -146,7 +150,9 @@ ${buyerWallets.length > 0 ? "✅ Ready for launches" : "⚠️ No buyer wallets 
 
   if (data === CallBackQueries.MANAGE_BUYER_WALLETS) {
     // Import and start buyer wallets management conversation
-    const { default: manageBuyerWalletsConversation } = await import("./buyerWallets");
+    const { default: manageBuyerWalletsConversation } = await import(
+      "./buyerWallets"
+    );
     return await manageBuyerWalletsConversation(conversation, next);
   }
 

@@ -87,14 +87,22 @@ export const executeCTOOperation = async (
 
     logger.info(`[CTO] Using ${walletsToUse} wallets that were successfully funded by mixer`);
 
-    // Execute buy transactions in parallel
-    const buyPromises = selectedWallets.map(async (wallet, index) => {
+    // Execute buy transactions with 20ms delay between each buy
+    const buyResults = [];
+    for (let index = 0; index < selectedWallets.length; index++) {
+      const wallet = selectedWallets[index];
       const buyAmountLamports = actualAmountsFromMixer[index];
       const buyAmountSol = buyAmountLamports / 1e9; // Convert lamports to SOL for external buy
       
+      // CRITICAL FIX: Reserve 0.01 SOL in each wallet for future sell transactions
+      const sellReserve = 0.01; // Reserve 0.01 SOL for sell transaction fees
+      const adjustedBuyAmountSol = Math.max(0.001, buyAmountSol - sellReserve); // Ensure minimum 0.001 SOL for buy
+      
+      logger.info(`[CTO] Wallet ${index + 1}/${selectedWallets.length}: Original amount ${buyAmountSol.toFixed(6)} SOL, Adjusted for sell reserve: ${adjustedBuyAmountSol.toFixed(6)} SOL (reserving ${sellReserve} SOL for sells)`);
+      
       try {
         const keypair = secretKeyToKeypair(wallet.privateKey);
-        const result = await executeExternalBuy(tokenAddress, keypair, buyAmountSol);
+        const result = await executeExternalBuy(tokenAddress, keypair, adjustedBuyAmountSol);
         
         if (result.success) {
           logger.info(`[CTO] Buy ${index + 1}/${selectedWallets.length} successful: ${result.signature}`);
@@ -110,7 +118,7 @@ export const executeCTOOperation = async (
               true,
               0, // CTO operations don't have launch attempts
               {
-                amountSol: buyAmountSol,
+                amountSol: adjustedBuyAmountSol,
                 amountTokens: "0", // Will be parsed from blockchain
                 errorMessage: undefined,
                 retryAttempt: 0,
@@ -122,7 +130,7 @@ export const executeCTOOperation = async (
             logger.warn(`[CTO] Failed to record transaction for wallet ${wallet.publicKey}:`, recordError);
           }
           
-          return { success: true, signature: result.signature, walletAddress: wallet.publicKey };
+          buyResults.push({ success: true, signature: result.signature, walletAddress: wallet.publicKey });
         } else {
           logger.warn(`[CTO] Buy ${index + 1}/${selectedWallets.length} failed: ${result.error}`);
           
@@ -137,7 +145,7 @@ export const executeCTOOperation = async (
               false,
               0,
               {
-                amountSol: buyAmountSol,
+                amountSol: adjustedBuyAmountSol,
                 amountTokens: "0",
                 errorMessage: result.error,
                 retryAttempt: 0,
@@ -147,7 +155,7 @@ export const executeCTOOperation = async (
             logger.warn(`[CTO] Failed to record failed transaction for wallet ${wallet.publicKey}:`, recordError);
           }
           
-          return { success: false, error: result.error, walletAddress: wallet.publicKey };
+          buyResults.push({ success: false, error: result.error, walletAddress: wallet.publicKey });
         }
       } catch (error: any) {
         logger.error(`[CTO] Buy ${index + 1}/${selectedWallets.length} error:`, error);
@@ -163,7 +171,7 @@ export const executeCTOOperation = async (
             false,
             0,
             {
-              amountSol: buyAmountSol,
+              amountSol: adjustedBuyAmountSol,
               amountTokens: "0",
               errorMessage: error.message,
               retryAttempt: 0,
@@ -173,13 +181,15 @@ export const executeCTOOperation = async (
           logger.warn(`[CTO] Failed to record error transaction for wallet ${wallet.publicKey}:`, recordError);
         }
         
-        return { success: false, error: error.message, walletAddress: wallet.publicKey };
+        buyResults.push({ success: false, error: error.message, walletAddress: wallet.publicKey });
       }
-    });
+      
+      // Add 20ms delay between buys (except for the last one)
+      if (index < selectedWallets.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
 
-    // Wait for all buy transactions to complete
-    const buyResults = await Promise.all(buyPromises);
-    
     // Count successful and failed buys
     const successfulBuys = buyResults.filter(r => r.success).length;
     const failedBuys = buyResults.filter(r => !r.success).length;
