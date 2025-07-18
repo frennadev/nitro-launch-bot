@@ -4205,7 +4205,11 @@ export const launchBonkToken = async (
       "../blockchain/mixer/init-mixer"
     );
     const { secretKeyToKeypair } = await import("../blockchain/common/utils");
-    const destinationAddresses = buyWallets.map((wallet) => {
+    
+    // CRITICAL FIX: Only fund the necessary number of buy wallets for the launch amount
+    const walletsNeeded = calculateRequiredWallets(buyAmount);
+    const selectedBuyWallets = buyWallets.slice(0, walletsNeeded);
+    const destinationAddresses = selectedBuyWallets.map((wallet) => {
       return secretKeyToKeypair(wallet).publicKey.toString();
     });
 
@@ -4215,7 +4219,7 @@ export const launchBonkToken = async (
     const totalAmountToMix = buyAmount + totalFeesNeeded;
 
     logger.info(
-      `[${logId}]: Starting wallet mixing - ${totalAmountToMix} SOL to ${destinationAddresses.length} wallets`
+      `[${logId}]: Starting wallet mixing - ${totalAmountToMix} SOL to ${destinationAddresses.length} wallets (not all ${buyWallets.length} wallets)`
     );
 
     try {

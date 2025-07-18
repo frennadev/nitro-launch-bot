@@ -2,6 +2,7 @@ import { logger } from "../common/logger";
 import { getAllTradingWallets, getFundingWallet } from "../../backend/functions";
 import { executeExternalBuy } from "./externalBuy";
 import { secretKeyToKeypair } from "../common/utils";
+import { type Context } from "grammy";
 
 interface CTOResult {
   success: boolean;
@@ -87,10 +88,8 @@ export const executeCTOOperation = async (
 
     logger.info(`[CTO] Using ${walletsToUse} wallets that were successfully funded by mixer`);
 
-    // Execute buy transactions with 20ms delay between each buy
-    const buyResults = [];
-    for (let index = 0; index < selectedWallets.length; index++) {
-      const wallet = selectedWallets[index];
+    // Execute buy transactions in parallel
+    const buyPromises = selectedWallets.map(async (wallet, index) => {
       const buyAmountLamports = actualAmountsFromMixer[index];
       const buyAmountSol = buyAmountLamports / 1e9; // Convert lamports to SOL for external buy
       
@@ -102,7 +101,7 @@ export const executeCTOOperation = async (
       
       try {
         const keypair = secretKeyToKeypair(wallet.privateKey);
-        const result = await executeExternalBuy(tokenAddress, keypair, adjustedBuyAmountSol);
+        const result = await executeExternalBuy(tokenAddress, keypair, adjustedBuyAmountSol, 3, 0.001, {} as Context);
         
         if (result.success) {
           logger.info(`[CTO] Buy ${index + 1}/${selectedWallets.length} successful: ${result.signature}`);
@@ -130,7 +129,7 @@ export const executeCTOOperation = async (
             logger.warn(`[CTO] Failed to record transaction for wallet ${wallet.publicKey}:`, recordError);
           }
           
-          buyResults.push({ success: true, signature: result.signature, walletAddress: wallet.publicKey });
+          return { success: true, signature: result.signature, walletAddress: wallet.publicKey };
         } else {
           logger.warn(`[CTO] Buy ${index + 1}/${selectedWallets.length} failed: ${result.error}`);
           
@@ -155,7 +154,7 @@ export const executeCTOOperation = async (
             logger.warn(`[CTO] Failed to record failed transaction for wallet ${wallet.publicKey}:`, recordError);
           }
           
-          buyResults.push({ success: false, error: result.error, walletAddress: wallet.publicKey });
+          return { success: false, error: result.error, walletAddress: wallet.publicKey };
         }
       } catch (error: any) {
         logger.error(`[CTO] Buy ${index + 1}/${selectedWallets.length} error:`, error);
@@ -181,14 +180,12 @@ export const executeCTOOperation = async (
           logger.warn(`[CTO] Failed to record error transaction for wallet ${wallet.publicKey}:`, recordError);
         }
         
-        buyResults.push({ success: false, error: error.message, walletAddress: wallet.publicKey });
+        return { success: false, error: error.message, walletAddress: wallet.publicKey };
       }
-      
-      // Add 20ms delay between buys (except for the last one)
-      if (index < selectedWallets.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 20));
-      }
-    }
+    });
+
+    // Wait for all buy transactions to complete
+    const buyResults = await Promise.all(buyPromises);
 
     // Count successful and failed buys
     const successfulBuys = buyResults.filter(r => r.success).length;

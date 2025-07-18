@@ -149,14 +149,13 @@ export const prepareTokenLaunch = async (
 
   const funderPrivateKey = bs58.encode(funderKeypair.secretKey);
   
-  // Calculate optimal number of wallets needed for this buy amount
-  const optimalWalletCount = calculateOptimalWalletCount(buyAmount, buyKeypairs.length);
-  
-  // Only use the wallets that are actually needed based on buy amount
-  const selectedBuyKeypairs = buyKeypairs.slice(0, optimalWalletCount);
+  // CRITICAL FIX: Only fund the necessary number of buy wallets for the launch amount
+  const { calculateRequiredWallets } = await import("../../backend/functions");
+  const walletsNeeded = calculateRequiredWallets(buyAmount);
+  const selectedBuyKeypairs = buyKeypairs.slice(0, walletsNeeded);
   const destinationAddresses = selectedBuyKeypairs.map(w => w.publicKey.toString());
   
-  logger.info(`[${logIdentifier}]: Wallet allocation - Buy Amount: ${buyAmount} SOL → Using ${optimalWalletCount}/${buyKeypairs.length} wallets (optimized from potential ${buyKeypairs.length})`);
+  logger.info(`[${logIdentifier}]: Wallet allocation - Buy Amount: ${buyAmount} SOL → Using ${walletsNeeded}/${buyKeypairs.length} wallets (optimized from potential ${buyKeypairs.length})`);
   
   // CRITICAL FIX: Log wallet addresses to verify consistency with execution phase
   logger.info(`[${logIdentifier}]: Selected wallet addresses for funding:`, {
@@ -176,7 +175,7 @@ export const prepareTokenLaunch = async (
         $set: { 
           "launchData.buyWalletsOrder": selectedWalletPrivateKeys,
           "launchData.fundedWalletAddresses": destinationAddresses,
-          "launchData.optimalWalletCount": optimalWalletCount
+          "launchData.optimalWalletCount": walletsNeeded
         } 
       },
       { upsert: false }
@@ -186,8 +185,7 @@ export const prepareTokenLaunch = async (
     logger.warn(`[${logIdentifier}]: Failed to store wallet order, execution phase may use different wallets:`, error);
   }
   
-  // Calculate total amount needed: buy amount + fees for each selected wallet
-  // Each wallet needs 0.005 SOL for transaction fees (increased from 0.003 for safety buffer)
+  // Calculate total amount needed: buy amount + fees for each wallet
   const feePerWallet = 0.005;
   const totalFeesNeeded = destinationAddresses.length * feePerWallet;
   const totalAmountToMix = buyAmount + totalFeesNeeded;
