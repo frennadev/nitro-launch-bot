@@ -2235,8 +2235,8 @@ ${balanceLines.join("\n")}
   let supplyPercentageSection = "";
   if (supplyData && supplyData.totalBalance > 0) {
     supplyPercentageSection = `
-📊 <b>Your Supply Ownership:</b> ${supplyData.supplyPercentageFormatted} of total supply
-💰 <b>Total Holdings:</b> ${supplyData.totalBalanceFormatted} tokens across ${supplyData.walletsWithBalance} wallet(s)`;
+📊 Your Supply Ownership: ${supplyData.supplyPercentageFormatted} of total supply
+💰 Total Holdings: ${supplyData.totalBalanceFormatted} tokens across ${supplyData.walletsWithBalance} wallet(s)`;
   }
 
   return `
@@ -2250,7 +2250,7 @@ ${balanceLines.join("\n")}
 ├─ 🏦 Market Cap: <code>${marketCapText}</code>
 ├─ 📈 Volume (24h): <code>${volumeText}</code>
 └─ 💧 Liquidity: <code>${liquidityText}</code>
-${supplyPercentageSection ? `\n📊 <b>Holdings</b>\n${supplyPercentageSection.replace(/📊.*?:\s*/g, "├─ Ownership: ").replace(/💰.*?:\s*/g, "└─ Total: ")}` : ""}${walletsBalanceSection}
+${supplyPercentageSection ? `\n📊 <b>Holdings</b>\n├─ <b>Ownership:</b> ${supplyData.supplyPercentageFormatted} of total supply\n└─ <b>Total:</b> ${supplyData.totalBalanceFormatted} tokens across ${supplyData.walletsWithBalance} wallet(s)` : ""}${walletsBalanceSection}
 🔗 <b>External Links</b>
 ${linksHtml}
 
