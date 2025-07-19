@@ -103,6 +103,7 @@ import { sellPercentageMessage } from "./conversation/sellPercent";
 import { sendErrorWithAutoDelete } from "./utils";
 import { startLoadingState } from "./loading";
 import { TokenInfoService } from "../service/token-info-service";
+import { airdropSolConversation } from "./conversation/airdropSol";
 
 // Platform detection and caching for external tokens
 const platformCache = new Map<
@@ -414,6 +415,7 @@ bot.use(createConversation(buyCustonConversation));
 bot.use(createConversation(sellIndividualToken));
 bot.use(createConversation(sellPercentageMessage));
 bot.use(createConversation(helpConversation));
+bot.use(createConversation(airdropSolConversation));
 
 // Middleware to patch reply/sendMessage and hook deletion
 bot.use(async (ctx, next) => {
@@ -2388,6 +2390,8 @@ bot.on("message:text", async (ctx) => {
               .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
               .text("🔄 Refresh", `refresh_ca_${text}`)
               .row()
+              .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${text}`)
+              .row()
               .text("🏠 Menu", CallBackQueries.BACK),
           });
           
@@ -2954,6 +2958,23 @@ bot.on("callback_query:data", async (ctx) => {
 
         await safeEditMessageReplyMarkup(ctx, sellKb);
         break;
+    }
+  }
+
+  // Handle airdrop SOL callback
+  if (data.startsWith(`${CallBackQueries.AIRDROP_SOL}_`)) {
+    const tokenAddress = data.replace(`${CallBackQueries.AIRDROP_SOL}_`, "");
+    
+    try {
+      // Answer callback query immediately
+      await safeAnswerCallbackQuery(ctx, "🎁 Starting SOL airdrop...");
+      
+      // Enter airdrop conversation
+      await ctx.conversation.enter("airdropSolConversation", tokenAddress);
+      
+    } catch (error: any) {
+      logger.error("Error starting airdrop conversation:", error);
+      await safeAnswerCallbackQuery(ctx, "❌ Error starting airdrop");
     }
   }
 });

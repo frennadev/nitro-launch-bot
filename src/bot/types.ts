@@ -76,4 +76,5 @@ export enum CallBackQueries {
   CTO = "cto",
   PUMPFUN = "pumpfun",
   LETSBONK = "letsbonk",
+  AIRDROP_SOL = "airdrop_sol",
 }
