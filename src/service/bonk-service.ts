@@ -34,6 +34,7 @@ import { getCpmmPoolState } from "../backend/get-cpmm-poolinfo.ts";
 import RaydiumCpmmService from "./raydium-cpmm-service.ts";
 import { detectTokenPlatform } from "./token-detection-service.ts";
 import { collectTransactionFee } from "../backend/functions-main.ts";
+import { getBonkPoolStateFast } from "./bonk-pool-service.ts";
 
 export interface CreateBuyIX {
   pool: any;
@@ -696,7 +697,7 @@ export default class BonkService {
     }
 
     const poolDiscoveryStart = Date.now();
-    const poolState = await getBonkPoolState(mint.toBase58());
+    const poolState = await getBonkPoolStateFast(mint.toBase58());
     const poolDiscoveryTime = Date.now() - poolDiscoveryStart;
 
     if (!poolState) {
@@ -730,7 +731,7 @@ export default class BonkService {
 
     // 🔥 OPTIMIZED: Check if pool is pre-cached
     const poolDiscoveryStart = Date.now();
-    const poolState = await getBonkPoolState(mint.toBase58());
+    const poolState = await getBonkPoolStateFast(mint.toBase58()); // 🔥 NEW: Use fast PDA derivation
     const poolDiscoveryTime = Date.now() - poolDiscoveryStart;
 
     if (!poolState) {

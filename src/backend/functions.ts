@@ -4242,18 +4242,25 @@ export const launchBonkToken = async (
     logger.info(`[${logId}]: Starting execution phase (token creation + buys)`);
 
     // 2.1 Create the Bonk token on-chain
-    const { launchBonkToken: launchBonkTokenFunction } = await import(
+    const { launchBonkToken: launchBonkTokenFunction, launchBonkTokenWithDevBuy } = await import(
       "../blockchain/letsbonk/integrated-token-creator"
     );
     
-    // MODIFIED: Launch token WITHOUT dev buy (we'll handle dev buy separately for prioritization)
-    const result = await launchBonkTokenFunction(tokenAddress, userId, 0); // No dev buy here
+    // NEW: Use combined approach if dev buy is requested (PumpFun-style)
+    let result;
+    if (devBuy > 0) {
+      logger.info(`[${logId}]: Using combined token creation + dev buy approach (PumpFun-style)`);
+      result = await launchBonkTokenWithDevBuy(tokenAddress, userId, devBuy);
+    } else {
+      logger.info(`[${logId}]: Using separate token creation approach`);
+      result = await launchBonkTokenFunction(tokenAddress, userId, 0); // No dev buy here
+    }
     
     if (!result.success) {
-      logger.error(`[${logId}]: Token creation failed: ${result.error}`);
+      logger.error(`[${logId}]: Token creation failed`);
       return {
         success: false,
-        error: `Token creation failed: ${result.error}`,
+        error: `Token creation failed`,
       };
     }
     
@@ -4261,7 +4268,7 @@ export const launchBonkToken = async (
     
     // 2.2 PRIORITIZED DEV BUY (immediate execution, no confirmation wait)
     let devBuySignature: string | undefined;
-    if (devBuy > 0) {
+    if (devBuy > 0 && result.transactionType !== "combined") {
       logger.info(`[${logId}]: 🚀 PRIORITY DEV BUY - Executing immediately after token creation`);
       
       try {
@@ -4273,6 +4280,7 @@ export const launchBonkToken = async (
           ComputeBudgetProgram,
           PublicKey,
           SystemProgram,
+          Keypair,
         } = await import("@solana/web3.js");
         const {
           getAssociatedTokenAddressSync,
@@ -4282,10 +4290,11 @@ export const launchBonkToken = async (
         } = await import("@solana/spl-token");
         const { getBonkPoolState } = await import("../service/bonk-pool-service");
         const { getDevWallet } = await import("../backend/functions");
+        const bs58 = await import("bs58");
         
         // Get dev wallet
         const devWalletPrivateKey = await getDevWallet(userId);
-        const wallet = Keypair.fromSecretKey(bs58.decode(devWalletPrivateKey.wallet));
+        const wallet = Keypair.fromSecretKey(bs58.default.decode(devWalletPrivateKey.wallet));
         
         logger.info(`[${logId}]: Dev wallet for priority buy: ${wallet.publicKey.toString()}`);
         

@@ -1,8 +1,8 @@
-import fs from "fs";
-import path from "path";
+import * as fs from "fs";
+import * as path from "path";
 import axios from "axios";
-import FormData from "form-data";
-import readline from "readline";
+import * as FormData from "form-data";
+import * as readline from "readline";
 
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
@@ -709,6 +709,289 @@ async function createMaestroBonkBuyInstructions({
   instructions.push(maestroFeeTransferIx);
   
   return instructions;
+}
+
+// Helper function to derive Bonk pool PDA (same as token creation)
+export const findBonkPoolPDA = (tokenMint: PublicKey) => {
+  const [poolPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from([112, 111, 111, 108]), tokenMint.toBuffer(), WSOL_MINT.toBuffer()],
+    RAYDIUM_LAUNCH_LAB_PROGRAM_ID
+  );
+  return poolPDA;
+};
+
+// Helper function to derive Bonk pool vault PDAs (same as token creation)
+export const findBonkPoolVaultPDAs = (tokenMint: PublicKey) => {
+  const poolPDA = findBonkPoolPDA(tokenMint);
+  
+  const [baseVaultPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]), poolPDA.toBuffer(), tokenMint.toBuffer()],
+    RAYDIUM_LAUNCH_LAB_PROGRAM_ID
+  );
+  
+  const [quoteVaultPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]), poolPDA.toBuffer(), WSOL_MINT.toBuffer()],
+    RAYDIUM_LAUNCH_LAB_PROGRAM_ID
+  );
+  
+  return {
+    poolPDA,
+    baseVaultPDA,
+    quoteVaultPDA
+  };
+};
+
+// New function: Combined token creation + dev buy (PumpFun-style approach)
+export async function launchBonkTokenWithDevBuy(
+  tokenAddress: string,
+  userId: string,
+  devBuy: number = 0
+) {
+  try {
+    console.log("=== Bonk Token Launch with Dev Buy (Combined Transaction) ===");
+    console.log("===========================================================");
+
+    // Import required modules
+    const { TokenModel } = await import("../../backend/models");
+    const { decryptPrivateKey } = await import("../../backend/utils");
+    const { getDevWallet } = await import("../../backend/functions");
+    const { getBonkPoolStateFast } = await import("../../service/bonk-pool-service");
+
+    // Get token from database
+    const token = await TokenModel.findOne({ 
+      tokenAddress, 
+      user: userId 
+    });
+
+    if (!token) {
+      throw new Error("Token not found in database");
+    }
+
+    console.log(`Launching token: ${token.name} (${token.symbol})`);
+    console.log(`Token address: ${tokenAddress}`);
+    console.log(`Dev buy amount: ${devBuy} SOL`);
+
+    // Get dev wallet for funding
+    console.log("\nLoading wallet for funding...");
+    const devWalletPrivateKey = await getDevWallet(userId);
+    const wallet = Keypair.fromSecretKey(bs58.decode(devWalletPrivateKey.wallet));
+
+    console.log(`Using wallet address for funding: ${wallet.publicKey.toString()}`);
+
+    // Decrypt token private key
+    const tokenPrivateKey = decryptPrivateKey(token.tokenPrivateKey);
+    const tokenKeypair = Keypair.fromSecretKey(bs58.decode(tokenPrivateKey));
+
+    console.log("\nStep 1: Creating combined token creation + dev buy transaction...");
+
+    // Create mint params
+    const mintParams: MintParams = {
+      decimals: 6,
+      name: token.name,
+      symbol: token.symbol,
+      uri: token.tokenMetadataUrl,
+    };
+
+    const curveParams: CurveParams = {
+      type: 0, // constant curve
+      supply: BigInt(1_000_000_000_000_000),
+      totalBaseSell: BigInt(793_100_000_000_000),
+      totalQuoteFundRaising: BigInt(85_000_000_000),
+      migrateType: 1,
+    };
+
+    const vestingParams: VestingParams = {
+      totalLockedAmount: BigInt(0),
+      cliffPeriod: BigInt(0),
+      unlockPeriod: BigInt(0),
+    };
+
+    // Create the main token creation instruction
+    const tokenCreationIx = createTokenInstruction(wallet, tokenKeypair, mintParams, curveParams, vestingParams);
+
+    // Initialize instructions array with token creation
+    const allInstructions: TransactionInstruction[] = [tokenCreationIx];
+
+    // If dev buy is requested, add dev buy instructions
+    if (devBuy > 0) {
+      console.log(`\nStep 2: Adding dev buy instructions (${devBuy} SOL)...`);
+      
+      // Import required modules for dev buy
+      const {
+        getAssociatedTokenAddressSync,
+        createAssociatedTokenAccountIdempotentInstruction,
+        NATIVE_MINT,
+        createSyncNativeInstruction,
+      } = await import("@solana/spl-token");
+      const { SystemProgram, ComputeBudgetProgram } = await import("@solana/web3.js");
+
+      // Create WSOL and token ATAs for dev wallet
+      const devWsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, wallet.publicKey);
+      const devTokenAta = getAssociatedTokenAddressSync(new PublicKey(tokenAddress), wallet.publicKey);
+
+      // Create ATA instructions
+      const devWsolAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+        wallet.publicKey,
+        devWsolAta,
+        wallet.publicKey,
+        NATIVE_MINT
+      );
+      const devTokenAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+        wallet.publicKey,
+        devTokenAta,
+        wallet.publicKey,
+        new PublicKey(tokenAddress)
+      );
+
+      // Convert dev buy amount to lamports
+      const devBuyLamports = BigInt(Math.ceil(devBuy * 1_000_000_000));
+
+      // Transfer SOL to WSOL account
+      const transferSolIx = SystemProgram.transfer({
+        fromPubkey: wallet.publicKey,
+        toPubkey: devWsolAta,
+        lamports: Number(devBuyLamports),
+      });
+
+      // Sync native instruction to convert SOL to WSOL
+      const syncNativeIx = createSyncNativeInstruction(devWsolAta);
+
+      // Add priority fee instruction for dev buy
+      const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: 5_000_000, // High priority for dev buy
+      });
+
+      // Create the actual Bonk buy instruction
+      const poolPDA = findBonkPoolPDA(new PublicKey(tokenAddress));
+      const vaultPDAs = findBonkPoolVaultPDAs(new PublicKey(tokenAddress));
+      
+      const devBuyIx = await createBonkBuyInstruction({
+        pool: {
+          poolId: poolPDA,
+          baseMint: new PublicKey(tokenAddress),
+          quoteMint: WSOL_MINT,
+          poolBaseTokenAccount: vaultPDAs.baseVaultPDA,
+          poolQuoteTokenAccount: vaultPDAs.quoteVaultPDA,
+        },
+        payer: wallet.publicKey,
+        userBaseAta: devTokenAta,
+        userQuoteAta: devWsolAta,
+        amount_in: devBuyLamports,
+        minimum_amount_out: BigInt(1), // Minimum 1 token
+      });
+
+      // Add all dev buy instructions
+      allInstructions.push(
+        addPriorityFee,
+        devWsolAtaIx,
+        devTokenAtaIx,
+        transferSolIx,
+        syncNativeIx,
+        devBuyIx
+      );
+
+      console.log("Dev buy instructions added to transaction");
+    }
+
+    // Get fresh blockhash
+    const connection = new Connection(env.UTILS_HELIUS_RPC, "confirmed");
+    const blockHash = await connection.getLatestBlockhash("finalized");
+    console.log("Got fresh blockhash, creating combined transaction...");
+
+    // Create the combined transaction
+    const tx = new VersionedTransaction(
+      new TransactionMessage({
+        payerKey: wallet.publicKey,
+        recentBlockhash: blockHash.blockhash,
+        instructions: allInstructions,
+      }).compileToV0Message()
+    );
+
+    // Sign transaction with both wallets
+    tx.sign([wallet, tokenKeypair]);
+
+    console.log("Sending combined transaction to network...");
+
+    try {
+      // Send the transaction
+      const signature = await connection.sendTransaction(tx, {
+        skipPreflight: false,
+        preflightCommitment: "confirmed",
+        maxRetries: 5,
+      });
+
+      console.log("\n=== BONK TOKEN LAUNCH WITH DEV BUY COMPLETE ===");
+      console.log(`Transaction signature: ${signature}`);
+      console.log(`Token address: ${tokenAddress}`);
+      console.log(`Token name: ${token.name}`);
+      console.log(`Token symbol: ${token.symbol}`);
+      console.log(`Metadata URI: ${token.tokenMetadataUrl}`);
+      console.log(`Dev buy: ${devBuy > 0 ? `${devBuy} SOL ✅` : 'Skipped'}`);
+
+      // Record the combined transaction
+      const { recordTransaction } = await import("../../backend/functions");
+      await recordTransaction(
+        tokenAddress,
+        wallet.publicKey.toString(),
+        "token_creation",
+        signature,
+        true,
+        token.launchData?.launchAttempt || 1,
+        {
+          amountSol: devBuy,
+          errorMessage: undefined,
+        }
+      );
+
+      // Update token state to launched
+      await TokenModel.updateOne(
+        { _id: token._id },
+        { 
+          state: "LAUNCHED",
+          "launchData.launchAttempt": (token.launchData?.launchAttempt || 0) + 1
+        }
+      );
+
+      console.log("\n=== BONK COMBINED LAUNCH PROCESS COMPLETE ===");
+      console.log(`Token creation: ✅ Success`);
+      console.log(`Dev buy: ${devBuy > 0 ? '✅ Success (same transaction)' : '⏭️ Skipped'}`);
+      console.log(`Token state: LAUNCHED`);
+      console.log(`Transaction type: Combined (PumpFun-style)`);
+
+      return {
+        success: true,
+        signature: signature,
+        tokenName: token.name,
+        tokenSymbol: token.symbol,
+        devBuyAmount: devBuy,
+        transactionType: "combined"
+      };
+
+    } catch (error: any) {
+      console.error("❌ Combined token creation + dev buy failed:", error.message);
+      
+      // Record the failed transaction
+      const { recordTransaction } = await import("../../backend/functions");
+      await recordTransaction(
+        tokenAddress,
+        wallet.publicKey.toString(),
+        "token_creation",
+        "FAILED",
+        false,
+        token.launchData?.launchAttempt || 1,
+        {
+          amountSol: devBuy,
+          errorMessage: error.message,
+        }
+      );
+
+      throw error;
+    }
+
+  } catch (error: any) {
+    console.error("❌ Bonk combined token launch failed:", error.message);
+    throw error;
+  }
 }
 
 // // Execute the token creation process

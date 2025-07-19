@@ -293,7 +293,114 @@ export function getPoolCacheStats() {
     knownPoolsSize: KNOWN_POOLS.size,
     cacheDuration: CACHE_DURATION,
   };
-} 
+}
+
+// 🔥 NEW: Fast pool discovery using PDA derivation (same as PumpFun)
+export const getBonkPoolStateFast = async (
+  tokenMint: string
+): Promise<PoolState | null> => {
+  const logId = `bonk-pool-fast-${tokenMint.substring(0, 8)}`;
+  logger.info(`[${logId}]: 🚀 Fast pool discovery using PDA derivation for mint: ${tokenMint}`);
+
+  try {
+    // 🔥 OPTIMIZED: Check pre-cached known pools first (instant)
+    const knownPool = KNOWN_POOLS.get(tokenMint);
+    if (knownPool) {
+      logger.info(`[${logId}]: ✅ Using pre-cached pool ID: ${knownPool.poolId}`);
+      try {
+        const poolAccount = await connection.getAccountInfo(
+          new PublicKey(knownPool.poolId)
+        );
+        if (poolAccount) {
+          const poolInfo = POOL_STATE_LAYOUT.decode(poolAccount.data as Buffer);
+          const result = {
+            ...poolInfo,
+            poolId: new PublicKey(knownPool.poolId),
+          };
+
+          // Cache the result for future use
+          poolCache.set(tokenMint, { pool: result, timestamp: Date.now() });
+          logger.info(`[${logId}]: ✅ Pool found via pre-cache in <1ms!`);
+          return result;
+        }
+      } catch (error) {
+        logger.warn(`[${logId}]: ⚠️ Pre-cached pool not found, falling back to PDA derivation...`);
+      }
+    }
+
+    // 🔥 OPTIMIZED: Check cache before PDA derivation
+    const cached = poolCache.get(tokenMint);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      logger.info(`[${logId}]: ✅ Using cached pool data in <1ms!`);
+      return cached.pool;
+    }
+
+    // 🔥 NEW: Try PDA derivation first (deterministic, no RPC search needed)
+    logger.info(`[${logId}]: 🔍 Deriving pool PDA for token ${tokenMint}...`);
+    
+    try {
+      // Import PDA derivation functions
+      const { findBonkPoolPDA, findBonkPoolVaultPDAs } = await import("../blockchain/letsbonk/integrated-token-creator");
+      const { PublicKey } = await import("@solana/web3.js");
+      
+      const mintPk = new PublicKey(tokenMint);
+      const poolPDA = findBonkPoolPDA(mintPk);
+      const { baseVaultPDA, quoteVaultPDA } = findBonkPoolVaultPDAs(mintPk);
+      
+      logger.info(`[${logId}]: 📍 Derived pool PDA: ${poolPDA.toBase58()}`);
+      logger.info(`[${logId}]: 📍 Derived base vault PDA: ${baseVaultPDA.toBase58()}`);
+      logger.info(`[${logId}]: 📍 Derived quote vault PDA: ${quoteVaultPDA.toBase58()}`);
+      
+      // Try to fetch pool data from derived PDA
+      const poolAccount = await connection.getAccountInfo(poolPDA, "processed");
+      
+      if (poolAccount && poolAccount.data.length === 429) {
+        const poolInfo = POOL_STATE_LAYOUT.decode(poolAccount.data as Buffer);
+        
+        // Verify this is the correct pool for our token
+        if (poolInfo.baseMint.toBase58() === tokenMint || poolInfo.quoteMint.toBase58() === tokenMint) {
+          const result = {
+            ...poolInfo,
+            poolId: poolPDA,
+          };
+
+          // 🔥 OPTIMIZED: Cache the result for future use
+          poolCache.set(tokenMint, { pool: result, timestamp: Date.now() });
+
+          // 🔥 OPTIMIZED: Add to known pools for instant access next time
+          KNOWN_POOLS.set(tokenMint, {
+            poolId: poolPDA.toBase58(),
+            lastUpdated: Date.now(),
+          });
+
+          logger.info(`[${logId}]: ✅ Pool found via PDA derivation in ~50ms!`);
+          logger.info(`[${logId}]:    Pool ID: ${poolPDA.toBase58()}`);
+          logger.info(`[${logId}]:    Base Mint: ${poolInfo.baseMint.toBase58()}`);
+          logger.info(`[${logId}]:    Quote Mint: ${poolInfo.quoteMint.toBase58()}`);
+          
+          return result;
+        } else {
+          logger.warn(`[${logId}]: ⚠️ PDA-derived pool doesn't match token mint`);
+        }
+      } else {
+        logger.info(`[${logId}]: ℹ️ Pool account not found at derived PDA (pool may not exist yet)`);
+      }
+    } catch (pdaError: any) {
+      logger.warn(`[${logId}]: ⚠️ PDA derivation failed: ${pdaError.message}`);
+    }
+
+    // 🔥 FALLBACK: Use existing RPC search method (slower but reliable)
+    logger.info(`[${logId}]: 🔄 Falling back to RPC search method...`);
+    return await getBonkPoolState(tokenMint);
+
+  } catch (error: any) {
+    logger.error(`[${logId}]: ❌ Fast pool discovery failed: ${error.message}`);
+    
+    // Final fallback to original method
+    logger.info(`[${logId}]: 🔄 Final fallback to original RPC search...`);
+    return await getBonkPoolState(tokenMint);
+  }
+};
 
 // === QUICK TEST SCRIPT ===
 // Note: This test script is disabled for ES module compatibility
