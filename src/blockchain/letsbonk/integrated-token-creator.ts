@@ -865,13 +865,21 @@ export async function launchBonkTokenWithDevBuy(
       const poolPDA = findBonkPoolPDA(new PublicKey(tokenAddress));
       const vaultPDAs = findBonkPoolVaultPDAs(new PublicKey(tokenAddress));
       
+      console.log("Creating Bonk buy instruction with pool data:", {
+        poolId: poolPDA.toString(),
+        baseMint: tokenAddress,
+        quoteMint: WSOL_MINT.toString(),
+        baseVault: vaultPDAs.baseVaultPDA.toString(),
+        quoteVault: vaultPDAs.quoteVaultPDA.toString(),
+      });
+      
       const devBuyIx = await createBonkBuyInstruction({
         pool: {
           poolId: poolPDA,
           baseMint: new PublicKey(tokenAddress),
           quoteMint: WSOL_MINT,
-          poolBaseTokenAccount: vaultPDAs.baseVaultPDA,
-          poolQuoteTokenAccount: vaultPDAs.quoteVaultPDA,
+          baseVault: vaultPDAs.baseVaultPDA,
+          quoteVault: vaultPDAs.quoteVaultPDA,
         },
         payer: wallet.publicKey,
         userBaseAta: devTokenAta,
