@@ -507,168 +507,6 @@ export async function launchBonkToken(
       console.log(`Token symbol: ${token.symbol}`);
       console.log(`Metadata URI: ${token.tokenMetadataUrl}`);
 
-      // Step 2: Execute dev buy if specified (immediately after token creation, no delay)
-      let devBuySignature: string | undefined;
-      if (devBuy > 0) {
-        console.log(`\nStep 2: Executing dev buy of ${devBuy} SOL (immediate execution)...`);
-        
-        try {
-          // Import required modules for dev buy
-          const { VersionedTransaction, TransactionMessage, ComputeBudgetProgram, PublicKey, SystemProgram } = await import("@solana/web3.js");
-          const { getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, NATIVE_MINT, createSyncNativeInstruction, TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
-          const { getBonkPoolState } = await import("../../service/bonk-pool-service");
-          
-          // Get Bonk pool state for this token (with retry logic for immediate execution)
-          let poolState = null;
-          let retries = 0;
-          const maxRetries = 5;
-          
-          while (!poolState && retries < maxRetries) {
-            try {
-              poolState = await getBonkPoolState(tokenAddress);
-              if (poolState) {
-                console.log(`Found Bonk pool: ${poolState.poolId.toString()}`);
-                break;
-              }
-            } catch (error) {
-              console.log(`Pool not found yet, retry ${retries + 1}/${maxRetries}...`);
-            }
-            
-            if (!poolState && retries < maxRetries - 1) {
-              // Short delay between retries for immediate execution
-              await new Promise(resolve => setTimeout(resolve, 500));
-            }
-            retries++;
-          }
-          
-          if (!poolState) {
-            throw new Error(`No Bonk pool found for token ${tokenAddress} after ${maxRetries} retries`);
-          }
-          
-          // Create WSOL and token ATAs for dev wallet
-          const devWsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, wallet.publicKey);
-          const devTokenAta = getAssociatedTokenAddressSync(new PublicKey(tokenAddress), wallet.publicKey);
-          
-          // Create ATA instructions
-          const devWsolAtaIx = createAssociatedTokenAccountIdempotentInstruction(
-            wallet.publicKey,
-            devWsolAta,
-            wallet.publicKey,
-            NATIVE_MINT
-          );
-          const devTokenAtaIx = createAssociatedTokenAccountIdempotentInstruction(
-            wallet.publicKey,
-            devTokenAta,
-            wallet.publicKey,
-            new PublicKey(tokenAddress)
-          );
-          
-          // Convert dev buy amount to lamports
-          const devBuyLamports = BigInt(Math.ceil(devBuy * 1_000_000_000));
-          
-          // Transfer SOL to WSOL account
-          const transferSolIx = SystemProgram.transfer({
-            fromPubkey: wallet.publicKey,
-            toPubkey: devWsolAta,
-            lamports: Number(devBuyLamports),
-          });
-          
-          // Sync native instruction to convert SOL to WSOL
-          const syncNativeIx = createSyncNativeInstruction(devWsolAta);
-          
-          // Create Maestro-style Bonk buy instructions for dev wallet (includes fee transfer)
-          const devBuyInstructions = await createMaestroBonkBuyInstructions({
-            pool: poolState,
-            payer: wallet.publicKey,
-            userBaseAta: devTokenAta,
-            userQuoteAta: devWsolAta,
-            amount_in: devBuyLamports,
-            minimum_amount_out: BigInt(1), // Minimum 1 token
-            maestroFeeAmount: BigInt(1000000), // 0.001 SOL Maestro fee
-          });
-          
-          // Add priority fee instruction
-          const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
-            microLamports: 2_000_000, // High priority for dev buy
-          });
-          
-          // Get fresh blockhash for dev buy
-          const devBuyBlockHash = await connection.getLatestBlockhash("processed");
-          
-          // Create dev buy transaction
-          const devBuyTx = new VersionedTransaction(
-            new TransactionMessage({
-              instructions: [
-                addPriorityFee,
-                devWsolAtaIx,
-                devTokenAtaIx,
-                transferSolIx,
-                syncNativeIx,
-                ...devBuyInstructions // Spread the Maestro instructions
-              ],
-              payerKey: wallet.publicKey,
-              recentBlockhash: devBuyBlockHash.blockhash,
-            }).compileToV0Message(),
-          );
-          devBuyTx.sign([wallet]);
-          
-          // Send dev buy transaction
-          devBuySignature = await connection.sendTransaction(devBuyTx, {
-            skipPreflight: false,
-            preflightCommitment: "processed",
-            maxRetries: 3
-          });
-          
-          // Wait for confirmation
-          const confirmation = await connection.confirmTransaction({
-            signature: devBuySignature,
-            blockhash: devBuyBlockHash.blockhash,
-            lastValidBlockHeight: devBuyBlockHash.lastValidBlockHeight
-          }, "processed");
-          
-          if (confirmation.value.err) {
-            throw new Error(`Dev buy transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-          }
-          
-          console.log(`✅ Dev buy successful! Signature: ${devBuySignature}`);
-          console.log(`Dev wallet bought tokens with ${devBuy} SOL`);
-          
-          // Record the dev buy transaction
-          const { recordTransaction } = await import("../../backend/functions");
-          await recordTransaction(
-            tokenAddress,
-            wallet.publicKey.toString(),
-            "dev_buy",
-            devBuySignature,
-            true,
-            token.launchData?.launchAttempt || 1,
-            {
-              amountSol: devBuy,
-              errorMessage: undefined,
-            }
-          );
-          
-        } catch (devBuyError: any) {
-          console.error(`❌ Dev buy failed: ${devBuyError.message}`);
-          console.log("Continuing with launch process...");
-          
-          // Record the failed dev buy transaction
-          const { recordTransaction } = await import("../../backend/functions");
-          await recordTransaction(
-            tokenAddress,
-            wallet.publicKey.toString(),
-            "dev_buy",
-            "FAILED",
-            false,
-            token.launchData?.launchAttempt || 1,
-            {
-              amountSol: devBuy,
-              errorMessage: devBuyError.message,
-            }
-          );
-        }
-      }
-
       // Record the token creation transaction
       const { recordTransaction } = await import("../../backend/functions");
       await recordTransaction(
@@ -693,30 +531,14 @@ export async function launchBonkToken(
         }
       );
 
-      console.log("\n=== BONK TOKEN LAUNCH PROCESS COMPLETE ===");
+      console.log("\n=== BONK TOKEN CREATION PROCESS COMPLETE ===");
       console.log(`Token creation: ✅ Success`);
-      console.log(`Dev buy: ${devBuy > 0 ? (devBuySignature ? '✅ Success' : '❌ Failed') : '⏭️ Skipped'}`);
       console.log(`Token state: LAUNCHED`);
-
-      // Send success notification to user
-      try {
-        const { sendBonkLaunchSuccessNotification } = await import("../../bot/message");
-        await sendBonkLaunchSuccessNotification(
-          parseInt(userId), // Convert to number for Telegram chat ID
-          tokenAddress,
-          token.name,
-          token.symbol
-        );
-        console.log("✅ Success notification sent to user");
-      } catch (notificationError) {
-        console.error("❌ Failed to send success notification:", notificationError);
-        // Don't fail the launch if notification fails
-      }
+      console.log(`Dev buy: ⏭️ Handled separately for prioritization`);
 
       return {
         success: true,
         signature: signature,
-        devBuySignature: devBuySignature,
         tokenName: token.name,
         tokenSymbol: token.symbol,
       };
