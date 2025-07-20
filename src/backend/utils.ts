@@ -721,16 +721,16 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
     // Calculate price: SOL per token
     const priceInSol = virtualSolReserves / virtualTokenReserves;
 
-    // Estimate SOL price (this could be fetched from an API for more accuracy)
-    const estimatedSolPrice = 240; // USD, could be made dynamic
-    const priceUsd = priceInSol * estimatedSolPrice;
+    // Get current SOL price from API
+    const currentSolPrice = await getCurrentSolPrice();
+    const priceUsd = priceInSol * currentSolPrice;
 
     // Calculate market cap: circulating supply * price
     const circulatingSupply = tokenTotalSupply - realTokenReserves; // Tokens that have been bought
     const marketCap = circulatingSupply * priceUsd;
 
     // Calculate liquidity (total SOL in the curve)
-    const liquidityUsd = virtualSolReserves * estimatedSolPrice;
+    const liquidityUsd = virtualSolReserves * currentSolPrice;
 
     // Calculate bonding curve progress (percentage of tokens sold)
     const bondingCurveProgress = ((tokenTotalSupply - realTokenReserves) / tokenTotalSupply) * 100;
@@ -1125,3 +1125,48 @@ export async function archiveAddress(
     return false;
   }
 }
+
+/**
+ * Get current SOL price from CoinGecko API
+ */
+export const getCurrentSolPrice = async (): Promise<number> => {
+  try {
+    const response = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd', {
+      timeout: 5000,
+    });
+    
+    const price = response.data?.solana?.usd;
+    if (price && price > 0) {
+      console.log(`[getCurrentSolPrice] Current SOL price: $${price}`);
+      return price;
+    }
+    
+    throw new Error('Invalid price data from CoinGecko');
+  } catch (error: any) {
+    console.warn(`[getCurrentSolPrice] Failed to fetch SOL price from CoinGecko: ${error.message}`);
+    
+    // Fallback to Birdeye API
+    try {
+      const birdeyeResponse = await axios.get('https://public-api.birdeye.so/defi/token_overview?address=So11111111111111111111111111111111111111112', {
+        headers: {
+          accept: "application/json",
+          "x-chain": "solana",
+          "X-API-KEY": "e750e17792ae478983170f78486de13c",
+        },
+        timeout: 5000,
+      });
+      
+      const price = birdeyeResponse.data?.data?.price;
+      if (price && price > 0) {
+        console.log(`[getCurrentSolPrice] Current SOL price (Birdeye fallback): $${price}`);
+        return price;
+      }
+    } catch (birdeyeError: any) {
+      console.warn(`[getCurrentSolPrice] Birdeye fallback also failed: ${birdeyeError.message}`);
+    }
+    
+    // Final fallback to a reasonable estimate
+    console.warn(`[getCurrentSolPrice] Using fallback SOL price: $182`);
+    return 182; // Conservative fallback
+  }
+};

@@ -65,6 +65,76 @@ async function waitForInputOrCancel(
   return input;
 }
 
+// Add market cap calculation function after the imports
+async function calculateExpectedMarketCap(buyAmount: number, isBonkToken: boolean): Promise<string> {
+  // Get current SOL price from API
+  const { getCurrentSolPrice } = await import("../../backend/utils");
+  const currentSolPrice = await getCurrentSolPrice();
+  
+  // Bonding curve constants (in SOL)
+  const STARTING_MC_SOL = 30; // Starting market cap is 30 SOL
+  const FINAL_MC_SOL = 85; // Final market cap is 85 SOL (bonding curve completion)
+  
+  // Non-linear bonding curve progression based on SOL amounts
+  const pumpfunProgression = [
+    { buyAmount: 0, marketCapSol: 30 },
+    { buyAmount: 10, marketCapSol: 44 },
+    { buyAmount: 20, marketCapSol: 66 },
+    { buyAmount: 30, marketCapSol: 93 },
+    { buyAmount: 40, marketCapSol: 126 },
+    { buyAmount: 50, marketCapSol: 165 },
+    { buyAmount: 60, marketCapSol: 209 },
+    { buyAmount: 70, marketCapSol: 264 },
+    { buyAmount: 85, marketCapSol: 385 }
+  ];
+  
+  const bonkProgression = [
+    { buyAmount: 0, marketCapSol: 30 },
+    { buyAmount: 10, marketCapSol: 41 },
+    { buyAmount: 20, marketCapSol: 60 },
+    { buyAmount: 30, marketCapSol: 82 },
+    { buyAmount: 40, marketCapSol: 110 },
+    { buyAmount: 50, marketCapSol: 143 },
+    { buyAmount: 60, marketCapSol: 181 },
+    { buyAmount: 70, marketCapSol: 231 },
+    { buyAmount: 85, marketCapSol: 385 }
+  ];
+  
+  // Use appropriate progression based on platform
+  const progression = isBonkToken ? bonkProgression : pumpfunProgression;
+  
+  // Find the expected market cap in SOL using interpolation
+  let expectedMarketCapSol = 30; // Default starting value (30 SOL)
+  
+  for (let i = 0; i < progression.length - 1; i++) {
+    const current = progression[i];
+    const next = progression[i + 1];
+    
+    if (buyAmount >= current.buyAmount && buyAmount <= next.buyAmount) {
+      // Linear interpolation between two points
+      const ratio = (buyAmount - current.buyAmount) / (next.buyAmount - current.buyAmount);
+      expectedMarketCapSol = current.marketCapSol + ratio * (next.marketCapSol - current.marketCapSol);
+      break;
+    } else if (buyAmount > next.buyAmount) {
+      // If buy amount exceeds the range, use the last known value
+      expectedMarketCapSol = next.marketCapSol;
+    }
+  }
+  
+  // Convert SOL market cap to USD using current SOL price
+  const expectedMarketCapUsd = expectedMarketCapSol * currentSolPrice;
+  
+  // Round to nearest $100
+  const roundedMC = Math.round(expectedMarketCapUsd / 100) * 100;
+  
+  // Format the display
+  if (roundedMC >= 1000) {
+    return `${(roundedMC / 1000).toFixed(1)}K`;
+  } else {
+    return `${roundedMC}`;
+  }
+}
+
 const launchTokenConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
   await safeAnswerCallbackQuery(ctx);
   // --------- VALIDATE USER ---------
@@ -519,9 +589,12 @@ Please enter a smaller buy amount:`,
     }
 
     // -------- GET DEV BUY AMOUNT --------
+    const expectedMarketCap = await calculateExpectedMarketCap(buyAmount, isBonkToken);
     await sendMessage(
       ctx,
-      `💎 Enter SOL amount for dev to buy (0 to skip, recommended: 10-20% of buy amount = ${(buyAmount * 0.15).toFixed(3)} SOL):`,
+      `BUY AMOUNT: ${buyAmount}SOL
+EXPECTED MARKET CAP: ${expectedMarketCap}
+💎 Enter SOL amount for dev to buy (0 to skip, recommended: 10-20% of buy amount = ${(buyAmount * 0.15).toFixed(3)} SOL):`,
       { reply_markup: cancelKeyboard }
     );
 

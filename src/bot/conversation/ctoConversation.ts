@@ -7,6 +7,76 @@ import { logger } from "../../blockchain/common/logger";
 import { CallBackQueries } from "../types";
 import { safeEditMessageText, sendErrorWithAutoDelete } from "../utils";
 
+// Market cap calculation function for CTO operations
+async function calculateExpectedMarketCap(buyAmount: number, isBonkToken: boolean): Promise<string> {
+  // Get current SOL price from API
+  const { getCurrentSolPrice } = await import("../../backend/utils");
+  const currentSolPrice = await getCurrentSolPrice();
+  
+  // Bonding curve constants (in SOL)
+  const STARTING_MC_SOL = 30; // Starting market cap is 30 SOL
+  const FINAL_MC_SOL = 85; // Final market cap is 85 SOL (bonding curve completion)
+  
+  // Non-linear bonding curve progression based on SOL amounts
+  const pumpfunProgression = [
+    { buyAmount: 0, marketCapSol: 30 },
+    { buyAmount: 10, marketCapSol: 44 },
+    { buyAmount: 20, marketCapSol: 66 },
+    { buyAmount: 30, marketCapSol: 93 },
+    { buyAmount: 40, marketCapSol: 126 },
+    { buyAmount: 50, marketCapSol: 165 },
+    { buyAmount: 60, marketCapSol: 209 },
+    { buyAmount: 70, marketCapSol: 264 },
+    { buyAmount: 85, marketCapSol: 385 }
+  ];
+  
+  const bonkProgression = [
+    { buyAmount: 0, marketCapSol: 30 },
+    { buyAmount: 10, marketCapSol: 41 },
+    { buyAmount: 20, marketCapSol: 60 },
+    { buyAmount: 30, marketCapSol: 82 },
+    { buyAmount: 40, marketCapSol: 110 },
+    { buyAmount: 50, marketCapSol: 143 },
+    { buyAmount: 60, marketCapSol: 181 },
+    { buyAmount: 70, marketCapSol: 231 },
+    { buyAmount: 85, marketCapSol: 385 }
+  ];
+  
+  // Use appropriate progression based on platform
+  const progression = isBonkToken ? bonkProgression : pumpfunProgression;
+  
+  // Find the expected market cap in SOL using interpolation
+  let expectedMarketCapSol = 30; // Default starting value (30 SOL)
+  
+  for (let i = 0; i < progression.length - 1; i++) {
+    const current = progression[i];
+    const next = progression[i + 1];
+    
+    if (buyAmount >= current.buyAmount && buyAmount <= next.buyAmount) {
+      // Linear interpolation between two points
+      const ratio = (buyAmount - current.buyAmount) / (next.buyAmount - current.buyAmount);
+      expectedMarketCapSol = current.marketCapSol + ratio * (next.marketCapSol - current.marketCapSol);
+      break;
+    } else if (buyAmount > next.buyAmount) {
+      // If buy amount exceeds the range, use the last known value
+      expectedMarketCapSol = next.marketCapSol;
+    }
+  }
+  
+  // Convert SOL market cap to USD using current SOL price
+  const expectedMarketCapUsd = expectedMarketCapSol * currentSolPrice;
+  
+  // Round to nearest $100
+  const roundedMC = Math.round(expectedMarketCapUsd / 100) * 100;
+  
+  // Format the display
+  if (roundedMC >= 1000) {
+    return `${(roundedMC / 1000).toFixed(1)}K`;
+  } else {
+    return `${roundedMC}`;
+  }
+}
+
 export const ctoConversation = async (
   conversation: Conversation<Context>,
   ctx: Context,
@@ -170,27 +240,31 @@ export const ctoConversation = async (
     // Brief pause to show the detection result
     await new Promise(resolve => setTimeout(resolve, 1500));
     
+    // Calculate expected market cap for CTO operation
+    const expectedMarketCap = await calculateExpectedMarketCap(buyAmount, platform === 'bonk');
+    
     // Show final confirmation with platform information
     await sendMessage(
       amountInput,
       `🔍 **CTO Confirmation**\n\n` +
       `**Token:** \`${tokenAddress}\`\n` +
       `**Platform:** ${platformIcon} ${platformDetails}\n` +
-    `**Buy Amount:** ${buyAmount.toFixed(6)} SOL\n` +
-    `**Funding Wallet Balance:** ${fundingBalance.toFixed(6)} SOL\n\n` +
-    `**Process:**\n` +
-    `1. Distribute ${buyAmount.toFixed(6)} SOL to buy wallets via mixer\n` +
+      `**Buy Amount:** ${buyAmount.toFixed(6)} SOL\n` +
+      `**Expected Market Cap:** ${expectedMarketCap}\n` +
+      `**Funding Wallet Balance:** ${fundingBalance.toFixed(6)} SOL\n\n` +
+      `**Process:**\n` +
+      `1. Distribute ${buyAmount.toFixed(6)} SOL to buy wallets via mixer\n` +
       `2. Execute coordinated buy transactions on ${platform} platform\n` +
-    `3. Create buying pressure on the token\n\n` +
-    `⚠️ **Important:** This operation cannot be undone.\n\n` +
+      `3. Create buying pressure on the token\n\n` +
+      `⚠️ **Important:** This operation cannot be undone.\n\n` +
       `Do you want to proceed with the CTO operation?`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: new InlineKeyboard()
-        .text("✅ Confirm CTO", "confirm_cto")
-        .text("❌ Cancel", CallBackQueries.CANCEL)
-    }
-  );
+      {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard()
+          .text("✅ Confirm CTO", "confirm_cto")
+          .text("❌ Cancel", CallBackQueries.CANCEL)
+      }
+    );
 
   } catch (platformError: any) {
     logger.error(`[CTO Platform Detection Error] Failed to detect platform for ${tokenAddress}:`, platformError);

@@ -68,6 +68,7 @@ const externalTokenSellConversation = async (
             `[ExternalTokenSell] Wallet ${wallet.publicKey}: ${balance} tokens, ${solBalance.toFixed(6)} SOL`
           );
         }
+        // Only log wallets with token balances - skip logging wallets with 0 balance
       } catch (error) {
         logger.warn(
           `[ExternalTokenSell] Error checking balance for wallet ${wallet.publicKey}:`,
@@ -487,22 +488,22 @@ const executeExternalTokenSellWithJupiter = async (
       
       const walletKeypair = secretKeyToKeypair(buyerWalletPrivateKeys[0]);
       
-      // Check wallet's token balance
-      const walletBalance = await getTokenBalance(tokenAddress, walletKeypair.publicKey.toBase58());
-      if (walletBalance <= 0) {
-        logger.info(`[${logIdentifier}]: Wallet has no tokens, skipping`);
-        return {
-          success: false,
-          successfulSells: 0,
-          failedSells: 1,
-          error: "No tokens to sell"
-        };
-      }
+                // Check wallet's token balance
+          const walletBalance = await getTokenBalance(tokenAddress, walletKeypair.publicKey.toBase58());
+          if (walletBalance <= 0) {
+            // Don't log wallets with no tokens - keep logs clean
+            return {
+              success: false,
+              successfulSells: 0,
+              failedSells: 1,
+              error: "No tokens to sell"
+            };
+          }
 
       // Calculate tokens to sell from this wallet
       const tokensToSell = Math.floor((walletBalance * sellPercent) / 100);
       if (tokensToSell <= 0) {
-        logger.info(`[${logIdentifier}]: Wallet has insufficient tokens to sell, skipping`);
+        // Don't log wallets with insufficient tokens - keep logs clean
         return {
           success: false,
           successfulSells: 0,
@@ -557,7 +558,7 @@ const executeExternalTokenSellWithJupiter = async (
           // Check wallet's token balance
           const walletBalance = await getTokenBalance(tokenAddress, walletKeypair.publicKey.toBase58());
           if (walletBalance <= 0) {
-            logger.info(`[${logIdentifier}]: Wallet ${index + 1} has no tokens, skipping`);
+            // Don't log wallets with no tokens - keep logs clean
             return {
               success: false,
               wallet: walletKeypair.publicKey.toBase58(),
@@ -568,7 +569,7 @@ const executeExternalTokenSellWithJupiter = async (
           // Calculate tokens to sell from this wallet
           const tokensToSell = Math.floor((walletBalance * sellPercent) / 100);
           if (tokensToSell <= 0) {
-            logger.info(`[${logIdentifier}]: Wallet ${index + 1} has insufficient tokens to sell, skipping`);
+            // Don't log wallets with insufficient tokens - keep logs clean
             return {
               success: false,
               wallet: walletKeypair.publicKey.toBase58(),

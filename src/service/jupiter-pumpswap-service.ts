@@ -228,21 +228,21 @@ export class JupiterPumpswapService {
           return pumpswapResult;
         }
       } else {
-        // Token is graduated or unknown - use Jupiter FIRST
-        logger.info(`[${logId}] Token is graduated/unknown - trying Jupiter first (optimal for graduated tokens)`);
+        // Token is graduated or unknown - use PumpSwap FIRST
+        logger.info(`[${logId}] Token is graduated/unknown - trying PumpSwap first (optimal for graduated tokens)`);
         
-        const jupiterResult = await this.tryJupiterBuy(tokenAddress, buyerKeypair, actualTradeAmount, slippage, logId, ctx);
-        if (jupiterResult.success) {
-          return jupiterResult;
-        }
-        
-        logger.info(`[${logId}] Jupiter failed, trying PumpSwap fallback...`);
         const pumpswapResult = await this.tryPumpSwapBuy(tokenAddress, buyerKeypair, actualTradeAmount, logId);
         if (pumpswapResult.success) {
           return pumpswapResult;
         }
         
-        logger.info(`[${logId}] PumpSwap failed, trying PumpFun fallback...`);
+        logger.info(`[${logId}] PumpSwap failed, trying Jupiter fallback...`);
+        const jupiterResult = await this.tryJupiterBuy(tokenAddress, buyerKeypair, actualTradeAmount, slippage, logId, ctx);
+        if (jupiterResult.success) {
+          return jupiterResult;
+        }
+        
+        logger.info(`[${logId}] Jupiter failed, trying PumpFun fallback...`);
         const pumpfunResult = await this.tryPumpFunBuy(tokenAddress, buyerKeypair, actualTradeAmount, logId);
         if (pumpfunResult.success) {
           return pumpfunResult;
@@ -638,15 +638,90 @@ export class JupiterPumpswapService {
             };
           } else {
             logger.warn(`[${logId}] Bonk sell failed: ${bonkResult.error || bonkResult.message}`);
-            // Fall through to Jupiter/PumpSwap methods
+            // Fall through to PumpSwap/Jupiter methods
           }
         } catch (bonkError: any) {
           logger.warn(`[${logId}] Bonk sell error: ${bonkError.message}`);
-          // Fall through to Jupiter/PumpSwap methods
+          // Fall through to PumpSwap/Jupiter methods
         }
       }
 
-      // Try Jupiter first for non-Bonk tokens or if Bonk sell failed
+      // Try PumpSwap first for non-Bonk tokens or if Bonk sell failed
+      logger.info(`[${logId}] Trying PumpSwap first for optimal routing...`);
+      try {
+        const pumpswapService = new PumpswapService();
+        const sellData = {
+          mint: new PublicKey(tokenAddress),
+          privateKey: bs58.encode(sellerKeypair.secretKey),
+        };
+
+        const sellTx = await pumpswapService.sellTx(sellData);
+        const signature = await this.connection.sendTransaction(sellTx, {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+          maxRetries: 3,
+        });
+
+        const confirmation = await this.connection.confirmTransaction(
+          signature,
+          "confirmed"
+        );
+
+        if (!confirmation.value.err) {
+          logger.info(`[${logId}] PumpSwap sell successful: ${signature}`);
+          
+          // Get actual transaction amount from blockchain for more accurate fee collection
+          let actualTransactionAmountSol = 0.01; // Fallback estimate
+          try {
+            const { parseTransactionAmounts } = await import("../backend/utils");
+            const actualAmounts = await parseTransactionAmounts(
+              signature,
+              sellerKeypair.publicKey.toBase58(),
+              tokenAddress,
+              "sell"
+            );
+            
+            if (actualAmounts.success && actualAmounts.actualSolReceived) {
+              actualTransactionAmountSol = actualAmounts.actualSolReceived;
+              logger.info(`[${logId}] Actual SOL received from blockchain: ${actualTransactionAmountSol} SOL`);
+            } else {
+              logger.warn(`[${logId}] Failed to parse actual amounts, using fallback estimate: ${actualAmounts.error}`);
+            }
+          } catch (parseError: any) {
+            logger.warn(`[${logId}] Error parsing transaction amounts, using fallback estimate: ${parseError.message}`);
+          }
+          
+          // Collect 1% transaction fee after successful PumpSwap sell using actual amount
+          try {
+            const { collectTransactionFee } = await import("../backend/functions-main");
+            const feeResult = await collectTransactionFee(
+              bs58.encode(sellerKeypair.secretKey),
+              actualTransactionAmountSol,
+              "sell"
+            );
+            
+            if (feeResult.success) {
+              logger.info(`[${logId}] PumpSwap sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
+            } else {
+              logger.warn(`[${logId}] Failed to collect PumpSwap sell transaction fee: ${feeResult.error}`);
+            }
+          } catch (feeError: any) {
+            logger.warn(`[${logId}] Error collecting PumpSwap sell transaction fee: ${feeError.message}`);
+          }
+          
+          return {
+            success: true,
+            signature,
+            platform: "pumpswap",
+            solReceived: actualTransactionAmountSol.toString(),
+          };
+        }
+      } catch (pumpswapError: any) {
+        logger.warn(`[${logId}] PumpSwap sell failed: ${pumpswapError.message}`);
+      }
+
+      // Fallback to Jupiter if PumpSwap failed
+      logger.info(`[${logId}] PumpSwap failed, trying Jupiter fallback...`);
       const quote = await this.getQuote(tokenAddress, WSOL, sellAmount, "sell");
 
       if (quote) {
@@ -766,82 +841,7 @@ export class JupiterPumpswapService {
         }
       }
 
-      // Fallback to PumpSwap
-      logger.info(`[${logId}] Jupiter failed, trying PumpSwap fallback...`);
 
-      try {
-        const pumpswapService = new PumpswapService();
-        const sellData = {
-          mint: new PublicKey(tokenAddress),
-          privateKey: bs58.encode(sellerKeypair.secretKey),
-        };
-
-        const sellTx = await pumpswapService.sellTx(sellData);
-        const signature = await this.connection.sendTransaction(sellTx, {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
-          maxRetries: 3,
-        });
-
-        const confirmation = await this.connection.confirmTransaction(
-          signature,
-          "confirmed"
-        );
-
-        if (!confirmation.value.err) {
-          logger.info(`[${logId}] PumpSwap sell successful: ${signature}`);
-          
-          // Get actual transaction amount from blockchain for more accurate fee collection
-          let actualTransactionAmountSol = 0.01; // Fallback estimate
-          try {
-            const { parseTransactionAmounts } = await import("../backend/utils");
-            const actualAmounts = await parseTransactionAmounts(
-              signature,
-              sellerKeypair.publicKey.toBase58(),
-              tokenAddress,
-              "sell"
-            );
-            
-            if (actualAmounts.success && actualAmounts.actualSolReceived) {
-              actualTransactionAmountSol = actualAmounts.actualSolReceived;
-              logger.info(`[${logId}] Actual SOL received from blockchain: ${actualTransactionAmountSol} SOL`);
-            } else {
-              logger.warn(`[${logId}] Failed to parse actual amounts, using fallback estimate: ${actualAmounts.error}`);
-            }
-          } catch (parseError: any) {
-            logger.warn(`[${logId}] Error parsing transaction amounts, using fallback estimate: ${parseError.message}`);
-          }
-          
-          // Collect 1% transaction fee after successful PumpSwap sell using actual amount
-          try {
-            const { collectTransactionFee } = await import("../backend/functions-main");
-            const feeResult = await collectTransactionFee(
-              bs58.encode(sellerKeypair.secretKey),
-              actualTransactionAmountSol,
-              "sell"
-            );
-            
-            if (feeResult.success) {
-              logger.info(`[${logId}] PumpSwap sell transaction fee collected: ${feeResult.feeAmount} SOL, Signature: ${feeResult.signature}`);
-            } else {
-              logger.warn(`[${logId}] Failed to collect PumpSwap sell transaction fee: ${feeResult.error}`);
-            }
-          } catch (feeError: any) {
-            logger.warn(`[${logId}] Error collecting PumpSwap sell transaction fee: ${feeError.message}`);
-          }
-          
-          return {
-            success: true,
-            signature,
-            platform: "pumpswap",
-            solReceived: actualTransactionAmountSol.toString(),
-          };
-        }
-      } catch (pumpswapError: any) {
-        logger.error(
-          `[${logId}] PumpSwap sell fallback failed: ${pumpswapError.message}`
-        );
-      }
 
       // Final fallback to PumpFun direct sell
       logger.info(`[${logId}] Both Jupiter and PumpSwap failed, trying PumpFun direct sell fallback...`);
