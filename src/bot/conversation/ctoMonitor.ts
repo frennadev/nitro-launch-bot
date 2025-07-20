@@ -119,16 +119,16 @@ export const ctoMonitorConversation = async (
 
     // Build monitor message
     let monitorMessage = `
-  📊 <b>${escape(tokenName)}</b> (${escape(tokenSymbol)}) • <code>${tokenAddress}</code>
+  📊 <b>${tokenName}</b> (${tokenSymbol}) • <code>${tokenAddress}</code>
 
   💰 <b>Your Holdings</b>
-  ┌─ Total Tokens: <b>${escape(totalBalanceFormatted.toLocaleString(undefined, { maximumFractionDigits: 2 }))}</b>
-  ${totalValueUsd > 0 ? `├─ Total Value: <b>$${escape(totalValueUsd.toFixed(2))}</b>` : ""}
+  ┌─ Total Tokens: <b>${totalBalanceFormatted.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>
+  ${totalValueUsd > 0 ? `├─ Total Value: <b>$${totalValueUsd.toFixed(2)}</b>` : ""}
   └─ Wallets with Balance: <b>${walletsWithBalance}/${buyerWallets.length}</b>
 
   💎 <b>Market Data</b>
-  ├─ Price: <b>${tokenPrice > 0 ? `$${escape(tokenPrice.toFixed(8))}` : "Unknown"}</b>
-  └─ Market Cap: <b>${marketCap > 0 ? `$${escape(marketCap.toLocaleString())}` : "Unknown"}</b>
+  ├─ Price: <b>${tokenPrice > 0 ? `$${tokenPrice.toFixed(8)}` : "Unknown"}</b>
+  └─ Market Cap: <b>${marketCap > 0 ? `$${marketCap.toLocaleString()}` : "Unknown"}</b>
 
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   🔄 <i>Auto-updates disabled • Click refresh to resume</i>
@@ -137,17 +137,17 @@ export const ctoMonitorConversation = async (
 
     // Add wallet breakdown if there are holdings
     if (walletsWithBalance > 0) {
-      monitorMessage += `**💎 Wallet Breakdown:**\n`;
+      monitorMessage += `<b>💎 Wallet Breakdown:</b>\n`;
       walletHoldings.forEach((holding, index) => {
         const valueText =
           holding.valueUsd > 0
-            ? ` (${escape(`$${holding.valueUsd.toFixed(2)}`)}$)`
+            ? ` ($${holding.valueUsd.toFixed(2)})`
             : "";
-        monitorMessage += `${index + 1}. ${holding.shortAddress}: ${escape(holding.balance.toLocaleString(undefined, { maximumFractionDigits: 2 }))}${valueText}\n`;
+        monitorMessage += `${index + 1}. ${holding.shortAddress}: ${holding.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}${valueText}\n`;
       });
       monitorMessage += `\n`;
     } else {
-      monitorMessage += `❌ **No tokens found in your wallets**\n\n`;
+      monitorMessage += `<b>❌ No tokens found in your wallets</b>\n\n`;
     }
 
     monitorMessage += `Use the buttons below to manage your position ⬇️`;
@@ -179,7 +179,7 @@ export const ctoMonitorConversation = async (
       loadingMessage.message_id,
       monitorMessage,
       {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         reply_markup: keyboard,
       }
     );
@@ -246,9 +246,9 @@ export const ctoMonitorConversation = async (
     await ctx.api.editMessageText(
       ctx.chat!.id,
       loadingMessage.message_id,
-      `❌ **CTO Monitor Error**\n\n` +
+      `<b>❌ CTO Monitor Error</b>\n\n` +
         `Failed to load monitor data: ${error.message}`,
-      { parse_mode: "Markdown" }
+      { parse_mode: "HTML" }
     );
     return conversation.halt();
   }
