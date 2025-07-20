@@ -25,13 +25,18 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
       return;
     }
 
-    // Get user's token with buyer wallets
-    const userToken = await getUserTokenWithBuyWallets(user.id, tokenAddress);
-    if (!userToken) {
-      await ctx.reply("❌ Token not found or you don't own this token.");
+    // Get token info from external API (works for any token)
+    const { getTokenInfo } = await import("../../backend/utils");
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    if (!tokenInfo || !tokenInfo.baseToken) {
+      await ctx.reply("❌ Token not found or invalid token address.");
       await conversation.halt();
       return;
     }
+
+    // Use token info from external API
+    const tokenName = tokenInfo.baseToken.name || "Unknown Token";
+    const tokenSymbol = tokenInfo.baseToken.symbol || "Unknown";
 
     // Get buyer wallets
     const { getAllBuyerWallets } = await import("../../backend/functions");
@@ -72,7 +77,7 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
     // Show confirmation message
     const confirmationMessage = 
       `🎁 **SOL Airdrop Confirmation**\n\n` +
-      `📋 **Token:** ${userToken.name} ($${userToken.symbol})\n` +
+      `📋 **Token:** ${tokenName} ($${tokenSymbol})\n` +
       `📍 **Address:** \`${tokenAddress}\`\n\n` +
       `👥 **Recipients:** ${buyerWallets.length} buyer wallets\n` +
       `💰 **Amount per wallet:** ${AIRDROP_AMOUNT} SOL\n` +
@@ -102,7 +107,7 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
       // Start airdrop process
       await ctx.reply("🚀 Starting SOL airdrop to buyer wallets...");
       
-      const results = await executeAirdrop(userToken, buyerWallets, fundingWallet);
+      const results = await executeAirdrop(tokenAddress, buyerWallets, fundingWallet);
       
       // Show results
       const successCount = results.filter(r => r.success).length;
@@ -111,7 +116,7 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
       
       let resultMessage = 
         `🎁 **SOL Airdrop Complete\\!**\n\n` +
-        `📋 **Token:** ${userToken.name} \\($${userToken.symbol}\\)\n` +
+        `📋 **Token:** ${tokenName} \\($${tokenSymbol}\\)\n` +
         `📍 **Address:** \`${tokenAddress}\`\n\n` +
         `✅ **Successful:** ${successCount} wallets\n` +
         `❌ **Failed:** ${failedCount} wallets\n` +
@@ -138,7 +143,7 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
 };
 
 // Execute the actual airdrop
-async function executeAirdrop(userToken: any, buyerWallets: any[], fundingWallet: Keypair) {
+async function executeAirdrop(tokenAddress: string, buyerWallets: any[], fundingWallet: Keypair) {
   const results = [];
   
   for (let i = 0; i < buyerWallets.length; i++) {
@@ -146,7 +151,7 @@ async function executeAirdrop(userToken: any, buyerWallets: any[], fundingWallet
     
     try {
       // Check if buyer wallet holds the token
-      const tokenBalance = await getTokenBalance(userToken.tokenAddress, buyerWallet.publicKey);
+      const tokenBalance = await getTokenBalance(tokenAddress, buyerWallet.publicKey);
       
       if (tokenBalance <= 0) {
         results.push({
