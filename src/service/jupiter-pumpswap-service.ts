@@ -620,14 +620,21 @@ export class JupiterPumpswapService {
         logger.info(`[${logId}] Routing Bonk token to Bonk sell method`);
         try {
           const { executeBonkSell } = await import("./bonk-transaction-handler");
+          
+          // Calculate the percentage based on the tokenAmount vs total balance
+          const totalBalance = await this.checkTokenBalance(tokenAddress, sellerKeypair);
+          const sellPercentage = totalBalance > 0 ? Math.round((sellAmount / totalBalance) * 100) : 100;
+          
+          logger.info(`[${logId}] Selling ${sellAmount} tokens (${sellPercentage}% of ${totalBalance} total balance)`);
+          
           const bonkResult = await executeBonkSell(
-            100, // Sell 100% of the specified amount
+            sellPercentage, // Use calculated percentage instead of hardcoded 100%
             bs58.encode(sellerKeypair.secretKey),
             tokenAddress,
             sellAmount
           );
 
-          if (bonkResult.success) {
+          if (bonkResult.success && bonkResult.signature) {
             logger.info(`[${logId}] Bonk sell successful: ${bonkResult.signature}`);
             return {
               success: true,
@@ -840,8 +847,6 @@ export class JupiterPumpswapService {
           }
         }
       }
-
-
 
       // Final fallback to PumpFun direct sell
       logger.info(`[${logId}] Both Jupiter and PumpSwap failed, trying PumpFun direct sell fallback...`);

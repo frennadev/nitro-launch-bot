@@ -104,6 +104,7 @@ import { sendErrorWithAutoDelete } from "./utils";
 import { startLoadingState } from "./loading";
 import { TokenInfoService } from "../service/token-info-service";
 import { airdropSolConversation } from "./conversation/airdropSol";
+import { predictMcConversation } from "./conversation/predictMc";
 
 // Platform detection and caching for external tokens
 const platformCache = new Map<
@@ -416,6 +417,7 @@ bot.use(createConversation(sellIndividualToken));
 bot.use(createConversation(sellPercentageMessage));
 bot.use(createConversation(helpConversation));
 bot.use(createConversation(airdropSolConversation));
+bot.use(createConversation(predictMcConversation));
 
 // Middleware to patch reply/sendMessage and hook deletion
 bot.use(async (ctx, next) => {
@@ -1099,6 +1101,11 @@ bot.callbackQuery(CallBackQueries.VIEW_REFERRALS, async (ctx) => {
 bot.callbackQuery(CallBackQueries.HELP, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("helpConversation");
+});
+
+bot.callbackQuery(CallBackQueries.PREDICT_MC, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("predictMcConversation");
 });
 
 // Callback handlers for token CA sell buttons

@@ -45,6 +45,8 @@ To proceed, you can choose any of the actions below ⬇️
     .text("Wallet Config", CallBackQueries.WALLET_CONFIG)
     .row()
     .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
+    .text("📊 Predict MC", CallBackQueries.PREDICT_MC)
+    .row()
     .text("🆘 Help", CallBackQueries.HELP);
 
   await ctx.reply(welcomeMsg, {
