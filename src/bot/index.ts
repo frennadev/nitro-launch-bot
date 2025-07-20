@@ -2684,6 +2684,8 @@ bot.on("message:text", async (ctx) => {
                   .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
                   .text("🔄 Refresh", `refresh_ca_${text}`)
                   .row()
+                  .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${text}`)
+                  .row()
                   .text("🏠 Menu", CallBackQueries.BACK),
               }
             );
