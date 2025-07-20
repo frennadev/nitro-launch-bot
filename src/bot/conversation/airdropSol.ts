@@ -12,7 +12,7 @@ import bs58 from "bs58";
 const AIRDROP_AMOUNT = 0.01;
 const AIRDROP_AMOUNT_LAMPORTS = AIRDROP_AMOUNT * 1_000_000_000;
 
-const airdropSolConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
+async function airdropSolConversation(conversation: Conversation, ctx: Context, tokenAddress: string) {
   try {
     console.log("🎁 Airdrop conversation started for token:", tokenAddress);
     
@@ -92,11 +92,17 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
       .text("❌ Cancel", CallBackQueries.CANCEL);
 
     console.log("🎁 About to send confirmation message...");
-    await ctx.reply(confirmationMessage, {
-      parse_mode: "MarkdownV2",
-      reply_markup: confirmationKeyboard,
-    });
-    console.log("🎁 Confirmation message sent successfully!");
+    console.log("🎁 Confirmation message content:", confirmationMessage);
+    try {
+      await ctx.reply(confirmationMessage, {
+        parse_mode: "MarkdownV2",
+        reply_markup: confirmationKeyboard,
+      });
+      console.log("🎁 Confirmation message sent successfully!");
+    } catch (replyError: any) {
+      console.error("🎁 Error sending confirmation message:", replyError);
+      throw replyError;
+    }
 
     // Wait for user confirmation
     const response = await conversation.waitFor("callback_query:data");
@@ -141,6 +147,7 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
     }
 
   } catch (error: any) {
+    console.error("🎁 Error in airdrop conversation:", error);
     await ctx.reply(`❌ Error: ${error.message}`);
     await conversation.halt();
   }
