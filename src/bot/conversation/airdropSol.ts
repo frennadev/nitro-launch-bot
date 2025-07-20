@@ -8,6 +8,12 @@ import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
 
+// Function to escape text for MarkdownV2
+function escapeMarkdownV2(text: string): string {
+  return text
+    .replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
+}
+
 // Airdrop amount per wallet (0.01 SOL)
 const AIRDROP_AMOUNT = 0.01;
 const AIRDROP_AMOUNT_LAMPORTS = AIRDROP_AMOUNT * 1_000_000_000;
@@ -36,9 +42,9 @@ async function airdropSolConversation(conversation: Conversation, ctx: Context, 
       return;
     }
 
-    // Use token info from external API
-    const tokenName = tokenInfo.baseToken.name || "Unknown Token";
-    const tokenSymbol = tokenInfo.baseToken.symbol || "Unknown";
+    // Use token info from external API and escape for MarkdownV2
+    const tokenName = escapeMarkdownV2(tokenInfo.baseToken.name || "Unknown Token");
+    const tokenSymbol = escapeMarkdownV2(tokenInfo.baseToken.symbol || "Unknown");
 
     // Get buyer wallets
     const { getAllBuyerWallets } = await import("../../backend/functions");
