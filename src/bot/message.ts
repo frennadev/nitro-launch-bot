@@ -131,6 +131,12 @@ const buildLaunchSuccessMessage = async (tokenAddress: string, tokenName: string
           callback_data: `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`,
         },
       ],
+      [
+        {
+          text: "🎁 Airdrop SOL",
+          callback_data: `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`,
+        },
+      ],
     ],
   };
 
@@ -210,6 +216,12 @@ const buildBonkLaunchSuccessMessage = async (tokenAddress: string, tokenName: st
         {
           text: "👥 Individual Wallet Sells",
           callback_data: `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress.substring(0, 8)}`,
+        },
+      ],
+      [
+        {
+          text: "🎁 Airdrop SOL",
+          callback_data: `${CallBackQueries.AIRDROP_SOL}_${tokenAddress.substring(0, 8)}`,
         },
       ],
     ],

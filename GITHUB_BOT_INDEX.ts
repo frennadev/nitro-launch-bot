@@ -866,7 +866,8 @@ Tokens: 2.3% | Worth: ${payout.toFixed(2)} SOL
           .row()
           .text("💸 Generate PNL", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
           .text("📊 Chart", `${CallBackQueries.BUY_EXTERNAL_TOKEN}_${tokenAddress}`)
-
+          .row()
+          .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`)
           .row()
           .text("❌ Cancel", CallBackQueries.CANCEL),
       }
