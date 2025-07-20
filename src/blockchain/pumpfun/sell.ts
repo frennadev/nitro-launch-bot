@@ -5,6 +5,7 @@ import { logger } from "../common/logger";
 import { sellInstruction } from "./instructions";
 import { connection } from "../common/connection";
 import { executeExternalSell } from "./externalSell";
+import { Context } from "grammy";
 
 /**
  * Enhanced dev sell using external sell mechanism with platform detection
@@ -37,7 +38,7 @@ export const executeDevSell = async (tokenAddress: string, devWallet: string, se
     logger.info(`[${logIdentifier}] Dev balance: ${devBalance.toString()}, selling ${sellPercent}% = ${tokensToSell.toString()} tokens`);
     
     // Use external sell mechanism for better platform detection and robustness
-    const result = await executeExternalSell(tokenAddress, devKeypair, Number(tokensToSell));
+    const result = await executeExternalSell(tokenAddress, devKeypair, Number(tokensToSell), {} as Context);
     
     if (!result.success) {
       throw new Error(`External sell failed: ${result.error}`);
@@ -181,7 +182,7 @@ export const executeWalletSell = async (
       try {
         logger.info(`[${logIdentifier}] Processing wallet ${index + 1}/${sellSetups.length}: ${wallet.publicKey.toBase58().slice(0, 8)}...`);
         
-        const result = await executeExternalSell(tokenAddress, wallet, Number(amount));
+        const result = await executeExternalSell(tokenAddress, wallet, Number(amount), {} as Context);
         
         if (result.success) {
           logger.info(`[${logIdentifier}] Wallet ${index + 1} sell successful via ${result.platform}: ${result.signature}`);

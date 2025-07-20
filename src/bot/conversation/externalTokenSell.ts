@@ -173,7 +173,7 @@ const externalTokenSellConversation = async (
       try {
         // Execute the external token sell using buyer wallets
         const buyerWalletPrivateKeys = walletsWithBalance.map(w => w.privateKey);
-        const result = await executeExternalTokenSellWithJupiter(tokenAddress, buyerWalletPrivateKeys, sellPercent);
+        const result = await executeExternalTokenSellWithJupiter(tokenAddress, buyerWalletPrivateKeys, sellPercent, ctx);
 
         if (result.success) {
           const solReceivedText = result.totalSolReceived?.toFixed(6) || "Unknown";
@@ -469,7 +469,8 @@ const externalTokenSellConversation = async (
 const executeExternalTokenSellWithJupiter = async (
   tokenAddress: string,
   buyerWalletPrivateKeys: string[],
-  sellPercent: number
+  sellPercent: number,
+  ctx?: Context
 ) => {
   const logIdentifier = `external-sell-${tokenAddress.substring(0, 8)}`;
   logger.info(`[${logIdentifier}]: Starting external token sell using Jupiter-Pumpswap service`);
@@ -514,11 +515,13 @@ const executeExternalTokenSellWithJupiter = async (
 
       logger.info(`[${logIdentifier}]: Selling ${tokensToSell} tokens (${sellPercent}% of ${walletBalance})`);
 
-      // Execute sell using Jupiter-Pumpswap service
-      const result = await jupiterPumpswapService.executeSell(
+      // Execute sell using optimized platform priority (PumpSwap/CPMM first, Jupiter fallback)
+      const { executeExternalSell } = await import("../../blockchain/pumpfun/externalSell");
+      const result = await executeExternalSell(
         tokenAddress,
         walletKeypair,
-        tokensToSell
+        tokensToSell,
+        ctx || {} as Context
       );
 
       if (result.success) {
@@ -579,11 +582,13 @@ const executeExternalTokenSellWithJupiter = async (
 
           logger.info(`[${logIdentifier}]: Wallet ${index + 1} selling ${tokensToSell} tokens (${sellPercent}% of ${walletBalance})`);
 
-          // Execute sell using Jupiter-Pumpswap service
-          const result = await jupiterPumpswapService.executeSell(
+          // Execute sell using optimized platform priority (PumpSwap/CPMM first, Jupiter fallback)
+          const { executeExternalSell } = await import("../../blockchain/pumpfun/externalSell");
+          const result = await executeExternalSell(
             tokenAddress,
             walletKeypair,
-            tokensToSell
+            tokensToSell,
+            ctx || {} as Context
           );
 
           if (result.success) {
