@@ -115,11 +115,77 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
       }
 
       if (data === CallBackQueries.GENERATE_BUYER_WALLET) {
-        const newWallet = await generateNewBuyerWallet(user.id);
-        await next.reply(
-          `✅ New buyer wallet generated!\n\n<b>Address:</b> <code>${newWallet.publicKey}</code>\n\n<b>Private Key:</b>\n<code>${newWallet.privateKey}</code>\n\n<i>⚠️ Save this private key securely and delete this message!</i>`,
-          { parse_mode: "HTML" }
+        // Calculate how many wallets can still be generated
+        const remainingSlots = MAX_WALLETS - wallets.length;
+        
+        const cancelKeyboard = new InlineKeyboard().text(
+          "❌ Cancel",
+          CallBackQueries.CANCEL_BUYER_WALLET
         );
+
+        await sendMessage(
+          next,
+          `🔄 **Generate New Buyer Wallets**\n\nYou currently have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.\n\n<b>Maximum wallets you can generate:</b> ${remainingSlots}\n\nPlease enter the number of new wallets you want to generate (1-${remainingSlots}):`,
+          {
+            parse_mode: "HTML",
+            reply_markup: cancelKeyboard,
+          }
+        );
+
+        const quantityInput = await conversation.wait();
+
+        if (
+          quantityInput.callbackQuery?.data ===
+          CallBackQueries.CANCEL_BUYER_WALLET
+        ) {
+          await quantityInput.answerCallbackQuery();
+          await sendMessage(quantityInput, "Wallet generation cancelled.");
+          return conversation.halt();
+        }
+
+        const quantityText = quantityInput.message?.text?.trim();
+        if (!quantityText) {
+          await sendMessage(
+            quantityInput,
+            "❌ No quantity provided. Generation cancelled."
+          );
+          return conversation.halt();
+        }
+
+        const quantity = parseInt(quantityText);
+        if (isNaN(quantity) || quantity < 1 || quantity > remainingSlots) {
+          await sendMessage(
+            quantityInput,
+            `❌ Invalid quantity. Please enter a number between 1 and ${remainingSlots}.`
+          );
+          return conversation.halt();
+        }
+
+        // Generate the requested number of wallets
+        const generatedWallets = [];
+        for (let i = 0; i < quantity; i++) {
+          const newWallet = await generateNewBuyerWallet(user.id);
+          generatedWallets.push(newWallet);
+        }
+
+        // Create success message
+        let successMessage = `✅ Successfully generated <b>${quantity}</b> new buyer wallet${quantity > 1 ? 's' : ''}!\n\n`;
+        
+        if (quantity === 1) {
+          // Single wallet - show full details
+          const wallet = generatedWallets[0];
+          successMessage += `<b>Address:</b> <code>${wallet.publicKey}</code>\n\n<b>Private Key:</b>\n<code>${wallet.privateKey}</code>\n\n<i>⚠️ Save this private key securely and delete this message!</i>`;
+        } else {
+          // Multiple wallets - show summary and list
+          successMessage += `<b>Generated Wallets:</b>\n`;
+          generatedWallets.forEach((wallet, index) => {
+            const short = `${wallet.publicKey.slice(0, 6)}…${wallet.publicKey.slice(-4)}`;
+            successMessage += `${index + 1}. <code>${short}</code>\n`;
+          });
+          successMessage += `\n<i>⚠️ Private keys have been generated but not shown for security. Use the export function to get individual private keys.</i>`;
+        }
+
+        await sendMessage(quantityInput, successMessage, { parse_mode: "HTML" });
         return conversation.halt();
       }
 
