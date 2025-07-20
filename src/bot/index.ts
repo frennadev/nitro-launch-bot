@@ -2965,19 +2965,25 @@ bot.on("callback_query:data", async (ctx) => {
 
   // Handle airdrop SOL callback
   if (data.startsWith(`${CallBackQueries.AIRDROP_SOL}_`)) {
+    console.log("🎁 Airdrop SOL callback detected:", data);
     const tokenAddress = data.replace(`${CallBackQueries.AIRDROP_SOL}_`, "");
+    console.log("🎁 Token address extracted:", tokenAddress);
     
     try {
       // Answer callback query immediately
       await safeAnswerCallbackQuery(ctx, "🎁 Starting SOL airdrop...");
+      console.log("🎁 Callback query answered, entering conversation...");
       
       // Enter airdrop conversation
       await ctx.conversation.enter("airdropSolConversation", tokenAddress);
+      console.log("🎁 Airdrop conversation entered successfully");
       
     } catch (error: any) {
+      console.error("🎁 Error in airdrop callback handler:", error);
       logger.error("Error starting airdrop conversation:", error);
       await safeAnswerCallbackQuery(ctx, "❌ Error starting airdrop");
     }
+    return; // Add return to prevent further processing
   }
 });
 
