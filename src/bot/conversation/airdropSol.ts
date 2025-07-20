@@ -14,6 +14,8 @@ const AIRDROP_AMOUNT_LAMPORTS = AIRDROP_AMOUNT * 1_000_000_000;
 
 const airdropSolConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
   try {
+    console.log("🎁 Airdrop conversation started for token:", tokenAddress);
+    
     // Validate token address
     new PublicKey(tokenAddress);
     
@@ -29,7 +31,7 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
     const { getTokenInfo } = await import("../../backend/utils");
     const tokenInfo = await getTokenInfo(tokenAddress);
     if (!tokenInfo || !tokenInfo.baseToken) {
-      await ctx.reply("❌ Token not found or invalid token address.");
+      await ctx.reply("❌ Token not found or invalid token address\\.");
       await conversation.halt();
       return;
     }
@@ -43,7 +45,7 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
     const buyerWallets = await getAllBuyerWallets(user.id);
     
     if (!buyerWallets || buyerWallets.length === 0) {
-      await ctx.reply("❌ No buyer wallets found for this token.");
+      await ctx.reply("❌ No buyer wallets found for this token\\.");
       await conversation.halt();
       return;
     }
@@ -51,7 +53,7 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
     // Get funding wallet
     const fundingWalletData = await getFundingWallet(user.id);
     if (!fundingWalletData) {
-      await ctx.reply("❌ No funding wallet found. Please add a funding wallet first.");
+      await ctx.reply("❌ No funding wallet found\\. Please add a funding wallet first\\.");
       await conversation.halt();
       return;
     }
@@ -65,10 +67,10 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
     
     if (fundingBalance < totalNeeded) {
       await ctx.reply(
-        `❌ Insufficient funding wallet balance.\n\n` +
+        `❌ Insufficient funding wallet balance\\.\n\n` +
         `💰 Required: ${(totalNeeded / 1_000_000_000).toFixed(6)} SOL\n` +
         `💳 Available: ${(fundingBalance / 1_000_000_000).toFixed(6)} SOL\n\n` +
-        `Please add more SOL to your funding wallet.`
+        `Please add more SOL to your funding wallet\\.`
       );
       await conversation.halt();
       return;
@@ -77,35 +79,37 @@ const airdropSolConversation = async (conversation: Conversation, ctx: Context, 
     // Show confirmation message
     const confirmationMessage = 
       `🎁 **SOL Airdrop Confirmation**\n\n` +
-      `📋 **Token:** ${tokenName} ($${tokenSymbol})\n` +
+      `📋 **Token:** ${tokenName} \\($${tokenSymbol}\\)\n` +
       `📍 **Address:** \`${tokenAddress}\`\n\n` +
       `👥 **Recipients:** ${buyerWallets.length} buyer wallets\n` +
       `💰 **Amount per wallet:** ${AIRDROP_AMOUNT} SOL\n` +
       `💸 **Total cost:** ${(totalNeeded / 1_000_000_000).toFixed(6)} SOL\n\n` +
-      `⚠️ **Note:** Only wallets holding this token will receive SOL for gas fees.\n\n` +
+      `⚠️ **Note:** Only wallets holding this token will receive SOL for gas fees\\.\n\n` +
       `Are you sure you want to proceed?`;
 
     const confirmationKeyboard = new InlineKeyboard()
       .text("✅ Confirm Airdrop", "CONFIRM_AIRDROP")
       .text("❌ Cancel", CallBackQueries.CANCEL);
 
+    console.log("🎁 About to send confirmation message...");
     await ctx.reply(confirmationMessage, {
       parse_mode: "MarkdownV2",
       reply_markup: confirmationKeyboard,
     });
+    console.log("🎁 Confirmation message sent successfully!");
 
     // Wait for user confirmation
     const response = await conversation.waitFor("callback_query:data");
     
     if (response.callbackQuery?.data === CallBackQueries.CANCEL) {
-      await ctx.reply("❌ Airdrop cancelled.");
+      await ctx.reply("❌ Airdrop cancelled\\.");
       await conversation.halt();
       return;
     }
 
     if (response.callbackQuery?.data === "CONFIRM_AIRDROP") {
       // Start airdrop process
-      await ctx.reply("🚀 Starting SOL airdrop to buyer wallets...");
+      await ctx.reply("🚀 Starting SOL airdrop to buyer wallets\\.\\.\\.");
       
       const results = await executeAirdrop(tokenAddress, buyerWallets, fundingWallet);
       
