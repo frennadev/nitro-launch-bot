@@ -43,8 +43,17 @@ async function airdropSolConversation(conversation: Conversation, ctx: Context, 
     }
 
     // Use token info from external API and escape for MarkdownV2
-    const tokenName = escapeMarkdownV2(tokenInfo.baseToken.name || "Unknown Token");
-    const tokenSymbol = escapeMarkdownV2(tokenInfo.baseToken.symbol || "Unknown");
+    const originalTokenName = tokenInfo.baseToken.name || "Unknown Token";
+    const originalTokenSymbol = tokenInfo.baseToken.symbol || "Unknown";
+    
+    console.log("🎁 Original token name:", originalTokenName);
+    console.log("🎁 Original token symbol:", originalTokenSymbol);
+    
+    const tokenName = escapeMarkdownV2(originalTokenName);
+    const tokenSymbol = escapeMarkdownV2(originalTokenSymbol);
+    
+    console.log("🎁 Escaped token name:", tokenName);
+    console.log("🎁 Escaped token symbol:", tokenSymbol);
 
     // Get buyer wallets
     const { getAllBuyerWallets } = await import("../../backend/functions");
@@ -82,16 +91,18 @@ async function airdropSolConversation(conversation: Conversation, ctx: Context, 
       return;
     }
 
-    // Show confirmation message
+    // Show confirmation message using HTML format (more forgiving)
     const confirmationMessage = 
-      `🎁 **SOL Airdrop Confirmation**\n\n` +
-      `📋 **Token:** ${tokenName} \\($${tokenSymbol}\\)\n` +
-      `📍 **Address:** \`${tokenAddress}\`\n\n` +
-      `👥 **Recipients:** ${buyerWallets.length} buyer wallets\n` +
-      `💰 **Amount per wallet:** ${AIRDROP_AMOUNT} SOL\n` +
-      `💸 **Total cost:** ${(totalNeeded / 1_000_000_000).toFixed(6)} SOL\n\n` +
-      `⚠️ **Note:** Only wallets holding this token will receive SOL for gas fees\\.\n\n` +
+      `🎁 <b>SOL Airdrop Confirmation</b>\n\n` +
+      `📋 <b>Token:</b> ${originalTokenName} ($${originalTokenSymbol})\n` +
+      `📍 <b>Address:</b> <code>${tokenAddress}</code>\n\n` +
+      `👥 <b>Recipients:</b> ${buyerWallets.length} buyer wallets\n` +
+      `💰 <b>Amount per wallet:</b> ${AIRDROP_AMOUNT} SOL\n` +
+      `💸 <b>Total cost:</b> ${(totalNeeded / 1_000_000_000).toFixed(6)} SOL\n\n` +
+      `⚠️ <b>Note:</b> Only wallets holding this token will receive SOL for gas fees.\n\n` +
       `Are you sure you want to proceed?`;
+    
+    console.log("🎁 Final confirmation message:", confirmationMessage);
 
     const confirmationKeyboard = new InlineKeyboard()
       .text("✅ Confirm Airdrop", "CONFIRM_AIRDROP")
@@ -101,7 +112,7 @@ async function airdropSolConversation(conversation: Conversation, ctx: Context, 
     console.log("🎁 Confirmation message content:", confirmationMessage);
     try {
       await ctx.reply(confirmationMessage, {
-        parse_mode: "MarkdownV2",
+        parse_mode: "HTML",
         reply_markup: confirmationKeyboard,
       });
       console.log("🎁 Confirmation message sent successfully!");
@@ -131,24 +142,24 @@ async function airdropSolConversation(conversation: Conversation, ctx: Context, 
       const totalCost = successCount * AIRDROP_AMOUNT;
       
       let resultMessage = 
-        `🎁 **SOL Airdrop Complete\\!**\n\n` +
-        `📋 **Token:** ${tokenName} \\($${tokenSymbol}\\)\n` +
-        `📍 **Address:** \`${tokenAddress}\`\n\n` +
-        `✅ **Successful:** ${successCount} wallets\n` +
-        `❌ **Failed:** ${failedCount} wallets\n` +
-        `💰 **Total sent:** ${totalCost.toFixed(6)} SOL\n\n`;
+        `🎁 <b>SOL Airdrop Complete!</b>\n\n` +
+        `📋 <b>Token:</b> ${originalTokenName} ($${originalTokenSymbol})\n` +
+        `📍 <b>Address:</b> <code>${tokenAddress}</code>\n\n` +
+        `✅ <b>Successful:</b> ${successCount} wallets\n` +
+        `❌ <b>Failed:</b> ${failedCount} wallets\n` +
+        `💰 <b>Total sent:</b> ${totalCost.toFixed(6)} SOL\n\n`;
       
       if (failedCount > 0) {
-        resultMessage += `⚠️ **Failed wallets:**\n`;
+        resultMessage += `⚠️ <b>Failed wallets:</b>\n`;
         results.filter(r => !r.success).forEach((result, index) => {
           resultMessage += `• Wallet ${index + 1}: ${result.error}\n`;
         });
       }
       
-      resultMessage += `\n💡 **Purpose:** SOL sent for gas fees to sell tokens\\.`;
+      resultMessage += `\n💡 <b>Purpose:</b> SOL sent for gas fees to sell tokens.`;
       
       await ctx.reply(resultMessage, {
-        parse_mode: "MarkdownV2",
+        parse_mode: "HTML",
       });
     }
 
