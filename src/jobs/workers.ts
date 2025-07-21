@@ -78,6 +78,14 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         data.tokenName,
         data.tokenSymbol,
       );
+
+      // After Bonk dev buy/launch, wait 2 seconds before sniping (PumpFun-style best practice)
+      const { TokenModel } = await import("../backend/models");
+      const tokenRecord = await TokenModel.findOne({ tokenAddress: data.tokenAddress });
+      if (tokenRecord?.launchData?.destination === "letsbonk") {
+        logger.info("[jobs]: Waiting 2 seconds after Bonk dev buy/launch before starting pool polling/snipes...");
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     } catch (error: any) {
       logger.error(
         "[jobs-launch-token]: Error Occurred while launching token",
