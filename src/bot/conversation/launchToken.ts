@@ -35,14 +35,24 @@ enum LaunchCallBackQueries {
   RETRY = "RETRY_LAUNCH",
 }
 
-const cancelKeyboard = new InlineKeyboard().text("❌ Cancel", LaunchCallBackQueries.CANCEL);
+const cancelKeyboard = new InlineKeyboard().text(
+  "❌ Cancel",
+  LaunchCallBackQueries.CANCEL
+);
 const retryKeyboard = new InlineKeyboard()
   .text("🔄 Try Again", LaunchCallBackQueries.RETRY)
   .row()
   .text("❌ Cancel", LaunchCallBackQueries.CANCEL);
 
 async function sendMessage(ctx: Context, text: string, options: any = {}) {
-  await ctx.reply(text, options);
+  await ctx.reply(
+    `<b>🌟 Nitro Bot</b>\n${text}\n<i>──────────────</i>`,
+    {
+      ...options,
+      parse_mode: options.parse_mode || "HTML",
+      disable_web_page_preview: true,
+    }
+  );
 }
 
 async function waitForInputOrCancel(
@@ -56,7 +66,10 @@ async function waitForInputOrCancel(
     reply_markup: cancelKeyboard,
   });
 
-  const input = await conversation.waitFor(["message:text", "callback_query:data"]);
+  const input = await conversation.waitFor([
+    "message:text",
+    "callback_query:data",
+  ]);
   if (input.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
     await sendMessage(ctx, "Process cancelled. Returning to the beginning.");
     await conversation.halt();
@@ -66,15 +79,18 @@ async function waitForInputOrCancel(
 }
 
 // Add market cap calculation function after the imports
-async function calculateExpectedMarketCap(buyAmount: number, isBonkToken: boolean): Promise<string> {
+async function calculateExpectedMarketCap(
+  buyAmount: number,
+  isBonkToken: boolean
+): Promise<string> {
   // Get current SOL price from API
   const { getCurrentSolPrice } = await import("../../backend/utils");
   const currentSolPrice = await getCurrentSolPrice();
-  
+
   // Bonding curve constants (in SOL)
   const STARTING_MC_SOL = 30; // Starting market cap is 30 SOL
   const FINAL_MC_SOL = 85; // Final market cap is 85 SOL (bonding curve completion)
-  
+
   // Non-linear bonding curve progression based on SOL amounts
   const pumpfunProgression = [
     { buyAmount: 0, marketCapSol: 30 },
@@ -85,9 +101,9 @@ async function calculateExpectedMarketCap(buyAmount: number, isBonkToken: boolea
     { buyAmount: 50, marketCapSol: 165 },
     { buyAmount: 60, marketCapSol: 209 },
     { buyAmount: 70, marketCapSol: 264 },
-    { buyAmount: 85, marketCapSol: 385 }
+    { buyAmount: 85, marketCapSol: 385 },
   ];
-  
+
   const bonkProgression = [
     { buyAmount: 0, marketCapSol: 30 },
     { buyAmount: 10, marketCapSol: 41 },
@@ -97,36 +113,39 @@ async function calculateExpectedMarketCap(buyAmount: number, isBonkToken: boolea
     { buyAmount: 50, marketCapSol: 143 },
     { buyAmount: 60, marketCapSol: 181 },
     { buyAmount: 70, marketCapSol: 231 },
-    { buyAmount: 85, marketCapSol: 385 }
+    { buyAmount: 85, marketCapSol: 385 },
   ];
-  
+
   // Use appropriate progression based on platform
   const progression = isBonkToken ? bonkProgression : pumpfunProgression;
-  
+
   // Find the expected market cap in SOL using interpolation
   let expectedMarketCapSol = 30; // Default starting value (30 SOL)
-  
+
   for (let i = 0; i < progression.length - 1; i++) {
     const current = progression[i];
     const next = progression[i + 1];
-    
+
     if (buyAmount >= current.buyAmount && buyAmount <= next.buyAmount) {
       // Linear interpolation between two points
-      const ratio = (buyAmount - current.buyAmount) / (next.buyAmount - current.buyAmount);
-      expectedMarketCapSol = current.marketCapSol + ratio * (next.marketCapSol - current.marketCapSol);
+      const ratio =
+        (buyAmount - current.buyAmount) / (next.buyAmount - current.buyAmount);
+      expectedMarketCapSol =
+        current.marketCapSol +
+        ratio * (next.marketCapSol - current.marketCapSol);
       break;
     } else if (buyAmount > next.buyAmount) {
       // If buy amount exceeds the range, use the last known value
       expectedMarketCapSol = next.marketCapSol;
     }
   }
-  
+
   // Convert SOL market cap to USD using current SOL price
   const expectedMarketCapUsd = expectedMarketCapSol * currentSolPrice;
-  
+
   // Round to nearest $100
   const roundedMC = Math.round(expectedMarketCapUsd / 100) * 100;
-  
+
   // Format the display
   if (roundedMC >= 1000) {
     return `${(roundedMC / 1000).toFixed(1)}K`;
@@ -135,12 +154,16 @@ async function calculateExpectedMarketCap(buyAmount: number, isBonkToken: boolea
   }
 }
 
-const launchTokenConversation = async (conversation: Conversation, ctx: Context, tokenAddress: string) => {
+const launchTokenConversation = async (
+  conversation: Conversation,
+  ctx: Context,
+  tokenAddress: string
+) => {
   await safeAnswerCallbackQuery(ctx);
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await sendMessage(ctx, "Unrecognized user ❌");
+    await sendMessage(ctx, "❌ Unrecognized user");
     await conversation.halt();
     return;
   }
@@ -154,17 +177,17 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   // -------- VALIDATE TOKEN ----------
   let token = await getUserToken(user.id, tokenAddress);
   if (!token) {
-    await sendMessage(ctx, "Token not found ❌");
+    await sendMessage(ctx, "❌ Token not found");
     await conversation.halt();
     return;
   }
   if (token.state === TokenState.LAUNCHING) {
-    await sendMessage(ctx, "Token is currently launching 🔄");
+    await sendMessage(ctx, "🔄 Token is currently launching");
     await conversation.halt();
     return;
   }
   if (token.state === TokenState.LAUNCHED) {
-    await sendMessage(ctx, "Token is already launched 🚀");
+    await sendMessage(ctx, "🚀 Token is already launched");
     await conversation.halt();
     return;
   }
@@ -172,25 +195,29 @@ const launchTokenConversation = async (conversation: Conversation, ctx: Context,
   // -------- CHECK IF TOKEN IS ALREADY LAUNCHED ON OTHER PLATFORMS --------
   // Automatically replace token address if it's already launched/listed
   try {
-    const replacementResult = await autoReplaceLaunchedTokenAddress(user.id, tokenAddress);
+    const replacementResult = await autoReplaceLaunchedTokenAddress(
+      user.id,
+      tokenAddress
+    );
 
     if (replacementResult.wasReplaced) {
       // Token was replaced with a new address
       await sendMessage(
         ctx,
-        `🔄 <b>Token Address Replaced</b>
+        `
+<b>🔄 Token Address Automatically Replaced</b>
 
-The original token address was already ${replacementResult.reason?.includes("listed") ? "listed" : "launched"} on a trading platform.
+<b>Reason:</b> The original token address was already ${replacementResult.reason?.includes("listed") ? "<b>listed</b>" : "<b>launched</b>"} on a trading platform.
 
-✅ <b>Automatically assigned new address:</b>
+<b>New Token Address:</b>
 <code>${replacementResult.newTokenAddress}</code>
 
-Your token metadata remains the same:
-• <b>Name:</b> ${token.name}
-• <b>Symbol:</b> ${token.symbol}
-• <b>Description:</b> ${token.description}
+<b>Token Details:</b>
+• <b>Name:</b> <code>${token.name}</code>
+• <b>Symbol:</b> <code>${token.symbol}</code>
+• <b>Description:</b> <code>${token.description}</code>
 
-Continuing with launch process...`,
+<i>✅ Continuing with the launch process using the new address.</i>`,
         { parse_mode: "HTML" }
       );
 
@@ -200,14 +227,19 @@ Continuing with launch process...`,
       // Get the updated token data
       const updatedToken = await getUserToken(user.id, tokenAddress);
       if (!updatedToken) {
-        await sendMessage(ctx, "Error: Could not retrieve updated token data ❌");
+        await sendMessage(
+          ctx,
+          "❌ Error: Could not retrieve updated token data"
+        );
         await conversation.halt();
         return;
       }
       token = updatedToken;
     }
   } catch (error: any) {
-    logger.error(`[launchToken] Error during token address replacement: ${error.message}`);
+    logger.error(
+      `[launchToken] Error during token address replacement: ${error.message}`
+    );
     await sendMessage(
       ctx,
       `❌ <b>Error checking token status</b>
@@ -226,21 +258,22 @@ Error: ${error.message}`,
   if ((token.launchData?.launchStage || 1) > 1) {
     await sendMessage(
       ctx,
-      `🔄 <b>Previous launch attempt detected</b>
+      `<b>🔄 Previous Launch Attempt Detected</b>
 
-This token has a previous launch attempt. You can:
-• Enter new launch amounts (recommended)
-• Or continue with previous values
+<i>This token has a previous launch attempt. You can:</i>
+• <b>Enter new launch amounts</b> (recommended)
+• <b>Continue with previous values</b>
 
-<b>Previous values:</b>
-• Buy Amount: ${token.launchData?.buyAmount || 0} SOL  
-• Dev Buy: ${token.launchData?.devBuy || 0} SOL
+<b>Previous Values:</b>
+• <b>Buy Amount:</b> <code>${token.launchData?.buyAmount || 0}</code> SOL
+• <b>Dev Buy:</b> <code>${token.launchData?.devBuy || 0}</code> SOL
 
-Would you like to enter new values or use previous ones?`,
+<b>What would you like to do?</b>`,
       {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard()
           .text("🆕 Enter New Values", "NEW_VALUES")
+          .row()
           .text("🔄 Use Previous Values", "USE_PREVIOUS")
           .row()
           .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
@@ -258,13 +291,25 @@ Would you like to enter new values or use previous ones?`,
 
     if (retryChoice.callbackQuery?.data === "USE_PREVIOUS") {
       // Use the automatic retry with stored values
-      const result = await enqueueTokenLaunchRetry(user.id, Number(user.telegramId), token.tokenAddress);
+      const result = await enqueueTokenLaunchRetry(
+        user.id,
+        Number(user.telegramId),
+        token.tokenAddress
+      );
       if (!result.success) {
-        await sendMessage(ctx, "An error occurred while submitting token launch for retry ❌. Please try again..");
+        await sendMessage(
+          ctx,
+          "❌ An error occurred while submitting token launch for retry. Please try again."
+        );
       } else {
         await sendMessage(
           ctx,
-          "Token Launch details has been submitted for retry ✅.\nYou would get a message once your launch has been completed."
+          `<b>✅ Token Launch Submitted for Retry</b>
+
+Your token launch details have been successfully submitted for retry. 🚀
+
+<i>You will receive a notification once your launch is completed.</i>`,
+          { parse_mode: "HTML" }
         );
       }
       await conversation.halt();
@@ -278,7 +323,10 @@ Would you like to enter new values or use previous ones?`,
   // -------- GET FUNDING WALLET ----------
   const fundingWallet = await getFundingWallet(user.id);
   if (!fundingWallet) {
-    await sendMessage(ctx, "❌ No funding wallet found. Please configure your funding wallet in Wallet Config first.");
+    await sendMessage(
+      ctx,
+      "❌ No funding wallet found. Please configure your funding wallet in Wallet Config first."
+    );
     await conversation.halt();
     return;
   }
@@ -286,13 +334,17 @@ Would you like to enter new values or use previous ones?`,
   // -------- GET BUYER WALLETS ----------
   const buyerWallets = await getAllBuyerWallets(user.id);
   if (buyerWallets.length === 0) {
-    await sendMessage(ctx, "❌ No buyer wallets found. Please add buyer wallets in Wallet Config first.");
+    await sendMessage(
+      ctx,
+      "❌ No buyer wallets found. Please add buyer wallets in Wallet Config first."
+    );
     await conversation.halt();
     return;
   }
 
   // Check if this is a Bonk token - if so, we'll collect input but use direct launch
-  const isBonkToken = token.launchData?.destination === LaunchDestination.LETSBONK;
+  const isBonkToken =
+    token.launchData?.destination === LaunchDestination.LETSBONK;
 
   // -------- CHECK DEV WALLET BALANCE ----------
   const devWalletAddress = await getDefaultDevWallet(String(user.id));
@@ -300,21 +352,23 @@ Would you like to enter new values or use previous ones?`,
   const minDevBalance = env.LAUNCH_FEE_SOL + 0.1; // Platform fee + buffer (hidden from user)
 
   if (devBalance < minDevBalance) {
-    const launchKb = new InlineKeyboard().text("🚀 Launch Token", `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`);
-
+    const launchKb = new InlineKeyboard().text(
+      "🚀 Launch Token",
+      `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`
+    );
     await sendMessage(
       ctx,
-      `❌ <b>Insufficient dev wallet balance!</b>
+      `<b>❌ Insufficient Dev Wallet Balance</b>
 
-💰 <b>Required:</b> At least ${minDevBalance.toFixed(4)} SOL
-💳 <b>Available:</b> ${devBalance.toFixed(4)} SOL
+<b>Required:</b> <code>${minDevBalance.toFixed(4)} SOL</code>
+<b>Available:</b> <code>${devBalance.toFixed(4)} SOL</code>
 
-<b>Your dev wallet needs funding for token creation and dev buy operations.</b>
+Your dev wallet needs additional funds for token creation and dev buy operations.
 
 <b>Please fund your dev wallet:</b>
 <code>${devWalletAddress}</code>
 
-<i>💡 Tap the address above to copy it</i>`,
+<i>💡 Tap the address above to copy it.</i>`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
 
@@ -326,7 +380,13 @@ Would you like to enter new values or use previous ones?`,
   const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
   await sendMessage(
     ctx,
-    `💳 Using funding wallet: <code>${fundingWallet.publicKey}</code>\n💰 Balance: ${fundingBalance.toFixed(4)} SOL\n👥 Using ${buyerWallets.length} buyer wallets`,
+    `<b>💳 Funding Wallet</b>
+<code>${fundingWallet.publicKey}</code>
+<b>Balance:</b> <code>${fundingBalance.toFixed(4)} SOL</code>
+
+<b>👥 Buyer Wallets:</b> <code>${buyerWallets.length}</code>
+
+<i>✅ All wallets are ready for launch.</i>`,
     { parse_mode: "HTML" }
   );
 
@@ -339,9 +399,12 @@ Would you like to enter new values or use previous ones?`,
     devBuy = existingRetryData.devBuy;
     await sendMessage(
       ctx,
-      `🔄 <b>Retrying with previous values:</b>
-• <b>Buy Amount:</b> ${buyAmount} SOL
-• <b>Dev Buy:</b> ${devBuy} SOL`,
+      `<b>🔄 Retrying Token Launch with Previous Values</b>
+
+<b>Buy Amount:</b> <code>${buyAmount}</code> SOL
+<b>Dev Buy:</b> <code>${devBuy}</code> SOL
+
+<i>Proceeding with your previous launch parameters.</i>`,
       { parse_mode: "HTML" }
     );
 
@@ -350,9 +413,12 @@ Would you like to enter new values or use previous ones?`,
   } else {
     // -------- GET BUY AMOUNT --------
     // Calculate maximum buy amount based on current wallet count
-    const { calculateMaxBuyAmount, calculateMaxBuyAmountWithWallets } = await import("../../backend/functions-main");
+    const { calculateMaxBuyAmount, calculateMaxBuyAmountWithWallets } =
+      await import("../../backend/functions-main");
     const maxBuyAmount = calculateMaxBuyAmount();
-    const maxBuyAmountWithCurrentWallets = calculateMaxBuyAmountWithWallets(buyerWallets.length);
+    const maxBuyAmountWithCurrentWallets = calculateMaxBuyAmountWithWallets(
+      buyerWallets.length
+    );
 
     await sendMessage(
       ctx,
@@ -371,7 +437,10 @@ Would you like to enter new values or use previous ones?`,
     );
 
     buyAmountLoop: while (true) {
-      const buyAmountCtx = await conversation.waitFor(["message:text", "callback_query:data"]);
+      const buyAmountCtx = await conversation.waitFor([
+        "message:text",
+        "callback_query:data",
+      ]);
 
       if (buyAmountCtx.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
         await buyAmountCtx.answerCallbackQuery();
@@ -382,7 +451,10 @@ Would you like to enter new values or use previous ones?`,
       if (buyAmountCtx.message?.text) {
         const parsed = parseFloat(buyAmountCtx.message.text);
         if (isNaN(parsed) || parsed <= 0) {
-          await sendMessage(ctx, "❌ Invalid amount. Please enter a positive number:");
+          await sendMessage(
+            ctx,
+            "❌ Invalid amount. Please enter a positive number:"
+          );
           continue;
         } else if (parsed > maxBuyAmountWithCurrentWallets) {
           await sendMessage(
@@ -400,7 +472,8 @@ Please enter a smaller amount between 0.1 and ${maxBuyAmountWithCurrentWallets.t
           buyAmount = parsed;
 
           // -------- CHECK WALLET REQUIREMENTS --------
-          const { calculateRequiredWallets, allocateWalletsFromPool } = await import("../../backend/functions-main");
+          const { calculateRequiredWallets, allocateWalletsFromPool } =
+            await import("../../backend/functions-main");
 
           try {
             const requiredWallets = calculateRequiredWallets(buyAmount);
@@ -422,7 +495,10 @@ You need ${walletsNeeded} more wallet${walletsNeeded > 1 ? "s" : ""} for this bu
                 {
                   parse_mode: "HTML",
                   reply_markup: new InlineKeyboard()
-                    .text(`📥 Import ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}`, "import_missing_wallets")
+                    .text(
+                      `📥 Import ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}`,
+                      "import_missing_wallets"
+                    )
                     .row()
                     .text(
                       `🔧 Generate ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}`,
@@ -433,15 +509,22 @@ You need ${walletsNeeded} more wallet${walletsNeeded > 1 ? "s" : ""} for this bu
                 }
               );
 
-              const walletChoice = await conversation.waitFor("callback_query:data");
+              const walletChoice = await conversation.waitFor(
+                "callback_query:data"
+              );
               await walletChoice.answerCallbackQuery();
 
-              if (walletChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+              if (
+                walletChoice.callbackQuery?.data ===
+                LaunchCallBackQueries.CANCEL
+              ) {
                 await sendMessage(walletChoice, "Launch cancelled.");
                 return conversation.halt();
               }
 
-              if (walletChoice.callbackQuery?.data === "import_missing_wallets") {
+              if (
+                walletChoice.callbackQuery?.data === "import_missing_wallets"
+              ) {
                 // Import wallets flow
                 await sendMessage(
                   walletChoice,
@@ -452,7 +535,10 @@ Please send the private key of wallet 1/${walletsNeeded}:
 <i>💡 Send one private key per message. You'll be prompted for each wallet.</i>`,
                   {
                     parse_mode: "HTML",
-                    reply_markup: new InlineKeyboard().text("❌ Cancel", LaunchCallBackQueries.CANCEL),
+                    reply_markup: new InlineKeyboard().text(
+                      "❌ Cancel",
+                      LaunchCallBackQueries.CANCEL
+                    ),
                   }
                 );
 
@@ -462,14 +548,20 @@ Please send the private key of wallet 1/${walletsNeeded}:
                       walletChoice,
                       `📥 Please send the private key of wallet ${i + 1}/${walletsNeeded}:`,
                       {
-                        reply_markup: new InlineKeyboard().text("❌ Cancel", LaunchCallBackQueries.CANCEL),
+                        reply_markup: new InlineKeyboard().text(
+                          "❌ Cancel",
+                          LaunchCallBackQueries.CANCEL
+                        ),
                       }
                     );
                   }
 
                   const privateKeyInput = await conversation.wait();
 
-                  if (privateKeyInput.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+                  if (
+                    privateKeyInput.callbackQuery?.data ===
+                    LaunchCallBackQueries.CANCEL
+                  ) {
                     await privateKeyInput.answerCallbackQuery();
                     await sendMessage(privateKeyInput, "Import cancelled.");
                     return conversation.halt();
@@ -477,16 +569,25 @@ Please send the private key of wallet 1/${walletsNeeded}:
 
                   const privateKey = privateKeyInput.message?.text?.trim();
                   if (!privateKey) {
-                    await sendMessage(privateKeyInput, "❌ No private key provided. Import cancelled.");
+                    await sendMessage(
+                      privateKeyInput,
+                      "❌ No private key provided. Import cancelled."
+                    );
                     return conversation.halt();
                   }
 
                   try {
-                    const { addBuyerWallet } = await import("../../backend/functions-main");
+                    const { addBuyerWallet } = await import(
+                      "../../backend/functions-main"
+                    );
                     await addBuyerWallet(user.id, privateKey);
-                    await sendMessage(privateKeyInput, `✅ Wallet ${i + 1}/${walletsNeeded} imported successfully!`, {
-                      parse_mode: "HTML",
-                    });
+                    await sendMessage(
+                      privateKeyInput,
+                      `✅ Wallet ${i + 1}/${walletsNeeded} imported successfully!`,
+                      {
+                        parse_mode: "HTML",
+                      }
+                    );
                   } catch (error: any) {
                     await sendMessage(
                       privateKeyInput,
@@ -502,7 +603,9 @@ Please send the private key of wallet 1/${walletsNeeded}:
                   `🎉 <b>All ${walletsNeeded} wallets imported successfully!</b>\n\nProceeding with token launch...`,
                   { parse_mode: "HTML" }
                 );
-              } else if (walletChoice.callbackQuery?.data === "generate_missing_wallets") {
+              } else if (
+                walletChoice.callbackQuery?.data === "generate_missing_wallets"
+              ) {
                 // Generate wallets flow
                 await sendMessage(
                   walletChoice,
@@ -537,7 +640,9 @@ Proceeding with token launch...`,
                           `⚠️ Generation attempt ${retryCount} failed: ${error.message}\n\n🔄 Retrying... (${retryCount}/${maxRetries})`,
                           { parse_mode: "HTML" }
                         );
-                        await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second before retry
+                        await new Promise((resolve) =>
+                          setTimeout(resolve, 1000)
+                        ); // Wait 1 second before retry
                       } else {
                         throw error;
                       }
@@ -589,7 +694,10 @@ Please enter a smaller buy amount:`,
     }
 
     // -------- GET DEV BUY AMOUNT --------
-    const expectedMarketCap = await calculateExpectedMarketCap(buyAmount, isBonkToken);
+    const expectedMarketCap = await calculateExpectedMarketCap(
+      buyAmount,
+      isBonkToken
+    );
     await sendMessage(
       ctx,
       `BUY AMOUNT: ${buyAmount}SOL
@@ -599,7 +707,10 @@ EXPECTED MARKET CAP: ${expectedMarketCap}
     );
 
     while (true) {
-      const devBuyCtx = await conversation.waitFor(["message:text", "callback_query:data"]);
+      const devBuyCtx = await conversation.waitFor([
+        "message:text",
+        "callback_query:data",
+      ]);
 
       if (devBuyCtx.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
         await devBuyCtx.answerCallbackQuery();
@@ -610,7 +721,10 @@ EXPECTED MARKET CAP: ${expectedMarketCap}
       if (devBuyCtx.message?.text) {
         const parsed = parseFloat(devBuyCtx.message.text);
         if (isNaN(parsed) || parsed < 0) {
-          await sendMessage(ctx, "❌ Invalid amount. Please enter 0 or a positive number:");
+          await sendMessage(
+            ctx,
+            "❌ Invalid amount. Please enter 0 or a positive number:"
+          );
         } else if (parsed > buyAmount) {
           await sendMessage(
             ctx,
@@ -638,7 +752,10 @@ EXPECTED MARKET CAP: ${expectedMarketCap}
 
   // Check funding wallet balance against total requirement
   if (fundingBalance < requiredFundingAmount) {
-    const launchKb = new InlineKeyboard().text("🚀 Launch Token", `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`);
+    const launchKb = new InlineKeyboard().text(
+      "🚀 Launch Token",
+      `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`
+    );
 
     await sendMessage(
       ctx,
@@ -680,7 +797,9 @@ EXPECTED MARKET CAP: ${expectedMarketCap}
 
   const buyerKeys = buyerWalletDocs.map((w) => decryptPrivateKey(w.privateKey));
 
-  await checksLoading.update("🔍 **Performing pre-launch checks...**\n\n💰 Checking wallet balances...");
+  await checksLoading.update(
+    "🔍 **Performing pre-launch checks...**\n\n💰 Checking wallet balances..."
+  );
 
   let checkResult: any;
 
@@ -688,7 +807,8 @@ EXPECTED MARKET CAP: ${expectedMarketCap}
     // For Bonk tokens, do simplified checks (no complex PumpFun validation)
     checkResult = await preLaunchChecks(
       fundingWallet.privateKey,
-      (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
+      (token.launchData!.devWallet! as unknown as { privateKey: string })
+        .privateKey,
       buyAmount,
       devBuy,
       buyerKeys.length
@@ -697,7 +817,8 @@ EXPECTED MARKET CAP: ${expectedMarketCap}
     // For PumpFun tokens, do full validation
     checkResult = await preLaunchChecks(
       fundingWallet.privateKey,
-      (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
+      (token.launchData!.devWallet! as unknown as { privateKey: string })
+        .privateKey,
       buyAmount,
       devBuy,
       buyerKeys.length
@@ -725,7 +846,10 @@ ${checkResult.message}`,
 
     if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
       // Exit conversation and let user manually retry from tokens list
-      await sendMessage(response, "🔄 Please resolve the issues and try launching again from your tokens list.");
+      await sendMessage(
+        response,
+        "🔄 Please resolve the issues and try launching again from your tokens list."
+      );
       await conversation.halt();
       return;
     } else {
@@ -736,7 +860,9 @@ ${checkResult.message}`,
     }
   }
 
-  await checksLoading.update("✅ **Pre-launch checks completed successfully!**\n\n🚀 Submitting launch to queue...");
+  await checksLoading.update(
+    "✅ **Pre-launch checks completed successfully!**\n\n🚀 Submitting launch to queue..."
+  );
 
   // ------ HANDLE LAUNCH BASED ON TOKEN TYPE -----
   let result: any;
@@ -744,7 +870,9 @@ ${checkResult.message}`,
   // Check if this is a Bonk token
   if (isBonkToken) {
     // Bonk tokens use direct launch (no complex staging)
-    await checksLoading.update("🚀 **Launching Bonk token...**\n\n⏳ Creating token on Raydium Launch Lab...");
+    await checksLoading.update(
+      "🚀 **Launching Bonk token...**\n\n⏳ Creating token on Raydium Launch Lab..."
+    );
 
     result = await launchBonkToken(user.id, tokenAddress, buyAmount, devBuy);
 
@@ -755,7 +883,12 @@ ${checkResult.message}`,
 
       // Send Bonk-specific success notification
       const { sendBonkLaunchSuccessNotification } = await import("../message");
-      await sendBonkLaunchSuccessNotification(ctx.chat!.id, tokenAddress, result.tokenName, result.tokenSymbol);
+      await sendBonkLaunchSuccessNotification(
+        ctx.chat!.id,
+        tokenAddress,
+        result.tokenName,
+        result.tokenSymbol
+      );
     } else {
       await checksLoading.update(
         "❌ **Bonk token launch failed**\n\nAn error occurred during launch. Please try again."
@@ -773,14 +906,17 @@ Please try again or contact support if the issue persists.`,
     }
   } else {
     // PumpFun tokens use the complex staging process
-    await checksLoading.update("🚀 **Submitting PumpFun token launch...**\n\n⏳ Queuing for staged launch process...");
+    await checksLoading.update(
+      "🚀 **Submitting PumpFun token launch...**\n\n⏳ Queuing for staged launch process..."
+    );
 
     result = await enqueuePrepareTokenLaunch(
       user.id,
       ctx.chat!.id,
       tokenAddress,
       fundingWallet.privateKey,
-      (token.launchData!.devWallet! as unknown as { privateKey: string }).privateKey,
+      (token.launchData!.devWallet! as unknown as { privateKey: string })
+        .privateKey,
       buyerKeys,
       devBuy,
       buyAmount
@@ -790,7 +926,10 @@ Please try again or contact support if the issue persists.`,
       await checksLoading.update(
         "❌ **Failed to submit launch**\n\nAn error occurred while submitting launch details for execution. Please try again."
       );
-      await sendMessage(ctx, "An error occurred while submitting launch details for execution ❌. Please try again..");
+      await sendMessage(
+        ctx,
+        "An error occurred while submitting launch details for execution ❌. Please try again.."
+      );
     } else {
       await checksLoading.update(
         "🎉 **Launch submitted successfully!**\n\n⏳ Your token launch is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the launch is completed."

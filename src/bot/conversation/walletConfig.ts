@@ -39,21 +39,18 @@ const walletConfigConversation = async (
 
   const keyboard = new InlineKeyboard()
     .text("🛠️ Change Developer Wallet", CallBackQueries.CHANGE_DEV_WALLET)
-    .row()
     .text(
       "💰 Generate New Funding Wallet",
       CallBackQueries.GENERATE_FUNDING_WALLET
     )
     .row()
     .text("👥 Manage Buyer Wallets", CallBackQueries.MANAGE_BUYER_WALLETS)
-    .row()
     .text("💸 Withdraw from Dev Wallet", CallBackQueries.WITHDRAW_DEV_WALLET)
     .row()
     .text(
       "💸 Withdraw from Funding Wallet",
       CallBackQueries.WITHDRAW_FUNDING_WALLET
     )
-    .row()
     .text(
       "💸 Withdraw from Buyer Wallets",
       CallBackQueries.WITHDRAW_BUYER_WALLETS
@@ -62,21 +59,22 @@ const walletConfigConversation = async (
     .text("🔙 Back", CallBackQueries.BACK);
 
   const menuMessage = `
-<b>💼 Wallet Configuration</b>
-Configure and manage your wallets for token operations
+<b>✨ <u>Wallet Configuration</u> ✨</b>
+<i>Effortlessly manage your wallets for token launches and operations.</i>
 
-<b>🔧 Developer Wallet:</b>
+<b>🔧 Developer Wallet</b>
 <code>${devWalletAddress}</code>
-💰 ${devBalance.toFixed(4)} SOL
+<b>Balance:</b> <b>${devBalance.toFixed(4)} SOL</b>
 
-<b>💳 Funding Wallet:</b>
+<b>💳 Funding Wallet</b>
 <code>${fundingWalletAddress}</code>
-💰 ${fundingBalance.toFixed(4)} SOL
+<b>Balance:</b> <b>${fundingBalance.toFixed(4)} SOL</b>
 
-<b>👥 Buyer Wallets:</b> ${buyerWallets.length}/40 wallets
-${buyerWallets.length > 0 ? "✅ Ready for launches" : "⚠️ No buyer wallets configured"}
+<b>👥 Buyer Wallets</b>
+<b>Count:</b> <b>${buyerWallets.length}/40</b>
+<b>Status:</b> ${buyerWallets.length > 0 ? "✅ <b>Ready for launches</b>" : "⚠️ <b>No buyer wallets configured</b>"}
 
-<i>💡 Tip: Ensure your funding wallet has sufficient SOL for token launches!</i>
+<i>💡 <b>Tip:</b> Keep your funding wallet topped up for seamless launches!</i>
 `;
 
   await sendMessage(ctx, menuMessage, {

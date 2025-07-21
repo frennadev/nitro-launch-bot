@@ -44,10 +44,13 @@ export const withdrawDevWalletConversation = async (
   if (devBalance < 0.001) {
     await sendMessage(
       ctx,
-      `❌ Dev wallet has insufficient balance to withdraw.
-    
-<b>Current balance:</b> ${devBalance.toFixed(6)} SOL
-<b>Minimum required:</b> 0.001 SOL`,
+      `❌ <b>Insufficient Balance</b>
+      
+<b>Dev Wallet:</b> <code>${devWalletAddress}</code>
+<b>Current Balance:</b> <b>${devBalance.toFixed(6)} SOL</b>
+<b>Minimum Required:</b> <b>0.001 SOL</b>
+
+<i>Please deposit more SOL to proceed with withdrawal.</i>`,
       { parse_mode: "HTML" }
     );
     return conversation.halt();
@@ -61,9 +64,9 @@ export const withdrawDevWalletConversation = async (
     `💸 <b>Withdraw from Dev Wallet</b>
 
 <b>Dev Wallet:</b> <code>${devWalletAddress}</code>
-<b>Available Balance:</b> ${devBalance.toFixed(6)} SOL
+<b>Available Balance:</b> <b>${devBalance.toFixed(6)} SOL</b>
 
-Where would you like to withdraw the funds?`,
+<b>Choose withdrawal destination:</b>`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
@@ -166,13 +169,15 @@ Where would you like to withdraw the funds?`,
   // Confirm withdrawal
   await sendMessage(
     destinationChoice,
-    `🔍 <b>Confirm Withdrawal</b>
-
-<b>From:</b> Dev Wallet
-<b>To:</b> ${destinationLabel}
-<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
-
-Proceed with withdrawal?`,
+    [
+      "🔍 <b>Confirm Withdrawal</b>",
+      "",
+      `<b>From:</b> Dev Wallet`,
+      `<b>To:</b> ${destinationLabel}`,
+      `<b>Amount:</b> <b>${netWithdrawAmount.toFixed(6)} SOL</b>`,
+      "",
+      "Proceed with withdrawal?",
+    ].join("\n"),
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
@@ -194,12 +199,10 @@ Proceed with withdrawal?`,
     try {
       await sendMessage(confirmation, "🔄 Processing withdrawal...");
 
-      // Create and send transaction
       const devKeypair = secretKeyToKeypair(devWalletPrivateKey);
       const destinationPubkey = new PublicKey(destinationAddress);
       const feeWalletPubkey = new PublicKey(env.PLATFORM_FEE_WALLET);
 
-      // Transaction to destination
       const transaction = new Transaction()
         .add(
           SystemProgram.transfer({
@@ -209,7 +212,6 @@ Proceed with withdrawal?`,
           })
         )
         .add(
-          // Fee transaction
           SystemProgram.transfer({
             fromPubkey: devKeypair.publicKey,
             toPubkey: feeWalletPubkey,
@@ -224,17 +226,23 @@ Proceed with withdrawal?`,
 
       await sendMessage(
         confirmation,
-        `✅ <b>Withdrawal Successful!</b>
-
-<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
-<b>Destination:</b> ${destinationLabel}
-<b>Transaction:</b> <code>${signature}</code>
-
-<i>🔗 View on Solscan: https://solscan.io/tx/${signature}</i>`,
+        [
+          "✅ <b>Withdrawal Successful!</b>",
+          "",
+          `<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL`,
+          `<b>Destination:</b> ${destinationLabel}`,
+          `<b>Transaction:</b> <code>${signature}</code>`,
+          "",
+          `<i>🔗 View on Solscan: https://solscan.io/tx/${signature}</i>`,
+        ].join("\n"),
         { parse_mode: "HTML" }
       );
     } catch (error: any) {
-      await sendMessage(confirmation, `❌ Withdrawal failed: ${error.message}`);
+      await sendMessage(
+        confirmation,
+        `❌ Withdrawal failed: ${error.message}`,
+        { parse_mode: "HTML" }
+      );
     }
   }
 
@@ -296,19 +304,21 @@ export const withdrawBuyerWalletsConversation = async (
 
   await sendMessage(
     ctx,
-    `💸 <b>Withdraw from Buyer Wallets</b>
-
-<b>Wallets with withdrawable balance:</b>
-${walletList}
-
-<b>Total Available:</b> ${totalBalance.toFixed(6)} SOL
-
-Where would you like to withdraw all funds?`,
+    [
+      "💸 <b>Withdraw from Buyer Wallets</b>",
+      "",
+      "<b>Wallets with withdrawable balance:</b>",
+      walletList,
+      "",
+      `<b>Total Available:</b> <b>${totalBalance.toFixed(6)} SOL</b>`,
+      "",
+      "<b>Choose withdrawal destination:</b>",
+    ].join("\n"),
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
         .text("💳 To Funding Wallet", CallBackQueries.WITHDRAW_TO_FUNDING)
-        .row()
+        // .row()
         .text("🌐 To External Wallet", CallBackQueries.WITHDRAW_TO_EXTERNAL)
         .row()
         .text("❌ Cancel", CallBackQueries.CANCEL_WITHDRAWAL),
@@ -577,7 +587,7 @@ Where would you like to withdraw the funds?`,
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
         .text("🌐 To External Wallet", CallBackQueries.WITHDRAW_TO_EXTERNAL)
-        .row()
+
         .text("❌ Cancel", CallBackQueries.CANCEL_WITHDRAWAL),
     }
   );
@@ -670,7 +680,7 @@ Proceed with withdrawal?`,
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
         .text("✅ Confirm Withdrawal", "confirm_funding_withdrawal")
-        .row()
+        // .row()
         .text("❌ Cancel", CallBackQueries.CANCEL_WITHDRAWAL),
     }
   );

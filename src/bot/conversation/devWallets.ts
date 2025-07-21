@@ -93,7 +93,10 @@ You have <b>${wallets.length}/5</b> dev wallets.
     if (data === CallBackQueries.GENERATE_DEV_WALLET) {
       const newWallet = await generateNewDevWallet(user.id);
       await next.reply(
-        `✅ New dev wallet generated!\n\n<b>Address:</b> <code>${newWallet.publicKey}</code>\n\n<b>Private Key:</b>\n<code>${newWallet.privateKey}</code>\n\n<i>⚠️ Save this private key securely and delete this message!</i>`,
+        `<b>✅ New Developer Wallet Generated!</b>\n\n` +
+          `<b>Address:</b>\n<code>${newWallet.publicKey}</code>\n\n` +
+          `<b>Private Key:</b>\n<code>${newWallet.privateKey}</code>\n\n` +
+          `<i>⚠️ Please save your private key securely. Never share it with anyone. Delete this message after saving!</i>`,
         { parse_mode: "HTML" }
       );
       return conversation.halt();

@@ -237,7 +237,8 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
           .row()
           .text("💳 Wallet Config", CallBackQueries.WALLET_CONFIG);
 
-        await ctx.reply(
+        await sendMessage(
+          ctx,
           "🔧 **Session Reset Complete**\n\n" +
             "✅ Conversation state cleared\n" +
             "✅ Ready for new operations\n\n" +
@@ -340,7 +341,10 @@ async function handleTokenAddressMessage(ctx: any, tokenAddress: string) {
     });
   } catch (error: any) {
     logger.error("Error handling token address message:", error);
-    await ctx.reply("❌ Error processing token address. Please try again.");
+    await sendMessage(
+      ctx,
+      "❌ Error processing token address. Please try again."
+    );
   }
 }
 
@@ -376,7 +380,8 @@ bot.use(async (ctx, next) => {
         .row()
         .text("📋 View Tokens", CallBackQueries.VIEW_TOKENS);
 
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "🔧 **Conversation State Fixed**\n\n" +
           "✅ Error cleared automatically\n" +
           "✅ Session reset completed\n\n" +
@@ -501,21 +506,23 @@ bot.command("start", async (ctx) => {
   const referralStats = await getUserReferralStats(String(user?.id));
 
   const welcomeMsg = `
-👋 *Hello and welcome to Nitro Bot!* 🌟
+👋 <b>Welcome to Nitro Launch Bot!</b> 🚀
 
-🚀 Nitro Bot empowers you to deploy and manage your Solana tokens on [Pump.fun](https://pump.fun) in a flash—no coding required!  
-Here's what Nitro Bot can help you with:
+Nitro Bot empowers you to deploy and manage Solana tokens on <a href="https://pump.fun">Pump.fun</a> and <a href="https://letsbonk.fun">LetsBonk.fun</a> — <i>no coding required</i>!
 
-🔹 Create & launch tokens on Pump.fun
-🔹 Untraceable buys & sells
-🔹 Token launches made easy!
+<b>What you can do:</b>
+• <b>Create & launch tokens</b> instantly on Pump.fun and LetsBonk.fun
+• <b>Private buys & sells</b> for full privacy
+• <b>Easy token management</b> with one click
 
-💳 *Your current dev wallet address:*  
-\`${devWallet}\`
+💳 <b>Your Dev Wallet</b>
+<code>${devWallet}</code>
 
-🔗 *Referrals:* ${referralStats.referralCount} friends joined through your link
-
-Choose an option below to get started ⬇️
+🔗 <b>Referrals:</b> <code>${referralStats.referralCount}</code> friend(s) joined via your link
+<b>Useful Links:</b>
+• <a href="https://pump.fun">Pump.fun</a>
+• <a href="https://letsbonk.fun">LetsBonk.fun</a>
+<b>Get started below:</b>
 `;
 
   const inlineKeyboard = new InlineKeyboard()
@@ -530,7 +537,7 @@ Choose an option below to get started ⬇️
   // .text("Add Wallet", CallBackQueries.ADD_WALLET)
   // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
-  await ctx.reply(welcomeMsg, {
+  await sendMessage(ctx, welcomeMsg, {
     parse_mode: "Markdown",
     reply_markup: inlineKeyboard,
   });
@@ -538,8 +545,43 @@ Choose an option below to get started ⬇️
 
 bot.command("menu", async (ctx) => {
   let user = await getUser(ctx.chat.id.toString());
+  let isFirstTime = user === null;
+
+  if (isFirstTime) {
+    // Check if there's a referral code in the start command
+    const startPayload = ctx.match; // This gets the text after /start
+    let referralCode: string | undefined;
+
+    if (
+      startPayload &&
+      typeof startPayload === "string" &&
+      startPayload.startsWith("REF_")
+    ) {
+      referralCode = startPayload.replace("REF_", "");
+      console.log(`New user with referral code: ${referralCode}`);
+    }
+
+    // Create user with or without referral
+    if (referralCode) {
+      user = await createUserWithReferral(
+        ctx.chat.first_name,
+        ctx.chat.last_name,
+        ctx.chat.username!,
+        ctx.chat.id.toString(),
+        referralCode
+      );
+    } else {
+      user = await createUser(
+        ctx.chat.first_name,
+        ctx.chat.last_name,
+        ctx.chat.username!,
+        ctx.chat.id.toString()
+      );
+    }
+  }
+
   if (!user) {
-    await ctx.reply("Unrecognized user ❌");
+    await sendMessage(ctx, "Unrecognized user ❌");
     return;
   }
 
@@ -553,21 +595,23 @@ bot.command("menu", async (ctx) => {
   const referralStats = await getUserReferralStats(String(user?.id));
 
   const welcomeMsg = `
-👋 *Hello and welcome to Nitro Bot!* 🌟
+👋 <b>Welcome to Nitro Launch Bot!</b> 🚀
 
-🚀 Nitro Bot empowers you to deploy and manage your Solana tokens on [Pump.fun](https://pump.fun) in a flash—no coding required!  
-Here's what Nitro Bot can help you with:
+Nitro Bot empowers you to deploy and manage Solana tokens on <a href="https://pump.fun">Pump.fun</a> and <a href="https://letsbonk.fun">LetsBonk.fun</a> — <i>no coding required</i>!
 
-🔹 Create & launch tokens on Pump.fun
-🔹 Untraceable buys & sells
-🔹 Token launches made easy!
+<b>What you can do:</b>
+• <b>Create & launch tokens</b> instantly on Pump.fun and LetsBonk.fun
+• <b>Private buys & sells</b> for full privacy
+• <b>Easy token management</b> with one click
 
-💳 *Your current dev wallet address:*  
-\`${devWallet}\`
+💳 <b>Your Dev Wallet</b>
+<code>${devWallet}</code>
 
-🔗 *Referrals:* ${referralStats.referralCount} friends joined through your link
-
-Choose an option below to get started ⬇️
+🔗 <b>Referrals:</b> <code>${referralStats.referralCount}</code> friend(s) joined via your link
+<b>Useful Links:</b>
+• <a href="https://pump.fun">Pump.fun</a>
+• <a href="https://letsbonk.fun">LetsBonk.fun</a>
+<b>Get started below:</b>
 `;
 
   const inlineKeyboard = new InlineKeyboard()
@@ -579,11 +623,9 @@ Choose an option below to get started ⬇️
     .row()
     .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
     .text("🆘 Help", CallBackQueries.HELP);
-  // .text("Add Wallet", CallBackQueries.ADD_WALLET)
-  // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
-  await ctx.reply(welcomeMsg, {
-    parse_mode: "Markdown",
+  await sendMessage(ctx, welcomeMsg, {
+    parse_mode: "HTML",
     reply_markup: inlineKeyboard,
   });
 });
@@ -599,7 +641,7 @@ bot.command("admin", async (ctx) => {
     : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
-    await ctx.reply("❌ Access denied. Admin only command.");
+    await sendMessage(ctx, "❌ Access denied. Admin only command.");
     return;
   }
 
@@ -622,9 +664,9 @@ ${stats.available < 100 ? "⚠️ *Warning: Low address pool\\!*" : "✅ *Addres
 • \`/removetoken <address>\` \\- Remove failed token from database
 `;
 
-    await ctx.reply(message, { parse_mode: "MarkdownV2" });
+    await sendMessage(ctx, message, { parse_mode: "MarkdownV2" });
   } catch (error: any) {
-    await ctx.reply(`❌ Error fetching stats: ${error.message}`);
+    await sendMessage(ctx, `❌ Error fetching stats: ${error.message}`);
   }
 });
 
@@ -635,13 +677,14 @@ bot.command("markused", async (ctx) => {
     : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
-    await ctx.reply("❌ Access denied. Admin only command.");
+    await sendMessage(ctx, "❌ Access denied. Admin only command.");
     return;
   }
 
   const args = ctx.message?.text?.split(" ");
   if (!args || args.length < 2) {
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ Usage: /markused <address>\n\nExample: /markused <your_token_address>"
     );
     return;
@@ -651,12 +694,16 @@ bot.command("markused", async (ctx) => {
 
   try {
     await markPumpAddressAsUsed(address);
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       `✅ Successfully marked address as used:\n\`${address}\`\n\nThis address will no longer be used for new token launches.`,
       { parse_mode: "MarkdownV2" }
     );
   } catch (error: any) {
-    await ctx.reply(`❌ Error marking address as used: ${error.message}`);
+    await sendMessage(
+      ctx,
+      `❌ Error marking address as used: ${error.message}`
+    );
   }
 });
 
@@ -667,13 +714,14 @@ bot.command("removetoken", async (ctx) => {
     : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
-    await ctx.reply("❌ Access denied. Admin only command.");
+    await sendMessage(ctx, "❌ Access denied. Admin only command.");
     return;
   }
 
   const args = ctx.message?.text?.split(" ");
   if (!args || args.length < 2) {
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ Usage: /removetoken <address>\n\nExample: /removetoken <your_token_address>\n\n⚠️ This will permanently delete the token from the database and mark the address as used."
     );
     return;
@@ -683,18 +731,20 @@ bot.command("removetoken", async (ctx) => {
 
   try {
     const result = await removeFailedToken(tokenAddress);
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       `✅ Successfully removed failed token:\n\`${tokenAddress}\`\n\n• Token deleted from database\n• Address marked as used (won't be reused)\n• Operation completed safely`,
       { parse_mode: "MarkdownV2" }
     );
   } catch (error: any) {
     if (error.message.includes("not found")) {
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         `⚠️ Token not found in database:\n\`${tokenAddress}\`\n\nThe token may have already been removed or the address is incorrect.`,
         { parse_mode: "MarkdownV2" }
       );
     } else {
-      await ctx.reply(`❌ Error removing token: ${error.message}`);
+      await sendMessage(ctx, `❌ Error removing token: ${error.message}`);
     }
   }
 });
@@ -709,7 +759,7 @@ bot.command("ratelimit", async (ctx) => {
     : [];
 
   if (!adminIds.includes(ctx.from!.id)) {
-    await ctx.reply("❌ Access denied. Admin only command.");
+    await sendMessage(ctx, "❌ Access denied. Admin only command.");
     return;
   }
 
@@ -731,7 +781,7 @@ bot.command("ratelimit", async (ctx) => {
 • \`/ratelimit reset <user_id>\` - Reset rate limits for a user
 • \`/ratelimit user <user_id>\` - Show rate limit status for a user
 `;
-    await ctx.reply(message, { parse_mode: "MarkdownV2" });
+    await sendMessage(ctx, message, { parse_mode: "MarkdownV2" });
     return;
   }
 
@@ -756,28 +806,34 @@ bot.command("ratelimit", async (ctx) => {
 • Message Handling: Unlimited (999,999 per second)
 • Callback Queries: Unlimited (999,999 per second)
 `;
-    await ctx.reply(message, { parse_mode: "MarkdownV2" });
+    await sendMessage(ctx, message, { parse_mode: "MarkdownV2" });
   } else if (subcommand === "reset" && args[2]) {
     const userId = parseInt(args[2]);
     if (isNaN(userId)) {
-      await ctx.reply("❌ Invalid user ID. Please provide a valid number.");
+      await sendMessage(
+        ctx,
+        "❌ Invalid user ID. Please provide a valid number."
+      );
       return;
     }
 
     const reset = resetRateLimits(userId);
     if (reset) {
-      await ctx.reply(`✅ Rate limits reset for user \`${userId}\``, {
+      await sendMessage(ctx, `✅ Rate limits reset for user \`${userId}\``, {
         parse_mode: "MarkdownV2",
       });
     } else {
-      await ctx.reply(`⚠️ No rate limits found for user \`${userId}\``, {
+      await sendMessage(ctx, `⚠️ No rate limits found for user \`${userId}\``, {
         parse_mode: "MarkdownV2",
       });
     }
   } else if (subcommand === "user" && args[2]) {
     const userId = parseInt(args[2]);
     if (isNaN(userId)) {
-      await ctx.reply("❌ Invalid user ID. Please provide a valid number.");
+      await sendMessage(
+        ctx,
+        "❌ Invalid user ID. Please provide a valid number."
+      );
       return;
     }
 
@@ -801,9 +857,9 @@ bot.command("ratelimit", async (ctx) => {
 • Trading Ops: <t:${Math.floor(status.trading_operations.resetTime / 1000)}:R>
 • Admin Ops: <t:${Math.floor(status.admin_operations.resetTime / 1000)}:R>
 `;
-    await ctx.reply(message, { parse_mode: "MarkdownV2" });
+    await sendMessage(ctx, message, { parse_mode: "MarkdownV2" });
   } else {
-    await ctx.reply("❌ Unknown subcommand. Use /ratelimit for help.");
+    await sendMessage(ctx, "❌ Unknown subcommand. Use /ratelimit for help.");
   }
 });
 
@@ -821,7 +877,7 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   let user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await ctx.reply("Unrecognized user ❌");
+    await sendMessage(ctx, "Unrecognized user ❌");
     return;
   }
 
@@ -834,7 +890,7 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
     "_Copy it now and delete the message as soon as you're done\\._",
   ].join("\n");
   const keyboard = new InlineKeyboard().text("🗑 Delete", "del_message");
-  const sent = await ctx.reply(msg, {
+  const sent = await sendMessage(ctx, msg, {
     parse_mode: "MarkdownV2",
     reply_markup: keyboard,
   });
@@ -860,7 +916,7 @@ bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
   // Find token by address prefix
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("❌ User not found");
+    await sendMessage(ctx, "❌ User not found");
     return;
   }
 
@@ -889,7 +945,7 @@ bot.callbackQuery(/^sell_dev_(.+)$/, async (ctx) => {
   }
 
   if (!token) {
-    await ctx.reply("❌ Token not found");
+    await sendMessage(ctx, "❌ Token not found");
     return;
   }
 
@@ -903,7 +959,7 @@ bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
   // Find token by address prefix
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("❌ User not found");
+    await sendMessage(ctx, "❌ User not found");
     return;
   }
 
@@ -932,7 +988,7 @@ bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
   }
 
   if (!token) {
-    await ctx.reply("❌ Token not found");
+    await sendMessage(ctx, "❌ Token not found");
     return;
   }
 
@@ -952,7 +1008,7 @@ bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   // Find token by address prefix
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("❌ User not found");
+    await sendMessage(ctx, "❌ User not found");
     return;
   }
 
@@ -981,7 +1037,7 @@ bot.callbackQuery(/^sell_all_(.+)$/, async (ctx) => {
   }
 
   if (!token) {
-    await ctx.reply("❌ Token not found");
+    await sendMessage(ctx, "❌ Token not found");
     return;
   }
 
@@ -998,7 +1054,7 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
   // Find token by address prefix
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("❌ User not found");
+    await sendMessage(ctx, "❌ User not found");
     return;
   }
 
@@ -1027,7 +1083,7 @@ bot.callbackQuery(/^sell_percent_(.+)$/, async (ctx) => {
   }
 
   if (!token) {
-    await ctx.reply("❌ Token not found");
+    await sendMessage(ctx, "❌ Token not found");
     return;
   }
 
@@ -1093,6 +1149,11 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_TO_EXTERNAL, async (ctx) => {
   await ctx.conversation.enter("withdrawBuyerWalletsConversation");
 });
 
+bot.command("referrals", async (ctx) => {
+  await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("referralsConversation");
+});
+
 bot.callbackQuery(CallBackQueries.VIEW_REFERRALS, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("referralsConversation");
@@ -1141,7 +1202,7 @@ bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   // Find token by address prefix
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("❌ User not found");
+    await sendMessage(ctx, "❌ User not found");
     return;
   }
 
@@ -1170,7 +1231,7 @@ bot.callbackQuery(/^sell_individual_(.+)$/, async (ctx) => {
   }
 
   if (!token) {
-    await ctx.reply("❌ Token not found");
+    await sendMessage(ctx, "❌ Token not found");
     return;
   }
 
@@ -1202,10 +1263,12 @@ bot.callbackQuery(/^sellAll_([^_]+)_([^_]+)$/, async (ctx) => {
       walletAddress,
       "all"
     );
-    if (!result) return ctx.reply("❌ Error selling all token in address");
+    if (!result)
+      return sendMessage(ctx, "❌ Error selling all token in address");
     const { success, signature } = result;
     if (success)
-      return ctx.reply(
+      return sendMessage(
+        ctx,
         `✅ Sold all tokens in address.\n\nTransaction Signature: <a href="https://solscan.io/tx/${signature}">View Transaction</a>`,
         { parse_mode: "HTML" }
       );
@@ -1231,7 +1294,8 @@ bot.callbackQuery(/^sellAll_([^_]+)_([^_]+)$/, async (ctx) => {
         100
       );
     } else {
-      return ctx.reply(
+      return sendMessage(
+        ctx,
         "❌ Could not determine full token address. Please use the main sell buttons from the token display."
       );
     }
@@ -1276,7 +1340,8 @@ bot.callbackQuery(/^sellPct_([^_]+)_([^_]+)$/, async (ctx) => {
         .row()
         .text("❌ Cancel", CallBackQueries.CANCEL);
 
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "💸 **Select Sell Percentage**\n\nChoose what percentage of your tokens to sell:",
         {
           parse_mode: "Markdown",
@@ -1284,7 +1349,8 @@ bot.callbackQuery(/^sellPct_([^_]+)_([^_]+)$/, async (ctx) => {
         }
       );
     } else {
-      return ctx.reply(
+      return sendMessage(
+        ctx,
         "❌ Could not determine full token address. Please use the main sell buttons from the token display."
       );
     }
@@ -1324,7 +1390,7 @@ bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
     // Get user
     const user = await getUser(ctx.chat!.id!.toString());
     if (!user) {
-      await ctx.reply("❌ User not found");
+      await sendMessage(ctx, "❌ User not found");
       return;
     }
 
@@ -1334,7 +1400,8 @@ bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
     );
     const fundingWallet = await getFundingWallet(user.id);
     if (!fundingWallet) {
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "❌ No funding wallet found. Please configure a funding wallet first."
       );
       return;
@@ -1344,7 +1411,8 @@ bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
     const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
     if (fundingBalance < 0.011) {
       // 0.01 SOL + 0.001 SOL for transaction fee
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         `❌ **Insufficient funding wallet balance**\n\n**Required:** 0.011 SOL (0.01 SOL + 0.001 SOL fee)\n**Available:** ${fundingBalance.toFixed(6)} SOL\n\nPlease add more SOL to your funding wallet first.`,
         { parse_mode: "Markdown" }
       );
@@ -1374,13 +1442,15 @@ bot.callbackQuery(/^fund_wallet_(.+)_(.+)$/, async (ctx) => {
     ]);
     await connection.confirmTransaction(signature, "confirmed");
 
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       `✅ **Wallet funded successfully!**\n\n💰 **0.01 SOL sent to:** \`${walletAddress}\`\n📝 **Transaction:** \`${signature}\`\n\nYou can now try selling your tokens again.`,
       { parse_mode: "Markdown" }
     );
   } catch (error: any) {
     logger.error("Error funding wallet:", error);
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       `❌ **Failed to fund wallet**\n\nError: ${error.message}\n\nPlease try again or contact support.`,
       { parse_mode: "Markdown" }
     );
@@ -1398,7 +1468,7 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
     // Get user
     const user = await getUser(ctx.chat!.id!.toString());
     if (!user) {
-      await ctx.reply("❌ User not found");
+      await sendMessage(ctx, "❌ User not found");
       return;
     }
 
@@ -1408,7 +1478,8 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
     const { getTokenBalance } = await import("../backend/utils");
     const fundingWallet = await getFundingWallet(user.id);
     if (!fundingWallet) {
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "❌ No funding wallet found. Please configure a funding wallet first."
       );
       return;
@@ -1440,7 +1511,7 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
     }
 
     if (walletsNeedingFunding.length === 0) {
-      await ctx.reply("❌ No wallets found that need funding.");
+      await sendMessage(ctx, "❌ No wallets found that need funding.");
       return;
     }
 
@@ -1451,7 +1522,8 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
 
     const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
     if (fundingBalance < totalRequired) {
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         `❌ **Insufficient funding wallet balance**\n\n**Required:** ${totalRequired.toFixed(6)} SOL (${totalFundingNeeded.toFixed(6)} SOL funding + ${totalFeesNeeded.toFixed(6)} SOL fees)\n**Available:** ${fundingBalance.toFixed(6)} SOL\n\nPlease add more SOL to your funding wallet first.`,
         { parse_mode: "Markdown" }
       );
@@ -1527,10 +1599,11 @@ bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
 
     resultMessage += `\nYou can now try selling your tokens again.`;
 
-    await ctx.reply(resultMessage, { parse_mode: "Markdown" });
+    await sendMessage(ctx, resultMessage, { parse_mode: "Markdown" });
   } catch (error: any) {
     logger.error("Error funding all wallets:", error);
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       `❌ **Failed to fund wallets**\n\nError: ${error.message}\n\nPlease try again or contact support.`,
       { parse_mode: "Markdown" }
     );
@@ -1550,7 +1623,8 @@ bot.callbackQuery(CallBackQueries.CANCEL, async (ctx) => {
     );
   } catch (error) {
     // If editing fails, send a new message
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ **Operation Cancelled**\n\nYou can send a token address to start over."
     );
   }
@@ -1568,7 +1642,8 @@ bot.callbackQuery(CallBackQueries.CANCEL_EXTERNAL_BUY, async (ctx) => {
       }
     );
   } catch (error) {
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ **External token buy cancelled**\n\nYou can send a token address to start over."
     );
   }
@@ -1585,7 +1660,8 @@ bot.callbackQuery(CallBackQueries.CANCEL_WITHDRAWAL, async (ctx) => {
       }
     );
   } catch (error) {
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ **Withdrawal cancelled**\n\nUse /menu to return to main menu."
     );
   }
@@ -1602,7 +1678,8 @@ bot.callbackQuery(CallBackQueries.CANCEL_DEV_WALLET, async (ctx) => {
       }
     );
   } catch (error) {
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ **Dev wallet operation cancelled**\n\nUse /menu to return to main menu."
     );
   }
@@ -1619,7 +1696,8 @@ bot.callbackQuery(CallBackQueries.CANCEL_BUYER_WALLET, async (ctx) => {
       }
     );
   } catch (error) {
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ **Buyer wallet operation cancelled**\n\nUse /menu to return to main menu."
     );
   }
@@ -1640,13 +1718,13 @@ bot.callbackQuery(/^refresh_launch_data_(.+)$/, async (ctx) => {
   // Get token info to get name and symbol
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("❌ User not found");
+    await sendMessage(ctx, "❌ User not found");
     return;
   }
 
   const token = await getUserTokenWithBuyWallets(user.id, tokenAddress);
   if (!token) {
-    await ctx.reply("❌ Token not found");
+    await sendMessage(ctx, "❌ Token not found");
     return;
   }
 
@@ -1668,7 +1746,7 @@ bot.callbackQuery(/^refresh_bonk_launch_data_(.+)$/, async (ctx) => {
   // Get token info to get name and symbol
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("❌ User not found");
+    await sendMessage(ctx, "❌ User not found");
     return;
   }
 
@@ -1680,7 +1758,7 @@ bot.callbackQuery(/^refresh_bonk_launch_data_(.+)$/, async (ctx) => {
   });
 
   if (!token) {
-    await ctx.reply("❌ Token not found");
+    await sendMessage(ctx, "❌ Token not found");
     return;
   }
 
@@ -1708,7 +1786,7 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
     // Get the existing message to update
     const messageId = ctx.callbackQuery?.message?.message_id;
     if (!messageId) {
-      await ctx.reply("❌ Unable to refresh - message not found.");
+      await sendMessage(ctx, "❌ Unable to refresh - message not found.");
       return;
     }
 
@@ -1718,7 +1796,7 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
     // Force fresh data by bypassing cache
     const tokenInfo = await tokenInfoService.getTokenInfo(tokenAddress); // TokenInfoService doesn't support force refresh parameter
     if (!tokenInfo) {
-      await ctx.reply("❌ Token not found or invalid address.");
+      await sendMessage(ctx, "❌ Token not found or invalid address.");
       return;
     }
 
@@ -1754,7 +1832,7 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
     logger.error(
       `[refresh] Error refreshing token data: ${(error as Error).message}`
     );
-    await ctx.reply("❌ Error refreshing token data. Please try again.");
+    await sendMessage(ctx, "❌ Error refreshing token data. Please try again.");
   }
 });
 
@@ -1812,13 +1890,15 @@ bot.callbackQuery(CallBackQueries.RETRY_LAUNCH, async (ctx) => {
       await ctx.conversation.enter("launchTokenConversation", tokenAddress);
     } else {
       // If we can't extract the token address, guide user to tokens list
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "🔄 Please go to 'View Tokens' and select the token you want to launch."
       );
     }
   } catch (error) {
     logger.error("Error handling RETRY_LAUNCH:", error);
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ Unable to retry launch. Please go to 'View Tokens' and try launching again."
     );
   }
@@ -1836,21 +1916,21 @@ bot.callbackQuery(
     const userId = ctx?.chat!.id.toString();
     const user = await getUser(userId);
     if (!user) {
-      await ctx.reply("Unrecognized user ❌");
+      await sendMessage(ctx, "Unrecognized user ❌");
       return;
     }
     await safeAnswerCallbackQuery(ctx, "💰 Loading");
 
     const tokenAddress = ctx.callbackQuery.data.split("_").pop();
     if (!tokenAddress) {
-      await ctx.reply("❌ Invalid token address.");
+      await sendMessage(ctx, "❌ Invalid token address.");
       return;
     }
 
     try {
       const tokenInfo = await getTokenInfo(tokenAddress);
       if (!tokenInfo) {
-        await ctx.reply("❌ Token not found.");
+        await sendMessage(ctx, "❌ Token not found.");
         return;
       }
 
@@ -1864,7 +1944,8 @@ bot.callbackQuery(
       const botUsername = bot.botInfo.username;
       const referralLink = await generateReferralLink(user.id, botUsername);
 
-      const message = await ctx.reply(
+      const message = await sendMessage(
+        ctx,
         `
 🌟 <b>${tokenInfo.baseToken.symbol}</b> • ⏰ ${age} • 🎯 <a href="${referralLink}">Referral</a>
 
@@ -1904,7 +1985,8 @@ bot.callbackQuery(
       await bot.api.pinChatMessage(userId, message.message_id);
     } catch (error) {
       logger.error("Error fetching trade history:", error);
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "❌ Error fetching trade history. Please try again later."
       );
     }
@@ -1922,14 +2004,14 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
   const userId = ctx?.chat!.id.toString();
   const user = await getUser(userId);
   if (!user) {
-    await ctx.reply("Unrecognized user ❌");
+    await sendMessage(ctx, "Unrecognized user ❌");
     return;
   }
 
   try {
     const tokenInfo = await getTokenInfo(tokenAddress);
     if (!tokenInfo) {
-      await ctx.reply("❌ Token not found.");
+      await sendMessage(ctx, "❌ Token not found.");
       return;
     }
 
@@ -1986,7 +2068,7 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
       });
     } else {
       // If message not found, send a new one
-      const message = await ctx.reply(monitorText, {
+      const message = await sendMessage(ctx, monitorText, {
         parse_mode: "HTML",
         reply_markup: monitorKeyboard,
       });
@@ -1994,7 +2076,8 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
     }
   } catch (error) {
     logger.error("Error refreshing monitor data:", error);
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ Error refreshing monitor data. Please try again later."
     );
   }
@@ -2004,6 +2087,7 @@ bot.api.setMyCommands([
   { command: "start", description: "Start the bot" },
   { command: "menu", description: "Bot Menu" },
   { command: "wallets", description: "Manage Wallets" },
+  { command: "referrals", description: "View your referral stats" },
   { command: "help", description: "Get help with the bot" },
 ]);
 
@@ -2363,12 +2447,14 @@ bot.on("message:text", async (ctx) => {
 
         const tokenInfo = await tokenInfoService.getTokenInfo(text);
         if (!tokenInfo) {
-          await ctx.reply("❌ Token not found or invalid address.");
+          await sendMessage(ctx, "❌ Token not found or invalid address.");
           return;
         }
-        
-        logger.info(`[token-display] Token info retrieved successfully for ${text}, calling formatTokenMessage...`);
-        
+
+        logger.info(
+          `[token-display] Token info retrieved successfully for ${text}, calling formatTokenMessage...`
+        );
+
         let tokenMessage: string;
         try {
           tokenMessage = await formatTokenMessage(
@@ -2377,23 +2463,34 @@ bot.on("message:text", async (ctx) => {
             ctx.chat.id.toString(),
             "2"
           );
-          logger.info(`[token-display] formatTokenMessage completed, message length: ${tokenMessage.length}, sending to user...`);
+          logger.info(
+            `[token-display] formatTokenMessage completed, message length: ${tokenMessage.length}, sending to user...`
+          );
         } catch (formatError: any) {
-          logger.error(`[token-display] formatTokenMessage failed: ${formatError.message}`, formatError);
-          await ctx.reply("❌ Error formatting token information. Please try again.");
+          logger.error(
+            `[token-display] formatTokenMessage failed: ${formatError.message}`,
+            formatError
+          );
+          await sendMessage(
+            ctx,
+            "❌ Error formatting token information. Please try again."
+          );
           return;
         }
-        
+
         let message: any;
         try {
-          message = await ctx.reply(tokenMessage, {
+          message = await sendMessage(ctx, tokenMessage, {
             parse_mode: "HTML",
             reply_markup: new InlineKeyboard()
               .url("📊 Chart", `https://dexscreener.com/solana/${text}`)
               .url("🔗 Contract", `https://solscan.io/token/${text}`)
               .text("💸 Sell", `sell_token_${text}`)
               .row()
-              .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`)
+              .text(
+                "📊 Monitor",
+                `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`
+              )
               .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
               .text("🔄 Refresh", `refresh_ca_${text}`)
               .row()
@@ -2401,14 +2498,22 @@ bot.on("message:text", async (ctx) => {
               .row()
               .text("🏠 Menu", CallBackQueries.BACK),
           });
-          
-          logger.info(`[token-display] Message sent successfully to user, message_id: ${message.message_id}`);
+
+          logger.info(
+            `[token-display] Message sent successfully to user, message_id: ${message.message_id}`
+          );
         } catch (replyError: any) {
-          logger.error(`[token-display] ctx.reply failed: ${replyError.message}`, replyError);
-          await ctx.reply("❌ Error sending token information. Please try again.");
+          logger.error(
+            `[token-display] ctx.reply failed: ${replyError.message}`,
+            replyError
+          );
+          await sendMessage(
+            ctx,
+            "❌ Error sending token information. Please try again."
+          );
           return;
         }
-        
+
         // **BACKGROUND UPDATES: ALL data fetching happens in background, including user checks**
         const updatePromises = [
           // User and token info fetch (moved to background)
@@ -2662,7 +2767,7 @@ bot.on("message:text", async (ctx) => {
 
             const tokenInfo = await tokenInfoService.getTokenInfo(text);
             if (!tokenInfo) {
-              await ctx.reply("❌ Token not found or invalid address.");
+              await sendMessage(ctx, "❌ Token not found or invalid address.");
               return;
             }
             const tokenMessage = await formatTokenMessage(
@@ -2691,7 +2796,10 @@ bot.on("message:text", async (ctx) => {
                   .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
                   .text("🔄 Refresh", `refresh_ca_${text}`)
                   .row()
-                  .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${text}`)
+                  .text(
+                    "🎁 Airdrop SOL",
+                    `${CallBackQueries.AIRDROP_SOL}_${text}`
+                  )
                   .row()
                   .text("🏠 Menu", CallBackQueries.BACK),
               }
@@ -2717,7 +2825,10 @@ bot.on("message:text", async (ctx) => {
     logger.error("Error handling token address message:", error);
     // Send a user-friendly error message
     try {
-      await ctx.reply("❌ Error displaying token information. Please try again or contact support if the issue persists.");
+      await sendMessage(
+        ctx,
+        "❌ Error displaying token information. Please try again or contact support if the issue persists."
+      );
     } catch (replyError) {
       logger.error("Failed to send error message to user:", replyError);
     }
@@ -2729,17 +2840,22 @@ bot.command("reset", async (ctx) => {
   try {
     const cleared = await clearConversationState(ctx);
     if (cleared) {
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "✅ Conversation state cleared successfully. You can now start fresh conversations."
       );
     } else {
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "⚠️ Failed to clear conversation state completely. Please try again or contact support."
       );
     }
   } catch (error: any) {
     logger.error("Error in reset command:", error);
-    await ctx.reply("❌ Error clearing conversation state. Please try again.");
+    await sendMessage(
+      ctx,
+      "❌ Error clearing conversation state. Please try again."
+    );
   }
 });
 
@@ -2760,7 +2876,8 @@ bot.command("forcefix", async (ctx) => {
     }
 
     // Send a fresh start message
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "🔧 **Force Fix Applied**\n\n" +
         "✅ All conversation state cleared\n" +
         "✅ Session completely reset\n\n" +
@@ -2771,7 +2888,7 @@ bot.command("forcefix", async (ctx) => {
     logger.info("Force fix completed for user:", ctx.chat?.id);
   } catch (error: any) {
     logger.error("Error in force fix command:", error);
-    await ctx.reply("❌ Force fix failed. Please contact support.");
+    await sendMessage(ctx, "❌ Force fix failed. Please contact support.");
   }
 });
 
@@ -2790,7 +2907,8 @@ bot.command("fixlaunch", async (ctx) => {
       });
     }
 
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "🔧 **Launch Fix Applied**\n\n" +
         "✅ Conversation state cleared\n" +
         "✅ Session completely reset\n\n" +
@@ -2805,7 +2923,8 @@ bot.command("fixlaunch", async (ctx) => {
     logger.info("Fix launch completed for user:", ctx.chat?.id);
   } catch (error: any) {
     logger.error("Error in fix launch command:", error);
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ Fix launch failed. Please try /forcefix or contact support."
     );
   }
@@ -2830,7 +2949,8 @@ bot.command("directlaunch", async (ctx) => {
         overwrite: true,
       });
     } else {
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "🚀 **Direct Launch**\n\n" +
           "Usage: `/directlaunch <token_address>`\n\n" +
           "Example: `/directlaunch 3oZ8DxXxDnxJ63Fc8DGja8xQnG1fgLshtKyLn9nkpUMP`\n\n" +
@@ -2840,14 +2960,16 @@ bot.command("directlaunch", async (ctx) => {
     }
   } catch (error: any) {
     logger.error("Direct launch failed:", error);
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "❌ Direct launch failed. Please try /fixlaunch first, then use /menu to access your tokens normally."
     );
   }
 });
 
 bot.command("help", async (ctx) => {
-  await ctx.reply(
+  await sendMessage(
+    ctx,
     "🆘 **Help - Can't Launch Token?**\n\n" +
       "**If you're having trouble launching tokens, try these in order:**\n\n" +
       "1️⃣ `/fixlaunch` - Fix launch-specific issues\n" +
@@ -2975,16 +3097,15 @@ bot.on("callback_query:data", async (ctx) => {
     console.log("🎁 Airdrop SOL callback detected:", data);
     const tokenAddress = data.replace(`${CallBackQueries.AIRDROP_SOL}_`, "");
     console.log("🎁 Token address extracted:", tokenAddress);
-    
+
     try {
       // Answer callback query immediately
       await safeAnswerCallbackQuery(ctx, "🎁 Starting SOL airdrop...");
       console.log("🎁 Callback query answered, entering conversation...");
-      
+
       // Enter airdrop conversation
       await ctx.conversation.enter("airdropSolConversation", tokenAddress);
       console.log("🎁 Airdrop conversation entered successfully");
-      
     } catch (error: any) {
       console.error("🎁 Error in airdrop callback handler:", error);
       logger.error("Error starting airdrop conversation:", error);

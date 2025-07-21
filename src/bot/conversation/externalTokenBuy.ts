@@ -145,11 +145,19 @@ export const buyExternalTokenConversation = async (
   // Confirm purchase with funding wallet
   await sendMessage(
     amountInput,
-    `🔍 <b>Confirm External Token Purchase</b>\n\n<b>Token Address:</b> <code>${tokenAddress}</code>\n<b>Buy Amount:</b> ${buyAmount.toFixed(6)} SOL\n<b>Using:</b> Funding Wallet\n\nProceed with purchase?`,
+    [
+      "🔍 <b>Confirm External Token Purchase</b>",
+      "",
+      `<b>Token Address:</b>\n<code>${tokenAddress}</code>`,
+      `<b>Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+      `<b>Wallet:</b> <code>Funding Wallet</code>`,
+      "",
+      "<i>Do you want to proceed with this purchase?</i>",
+    ].join("\n"),
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
-        .text("✅ Confirm Purchase", "confirm_external_buy")
+        .text("✅ Confirm", "confirm_external_buy")
         .row()
         .text("❌ Cancel", CallBackQueries.CANCEL_EXTERNAL_BUY),
     }
@@ -188,7 +196,19 @@ export const buyExternalTokenConversation = async (
           result.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
         await sendMessage(
           confirmation,
-          `✅ <b>External Token Purchase Successful!</b>\n\n<b>Amount Spent:</b> ${buyAmount.toFixed(6)} SOL\n<b>Platform:</b> ${platformText}\n<b>Token Address:</b> <code>${tokenAddress}</code>\n\n<b>Transaction:</b> <code>${result.signature}</code>`,
+          [
+            "✅ <b>External Token Purchase Successful!</b>",
+            "",
+            `<b>Amount Spent:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+            `<b>Platform:</b> <code>${platformText}</code>`,
+            `<b>Token Address:</b>`,
+            `<code>${tokenAddress}</code>`,
+            "",
+            `<b>Transaction Signature:</b>`,
+            `<code>${result.signature}</code>`,
+            "",
+            "<i>Your purchase has been processed successfully.</i>",
+          ].join("\n"),
           { parse_mode: "HTML" }
         );
       } else {
