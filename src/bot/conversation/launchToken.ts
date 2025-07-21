@@ -45,14 +45,11 @@ const retryKeyboard = new InlineKeyboard()
   .text("❌ Cancel", LaunchCallBackQueries.CANCEL);
 
 async function sendMessage(ctx: Context, text: string, options: any = {}) {
-  await ctx.reply(
-    `<b>🌟 Nitro Bot</b>\n${text}\n<i>──────────────</i>`,
-    {
-      ...options,
-      parse_mode: options.parse_mode || "HTML",
-      disable_web_page_preview: true,
-    }
-  );
+  await ctx.reply(`<b>🌟 Nitro Bot</b>\n${text}\n<i>──────────────</i>`, {
+    ...options,
+    parse_mode: options.parse_mode || "HTML",
+    disable_web_page_preview: true,
+  });
 }
 
 async function waitForInputOrCancel(
