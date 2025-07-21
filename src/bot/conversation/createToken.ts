@@ -122,6 +122,103 @@ const createTokenConversation = async (
   }
   const [name, symbol, description] = details;
 
+  let website: string = "";
+  let telegram: string = "";
+  let twitter: string = "";
+
+  await ctx.reply(
+    "🌐 (Optional) Send your website URL for the token, or type 'skip' to continue.\n" +
+      "<i>Example: <code>https://example.com</code></i>\n\n",
+    { parse_mode: "HTML", reply_markup: cancelKeyboard }
+  );
+
+  while (true) {
+    const upd = await conversation.wait();
+    if (upd.callbackQuery?.data === CallBackQueries.BACK) {
+      await upd.answerCallbackQuery();
+      await ctx.reply("Token creation cancelled.");
+      return conversation.halt();
+    }
+    if (upd.message?.text) {
+      const text = upd.message.text.trim();
+      if (text.toLowerCase() === "skip" || text === "") {
+        website = "";
+        break;
+      }
+      // Basic URL validation (optional, can be improved)
+      if (/^https?:\/\/\S+\.\S+/.test(text)) {
+        website = text;
+        break;
+      }
+      await ctx.reply(
+        "Invalid URL format. Please send a valid website URL or type 'skip' to continue.",
+        { parse_mode: "HTML", reply_markup: cancelKeyboard }
+      );
+    }
+  }
+
+  await ctx.reply(
+    "💬 (Optional) Send your Telegram group/channel link for the token, or type 'skip' to continue.\n" +
+      "<i>Example: <code>https://t.me/examplegroup</code></i>\n\n",
+    { parse_mode: "HTML", reply_markup: cancelKeyboard }
+  );
+
+  while (true) {
+    const upd = await conversation.wait();
+    if (upd.callbackQuery?.data === CallBackQueries.BACK) {
+      await upd.answerCallbackQuery();
+      await ctx.reply("Token creation cancelled.");
+      return conversation.halt();
+    }
+    if (upd.message?.text) {
+      const text = upd.message.text.trim();
+      if (text.toLowerCase() === "skip" || text === "") {
+        telegram = "";
+        break;
+      }
+      // Basic Telegram URL validation
+      if (/^https?:\/\/t\.me\/\S+/.test(text)) {
+        telegram = text;
+        break;
+      }
+      await ctx.reply(
+        "Invalid Telegram link format. Please send a valid Telegram URL or type 'skip' to continue.",
+        { parse_mode: "HTML", reply_markup: cancelKeyboard }
+      );
+    }
+  }
+
+  await ctx.reply(
+    "🐦 (Optional) Send your Twitter/X profile or post link for the token, or type 'skip' to continue.\n" +
+      "<i>Example: <code>https://twitter.com/example</code></i>\n\n",
+    { parse_mode: "HTML", reply_markup: cancelKeyboard }
+  );
+
+  while (true) {
+    const upd = await conversation.wait();
+    if (upd.callbackQuery?.data === CallBackQueries.BACK) {
+      await upd.answerCallbackQuery();
+      await ctx.reply("Token creation cancelled.");
+      return conversation.halt();
+    }
+    if (upd.message?.text) {
+      const text = upd.message.text.trim();
+      if (text.toLowerCase() === "skip" || text === "") {
+        twitter = "";
+        break;
+      }
+      // Basic Twitter URL validation
+      if (/^https?:\/\/(twitter\.com|x\.com)\/\S+/.test(text)) {
+        twitter = text;
+        break;
+      }
+      await ctx.reply(
+        "Invalid Twitter/X link format. Please send a valid Twitter/X URL or type 'skip' to continue.",
+        { parse_mode: "HTML", reply_markup: cancelKeyboard }
+      );
+    }
+  }
+
   // === 4) Ask for image upload ===
   await ctx.reply("Upload an image for your token (max 20 MB):", {
     reply_markup: cancelKeyboard,
@@ -160,7 +257,11 @@ const createTokenConversation = async (
 
   let token: any;
   if (mode === CallBackQueries.PUMPFUN) {
-    token = await createToken(user.id, name, symbol, description, fileData);
+    token = await createToken(user.id, name, symbol, description, fileData, {
+      website,
+      telegram,
+      twitter,
+    });
   } else {
     token = await createBonkToken(name, symbol, imageUrl, true, user.id);
   }
@@ -175,15 +276,26 @@ const createTokenConversation = async (
       `${CallBackQueries.LAUNCH_TOKEN}_${token.tokenAddress}`
     );
 
+    let socialsInfo = "";
+    if (twitter) {
+      socialsInfo += `twitter: <code>${twitter}</code>\n`;
+    }
+    if (telegram) {
+      socialsInfo += `telegram: <code>${telegram}</code>\n`;
+    }
+    if (website) {
+      socialsInfo += `<b>Website:</b> <code>${website}</code>\n`;
+    }
+
     await ctx.reply(
       `<b>Token created successfully!</b>
 
-<b>Launch Mode:</b> <code>${mode}</code>
-<b>Name:</b> <code>${token.name}</code>
-<b>Symbol:</b> <code>${token.symbol}</code>
-<b>Description:</b> ${token.description}
-<b>Token Address:</b> <code>${token.tokenAddress}</code>
-`,
+  <b>Launch Mode:</b> <code>${mode}</code>
+  <b>Name:</b> <code>${token.name}</code>
+  <b>Symbol:</b> <code>${token.symbol}</code>
+  <b>Description:</b> ${token.description}
+  <b>Token Address:</b> <code>${token.tokenAddress}</code>
+  ${socialsInfo}`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
   } else {

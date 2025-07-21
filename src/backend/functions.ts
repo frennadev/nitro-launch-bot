@@ -316,7 +316,16 @@ const createTokenMetadata = async (
   name: string,
   symbol: string,
   description: string,
-  image: any
+  image: any,
+  socials: {
+    twitter: string;
+    telegram: string;
+    website: string;
+  } = {
+    twitter: "",
+    telegram: "",
+    website: "",
+  }
 ) => {
   try {
     const ipfsImage = await uploadFileToPinata(
@@ -326,12 +335,21 @@ const createTokenMetadata = async (
     if (!ipfsImage) {
       return null;
     }
+
+    const { twitter, telegram, website } = socials;
+
     const data = {
       name,
       symbol,
       description,
       image: ipfsImage,
+      socials: {
+        twitter,
+        telegram,
+        website,
+      },
     };
+
     const ipfsMetadataResult = await uploadJsonToPinata(
       data,
       `metadata-${name}-${symbol}-${Date.now()}.json`
@@ -560,7 +578,16 @@ export const createToken = async (
   name: string,
   symbol: string,
   description: string,
-  image: any
+  image: any,
+  socials: {
+    twitter: string;
+    telegram: string;
+    website: string;
+  } = {
+    twitter: "",
+    telegram: "",
+    website: "",
+  }
 ) => {
   const devWallet = await WalletModel.findOne({
     user: userId,
@@ -572,11 +599,26 @@ export const createToken = async (
     throw new Error("No default dev wallet found");
   }
 
-  const metadataUri = await createTokenMetadata(
+  const { twitter, telegram, website } = socials;
+
+  const metadata = {
     name,
     symbol,
     description,
-    image
+    image,
+    socials: {
+      twitter: twitter,
+      telegram: telegram,
+      website: website,
+    },
+  };
+
+  const metadataUri = await createTokenMetadata(
+    metadata.name,
+    metadata.symbol,
+    metadata.description,
+    metadata.image,
+    metadata.socials
   );
   if (!metadataUri) {
     throw new Error("Token metadata uri not uploaded");
@@ -2492,7 +2534,10 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
 
   // First 7 wallets (reduced by 18%)
   const firstSevenReduced = [0.41, 0.574, 0.738, 0.82, 0.902, 0.984, 1.066];
-  const firstSevenTotal = firstSevenReduced.reduce((sum, amount) => sum + amount, 0); // 5.494 SOL
+  const firstSevenTotal = firstSevenReduced.reduce(
+    (sum, amount) => sum + amount,
+    0
+  ); // 5.494 SOL
 
   // Next 8 wallets (8-15): 1.25 SOL each
   const nextEightTotal = 8 * 1.25; // 10.0 SOL
@@ -2573,14 +2618,23 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
  */
 export const calculateMaxBuyAmount = (): number => {
   const firstSevenReduced = [0.41, 0.574, 0.738, 0.82, 0.902, 0.984, 1.066];
-  
-  const firstSevenTotal = firstSevenReduced.reduce((sum, amount) => sum + amount, 0);
+
+  const firstSevenTotal = firstSevenReduced.reduce(
+    (sum, amount) => sum + amount,
+    0
+  );
   const nextEightTotal = 8 * 1.25; // 10.0 SOL
   const nextFiveTotal = 5 * 2.2; // 11.0 SOL
   const nextTenTotal = 10 * 2.251; // 22.506 SOL
   const lastTenTotal = 10 * 3.5; // 35.0 SOL
-  
-  return firstSevenTotal + nextEightTotal + nextFiveTotal + nextTenTotal + lastTenTotal; // 84.0 SOL
+
+  return (
+    firstSevenTotal +
+    nextEightTotal +
+    nextFiveTotal +
+    nextTenTotal +
+    lastTenTotal
+  ); // 84.0 SOL
 };
 
 /**
@@ -2594,8 +2648,11 @@ export const calculateMaxBuyAmountWithWallets = (
   if (walletCount <= 0) return 0;
 
   const firstSevenReduced = [0.41, 0.574, 0.738, 0.82, 0.902, 0.984, 1.066];
-  
-  const firstSevenTotal = firstSevenReduced.reduce((sum, amount) => sum + amount, 0);
+
+  const firstSevenTotal = firstSevenReduced.reduce(
+    (sum, amount) => sum + amount,
+    0
+  );
   const nextEightTotal = 8 * 1.25; // 10.0 SOL
 
   if (walletCount <= 7) {
@@ -2622,12 +2679,14 @@ export const calculateMaxBuyAmountWithWallets = (
     // Use all 20 wallets + additional wallets from next 10 (2.251 SOL each)
     const additionalWallets = Math.min(walletCount - 20, 10);
     const additionalTotal = additionalWallets * 2.251;
-    return firstSevenTotal + nextEightTotal + (5 * 2.2) + additionalTotal;
+    return firstSevenTotal + nextEightTotal + 5 * 2.2 + additionalTotal;
   } else {
     // Use all 30 wallets + additional wallets from last 10 (3.5 SOL each)
     const additionalWallets = Math.min(walletCount - 30, 10);
     const additionalTotal = additionalWallets * 3.5;
-    return firstSevenTotal + nextEightTotal + (5 * 2.2) + (10 * 2.251) + additionalTotal;
+    return (
+      firstSevenTotal + nextEightTotal + 5 * 2.2 + 10 * 2.251 + additionalTotal
+    );
   }
 };
 
@@ -2644,10 +2703,13 @@ export const generateBuyDistribution = (
   availableWallets: number
 ): number[] => {
   const maxWallets = Math.min(availableWallets, 40);
-  
+
   const firstSevenReduced = [0.41, 0.574, 0.738, 0.82, 0.902, 0.984, 1.066];
-  
-  const firstSevenTotal = firstSevenReduced.reduce((sum, amount) => sum + amount, 0);
+
+  const firstSevenTotal = firstSevenReduced.reduce(
+    (sum, amount) => sum + amount,
+    0
+  );
   const nextEightTotal = 8 * 1.25; // 10.0 SOL
   const firstFifteenTotal = firstSevenTotal + nextEightTotal;
 
@@ -2687,14 +2749,14 @@ export const generateBuyDistribution = (
     }
 
     return distribution;
-  } else if (buyAmount <= firstFifteenTotal + (5 * 2.2)) {
+  } else if (buyAmount <= firstFifteenTotal + 5 * 2.2) {
     // Use all 15 wallets + distribute remaining across next 5 wallets (2.2 SOL each)
     const distribution = [...firstSevenReduced];
     // Add the 8 wallets with 1.25 SOL each
     for (let i = 0; i < 8; i++) {
       distribution.push(1.25);
     }
-    
+
     let remaining = buyAmount - firstFifteenTotal;
 
     const additionalWalletsNeeded = Math.min(
@@ -2709,7 +2771,10 @@ export const generateBuyDistribution = (
         if (i === additionalWalletsNeeded - 1) {
           distribution.push(remaining);
         } else {
-          const walletAmount = Math.min(2.2, Math.max(2.2, remaining / (additionalWalletsNeeded - i)));
+          const walletAmount = Math.min(
+            2.2,
+            Math.max(2.2, remaining / (additionalWalletsNeeded - i))
+          );
           distribution.push(walletAmount);
           remaining -= walletAmount;
         }
@@ -2717,7 +2782,7 @@ export const generateBuyDistribution = (
     }
 
     return distribution;
-  } else if (buyAmount <= firstFifteenTotal + (5 * 2.2) + (10 * 2.251)) {
+  } else if (buyAmount <= firstFifteenTotal + 5 * 2.2 + 10 * 2.251) {
     // Use all 20 wallets + distribute remaining across next 10 wallets (2.251 SOL each)
     const distribution = [...firstSevenReduced];
     // Add the 8 wallets with 1.25 SOL each
@@ -2728,8 +2793,8 @@ export const generateBuyDistribution = (
     for (let i = 0; i < 5; i++) {
       distribution.push(2.2);
     }
-    
-    let remaining = buyAmount - firstFifteenTotal - (5 * 2.2);
+
+    let remaining = buyAmount - firstFifteenTotal - 5 * 2.2;
 
     const additionalWalletsNeeded = Math.min(
       10,
@@ -2743,7 +2808,10 @@ export const generateBuyDistribution = (
         if (i === additionalWalletsNeeded - 1) {
           distribution.push(remaining);
         } else {
-          const walletAmount = Math.min(2.251, Math.max(2.251, remaining / (additionalWalletsNeeded - i)));
+          const walletAmount = Math.min(
+            2.251,
+            Math.max(2.251, remaining / (additionalWalletsNeeded - i))
+          );
           distribution.push(walletAmount);
           remaining -= walletAmount;
         }
@@ -2766,8 +2834,8 @@ export const generateBuyDistribution = (
     for (let i = 0; i < 10; i++) {
       distribution.push(2.251);
     }
-    
-    let remaining = buyAmount - firstFifteenTotal - (5 * 2.2) - (10 * 2.251);
+
+    let remaining = buyAmount - firstFifteenTotal - 5 * 2.2 - 10 * 2.251;
 
     const additionalWalletsNeeded = Math.min(
       10,
@@ -2781,7 +2849,10 @@ export const generateBuyDistribution = (
         if (i === additionalWalletsNeeded - 1) {
           distribution.push(remaining);
         } else {
-          const walletAmount = Math.min(3.5, Math.max(3.5, remaining / (additionalWalletsNeeded - i)));
+          const walletAmount = Math.min(
+            3.5,
+            Math.max(3.5, remaining / (additionalWalletsNeeded - i))
+          );
           distribution.push(walletAmount);
           remaining -= walletAmount;
         }
@@ -4205,7 +4276,7 @@ export const launchBonkToken = async (
       "../blockchain/mixer/init-mixer"
     );
     const { secretKeyToKeypair } = await import("../blockchain/common/utils");
-    
+
     // CRITICAL FIX: Only fund the necessary number of buy wallets for the launch amount
     const walletsNeeded = calculateRequiredWallets(buyAmount);
     const selectedBuyWallets = buyWallets.slice(0, walletsNeeded);
@@ -4242,20 +4313,23 @@ export const launchBonkToken = async (
     logger.info(`[${logId}]: Starting execution phase (token creation + buys)`);
 
     // 2.1 Create the Bonk token on-chain
-    const { launchBonkToken: launchBonkTokenFunction, launchBonkTokenWithDevBuy } = await import(
-      "../blockchain/letsbonk/integrated-token-creator"
-    );
-    
+    const {
+      launchBonkToken: launchBonkTokenFunction,
+      launchBonkTokenWithDevBuy,
+    } = await import("../blockchain/letsbonk/integrated-token-creator");
+
     // NEW: Use combined approach if dev buy is requested (PumpFun-style)
     let result;
     if (devBuy > 0) {
-      logger.info(`[${logId}]: Using combined token creation + dev buy approach (PumpFun-style)`);
+      logger.info(
+        `[${logId}]: Using combined token creation + dev buy approach (PumpFun-style)`
+      );
       result = await launchBonkTokenWithDevBuy(tokenAddress, userId, devBuy);
     } else {
       logger.info(`[${logId}]: Using separate token creation approach`);
       result = await launchBonkTokenFunction(tokenAddress, userId, 0); // No dev buy here
     }
-    
+
     if (!result.success) {
       logger.error(`[${logId}]: Token creation failed`);
       return {
@@ -4263,14 +4337,16 @@ export const launchBonkToken = async (
         error: `Token creation failed`,
       };
     }
-    
+
     logger.info(`[${logId}]: Token creation successful: ${result.signature}`);
-    
+
     // 2.2 PRIORITIZED DEV BUY (immediate execution, no confirmation wait)
     let devBuySignature: string | undefined;
     if (devBuy > 0 && result.transactionType !== "combined") {
-      logger.info(`[${logId}]: 🚀 PRIORITY DEV BUY - Executing immediately after token creation`);
-      
+      logger.info(
+        `[${logId}]: 🚀 PRIORITY DEV BUY - Executing immediately after token creation`
+      );
+
       try {
         // Import required modules for dev buy
         const { connection } = await import("../blockchain/common/connection");
@@ -4288,47 +4364,65 @@ export const launchBonkToken = async (
           NATIVE_MINT,
           createSyncNativeInstruction,
         } = await import("@solana/spl-token");
-        const { getBonkPoolState } = await import("../service/bonk-pool-service");
+        const { getBonkPoolState } = await import(
+          "../service/bonk-pool-service"
+        );
         const { getDevWallet } = await import("../backend/functions");
         const bs58 = await import("bs58");
-        
+
         // Get dev wallet
         const devWalletPrivateKey = await getDevWallet(userId);
-        const wallet = Keypair.fromSecretKey(bs58.default.decode(devWalletPrivateKey.wallet));
-        
-        logger.info(`[${logId}]: Dev wallet for priority buy: ${wallet.publicKey.toString()}`);
-        
+        const wallet = Keypair.fromSecretKey(
+          bs58.default.decode(devWalletPrivateKey.wallet)
+        );
+
+        logger.info(
+          `[${logId}]: Dev wallet for priority buy: ${wallet.publicKey.toString()}`
+        );
+
         // Get Bonk pool state for this token (with retry logic for immediate execution)
         let poolState = null;
         let retries = 0;
         const maxRetries = 5;
-        
+
         while (!poolState && retries < maxRetries) {
           try {
             poolState = await getBonkPoolState(tokenAddress);
             if (poolState) {
-              logger.info(`[${logId}]: Found Bonk pool: ${poolState.poolId.toString()}`);
+              logger.info(
+                `[${logId}]: Found Bonk pool: ${poolState.poolId.toString()}`
+              );
               break;
             }
           } catch (error) {
-            logger.info(`[${logId}]: Pool not found yet, retry ${retries + 1}/${maxRetries}...`);
+            logger.info(
+              `[${logId}]: Pool not found yet, retry ${retries + 1}/${maxRetries}...`
+            );
           }
-          
+
           if (!poolState && retries < maxRetries - 1) {
             // Short delay between retries for immediate execution
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise((resolve) => setTimeout(resolve, 200));
           }
           retries++;
         }
-        
+
         if (!poolState) {
-          throw new Error(`No Bonk pool found for token ${tokenAddress} after ${maxRetries} retries`);
+          throw new Error(
+            `No Bonk pool found for token ${tokenAddress} after ${maxRetries} retries`
+          );
         }
-        
+
         // Create WSOL and token ATAs for dev wallet
-        const devWsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, wallet.publicKey);
-        const devTokenAta = getAssociatedTokenAddressSync(new PublicKey(tokenAddress), wallet.publicKey);
-        
+        const devWsolAta = getAssociatedTokenAddressSync(
+          NATIVE_MINT,
+          wallet.publicKey
+        );
+        const devTokenAta = getAssociatedTokenAddressSync(
+          new PublicKey(tokenAddress),
+          wallet.publicKey
+        );
+
         // Create ATA instructions
         const devWsolAtaIx = createAssociatedTokenAccountIdempotentInstruction(
           wallet.publicKey,
@@ -4342,20 +4436,20 @@ export const launchBonkToken = async (
           wallet.publicKey,
           new PublicKey(tokenAddress)
         );
-        
+
         // Convert dev buy amount to lamports
         const devBuyLamports = BigInt(Math.ceil(devBuy * 1_000_000_000));
-        
+
         // Transfer SOL to WSOL account
         const transferSolIx = SystemProgram.transfer({
           fromPubkey: wallet.publicKey,
           toPubkey: devWsolAta,
           lamports: Number(devBuyLamports),
         });
-        
+
         // Sync native instruction to convert SOL to WSOL
         const syncNativeIx = createSyncNativeInstruction(devWsolAta);
-        
+
         // Create Maestro-style Bonk buy instructions for dev wallet (includes fee transfer)
         const devBuyInstructions = await createMaestroBonkBuyInstructions({
           pool: poolState,
@@ -4366,15 +4460,16 @@ export const launchBonkToken = async (
           minimum_amount_out: BigInt(1), // Minimum 1 token
           maestroFeeAmount: BigInt(1000000), // 0.001 SOL Maestro fee
         });
-        
+
         // Add priority fee instruction (HIGHEST priority for dev buy)
         const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
           microLamports: 5_000_000, // Very high priority for dev buy
         });
-        
+
         // Get fresh blockhash for dev buy
-        const devBuyBlockHash = await connection.getLatestBlockhash("processed");
-        
+        const devBuyBlockHash =
+          await connection.getLatestBlockhash("processed");
+
         // Create dev buy transaction
         const devBuyTx = new VersionedTransaction(
           new TransactionMessage({
@@ -4384,24 +4479,28 @@ export const launchBonkToken = async (
               devTokenAtaIx,
               transferSolIx,
               syncNativeIx,
-              ...devBuyInstructions // Spread the Maestro instructions
+              ...devBuyInstructions, // Spread the Maestro instructions
             ],
             payerKey: wallet.publicKey,
             recentBlockhash: devBuyBlockHash.blockhash,
-          }).compileToV0Message(),
+          }).compileToV0Message()
         );
         devBuyTx.sign([wallet]);
-        
+
         // Send dev buy transaction (NO CONFIRMATION WAIT - immediate execution)
         devBuySignature = await connection.sendTransaction(devBuyTx, {
           skipPreflight: false,
           preflightCommitment: "processed",
-          maxRetries: 3
+          maxRetries: 3,
         });
-        
-        logger.info(`[${logId}]: 🚀 PRIORITY DEV BUY SENT! Signature: ${devBuySignature}`);
-        logger.info(`[${logId}]: Dev wallet bought tokens with ${devBuy} SOL (no confirmation wait)`);
-        
+
+        logger.info(
+          `[${logId}]: 🚀 PRIORITY DEV BUY SENT! Signature: ${devBuySignature}`
+        );
+        logger.info(
+          `[${logId}]: Dev wallet bought tokens with ${devBuy} SOL (no confirmation wait)`
+        );
+
         // Record the dev buy transaction immediately (success assumed, will be updated if needed)
         await recordTransaction(
           tokenAddress,
@@ -4415,19 +4514,24 @@ export const launchBonkToken = async (
             errorMessage: undefined,
           }
         );
-        
+
         // Background confirmation and fee collection (non-blocking)
         (async () => {
           try {
             // Wait for confirmation in background
-            const confirmation = await connection.confirmTransaction({
-              signature: devBuySignature,
-              blockhash: devBuyBlockHash.blockhash,
-              lastValidBlockHeight: devBuyBlockHash.lastValidBlockHeight
-            }, "processed");
-            
+            const confirmation = await connection.confirmTransaction(
+              {
+                signature: devBuySignature,
+                blockhash: devBuyBlockHash.blockhash,
+                lastValidBlockHeight: devBuyBlockHash.lastValidBlockHeight,
+              },
+              "processed"
+            );
+
             if (confirmation.value.err) {
-              logger.error(`[${logId}]: Dev buy confirmation failed: ${JSON.stringify(confirmation.value.err)}`);
+              logger.error(
+                `[${logId}]: Dev buy confirmation failed: ${JSON.stringify(confirmation.value.err)}`
+              );
               // Update transaction record to failed
               await recordTransaction(
                 tokenAddress,
@@ -4442,35 +4546,50 @@ export const launchBonkToken = async (
                 }
               );
             } else {
-              logger.info(`[${logId}]: Dev buy confirmed successfully in background`);
-              
+              logger.info(
+                `[${logId}]: Dev buy confirmed successfully in background`
+              );
+
               // Collect transaction fee in background
               try {
-                const { collectTransactionFee } = await import("../backend/functions-main");
+                const { collectTransactionFee } = await import(
+                  "../backend/functions-main"
+                );
                 const feeResult = await collectTransactionFee(
                   devWalletPrivateKey.wallet,
                   devBuy,
                   "buy"
                 );
-                
+
                 if (feeResult.success) {
-                  logger.info(`[${logId}]: Dev buy transaction fee collected: ${feeResult.feeAmount} SOL`);
+                  logger.info(
+                    `[${logId}]: Dev buy transaction fee collected: ${feeResult.feeAmount} SOL`
+                  );
                 } else {
-                  logger.warn(`[${logId}]: Dev buy transaction fee collection failed: ${feeResult.error}`);
+                  logger.warn(
+                    `[${logId}]: Dev buy transaction fee collection failed: ${feeResult.error}`
+                  );
                 }
               } catch (feeError: any) {
-                logger.error(`[${logId}]: Error collecting dev buy transaction fee:`, feeError.message);
+                logger.error(
+                  `[${logId}]: Error collecting dev buy transaction fee:`,
+                  feeError.message
+                );
               }
             }
           } catch (confirmError: any) {
-            logger.error(`[${logId}]: Dev buy confirmation error:`, confirmError.message);
+            logger.error(
+              `[${logId}]: Dev buy confirmation error:`,
+              confirmError.message
+            );
           }
         })();
-        
       } catch (devBuyError: any) {
-        logger.error(`[${logId}]: ❌ Priority dev buy failed: ${devBuyError.message}`);
+        logger.error(
+          `[${logId}]: ❌ Priority dev buy failed: ${devBuyError.message}`
+        );
         logger.info(`[${logId}]: Continuing with snipe buys...`);
-        
+
         // Record the failed dev buy transaction
         await recordTransaction(
           tokenAddress,
@@ -4486,11 +4605,11 @@ export const launchBonkToken = async (
         );
       }
     }
-    
+
     // 2.3 100ms DELAY before snipe buys (as requested)
     if (buyAmount > 0) {
       logger.info(`[${logId}]: ⏱️ Waiting 100ms before starting snipe buys...`);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       logger.info(`[${logId}]: 🚀 Starting snipe buys after 100ms delay`);
     }
 
