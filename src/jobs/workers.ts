@@ -200,10 +200,9 @@ export const sellDevWorker = new Worker<SellDevJob>(
       
       await sendNotification(
         data.userChatId,
-        `🎉 **Dev Sell completed successfully\\!**\n\n` +
-        `💰 **Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\\.')} SOL\n` +
-        `🪙 **Sold:** ${tokensSoldFormatted.replace(/\./g, '\\.')} tokens \\(${data.sellPercent}%\\)\n` +
-        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\\.')}%\\)\n\n` +
+        `🎉 **Dev Sell completed successfully\!**\n\n` +
+        `💰 **Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\.')} SOL\n` +
+        `🪙 **Sold:** ${tokensSoldFormatted.replace(/\./g, '\.')} tokens \\(${data.sellPercent}%\\)\n` +
         `[View Transaction](https://solscan\\.io/tx/${result.signature})`,
       );
     } catch (error: any) {
@@ -307,7 +306,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       const immediateSuccessRate = Math.round((successfulSells.length / results.length) * 100);
       
       // Send immediate success notification with basic info
-      const initialMessage = `🎉 **Wallet Sells completed successfully\\!**\n\n` +
+      const initialMessage = `🎉 **Wallet Sells completed successfully\!**\n\n` +
         `✅ **Success Rate:** ${successfulSells.length}/${results.length} wallets \\(${immediateSuccessRate}%\\)\n` +
         `💰 **Total Received:** Calculating\\.\\.\\.\n` +
         `🪙 **Tokens Sold:** Calculating\\.\\.\\.\n` +
@@ -368,11 +367,11 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       );
       
       // Update the initial notification with accurate data
-      const finalMessage = `🎉 **Wallet Sells completed successfully\\!**\n\n` +
+      const finalMessage = `🎉 **Wallet Sells completed successfully\!**\n\n` +
         `✅ **Success Rate:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets \\(${sellSummary.successRate}%\\)\n` +
-        `💰 **Total Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\\.')} SOL\n` +
-        `🪙 **Tokens Sold:** ${tokensSoldFormatted.replace(/\./g, '\\.')} tokens \\(${data.sellPercent}%\\)\n` +
-        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\\.')}%\\)\n\n` +
+        `💰 **Total Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\.')} SOL\n` +
+        `🪙 **Tokens Sold:** ${tokensSoldFormatted.replace(/\./g, '\.')} tokens \\(${data.sellPercent}%\\)\n` +
+        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\.')}%\\)\n\n` +
         `${sellSummary.failedWallets > 0 ? `⚠️ ${sellSummary.failedWallets} wallet\\(s\\) failed to sell\n\n` : ''}` +
         `💡 View individual transactions in your token list for more details\\.`;
       
@@ -481,7 +480,7 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       
       await sendNotification(
         data.userChatId,
-        `🛠️ **Preparation Complete\\!**\n\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token\\.\\.\\.**`,
+        `🛠️ **Preparation Complete\!**\n\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token\\.\\.\\.**`,
       );
       
     } catch (error: any) {
@@ -634,7 +633,7 @@ sellDevWorker.on("failed", async (job) => {
   await releaseDevSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Dev Wallet Sell Failed\\. Please try again 🔄",
+    "❌ Dev Wallet Sell Failed\. Please try again 🔄",
   );
 });
 sellDevWorker.on("closed", () => {
@@ -654,7 +653,7 @@ sellWalletWorker.on("failed", async (job) => {
   await releaseWalletSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Wallet Sells Failed\\. Please try again 🔄",
+    "❌ Wallet Sells Failed\. Please try again 🔄",
   );
 });
 sellWalletWorker.on("closed", async () => {
