@@ -284,6 +284,9 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         // Bonk token - use Bonk sell mechanism for each wallet
         logger.info(`[jobs-sell-wallet]: Using Bonk sell mechanism for token ${data.tokenAddress}`);
         const { executeBonkSell } = await import("../service/bonk-transaction-handler");
+        const { recordTransactionWithActualAmounts } = await import("../backend/utils");
+        const { Keypair } = await import("@solana/web3.js");
+        const bs58 = await import("bs58");
         
         // Execute Bonk sells for each wallet
         const sellPromises = data.buyerWallets.map(async (walletPrivateKey: string) => {
@@ -293,11 +296,32 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
               walletPrivateKey,
               data.tokenAddress
             );
+            // Record the transaction with actual SOL received
+            let walletPubkey = "unknown";
+            try {
+              walletPubkey = Keypair.fromSecretKey(bs58.default.decode(walletPrivateKey)).publicKey.toBase58();
+            } catch {}
+            if (result && result.success && result.signature) {
+              await recordTransactionWithActualAmounts(
+                data.tokenAddress,
+                walletPubkey,
+                "wallet_sell",
+                result.signature,
+                true,
+                0,
+                {
+                  amountSol: result.actualSolReceived,
+                  amountTokens: undefined,
+                  sellPercent: data.sellPercent,
+                },
+                false // Don't parse again, already have actual amount
+              );
+            }
             return {
               success: result.success,
               signature: result.signature,
               error: result.error,
-              expectedSolOut: 0, // Bonk doesn't provide expected SOL out
+              expectedSolOut: result.actualSolReceived || 0,
             };
           } catch (error: any) {
             return {
