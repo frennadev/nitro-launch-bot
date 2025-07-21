@@ -146,6 +146,32 @@ export const sellDevWorker = new Worker<SellDevJob>(
           data.devWallet,
           data.tokenAddress
         );
+        // Record the transaction with actual SOL received
+        const { recordTransactionWithActualAmounts } = await import("../backend/utils");
+        const { Keypair } = await import("@solana/web3.js");
+        const bs58 = await import("bs58");
+        const devWalletPubkey = Keypair.fromSecretKey(bs58.default.decode(data.devWallet)).publicKey.toBase58();
+        // Type guard for Bonk sell result
+        function isBonkSellResult(obj: any): obj is { success: boolean; signature: string; actualSolReceived: number } {
+          return obj && typeof obj.success === 'boolean' && typeof obj.signature === 'string' && 'actualSolReceived' in obj;
+        }
+
+        if (isBonkSellResult(result) && result.success && result.signature) {
+          await recordTransactionWithActualAmounts(
+            data.tokenAddress,
+            devWalletPubkey,
+            "dev_sell",
+            result.signature,
+            true,
+            0,
+            {
+              amountSol: result.actualSolReceived,
+              amountTokens: undefined,
+              sellPercent: data.sellPercent,
+            },
+            false // Don't parse again, already have actual amount
+          );
+        }
       } else {
         // PumpFun token - use PumpFun sell mechanism
         logger.info(`[jobs-sell-dev]: Using PumpFun sell mechanism for token ${data.tokenAddress}`);

@@ -255,7 +255,13 @@ export async function executeBonkSell(
     const result = await Promise.race([poolDiscoveryPromise, timeoutPromise]);
 
     if (!result) {
-      throw new Error("Sell transaction failed to complete");
+      return {
+        success: false,
+        signature: undefined,
+        actualSolReceived: 0,
+        explorerUrl: "",
+        message: "Sell transaction failed to complete",
+      };
     }
 
     logger.info(`[${logId}]: ✅ Sell transaction successful!`);
@@ -263,8 +269,10 @@ export async function executeBonkSell(
     logger.info(`[${logId}]: 🔗 Explorer: https://solscan.io/tx/${result}`);
 
     return {
+      ...result,
       success: true,
       signature: result,
+      actualSolReceived: typeof (result as any)?.actualTransactionAmountSol === 'number' ? (result as any).actualTransactionAmountSol : 0,
       explorerUrl: "https://solscan.io/tx/" + result,
       message: "Sell transaction executed successfully with platform fees collected",
     };
@@ -273,38 +281,55 @@ export async function executeBonkSell(
 
     if (error.message.includes("No token balance found")) {
       return {
+        success: false,
+        signature: undefined,
+        actualSolReceived: 0,
         error: "NoTokenBalance",
         message: "You don't have any tokens to sell",
       };
     } else if (error.message.includes("timeout")) {
       return {
+        success: false,
+        signature: undefined,
+        actualSolReceived: 0,
         error: "Timeout",
         message:
           "Transaction timed out. Try using a different RPC endpoint or try again later",
       };
     } else if (error.message.includes("429")) {
       return {
+        success: false,
+        signature: undefined,
+        actualSolReceived: 0,
         error: "RateLimit",
         message: "RPC rate limit exceeded - try again later",
       };
     } else if (error.message.includes("pool not found")) {
       return {
+        success: false,
+        signature: undefined,
+        actualSolReceived: 0,
         error: "PoolNotFound",
         message: "Token may not have a BONK pool or pool is inactive",
       };
     } else if (error.message.includes("ExceededSlippage")) {
       return {
+        success: false,
+        signature: undefined,
+        actualSolReceived: 0,
         error: "ExceededSlippage",
         message:
           "Slippage exceeded the maximum allowed. Try a different config mode.",
       };
+    } else {
+      return {
+        success: false,
+        signature: undefined,
+        actualSolReceived: 0,
+        error: "UnknownError",
+        message: error.message,
+      };
     }
-
-    return {
-      error: "TransactionFailed",
-      message:
-        error.message || "An unknown error occurred during the transaction",
-    };
   }
 }
 
