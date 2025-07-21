@@ -532,9 +532,9 @@ Get started below:`;
     .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
     .row()
     .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
+    .text("📊 Predict MC", CallBackQueries.PREDICT_MC)
+    .row()
     .text("🆘 Help", CallBackQueries.HELP);
-  // .text("Add Wallet", CallBackQueries.ADD_WALLET)
-  // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
   await sendMessage(ctx, welcomeMsg, {
     reply_markup: inlineKeyboard,
@@ -619,6 +619,8 @@ Get started below:`;
     .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
     .row()
     .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
+    .text("📊 Predict MC", CallBackQueries.PREDICT_MC)
+    .row()
     .text("🆘 Help", CallBackQueries.HELP);
 
   await sendMessage(ctx, welcomeMsg, {
