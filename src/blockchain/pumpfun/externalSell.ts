@@ -371,7 +371,7 @@ export interface SimpleExternalSellResult {
   success: boolean;
   signature?: string;
   error?: string;
-  platform?: "jupiter" | "pumpswap" | "pumpfun" | "unknown";
+  platform?: "jupiter" | "pumpswap" | "pumpfun" | "cpmm" | "bonk" | "unknown";
   solReceived?: string;
   tokensSold?: string;
   tokenInfo?: {
@@ -666,12 +666,176 @@ export async function executeExternalSell(
       }
     }
 
-    // Handle graduated tokens with Jupiter (best routing and prices)
-    if (platform === "pumpswap" || (await isTokenGraduated(tokenAddress))) {
+    // Handle Bonk tokens with native Bonk sell method
+    if (platform === "bonk") {
+      logger.info(`[${logId}] Using native Bonk sell method`);
+
+      try {
+        // Use the dedicated Bonk sell function
+        const { executeBonkSell } = await import("../../service/bonk-transaction-handler");
+        
+        // Calculate the percentage based on the tokenAmount vs total balance
+        const { getTokenBalance } = await import("../../backend/utils");
+        const totalBalance = await getTokenBalance(tokenAddress, sellerKeypair.publicKey.toBase58());
+        const sellPercentage = totalBalance > 0 ? Math.round((tokenAmount / totalBalance) * 100) : 100;
+        
+        logger.info(`[${logId}] Selling ${tokenAmount} tokens (${sellPercentage}% of ${totalBalance} total balance)`);
+        
+        const bonkResult = await executeBonkSell(
+          sellPercentage,
+          bs58.encode(sellerKeypair.secretKey),
+          tokenAddress,
+          tokenAmount
+        );
+
+        if (bonkResult.success && bonkResult.signature) {
+          // Only send message if ctx and ctx.chat are available
+          if (ctx && ctx.chat) {
+            try {
+              await sendMessage(
+                ctx,
+                "✅ Sell transaction confirmed! Processing details...",
+                {
+                  parse_mode: "HTML",
+                }
+              );
+            } catch (msgError) {
+              logger.warn(
+                `[${logId}] Failed to send status message: ${msgError}`
+              );
+            }
+          }
+          logger.info(`[${logId}] Bonk sell successful: ${bonkResult.signature}`);
+          
+          // Collect transaction fee after successful sell (non-blocking)
+          const solAmount = 0.01; // Fallback estimate for Bonk
+          await collectFeeAsync(
+            bs58.encode(sellerKeypair.secretKey),
+            solAmount,
+            "sell",
+            logId
+          );
+
+          return {
+            success: true,
+            signature: bonkResult.signature,
+            platform: "bonk",
+            solReceived: solAmount.toString(),
+            tokensSold: tokenAmount.toString(),
+            tokenInfo,
+          };
+        } else {
+          logger.warn(`[${logId}] Bonk sell failed: ${bonkResult.error || bonkResult.message}`);
+        }
+      } catch (bonkError: any) {
+        logger.warn(
+          `[${logId}] Bonk sell threw error: ${bonkError.message}`
+        );
+      }
+    }
+
+    // Handle graduated tokens with optimized platform priority: PumpSwap/CPMM first, Jupiter fallback
+    if (platform === "pumpswap" || platform === "cpmm" || (await isTokenGraduated(tokenAddress))) {
       logger.info(
-        `[${logId}] Token is graduated/external, using Jupiter for optimal routing`
+        `[${logId}] Token is graduated/external (${platform}), using optimized platform priority: PumpSwap/CPMM first, Jupiter fallback`
       );
 
+      // Try PumpSwap first for graduated tokens
+      if (platform === "pumpswap" || platform === "unknown") {
+        logger.info(`[${logId}] Trying PumpSwap first for graduated token`);
+        try {
+          const pumpswapResult = await executePumpswapSell(
+            tokenAddress,
+            sellerKeypair,
+            tokenAmount
+          );
+
+          if (pumpswapResult.success) {
+            logger.info(
+              `[${logId}] PumpSwap sell successful: ${pumpswapResult.signature}`
+            );
+            markTokenAsPumpswap(tokenAddress);
+
+            // Collect transaction fee after successful sell (non-blocking)
+            const solAmount = pumpswapResult.solReceived
+              ? parseFloat(pumpswapResult.solReceived)
+              : 0.01; // Fallback estimate
+            await collectFeeAsync(
+              bs58.encode(sellerKeypair.secretKey),
+              solAmount,
+              "sell",
+              logId
+            );
+
+            return {
+              ...pumpswapResult,
+              tokenInfo,
+            };
+          } else {
+            logger.warn(`[${logId}] PumpSwap sell failed: ${pumpswapResult.error}`);
+          }
+        } catch (pumpswapError: any) {
+          logger.warn(
+            `[${logId}] PumpSwap sell threw error: ${pumpswapError.message}`
+          );
+        }
+      }
+
+      // Try CPMM second for graduated tokens
+      if (platform === "cpmm" || platform === "unknown") {
+        logger.info(`[${logId}] Trying CPMM for graduated token`);
+        try {
+          const RaydiumCpmmService = (await import("../../service/raydium-cpmm-service")).default;
+          const cpmmService = new RaydiumCpmmService();
+          
+          const cpmmResult = await cpmmService.sellWithFeeCollection({
+            mint: tokenAddress,
+            privateKey: bs58.encode(sellerKeypair.secretKey),
+            amount_in: BigInt(tokenAmount),
+          });
+
+          if (cpmmResult.success) {
+            logger.info(
+              `[${logId}] CPMM sell successful: ${cpmmResult.signature}`
+            );
+
+            // Only send message if ctx and ctx.chat are available
+            if (ctx && ctx.chat) {
+              try {
+                await sendMessage(
+                  ctx,
+                  "✅ Sell transaction confirmed! Processing details...",
+                  {
+                    parse_mode: "HTML",
+                  }
+                );
+              } catch (msgError) {
+                logger.warn(
+                  `[${logId}] Failed to send status message: ${msgError}`
+                );
+              }
+            }
+
+            return {
+              success: true,
+              signature: cpmmResult.signature,
+              platform: "cpmm",
+              solReceived: cpmmResult.actualTransactionAmountSol.toString(),
+              tokensSold: tokenAmount.toString(),
+              tokenInfo,
+            };
+          } else {
+            logger.warn(`[${logId}] CPMM sell failed`);
+          }
+        } catch (cpmmError: any) {
+          logger.warn(
+            `[${logId}] CPMM sell threw error: ${cpmmError.message}`
+          );
+        }
+      }
+
+      // Jupiter as final fallback for graduated tokens
+      logger.info(`[${logId}] PumpSwap/CPMM failed, trying Jupiter as fallback`);
       try {
         const jupiterService = new JupiterPumpswapService();
         const result = await jupiterService.executeSell(
@@ -699,7 +863,7 @@ export async function executeExternalSell(
             }
           }
           logger.info(
-            `[${logId}] Jupiter sell successful via ${result.platform}: ${result.signature}`
+            `[${logId}] Jupiter fallback sell successful via ${result.platform}: ${result.signature}`
           );
 
           // Collect transaction fee after successful sell (non-blocking)
@@ -729,16 +893,16 @@ export async function executeExternalSell(
             success: true,
             signature: result.signature,
             platform: result.platform,
-            solReceived: calculatedSolReceived,
+            solReceived: calculatedSolReceived.toString(),
             tokensSold: tokenAmount.toString(), // Include the token amount sold
             tokenInfo,
           };
         } else {
-          logger.warn(`[${logId}] Jupiter sell failed: ${result.error}`);
+          logger.warn(`[${logId}] Jupiter fallback sell failed: ${result.error}`);
         }
       } catch (jupiterError: any) {
         logger.warn(
-          `[${logId}] Jupiter sell threw error: ${jupiterError.message}`
+          `[${logId}] Jupiter fallback sell threw error: ${jupiterError.message}`
         );
       }
     }

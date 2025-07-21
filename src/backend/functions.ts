@@ -4342,7 +4342,7 @@ export const launchBonkToken = async (
 
     // 2.2 PRIORITIZED DEV BUY (immediate execution, no confirmation wait)
     let devBuySignature: string | undefined;
-    if (devBuy > 0 && result.transactionType !== "combined") {
+    if (devBuy > 0) {
       logger.info(
         `[${logId}]: 🚀 PRIORITY DEV BUY - Executing immediately after token creation`
       );
@@ -4606,11 +4606,11 @@ export const launchBonkToken = async (
       }
     }
 
-    // 2.3 100ms DELAY before snipe buys (as requested)
+    // 2.3 50ms DELAY before snipe buys (optimized for speed)
     if (buyAmount > 0) {
-      logger.info(`[${logId}]: ⏱️ Waiting 100ms before starting snipe buys...`);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      logger.info(`[${logId}]: 🚀 Starting snipe buys after 100ms delay`);
+      logger.info(`[${logId}]: ⏱️ Waiting 50ms before starting snipe buys...`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      logger.info(`[${logId}]: 🚀 Starting snipe buys after 50ms delay`);
     }
 
     // 2.4 Execute buys from the funded wallets (real implementation)
@@ -5120,8 +5120,8 @@ export const launchBonkToken = async (
         }
         results.push(walletResult);
         processedWallets.add(wallet.publicKey);
-        // Wait 50ms before next wallet (do not wait for confirmation)
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        // Wait 10ms before next wallet (optimized for speed)
+        await new Promise((resolve) => setTimeout(resolve, 10));
       }
 
       const filteredResults = results.filter((r) => r !== undefined);

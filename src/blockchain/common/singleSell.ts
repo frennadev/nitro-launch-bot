@@ -16,6 +16,7 @@ import { sendAndConfirmTransactionWithRetry } from "./utils";
 import { getCachedPlatform, markTokenAsPumpFun } from "../../service/token-detection-service";
 import PumpswapService from "../../service/pumpswap-service";
 import { executeExternalSell } from "../pumpfun/externalSell";
+import { Context } from "grammy";
 
 /**
  * Enhanced single sell using external sell mechanism with platform detection
@@ -62,7 +63,8 @@ export const handleSingleSell = async (
     const result = await executeExternalSell(
       mintPublicKey.toBase58(),
       sellerKeypair,
-      amountToSell
+      amountToSell,
+      {} as Context // No context available in this function
     );
     
     if (!result.success) {

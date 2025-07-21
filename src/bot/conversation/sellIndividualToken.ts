@@ -306,7 +306,7 @@ async function handleWalletSellAction(
       const { secretKeyToKeypair } = await import("../../blockchain/common/utils");
       
       const walletKeypair = secretKeyToKeypair(privateKey);
-      const result = await executeExternalSell(fullTokenAddress, walletKeypair, tokensToSell);
+      const result = await executeExternalSell(fullTokenAddress, walletKeypair, tokensToSell, ctx);
       
       if (result.success) {
         await sendMessage(ctx, `✅ Successfully sold ${sellPercent}% of tokens!\n\nTransaction: ${result.signature}\nPlatform: ${result.platform}`);

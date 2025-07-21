@@ -1597,7 +1597,7 @@ bot.on("callback_query:data", async (ctx) => {
           // Calculate tokens to sell based on percentage
           const tokensToSell = Math.floor((currentBalance * Number(buyAmount)) / 100);
 
-          const sellResult = await executeExternalSell(mint, sellerKeypair, tokensToSell);
+          const sellResult = await executeExternalSell(mint, sellerKeypair, tokensToSell, ctx);
 
           if (sellResult.success) {
             const platformText = sellResult.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
