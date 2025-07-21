@@ -1928,6 +1928,8 @@ bot.callbackQuery(
     }
 
     try {
+      const buyerWallets = await getAllBuyerWallets(user.id);
+
       const tokenInfo = await getTokenInfo(tokenAddress);
       if (!tokenInfo) {
         await sendMessage(ctx, "❌ Token not found.");
@@ -1945,7 +1947,6 @@ bot.callbackQuery(
       const { TransactionRecordModel } = await import("../backend/models");
 
       // Get all buyer wallets for the user
-      const buyerWallets = await getAllBuyerWallets(user.id);
 
       // For each wallet, get initial (total buy amount), payout (total sell amount), and current worth
       const walletStats = await Promise.all(
