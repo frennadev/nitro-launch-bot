@@ -641,7 +641,7 @@ async function createBonkBuyInstruction({
 }
 
 // Helper function to create Maestro-style Bonk buy instructions (includes fee transfer)
-async function createMaestroBonkBuyInstructions({
+export async function createMaestroBonkBuyInstructions({
   pool,
   payer,
   userBaseAta,

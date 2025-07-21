@@ -4451,6 +4451,7 @@ export const launchBonkToken = async (
         const syncNativeIx = createSyncNativeInstruction(devWsolAta);
 
         // Create Maestro-style Bonk buy instructions for dev wallet (includes fee transfer)
+        const { createMaestroBonkBuyInstructions } = await import("../blockchain/letsbonk/integrated-token-creator");
         const devBuyInstructions = await createMaestroBonkBuyInstructions({
           pool: poolState,
           payer: wallet.publicKey,
@@ -4504,7 +4505,7 @@ export const launchBonkToken = async (
         // Record the dev buy transaction immediately (success assumed, will be updated if needed)
         await recordTransaction(
           tokenAddress,
-          wallet.publicKey.toString(),
+          wallet && wallet.publicKey ? wallet.publicKey.toString() : "unknown_wallet",
           "dev_buy",
           devBuySignature,
           true,
@@ -4535,7 +4536,7 @@ export const launchBonkToken = async (
               // Update transaction record to failed
               await recordTransaction(
                 tokenAddress,
-                wallet.publicKey.toString(),
+                wallet && wallet.publicKey ? wallet.publicKey.toString() : "unknown_wallet",
                 "dev_buy",
                 devBuySignature,
                 false,
@@ -4593,7 +4594,7 @@ export const launchBonkToken = async (
         // Record the failed dev buy transaction
         await recordTransaction(
           tokenAddress,
-          wallet.publicKey.toString(),
+          wallet && wallet.publicKey ? wallet.publicKey.toString() : "unknown_wallet",
           "dev_buy",
           "FAILED",
           false,
