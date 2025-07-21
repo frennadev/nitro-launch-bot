@@ -1934,11 +1934,200 @@ bot.callbackQuery(
         return;
       }
 
+      if (buyerWallets.length === 0) {
+        await sendMessage(
+          ctx,
+          "❌ No buyer wallets found. Please add a buyer wallet first."
+        );
+        return;
+      }
+      // Calculate total snipes (buys) made by user's buyer wallets for this token
+      const { TransactionRecordModel } = await import("../backend/models");
+
+      // Get all buyer wallets for the user
+      const buyerWallets = await getAllBuyerWallets(user.id);
+
+      // For each wallet, get initial (total buy amount), payout (total sell amount), and current worth
+      const walletStats = await Promise.all(
+        buyerWallets.map(async (wallet) => {
+          // Initial: sum of all buy transactions for this wallet and token
+          const initialAgg = await TransactionRecordModel.aggregate([
+            {
+              $match: {
+                user: user.id,
+                tokenAddress,
+                walletAddress: wallet.publicKey,
+                transactionType: "snipe_buy",
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                totalBuy: { $sum: "$amount" },
+              },
+            },
+          ]);
+          const initial = initialAgg[0]?.totalBuy || 0;
+
+          // Payout: sum of all sell transactions for this wallet and token
+          const payoutAgg = await TransactionRecordModel.aggregate([
+            {
+              $match: {
+                user: user.id,
+                tokenAddress,
+                walletAddress: wallet.publicKey,
+                transactionType: "snipe_sell",
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                totalSell: { $sum: "$amount" },
+              },
+            },
+          ]);
+          const payout = payoutAgg[0]?.totalSell || 0;
+
+          // Current worth: get current token balance and multiply by current price
+          let currentWorth = 0;
+          try {
+            const { getTokenBalance } = await import("../backend/utils");
+            const tokenBalance = await getTokenBalance(
+              tokenAddress,
+              wallet.publicKey
+            );
+            const price = tokenInfo.priceUsd || 0;
+            currentWorth = tokenBalance * price;
+          } catch (err) {
+            currentWorth = 0;
+          }
+
+          return {
+            wallet: wallet.publicKey,
+            initial,
+            payout,
+            currentWorth,
+          };
+        })
+      );
+
+      // Aggregate total initial, payout, and current worth across all buyer wallets
+      const totalInitial = walletStats.reduce((sum, w) => sum + w.initial, 0);
+      const totalPayout = walletStats.reduce((sum, w) => sum + w.payout, 0);
+      const totalCurrentWorth = walletStats.reduce(
+        (sum, w) => sum + w.currentWorth,
+        0
+      );
+
+      // Calculate stats for each wallet
+      const walletStatsDetails = [];
+      for (const wallet of buyerWallets) {
+        // Count snipes (buy transactions) for this wallet and token
+        const snipesCount = await TransactionRecordModel.countDocuments({
+          user: user.id,
+          tokenAddress,
+          walletAddress: wallet.publicKey,
+          transactionType: "snipe_buy",
+        });
+
+        // Initial: sum of all buy transactions for this wallet and token
+        const initialAgg = await TransactionRecordModel.aggregate([
+          {
+            $match: {
+              user: user.id,
+              tokenAddress,
+              walletAddress: wallet.publicKey,
+              transactionType: "snipe_buy",
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              totalBuy: { $sum: "$amount" },
+            },
+          },
+        ]);
+        const initial = initialAgg[0]?.totalBuy || 0;
+
+        // Payout: sum of all sell transactions for this wallet and token
+        const payoutAgg = await TransactionRecordModel.aggregate([
+          {
+            $match: {
+              user: user.id,
+              tokenAddress,
+              walletAddress: wallet.publicKey,
+              transactionType: "snipe_sell",
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              totalSell: { $sum: "$amount" },
+            },
+          },
+        ]);
+        const payout = payoutAgg[0]?.totalSell || 0;
+
+        // Worth: current token balance * current price
+        let worth = 0;
+        try {
+          const { getTokenBalance } = await import("../backend/utils");
+          const tokenBalance = await getTokenBalance(
+            tokenAddress,
+            wallet.publicKey
+          );
+          const price = tokenInfo.priceUsd || 0;
+          worth = tokenBalance * price;
+        } catch (err) {
+          worth = 0;
+        }
+
+        walletStatsDetails.push({
+          wallet: wallet.publicKey,
+          snipesCount,
+          initial,
+          payout,
+          worth,
+        });
+      }
+
+      // Build wallet stats section for monitor page
+      let walletStatsSection = "";
+      if (walletStatsDetails.length > 0) {
+        walletStatsSection =
+          `<b>📊 Per-Wallet Stats</b>\n` +
+          `<code>Wallet           | Buys | Initial   | Payout    | Worth     </code>\n` +
+          `<code>────────────────|─────|──────────|──────────|───────────</code>\n` +
+          walletStatsDetails
+            .map((w) => {
+              const shortWallet =
+                w.wallet.length > 12
+                  ? `${w.wallet.slice(0, 6)}...${w.wallet.slice(-4)}`
+                  : w.wallet;
+              return `<code>${shortWallet.padEnd(16)}| ${String(w.snipesCount).padEnd(4)} | ${w.initial.toFixed(3).padEnd(8)} | ${w.payout.toFixed(3).padEnd(8)} | ${w.worth.toFixed(3).padEnd(9)}</code>`;
+            })
+            .join("\n");
+      } else {
+        walletStatsSection = `<i>No buyer wallet stats found for this token.</i>`;
+      }
+      // You can use walletStatsDetails to display per-wallet stats in your message if needed.
+      // snipesCount is the total number of snipes (buy transactions) for this token by user's buyer wallets
+
       // TODO fetch actual trade history
-      const pnl = "-65.92%";
+      const worth = totalCurrentWorth.toFixed(3);
+      // Calculate PnL (Profit and Loss) percentage
+      let pnl = "-";
+      if (totalInitial > 0) {
+        pnl =
+          (
+            ((totalPayout + totalCurrentWorth - totalInitial) / totalInitial) *
+            100
+          ).toFixed(2) + "%";
+      }
+
       const age = "35:00";
-      const initial = 1.5;
-      const payout = 2.0;
+      const initial = totalInitial;
+      const payout = totalPayout;
       const marketCap = formatUSD(tokenInfo.marketCap);
       const price = tokenInfo.priceUsd;
       const botUsername = bot.botInfo.username;
@@ -1953,11 +2142,13 @@ bot.callbackQuery(
 ┌─ Initial: <b>${initial.toFixed(3)} SOL</b>
 ├─ Payout: <b>${payout.toFixed(3)} SOL</b>
 ├─ Tokens: <b>2.3%</b>
-└─ Worth: <b>${payout.toFixed(3)} SOL</b>
+└─ Worth: <b>${worth} SOL</b>
 
 💎 <b>Market Data</b>
 ├─ Price: <b>$${price}</b>
 └─ Market Cap: <b>${marketCap}</b>
+
+<blockquote expandable>${walletStatsSection}</blockquote>
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔄 <i>Auto-updates disabled • Click refresh to resume</i>
