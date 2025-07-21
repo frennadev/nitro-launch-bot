@@ -272,7 +272,12 @@ export async function createBonkToken(
   ticker: string,
   image: string,
   hasMedia: boolean,
-  userId: string
+  userId: string,
+  socials?: {
+    website?: string;
+    telegram?: string;
+    twitter?: string;
+  }
 ) {
   try {
     console.log("=== Bonk Token Creation (Metadata Only) ===");
@@ -308,7 +313,7 @@ export async function createBonkToken(
 
     // Step 3: Create and upload metadata
     console.log("\nStep 3: Creating and uploading metadata...");
-    const metadata = {
+    const metadata: any = {
       name,
       symbol,
       description: `${name} Token`,
@@ -323,7 +328,11 @@ export async function createBonkToken(
         category: "image",
       },
     };
-
+    if (socials) {
+      if (socials.twitter) metadata.twitter = socials.twitter;
+      if (socials.telegram) metadata.telegram = socials.telegram;
+      if (socials.website) metadata.website = socials.website;
+    }
     const metadataHash = await uploadJsonToPinata(metadata, `${name} Metadata`);
     const metadataUri = `${PINATA_GATEWAY}/ipfs/${metadataHash}`;
 

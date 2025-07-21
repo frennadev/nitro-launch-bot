@@ -122,16 +122,16 @@ const createTokenConversation = async (
   }
   const [name, symbol, description] = details;
 
-  let website: string = "";
-  let telegram: string = "";
   let twitter: string = "";
+  let telegram: string = "";
+  let website: string = "";
 
+  // Twitter/X first
   await ctx.reply(
-    "🌐 (Optional) Send your website URL for the token, or type 'skip' to continue.\n" +
-      "<i>Example: <code>https://example.com</code></i>\n\n",
+    "🐦 (Optional) Send your Twitter/X profile or post link for the token, or type 'skip' to continue.\n" +
+      "<i>Example: <code>https://twitter.com/example</code></i>\n\n",
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
-
   while (true) {
     const upd = await conversation.wait();
     if (upd.callbackQuery?.data === CallBackQueries.BACK) {
@@ -142,27 +142,27 @@ const createTokenConversation = async (
     if (upd.message?.text) {
       const text = upd.message.text.trim();
       if (text.toLowerCase() === "skip" || text === "") {
-        website = "";
+        twitter = "";
         break;
       }
-      // Basic URL validation (optional, can be improved)
-      if (/^https?:\/\/\S+\.\S+/.test(text)) {
-        website = text;
+      // Basic Twitter URL validation
+      if (/^https?:\/\/(twitter\.com|x\.com)\/\S+/.test(text)) {
+        twitter = text;
         break;
       }
       await ctx.reply(
-        "Invalid URL format. Please send a valid website URL or type 'skip' to continue.",
+        "Invalid Twitter/X link format. Please send a valid Twitter/X URL or type 'skip' to continue.",
         { parse_mode: "HTML", reply_markup: cancelKeyboard }
       );
     }
   }
 
+  // Telegram second
   await ctx.reply(
     "💬 (Optional) Send your Telegram group/channel link for the token, or type 'skip' to continue.\n" +
       "<i>Example: <code>https://t.me/examplegroup</code></i>\n\n",
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
-
   while (true) {
     const upd = await conversation.wait();
     if (upd.callbackQuery?.data === CallBackQueries.BACK) {
@@ -188,12 +188,12 @@ const createTokenConversation = async (
     }
   }
 
+  // Website third
   await ctx.reply(
-    "🐦 (Optional) Send your Twitter/X profile or post link for the token, or type 'skip' to continue.\n" +
-      "<i>Example: <code>https://twitter.com/example</code></i>\n\n",
+    "🌐 (Optional) Send your website URL for the token, or type 'skip' to continue.\n" +
+      "<i>Example: <code>https://example.com</code></i>\n\n",
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
-
   while (true) {
     const upd = await conversation.wait();
     if (upd.callbackQuery?.data === CallBackQueries.BACK) {
@@ -204,16 +204,16 @@ const createTokenConversation = async (
     if (upd.message?.text) {
       const text = upd.message.text.trim();
       if (text.toLowerCase() === "skip" || text === "") {
-        twitter = "";
+        website = "";
         break;
       }
-      // Basic Twitter URL validation
-      if (/^https?:\/\/(twitter\.com|x\.com)\/\S+/.test(text)) {
-        twitter = text;
+      // Basic URL validation (optional, can be improved)
+      if (/^https?:\/\/.+\..+/.test(text)) {
+        website = text;
         break;
       }
       await ctx.reply(
-        "Invalid Twitter/X link format. Please send a valid Twitter/X URL or type 'skip' to continue.",
+        "Invalid URL format. Please send a valid website URL or type 'skip' to continue.",
         { parse_mode: "HTML", reply_markup: cancelKeyboard }
       );
     }
@@ -263,7 +263,11 @@ const createTokenConversation = async (
       twitter,
     });
   } else {
-    token = await createBonkToken(name, symbol, imageUrl, true, user.id);
+    token = await createBonkToken(name, symbol, imageUrl, true, user.id, {
+      website,
+      telegram,
+      twitter,
+    });
   }
 
   if (mode === CallBackQueries.PUMPFUN) {
