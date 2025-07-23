@@ -191,9 +191,7 @@ export class SolanaConnectionManager {
     signers: Keypair[]
   ): Promise<string> {
     if (this.useConnectionPool && mixerConnectionPool) {
-      return await mixerConnectionPool.sendTransaction(transaction, {
-        signers,
-      });
+      return await mixerConnectionPool.sendTransaction(transaction, signers);
     }
     return await sendAndConfirmTransaction(
       this.connection,
