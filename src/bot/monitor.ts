@@ -3,6 +3,10 @@ import { Context } from "grammy";
 import { logger } from "../utils/logger";
 import { getUser } from "../backend/functions";
 import { sendMessage } from "../backend/sender";
+import { getTokenInfo } from "../backend/utils";
+import { InlineKeyboard } from "grammy";
+import { CallBackQueries } from "./types";
+import { compressCallbackData } from "./utils";
 
 export const handleViewTokenTrades = async (
   ctx: ConversationFlavor<Context>,
@@ -17,16 +21,55 @@ export const handleViewTokenTrades = async (
       return await ctx.reply("❌ User not found. Please try again later.");
     }
 
-    // Simple placeholder implementation
-    await sendMessage(
-      ctx,
-      `📊 **Token Monitor**\n\n` +
-        `**Token:** \`${tokenAddress}\`\n` +
-        `**Status:** Monitoring active\n` +
-        `**Mode:** ${variant}\n\n` +
-        `💡 Monitor functionality is being updated.`,
-      { parse_mode: "Markdown" }
-    );
+    // Get token info
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    if (!tokenInfo) {
+      await sendMessage(
+        ctx,
+        `❌ **Token not found**\n\nCould not fetch information for token: \`${tokenAddress}\``,
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    // Generate monitor message with current data
+    const refreshTime = new Date().toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    const monitorMessage = [
+      `📊 **Token Monitor**`,
+      ``,
+      `**Token:** ${tokenInfo.name} (${tokenInfo.symbol})`,
+      `**Address:** \`${tokenAddress}\``,
+      `**Status:** Monitoring active`,
+      `**Mode:** ${variant}`,
+      `**Last Updated:** ${refreshTime}`,
+      ``,
+      `**Market Data:**`,
+      `• Price: $${tokenInfo.priceUsd || "N/A"}`,
+      `• Market Cap: $${tokenInfo.marketCap ? tokenInfo.marketCap.toLocaleString() : "N/A"}`,
+      `• Volume (24h): $${tokenInfo.volume24h ? tokenInfo.volume24h.toLocaleString() : "N/A"}`,
+      `• Liquidity: $${tokenInfo.liquidity ? tokenInfo.liquidity.toLocaleString() : "N/A"}`,
+      ``,
+      `💡 **Tip:** Use /menu or /start to return to the main menu.`,
+    ].join("\n");
+
+    // Create keyboard with refresh and other options
+    const keyboard = new InlineKeyboard()
+      .text("🔄 Refresh", `remonitor_data_${tokenAddress}`)
+      .row()
+      .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
+      .row()
+      .text("🔙 Back to Tokens", CallBackQueries.VIEW_TOKENS);
+
+    await sendMessage(ctx, monitorMessage, {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    });
 
   } catch (error) {
     logger.error("Error in handleViewTokenTrades:", error);
