@@ -38,7 +38,7 @@ const walletSellConversation = async (
     return;
   }
   if (token.launchData?.lockWalletSell === true) {
-    await ctx.reply("Wallet sell job is currently processing 😏");
+    await ctx.reply("Wallet sell job is currently processing");
     await conversation.halt();
     return;
   }

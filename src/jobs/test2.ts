@@ -30,7 +30,7 @@ const walletSellConversation = async (
     return;
   }
   if (token.launchData?.lockWalletSell === true) {
-    console.log("Wallet sell job is currently processing 😏");
+    console.log("Wallet sell job is currently processing");
     return;
   }
 
