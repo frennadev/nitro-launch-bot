@@ -341,6 +341,20 @@ export class MongoSolanaMixer {
 
         signatures.push(signature);
 
+        // CRITICAL FIX: Wait for transaction confirmation before proceeding
+        // This ensures the intermediate wallet has received funds before we try to transfer from it
+        const confirmationSuccess = await this.connectionManager.waitForConfirmation(signature);
+        if (!confirmationSuccess) {
+          throw new Error(`Transaction confirmation failed for signature: ${signature}`);
+        }
+
+        // CRITICAL FIX: Verify the intermediate wallet actually received the funds
+        // This prevents the "insufficient lamports 0" error
+        const actualBalance = await this.connectionManager.getBalance(nextWallet.publicKey);
+        if (actualBalance < transferAmount) {
+          throw new Error(`Intermediate wallet ${nextWallet.publicKey.toString().slice(0, 8)}... did not receive expected funds. Expected: ${transferAmount} lamports, Actual: ${actualBalance} lamports`);
+        }
+
         // Optimized MongoDB operations - batch where possible
         await Promise.all([
           this.walletManager.recordTransaction(nextWallet.publicKey.toString(), {
@@ -417,6 +431,12 @@ export class MongoSolanaMixer {
       }
 
       signatures.push(finalSignature);
+
+      // CRITICAL FIX: Wait for final transaction confirmation
+      const finalConfirmationSuccess = await this.connectionManager.waitForConfirmation(finalSignature);
+      if (!finalConfirmationSuccess) {
+        throw new Error(`Final transaction confirmation failed for signature: ${finalSignature}`);
+      }
 
       // Batch final MongoDB operations
       await Promise.all([
