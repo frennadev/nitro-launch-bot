@@ -51,6 +51,7 @@ import {
   safeEditMessageText,
   safeEditOrSendMessage,
   safeAnswerCallbackQuery,
+  compressCallbackData,
   decompressCallbackData,
   isCompressedCallbackData,
 } from "./utils";
@@ -2317,9 +2318,61 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
       return;
     }
 
+    // Get buyer wallets and check balances
+    const buyerWallets = await getAllBuyerWallets(user.id);
+    let totalTokenBalance = 0;
+    let walletsWithBalance = 0;
+    const walletHoldings: Array<{
+      address: string;
+      balance: number;
+      valueUsd: number;
+      shortAddress: string;
+      rawBalance: number;
+    }> = [];
+
+    // Check balances across all wallets
+    const balanceCheckPromises = buyerWallets.map(async (wallet) => {
+      try {
+        const balance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        if (balance > 0) {
+          const balanceFormatted = balance / 1e6; // Convert to human readable
+          const valueUsd = balanceFormatted * (tokenInfo.priceUsd || 0);
+
+          return {
+            address: wallet.publicKey,
+            balance: balanceFormatted,
+            valueUsd: valueUsd,
+            shortAddress:
+              wallet.publicKey.slice(0, 6) + "…" + wallet.publicKey.slice(-4),
+            rawBalance: balance,
+          };
+        }
+        return null;
+      } catch (error) {
+        logger.warn(
+          `[RefreshMonitorData] Error checking balance for wallet ${wallet.publicKey}:`,
+          error
+        );
+        return null;
+      }
+    });
+
+    const balanceResults = await Promise.allSettled(balanceCheckPromises);
+
+    balanceResults.forEach((result) => {
+      if (result.status === "fulfilled" && result.value) {
+        const holding = result.value;
+        totalTokenBalance += holding.rawBalance;
+        walletsWithBalance++;
+        walletHoldings.push(holding);
+      }
+    });
+
+    // Format total balance
+    const totalBalanceFormatted = totalTokenBalance / 1e6;
+
     // TODO fetch actual trade history
     const pnl = "-65.92%";
-    const pi = "-0.02%";
     const age = "35:00";
     const initial = 1.5;
     const payout = 2.0;
@@ -2328,7 +2381,7 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
     const botUsername = bot.botInfo.username;
     const referralLink = await generateReferralLink(user.id, botUsername);
 
-    const monitorText = `
+    let monitorText = `
 🌟 <b>${tokenInfo.baseToken.symbol}</b> • ⏰ ${age} • 🎯 <a href="${referralLink}">Referral</a>
 
 💰 <b>Main Position</b> • 📈 <b>${pnl}</b>
@@ -2347,17 +2400,35 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
 <i>Updated: ${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}</i>
 `;
 
+    // Add wallet breakdown if there are holdings
+    if (walletsWithBalance > 0) {
+      monitorText += `\n<b>💎 Wallet Breakdown:</b>\n`;
+      walletHoldings.forEach((holding, index) => {
+        const valueText =
+          holding.valueUsd > 0
+            ? ` ($${holding.valueUsd.toFixed(2)})`
+            : "";
+        monitorText += `${index + 1}. ${holding.shortAddress}: ${holding.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}${valueText}\n`;
+      });
+      monitorText += `\n`;
+    } else {
+      monitorText += `\n<b>❌ No tokens found in your wallets</b>\n\n`;
+    }
+
+    monitorText += `Use the buttons below to manage your position ⬇️`;
+
     const monitorKeyboard = new InlineKeyboard()
       .text("🔄 Refresh", `remonitor_data_${tokenAddress}`)
-      .url("📊 Chart", `https://dexscreener.com/solana/${tokenAddress}`)
+      .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
       .row()
       .text("💸 25%", `sell_ca_25_${tokenAddress}`)
       .text("💸 50%", `sell_ca_50_${tokenAddress}`)
       .text("💸 75%", `sell_ca_75_${tokenAddress}`)
       .text("💸 100%", `sell_ca_100_${tokenAddress}`)
       .row()
-      .row()
+      .url("📊 Chart", `https://dexscreener.com/solana/${tokenAddress}`)
       .url("🔗 Contract", `https://solscan.io/token/${tokenAddress}`)
+      .row()
       .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
       .text("🏠 Menu", CallBackQueries.BACK);
 
