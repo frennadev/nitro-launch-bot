@@ -1756,11 +1756,31 @@ bot.callbackQuery(/^(rld_|rbld_|refresh_launch_data_|refresh_bonk_launch_data_)/
   logger.info(`[Refresh] Refresh clicked for ${isBonk ? 'Bonk' : 'PumpFun'} token: ${tokenAddress}`);
 
   try {
-    // Get token info to extract name and symbol
-    const tokenInfo = await getTokenInfo(tokenAddress);
-    if (!tokenInfo) {
-      await sendMessage(ctx, "❌ Token not found.");
-      return;
+    // First try to get token info from user's database
+    const user = await getUser(ctx.chat!.id.toString());
+    let tokenName = "Unknown Token";
+    let tokenSymbol = "UNK";
+    
+    if (user) {
+      const userToken = await getUserTokenWithBuyWallets(user.id, tokenAddress);
+      if (userToken) {
+        tokenName = userToken.name;
+        tokenSymbol = userToken.symbol;
+        logger.info(`[Refresh] Found token in user database: ${tokenName} (${tokenSymbol})`);
+      }
+    }
+    
+    // If not found in user database, try external APIs
+    if (tokenName === "Unknown Token") {
+      const tokenInfo = await getTokenInfo(tokenAddress);
+      if (tokenInfo) {
+        tokenName = tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
+        tokenSymbol = tokenInfo.baseToken?.symbol || tokenInfo.symbol || "UNK";
+        logger.info(`[Refresh] Found token in external API: ${tokenName} (${tokenSymbol})`);
+      } else {
+        logger.warn(`[Refresh] Token not found in external APIs: ${tokenAddress}`);
+        // Still proceed with unknown token name/symbol
+      }
     }
 
     // Import and call the appropriate refresh function
@@ -1771,16 +1791,16 @@ bot.callbackQuery(/^(rld_|rbld_|refresh_launch_data_|refresh_bonk_launch_data_)/
         ctx.chat!.id,
         ctx.callbackQuery.message!.message_id,
         tokenAddress,
-        tokenInfo.name,
-        tokenInfo.symbol
+        tokenName,
+        tokenSymbol
       );
     } else {
       await handleLaunchDataRefresh(
         ctx.chat!.id,
         ctx.callbackQuery.message!.message_id,
         tokenAddress,
-        tokenInfo.name,
-        tokenInfo.symbol
+        tokenName,
+        tokenSymbol
       );
     }
   } catch (error) {

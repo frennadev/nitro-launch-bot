@@ -276,17 +276,29 @@ export function cleanTokenAddress(tokenAddress: string): string {
 export function createSafeCallbackData(action: string, tokenAddress: string): string {
   // Clean the token address first
   const cleanedTokenAddress = cleanTokenAddress(tokenAddress);
-  
   const compressed = compressCallbackData(action, cleanedTokenAddress);
   
-  // If compressed data is still too long, truncate the token address
+  // If compressed data is still too long, try different strategies
   if (compressed.length > 64) {
-    console.warn(`[createSafeCallbackData] Compressed data too long (${compressed.length} bytes), truncating token address`);
+    console.warn(`[createSafeCallbackData] Compressed data too long (${compressed.length} bytes), trying fallback strategies`);
     
-    // Try with a shorter prefix
+    // Strategy 1: Try with shorter prefix
+    const prefix = CALLBACK_PREFIXES[action as keyof typeof CALLBACK_PREFIXES];
+    if (prefix && prefix.length < 4) {
+      const shortCompressed = `${prefix}_${Buffer.from(cleanedTokenAddress).toString('base64')}`;
+      if (shortCompressed.length <= 64) {
+        return shortCompressed;
+      }
+    }
+    
+    // Strategy 2: Use a very short prefix and truncate address
     const shortPrefix = 'cb';
-    const truncatedAddress = cleanedTokenAddress.substring(0, 20); // Take first 20 chars
-    return `${shortPrefix}_${truncatedAddress}`;
+    const maxAddressLength = 64 - shortPrefix.length - 1; // -1 for underscore
+    const truncatedAddress = cleanedTokenAddress.substring(0, Math.max(10, maxAddressLength));
+    const fallbackData = `${shortPrefix}_${truncatedAddress}`;
+    
+    console.warn(`[createSafeCallbackData] Using fallback data: ${fallbackData} (${fallbackData.length} bytes)`);
+    return fallbackData;
   }
   
   return compressed;
