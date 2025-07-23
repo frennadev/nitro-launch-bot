@@ -16,7 +16,10 @@ export default async function mainMenuConversation(
   conversation: Conversation<Context>,
   ctx: Context
 ) {
-  await safeAnswerCallbackQuery(ctx);
+  // Only answer callback query if this is triggered by a callback query
+  if (ctx.callbackQuery) {
+    await safeAnswerCallbackQuery(ctx);
+  }
   
   let user = await getUser(ctx.chat!.id.toString());
   let isFirstTime = user === null;
