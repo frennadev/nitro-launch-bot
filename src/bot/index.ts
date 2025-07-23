@@ -2409,11 +2409,65 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
   }
 
   try {
-    // Use the same monitor system as the initial VIEW_TOKEN_TRADES
-    const { handleViewTokenTrades } = await import("./monitor");
-    
-    // Call the same function that creates the initial monitor page
-    await handleViewTokenTrades(ctx, userId, tokenAddress, "scan", undefined);
+    // Get the existing message to update
+    const messageId = ctx.callbackQuery?.message?.message_id;
+    if (!messageId) {
+      await sendMessage(ctx, "❌ Unable to refresh - message not found.");
+      return;
+    }
+
+    // Get fresh token info
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    if (!tokenInfo) {
+      await sendMessage(ctx, "❌ Token not found or invalid address.");
+      return;
+    }
+
+    // Generate updated monitor message
+    const refreshTime = new Date().toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    // Extract token name and symbol from the correct structure
+    const tokenName = tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
+    const tokenSymbol = tokenInfo.baseToken?.symbol || tokenInfo.symbol || "Unknown";
+
+    const monitorMessage = [
+      `📊 **Token Monitor**`,
+      ``,
+      `**Token:** ${tokenName} (${tokenSymbol})`,
+      `**Address:** \`${tokenAddress}\``,
+      `**Status:** Monitoring active`,
+      `**Mode:** scan`,
+      `**Last Updated:** ${refreshTime}`,
+      ``,
+      `**Market Data:**`,
+      `• Price: $${tokenInfo.priceUsd || "N/A"}`,
+      `• Market Cap: $${tokenInfo.marketCap ? tokenInfo.marketCap.toLocaleString() : "N/A"}`,
+      `• Volume (24h): $${tokenInfo.volume24h ? tokenInfo.volume24h.toLocaleString() : "N/A"}`,
+      `• Liquidity: $${tokenInfo.liquidity ? (typeof tokenInfo.liquidity === 'object' ? tokenInfo.liquidity.usd?.toLocaleString() : tokenInfo.liquidity.toLocaleString()) : "N/A"}`,
+      ``,
+      `💡 **Tip:** Use /menu or /start to return to the main menu.`,
+    ].join("\n");
+
+    // Create keyboard with refresh and other options
+    const keyboard = new InlineKeyboard()
+      .text("🔄 Refresh", `remonitor_data_${tokenAddress}`)
+      .row()
+      .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
+      .row()
+      .text("🔙 Back to Tokens", CallBackQueries.VIEW_TOKENS);
+
+    // Update the existing message instead of creating a new one
+    await ctx.api.editMessageText(ctx.chat!.id, messageId, monitorMessage, {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    });
+
+    logger.info(`[RefreshMonitorData] Successfully refreshed monitor data for ${tokenAddress}`);
     
   } catch (error) {
     logger.error("Error refreshing monitor data:", error);

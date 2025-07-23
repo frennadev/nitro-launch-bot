@@ -40,10 +40,14 @@ export const handleViewTokenTrades = async (
       second: "2-digit",
     });
 
+    // Extract token name and symbol from the correct structure
+    const tokenName = tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
+    const tokenSymbol = tokenInfo.baseToken?.symbol || tokenInfo.symbol || "Unknown";
+
     const monitorMessage = [
       `📊 **Token Monitor**`,
       ``,
-      `**Token:** ${tokenInfo.name} (${tokenInfo.symbol})`,
+      `**Token:** ${tokenName} (${tokenSymbol})`,
       `**Address:** \`${tokenAddress}\``,
       `**Status:** Monitoring active`,
       `**Mode:** ${variant}`,
@@ -53,7 +57,7 @@ export const handleViewTokenTrades = async (
       `• Price: $${tokenInfo.priceUsd || "N/A"}`,
       `• Market Cap: $${tokenInfo.marketCap ? tokenInfo.marketCap.toLocaleString() : "N/A"}`,
       `• Volume (24h): $${tokenInfo.volume24h ? tokenInfo.volume24h.toLocaleString() : "N/A"}`,
-      `• Liquidity: $${tokenInfo.liquidity ? tokenInfo.liquidity.toLocaleString() : "N/A"}`,
+      `• Liquidity: $${tokenInfo.liquidity ? (typeof tokenInfo.liquidity === 'object' ? tokenInfo.liquidity.usd?.toLocaleString() : tokenInfo.liquidity.toLocaleString()) : "N/A"}`,
       ``,
       `💡 **Tip:** Use /menu or /start to return to the main menu.`,
     ].join("\n");
