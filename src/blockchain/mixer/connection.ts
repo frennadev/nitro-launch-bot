@@ -22,10 +22,18 @@ export class SolanaConnectionManager {
     // Use dedicated mixer connection pool if available, otherwise fallback to direct connection
     if (useConnectionPool && mixerConnectionPool) {
       this.useConnectionPool = true;
-      this.connection = new Connection(rpcEndpoint, "processed"); // Use processed for faster confirmation
+      this.connection = new Connection(rpcEndpoint, {
+        commitment: "processed", // Use processed for faster confirmation
+        confirmTransactionInitialTimeout: 60000, // Increase timeout to 60 seconds for mixer operations
+        disableRetryOnRateLimit: false,
+      });
     } else {
       this.useConnectionPool = false;
-      this.connection = new Connection(rpcEndpoint, "confirmed");
+      this.connection = new Connection(rpcEndpoint, {
+        commitment: "confirmed",
+        confirmTransactionInitialTimeout: 60000, // Increase timeout to 60 seconds for mixer operations
+        disableRetryOnRateLimit: false,
+      });
     }
     this.priorityFee = priorityFee;
   }
@@ -184,20 +192,48 @@ export class SolanaConnectionManager {
   }
 
   /**
-   * Send transaction (uses connection pool if available)
+   * Send transaction with retry logic (uses connection pool if available)
    */
   async sendTransaction(
     transaction: Transaction,
     signers: Keypair[]
   ): Promise<string> {
-    if (this.useConnectionPool && mixerConnectionPool) {
-      return await mixerConnectionPool.sendTransaction(transaction, signers);
+    const maxRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`📡 Sending transaction (attempt ${attempt}/${maxRetries})...`);
+        
+        if (this.useConnectionPool && mixerConnectionPool) {
+          const signature = await mixerConnectionPool.sendTransaction(transaction, signers);
+          console.log(`✅ Transaction sent successfully via pool: ${signature.slice(0, 8)}...`);
+          return signature;
+        } else {
+          const signature = await sendAndConfirmTransaction(
+            this.connection,
+            transaction,
+            signers
+          );
+          console.log(`✅ Transaction sent successfully via direct connection: ${signature.slice(0, 8)}...`);
+          return signature;
+        }
+        
+      } catch (error: any) {
+        console.error(`❌ Transaction send error (attempt ${attempt}/${maxRetries}):`, error.message);
+        
+        // If this is the last attempt, throw the error
+        if (attempt === maxRetries) {
+          throw new Error(`Failed to send transaction after ${maxRetries} attempts: ${error.message}`);
+        }
+        
+        // Wait before retry (exponential backoff)
+        const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 3000); // 1s, 2s, max 3s
+        console.log(`⏳ Retrying send in ${retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
     }
-    return await sendAndConfirmTransaction(
-      this.connection,
-      transaction,
-      signers
-    );
+    
+    throw new Error("Failed to send transaction after all retries");
   }
 
   /**
@@ -286,19 +322,43 @@ export class SolanaConnectionManager {
   }
 
   /**
-   * Wait for transaction confirmation
+   * Wait for transaction confirmation with retry logic
    */
-  async waitForConfirmation(signature: string): Promise<boolean> {
-    try {
-      const confirmation = await this.connection.confirmTransaction(
-        signature,
-        "processed"
-      );
-      return !confirmation.value.err;
-    } catch (error) {
-      console.error("Transaction confirmation error:", error);
-      return false;
+  async waitForConfirmation(signature: string, maxRetries: number = 3): Promise<boolean> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Confirming transaction ${signature.slice(0, 8)}... (attempt ${attempt}/${maxRetries})`);
+        
+        const confirmation = await this.connection.confirmTransaction(
+          signature,
+          "processed"
+        );
+        
+        if (confirmation.value.err) {
+          console.error(`❌ Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          return false;
+        }
+        
+        console.log(`✅ Transaction confirmed successfully: ${signature.slice(0, 8)}...`);
+        return true;
+        
+      } catch (error: any) {
+        console.error(`❌ Transaction confirmation error (attempt ${attempt}/${maxRetries}):`, error.message);
+        
+        // If this is the last attempt, return false
+        if (attempt === maxRetries) {
+          console.error(`❌ All confirmation attempts failed for signature: ${signature}`);
+          return false;
+        }
+        
+        // Wait before retry (exponential backoff)
+        const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 1s, 2s, 4s, max 5s
+        console.log(`⏳ Retrying in ${retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
     }
+    
+    return false;
   }
 
   /**
