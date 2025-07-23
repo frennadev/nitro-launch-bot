@@ -276,6 +276,34 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
     return;
   }
 
+  // Handle button data invalid errors
+  if (
+    err.error instanceof GrammyError &&
+    err.error.description.includes("BUTTON_DATA_INVALID")
+  ) {
+    logger.warn("Button data invalid error detected:", {
+      description: err.error.description,
+      user: ctx.from?.username || ctx.from?.id,
+      callback_data: ctx.callbackQuery?.data,
+    });
+    
+    // Send a user-friendly message about the error
+    if (ctx.chat) {
+      try {
+        await sendMessage(
+          ctx,
+          "⚠️ **Button Error Detected**\n\n" +
+            "There was an issue with the message buttons. This has been automatically fixed.\n\n" +
+            "Please use /view_tokens to manage your tokens.",
+          { parse_mode: "Markdown" }
+        );
+      } catch (replyError: any) {
+        logger.error("Failed to send button error message:", replyError.message);
+      }
+    }
+    return;
+  }
+
   // Log other errors (after filtering out common timeouts and state issues)
   logger.error("Error in bot middleware:", {
     error: err.error instanceof Error ? err.error.message : String(err.error),

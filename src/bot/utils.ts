@@ -206,7 +206,10 @@ const CALLBACK_PREFIXES = {
   BUY_EXTERNAL_TOKEN: 'bet',
   SELL_EXTERNAL_TOKEN: 'set',
   CTO: 'cto',
-  CHART: 'ch'
+  CHART: 'ch',
+  // Add the actual enum values for LaunchMessageCallbacks
+  "refresh_launch_data": 'rld',
+  "refresh_bonk_launch_data": 'rbld'
 };
 
 // Compress callback data by using short prefixes and base64 encoding for addresses
@@ -248,4 +251,26 @@ export function decompressCallbackData(compressedData: string): { action: string
 export function isCompressedCallbackData(data: string): boolean {
   const [prefix] = data.split('_');
   return Object.values(CALLBACK_PREFIXES).includes(prefix);
+}
+
+// Validate callback data length (Telegram has 64-byte limit)
+export function validateCallbackData(data: string): boolean {
+  return data.length <= 64;
+}
+
+// Create safe callback data that won't exceed Telegram's limits
+export function createSafeCallbackData(action: string, tokenAddress: string): string {
+  const compressed = compressCallbackData(action, tokenAddress);
+  
+  // If compressed data is still too long, truncate the token address
+  if (compressed.length > 64) {
+    console.warn(`[createSafeCallbackData] Compressed data too long (${compressed.length} bytes), truncating token address`);
+    
+    // Try with a shorter prefix
+    const shortPrefix = 'cb';
+    const truncatedAddress = tokenAddress.substring(0, 20); // Take first 20 chars
+    return `${shortPrefix}_${truncatedAddress}`;
+  }
+  
+  return compressed;
 }

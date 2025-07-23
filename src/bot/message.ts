@@ -1,6 +1,6 @@
 import { bot } from ".";
 import { CallBackQueries } from "./types";
-import { escape, compressCallbackData } from "./utils";
+import { escape, compressCallbackData, createSafeCallbackData } from "./utils";
 import { getTokenInfo, calculateTokenHoldingsWorth } from "../backend/utils";
 import { getAccurateSpendingStats } from "../backend/functions-main";
 import { InlineKeyboard } from "grammy";
@@ -41,20 +41,50 @@ export const sendBonkLaunchSuccessNotification = async (
   tokenName: string,
   symbol: string
 ) => {
-  const messageData = await buildBonkLaunchSuccessMessage(tokenAddress, tokenName, symbol);
-  
-  const message = await bot.api.sendMessage(chatId, messageData.text, {
-    parse_mode: "MarkdownV2",
-    reply_markup: messageData.keyboard,
-  });
-
-  // Pin the message
   try {
-    await bot.api.pinChatMessage(chatId, message.message_id, {
-      disable_notification: true, // Don't notify users about the pin
+    const messageData = await buildBonkLaunchSuccessMessage(tokenAddress, tokenName, symbol);
+    
+    const message = await bot.api.sendMessage(chatId, messageData.text, {
+      parse_mode: "MarkdownV2",
+      reply_markup: messageData.keyboard,
     });
-  } catch (error) {
-    console.warn(`[sendBonkLaunchSuccessNotification] Could not pin message:`, error);
+
+    // Pin the message
+    try {
+      await bot.api.pinChatMessage(chatId, message.message_id, {
+        disable_notification: true, // Don't notify users about the pin
+      });
+    } catch (error) {
+      console.warn(`[sendBonkLaunchSuccessNotification] Could not pin message:`, error);
+    }
+  } catch (error: any) {
+    console.error(`[sendBonkLaunchSuccessNotification] Error sending message:`, error);
+    
+    // If there's a button data error, send a simplified message without buttons
+    if (error.description && error.description.includes('BUTTON_DATA_INVALID')) {
+      console.warn(`[sendBonkLaunchSuccessNotification] Button data invalid, sending simplified message`);
+      
+      const simplifiedMessage = [
+        `🎉 *Bonk Token Launched Successfully\\!*`,
+        `*Name:* ${escape(tokenName)}`,
+        `*Symbol:* \`${escape(symbol)}\``,
+        `*Address:* \`${tokenAddress}\``,
+        ``,
+        `✅ Your token is now live on Raydium Launch Lab\\!`,
+        ``,
+        `Use /view\\_tokens to manage your tokens\\!`
+      ].join("\n");
+      
+      await bot.api.sendMessage(chatId, simplifiedMessage, {
+        parse_mode: "MarkdownV2"
+      });
+    } else {
+      // For other errors, send a basic success message
+      await bot.api.sendMessage(chatId, 
+        `🎉 Bonk token launched successfully! Token: ${tokenAddress}`, 
+        { parse_mode: "MarkdownV2" }
+      );
+    }
   }
 };
 
@@ -99,21 +129,21 @@ const buildLaunchSuccessMessage = async (tokenAddress: string, tokenName: string
     .join("\n");
 
   const keyboard = new InlineKeyboard()
-    .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
+    .text("💸 Fund Token Wallets", createSafeCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
     .row()
-    .text("🔄 Refresh", compressCallbackData(LaunchMessageCallbacks.REFRESH_LAUNCH_DATA, tokenAddress))
+    .text("🔄 Refresh", createSafeCallbackData(LaunchMessageCallbacks.REFRESH_LAUNCH_DATA, tokenAddress))
     .row()
-    .text("💯 Sell 100% Dev Supply", compressCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress))
+    .text("💯 Sell 100% Dev Supply", createSafeCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress))
     .row()
-    .text("👨‍💻 Sell Dev Supply", compressCallbackData(CallBackQueries.SELL_DEV, tokenAddress))
+    .text("👨‍💻 Sell Dev Supply", createSafeCallbackData(CallBackQueries.SELL_DEV, tokenAddress))
     .row()
-    .text("📈 Sell % supply", compressCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress))
+    .text("📈 Sell % supply", createSafeCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress))
     .row()
-    .text("🧨 Sell All", compressCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
+    .text("🧨 Sell All", createSafeCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
     .row()
-    .text("👥 Individual Wallet Sells", compressCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
+    .text("👥 Individual Wallet Sells", createSafeCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
     .row()
-    .text("🎁 Airdrop SOL", compressCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress));
+    .text("🎁 Airdrop SOL", createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress));
 
   return { text: msg, keyboard };
 };
@@ -160,21 +190,21 @@ const buildBonkLaunchSuccessMessage = async (tokenAddress: string, tokenName: st
     .join("\n");
 
   const keyboard = new InlineKeyboard()
-    .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
+    .text("💸 Fund Token Wallets", createSafeCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
     .row()
-    .text("🔄 Refresh", compressCallbackData(LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA, tokenAddress))
+    .text("🔄 Refresh", createSafeCallbackData(LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA, tokenAddress))
     .row()
-    .text("💯 Sell 100% Dev Supply", compressCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress))
+    .text("💯 Sell 100% Dev Supply", createSafeCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress))
     .row()
-    .text("👨‍💻 Sell Dev Supply", compressCallbackData(CallBackQueries.SELL_DEV, tokenAddress))
+    .text("👨‍💻 Sell Dev Supply", createSafeCallbackData(CallBackQueries.SELL_DEV, tokenAddress))
     .row()
-    .text("📈 Sell % supply", compressCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress))
+    .text("📈 Sell % supply", createSafeCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress))
     .row()
-    .text("🧨 Sell All", compressCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
+    .text("🧨 Sell All", createSafeCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
     .row()
-    .text("👥 Individual Wallet Sells", compressCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
+    .text("👥 Individual Wallet Sells", createSafeCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
     .row()
-    .text("🎁 Airdrop SOL", compressCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress));
+    .text("🎁 Airdrop SOL", createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress));
 
   return { text: msg, keyboard };
 };

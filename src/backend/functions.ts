@@ -4607,11 +4607,11 @@ export const launchBonkToken = async (
       }
     }
 
-    // 2.3 50ms DELAY before snipe buys (optimized for speed)
+    // 2.3 1.5s DELAY before snipe buys (wait for BONK pool creation)
     if (buyAmount > 0) {
-      logger.info(`[${logId}]: ⏱️ Waiting 50ms before starting snipe buys...`);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      logger.info(`[${logId}]: 🚀 Starting snipe buys after 50ms delay`);
+      logger.info(`[${logId}]: ⏱️ Waiting 1.5s before starting snipe buys (waiting for BONK pool creation)...`);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      logger.info(`[${logId}]: 🚀 Starting snipe buys after 1.5s delay`);
     }
 
     // 2.4 Execute buys from the funded wallets (real implementation)
@@ -4911,7 +4911,7 @@ export const launchBonkToken = async (
         `[${logId}]: Starting simultaneous buy execution with max ${maxConcurrentWallets} concurrent wallets (${walletsWithSufficientFunds.length}/${walletsToProcess.length} wallets have sufficient funds)`
       );
 
-      // Process wallets sequentially with 50ms delay between each buy (non-blocking, no confirmation wait)
+              // Process wallets sequentially with 50ms delay between each buy (give time for BONK pool operations)
       for (const wallet of walletsToProcess) {
         if (processedWallets.has(wallet.publicKey)) continue;
 
@@ -5121,8 +5121,8 @@ export const launchBonkToken = async (
         }
         results.push(walletResult);
         processedWallets.add(wallet.publicKey);
-        // Wait 10ms before next wallet (optimized for speed)
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        // Wait 50ms before next wallet (give time for BONK pool operations)
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
       const filteredResults = results.filter((r) => r !== undefined);
