@@ -187,3 +187,65 @@ export async function sendTemporaryMessage(
     console.error("Failed to send temporary message:", error);
   }
 }
+
+// Callback data compression utilities to handle long token addresses
+// Telegram has a 64-byte limit for callback_data, so we need to compress long addresses
+
+const CALLBACK_PREFIXES = {
+  FUND_TOKEN_WALLETS: 'ftw',
+  SELL_DEV_SUPPLY: 'sds', 
+  SELL_DEV: 'sd',
+  SELL_PERCENT: 'sp',
+  SELL_ALL: 'sa',
+  SELL_INDIVIDUAL: 'si',
+  AIRDROP_SOL: 'as',
+  REFRESH_LAUNCH_DATA: 'rld',
+  REFRESH_BONK_LAUNCH_DATA: 'rbld',
+  VIEW_TOKEN_TRADES: 'vtt',
+  LAUNCH_TOKEN: 'lt',
+  BUY_EXTERNAL_TOKEN: 'bet',
+  SELL_EXTERNAL_TOKEN: 'set',
+  CTO: 'cto',
+  CHART: 'ch'
+};
+
+// Compress callback data by using short prefixes and base64 encoding for addresses
+export function compressCallbackData(action: string, tokenAddress: string): string {
+  const prefix = CALLBACK_PREFIXES[action as keyof typeof CALLBACK_PREFIXES];
+  if (!prefix) {
+    // Fallback to original format if no compression available
+    return `${action}_${tokenAddress}`;
+  }
+  
+  // Use base64 encoding for the token address to make it shorter
+  const encodedAddress = Buffer.from(tokenAddress).toString('base64');
+  return `${prefix}_${encodedAddress}`;
+}
+
+// Decompress callback data back to original format
+export function decompressCallbackData(compressedData: string): { action: string; tokenAddress: string } | null {
+  const [prefix, encodedAddress] = compressedData.split('_');
+  
+  // Find the original action from the prefix
+  const action = Object.keys(CALLBACK_PREFIXES).find(key => 
+    CALLBACK_PREFIXES[key as keyof typeof CALLBACK_PREFIXES] === prefix
+  );
+  
+  if (!action || !encodedAddress) {
+    return null;
+  }
+  
+  try {
+    // Decode the base64 address
+    const tokenAddress = Buffer.from(encodedAddress, 'base64').toString();
+    return { action, tokenAddress };
+  } catch (error) {
+    return null;
+  }
+}
+
+// Check if callback data is compressed
+export function isCompressedCallbackData(data: string): boolean {
+  const [prefix] = data.split('_');
+  return Object.values(CALLBACK_PREFIXES).includes(prefix);
+}

@@ -1,6 +1,6 @@
 import { bot } from ".";
 import { CallBackQueries } from "./types";
-import { escape } from "./utils";
+import { escape, compressCallbackData } from "./utils";
 import { getTokenInfo, calculateTokenHoldingsWorth } from "../backend/utils";
 import { getAccurateSpendingStats } from "../backend/functions-main";
 import { InlineKeyboard } from "grammy";
@@ -99,21 +99,21 @@ const buildLaunchSuccessMessage = async (tokenAddress: string, tokenName: string
     .join("\n");
 
   const keyboard = new InlineKeyboard()
-    .text("💸 Fund Token Wallets", `${CallBackQueries.FUND_TOKEN_WALLETS}_${tokenAddress}`)
+    .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
     .row()
-    .text("🔄 Refresh", `${LaunchMessageCallbacks.REFRESH_LAUNCH_DATA}_${tokenAddress}`)
+    .text("🔄 Refresh", compressCallbackData(LaunchMessageCallbacks.REFRESH_LAUNCH_DATA, tokenAddress))
     .row()
-    .text("💯 Sell 100% Dev Supply", `${CallBackQueries.SELL_DEV_SUPPLY}_${tokenAddress}`)
+    .text("💯 Sell 100% Dev Supply", compressCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress))
     .row()
-    .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${tokenAddress}`)
+    .text("👨‍💻 Sell Dev Supply", compressCallbackData(CallBackQueries.SELL_DEV, tokenAddress))
     .row()
-    .text("📈 Sell % supply", `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`)
+    .text("📈 Sell % supply", compressCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress))
     .row()
-    .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
+    .text("🧨 Sell All", compressCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
     .row()
-    .text("👥 Individual Wallet Sells", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`)
+    .text("👥 Individual Wallet Sells", compressCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
     .row()
-    .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`);
+    .text("🎁 Airdrop SOL", compressCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress));
 
   return { text: msg, keyboard };
 };
@@ -160,21 +160,21 @@ const buildBonkLaunchSuccessMessage = async (tokenAddress: string, tokenName: st
     .join("\n");
 
   const keyboard = new InlineKeyboard()
-    .text("💸 Fund Token Wallets", `${CallBackQueries.FUND_TOKEN_WALLETS}_${tokenAddress}`)
+    .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
     .row()
-    .text("🔄 Refresh", `${LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA}_${tokenAddress}`)
+    .text("🔄 Refresh", compressCallbackData(LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA, tokenAddress))
     .row()
-    .text("💯 Sell 100% Dev Supply", `${CallBackQueries.SELL_DEV_SUPPLY}_${tokenAddress}`)
+    .text("💯 Sell 100% Dev Supply", compressCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress))
     .row()
-    .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${tokenAddress}`)
+    .text("👨‍💻 Sell Dev Supply", compressCallbackData(CallBackQueries.SELL_DEV, tokenAddress))
     .row()
-    .text("📈 Sell % supply", `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`)
+    .text("📈 Sell % supply", compressCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress))
     .row()
-    .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
+    .text("🧨 Sell All", compressCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
     .row()
-    .text("👥 Individual Wallet Sells", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`)
+    .text("👥 Individual Wallet Sells", compressCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
     .row()
-    .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`);
+    .text("🎁 Airdrop SOL", compressCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress));
 
   return { text: msg, keyboard };
 };

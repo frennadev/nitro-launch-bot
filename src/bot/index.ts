@@ -50,6 +50,9 @@ import {
   safeEditMessageReplyMarkup,
   safeEditMessageText,
   safeEditOrSendMessage,
+  safeAnswerCallbackQuery,
+  decompressCallbackData,
+  isCompressedCallbackData,
 } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
@@ -298,27 +301,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
 });
 
 // Safe wrapper for answerCallbackQuery to handle timeout errors
-async function safeAnswerCallbackQuery(
-  ctx: Context,
-  text?: string
-): Promise<void> {
-  try {
-    await ctx.answerCallbackQuery(text);
-  } catch (error: any) {
-    // Ignore callback query timeout errors
-    if (
-      error instanceof GrammyError &&
-      (error.description?.includes("query is too old") ||
-        error.description?.includes("response timeout expired") ||
-        error.description?.includes("query ID is invalid"))
-    ) {
-      logger.info("Callback query timeout ignored:", error.description);
-      return;
-    }
-    // Re-throw other errors
-    throw error;
-  }
-}
+
 
 // Clear conversation state helper function
 async function clearConversationState(ctx: any): Promise<boolean> {
@@ -1778,8 +1761,252 @@ bot.command("buyexternal", async (ctx) => {
   await ctx.conversation.enter("buy-external-token");
 });
 
+// Handle compressed callback data
+function handleCompressedCallback(data: string): { action: string; tokenAddress: string } | null {
+  if (isCompressedCallbackData(data)) {
+    return decompressCallbackData(data);
+  }
+  return null;
+}
+
+// Updated callback handlers to handle compressed data
+
+// Handle fund token wallets button clicks
+bot.callbackQuery(/^(ftw_|fund_token_wallets_)/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "💸 Loading fund options...");
+  
+  let tokenAddress: string;
+  const data = ctx.callbackQuery.data;
+  
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+  } else {
+    // Handle legacy uncompressed format
+    tokenAddress = data.split('_').slice(2).join('_');
+  }
+
+  logger.info(`[FundTokenWallets] Fund button clicked for token: ${tokenAddress}`);
+
+  // Start the fund token wallets conversation
+  await ctx.conversation.enter("fundTokenWalletsConversation", tokenAddress);
+});
+
+// Handle refresh launch data button clicks
+bot.callbackQuery(/^(rld_|rbld_|refresh_launch_data_|refresh_bonk_launch_data_)/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔄 Refreshing...");
+  
+  let tokenAddress: string;
+  let isBonk = false;
+  const data = ctx.callbackQuery.data;
+  
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+    isBonk = decompressed.action === 'REFRESH_BONK_LAUNCH_DATA';
+  } else {
+    // Handle legacy uncompressed format
+    const parts = data.split('_');
+    tokenAddress = parts.slice(3).join('_');
+    isBonk = parts[2] === 'bonk';
+  }
+
+  logger.info(`[Refresh] Refresh clicked for ${isBonk ? 'Bonk' : 'PumpFun'} token: ${tokenAddress}`);
+
+  try {
+    // Get token info to extract name and symbol
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    if (!tokenInfo) {
+      await sendMessage(ctx, "❌ Token not found.");
+      return;
+    }
+
+    // Import and call the appropriate refresh function
+    const { handleLaunchDataRefresh, handleBonkLaunchDataRefresh } = await import("./message");
+    
+    if (isBonk) {
+      await handleBonkLaunchDataRefresh(
+        ctx.chat!.id,
+        ctx.callbackQuery.message!.message_id,
+        tokenAddress,
+        tokenInfo.name,
+        tokenInfo.symbol
+      );
+    } else {
+      await handleLaunchDataRefresh(
+        ctx.chat!.id,
+        ctx.callbackQuery.message!.message_id,
+        tokenAddress,
+        tokenInfo.name,
+        tokenInfo.symbol
+      );
+    }
+  } catch (error) {
+    logger.error(`[Refresh] Error refreshing token data: ${(error as Error).message}`);
+    await sendMessage(ctx, "❌ Error refreshing token data. Please try again.");
+  }
+});
+
+// Handle sell dev supply button clicks
+bot.callbackQuery(/^(sds_|sell_dev_supply_)/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "💸 Selling dev supply...");
+  
+  let tokenAddress: string;
+  const data = ctx.callbackQuery.data;
+  
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+  } else {
+    // Handle legacy uncompressed format
+    tokenAddress = data.split('_').slice(2).join('_');
+  }
+
+  logger.info(`[SellDevSupply] Sell dev supply clicked for token: ${tokenAddress}`);
+
+  // Start the sell dev supply conversation
+  await ctx.conversation.enter("sellDevSupplyConversation", tokenAddress);
+});
+
+// Handle sell dev button clicks
+bot.callbackQuery(/^(sd_|sell_dev_)/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "💸 Selling dev tokens...");
+  
+  let tokenAddress: string;
+  const data = ctx.callbackQuery.data;
+  
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+  } else {
+    // Handle legacy uncompressed format
+    tokenAddress = data.split('_').slice(2).join('_');
+  }
+
+  logger.info(`[SellDev] Sell dev clicked for token: ${tokenAddress}`);
+
+  // Start the sell dev conversation
+  await ctx.conversation.enter("sellDevConversation", tokenAddress);
+});
+
+// Handle sell percent button clicks
+bot.callbackQuery(/^(sp_|sell_percent_)/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "💸 Loading sell options...");
+  
+  let tokenAddress: string;
+  const data = ctx.callbackQuery.data;
+  
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+  } else {
+    // Handle legacy uncompressed format
+    tokenAddress = data.split('_').slice(2).join('_');
+  }
+
+  logger.info(`[SellPercent] Sell percent clicked for token: ${tokenAddress}`);
+
+  // Start the sell percent conversation
+  await ctx.conversation.enter("sellPercentageMessage", tokenAddress);
+});
+
+// Handle sell all button clicks
+bot.callbackQuery(/^(sa_|sell_all_)/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "💸 Selling all tokens...");
+  
+  let tokenAddress: string;
+  const data = ctx.callbackQuery.data;
+  
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+  } else {
+    // Handle legacy uncompressed format
+    tokenAddress = data.split('_').slice(2).join('_');
+  }
+
+  logger.info(`[SellAll] Sell all clicked for token: ${tokenAddress}`);
+
+  // Start the sell all conversation
+  await ctx.conversation.enter("sellAllConversation", tokenAddress);
+});
+
+// Handle sell individual button clicks
+bot.callbackQuery(/^(si_|sell_individual_)/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "💸 Loading individual sells...");
+  
+  let tokenAddress: string;
+  const data = ctx.callbackQuery.data;
+  
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+  } else {
+    // Handle legacy uncompressed format
+    tokenAddress = data.split('_').slice(2).join('_');
+  }
+
+  logger.info(`[SellIndividual] Sell individual clicked for token: ${tokenAddress}`);
+
+  // Start the sell individual conversation
+  await ctx.conversation.enter("sellIndividualTokenConversation", tokenAddress);
+});
+
+// Handle airdrop SOL button clicks
+bot.callbackQuery(/^(as_|airdrop_sol_)/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🎁 Loading airdrop options...");
+  
+  let tokenAddress: string;
+  const data = ctx.callbackQuery.data;
+  
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+  } else {
+    // Handle legacy uncompressed format
+    tokenAddress = data.split('_').slice(2).join('_');
+  }
+
+  logger.info(`[AirdropSol] Airdrop SOL clicked for token: ${tokenAddress}`);
+
+  // Start the airdrop SOL conversation
+  await ctx.conversation.enter("airdropSolConversation", tokenAddress);
+});
+
 bot.callbackQuery(
-  new RegExp(`^${CallBackQueries.VIEW_TOKEN_TRADES}_`),
+  new RegExp(`^(vtt_|${CallBackQueries.VIEW_TOKEN_TRADES}_)`),
   async (ctx) => {
     // Get user ID from context
     const userId = ctx?.chat!.id.toString();
@@ -1790,7 +2017,21 @@ bot.callbackQuery(
     }
     await safeAnswerCallbackQuery(ctx, "💰 Loading");
 
-    const tokenAddress = ctx.callbackQuery.data.split("_").pop();
+    let tokenAddress: string;
+    const data = ctx.callbackQuery.data;
+    
+    if (isCompressedCallbackData(data)) {
+      const decompressed = decompressCallbackData(data);
+      if (!decompressed) {
+        await sendMessage(ctx, "❌ Invalid callback data.");
+        return;
+      }
+      tokenAddress = decompressed.tokenAddress;
+    } else {
+      // Handle legacy uncompressed format
+      tokenAddress = data.split("_").pop() || "";
+    }
+    
     if (!tokenAddress) {
       await sendMessage(ctx, "❌ Invalid token address.");
       return;
