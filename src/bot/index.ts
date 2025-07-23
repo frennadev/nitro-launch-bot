@@ -318,6 +318,77 @@ async function clearConversationState(ctx: any): Promise<boolean> {
   }
 }
 
+// Enhanced conversation state clearing for token display
+async function clearConversationStateForTokenDisplay(ctx: any): Promise<boolean> {
+  try {
+    const sessionCtx = ctx as any;
+    let cleared = false;
+
+    // Clear conversation session data
+    if (sessionCtx.session) {
+      // Clear the main conversation state
+      if (sessionCtx.session.__conversation) {
+        delete sessionCtx.session.__conversation;
+        cleared = true;
+        logger.info("Cleared __conversation session data for token display");
+      }
+
+      // Clear any other conversation-related session data
+      const sessionKeys = Object.keys(sessionCtx.session);
+      sessionKeys.forEach((key) => {
+        if (key.startsWith("__conversation") || key.includes("conversation")) {
+          delete sessionCtx.session[key];
+          cleared = true;
+          logger.info(`Cleared session key for token display: ${key}`);
+        }
+      });
+
+      // Clear Grammy.js internal conversation state keys
+      const grammyConversationKeys = sessionKeys.filter(
+        (key) =>
+          key.startsWith("__grammyjs_conversations") || key.startsWith("__conversations") || key.includes("__conv_")
+      );
+
+      grammyConversationKeys.forEach((key) => {
+        delete sessionCtx.session[key];
+        cleared = true;
+        logger.info(`Cleared Grammy conversation key for token display: ${key}`);
+      });
+    }
+
+    // Try to access and clear conversation context if available
+    if (sessionCtx.conversation) {
+      try {
+        if (typeof sessionCtx.conversation.halt === "function") {
+          await sessionCtx.conversation.halt();
+          cleared = true;
+          logger.info("Successfully halted conversation for token display");
+        } else if (typeof sessionCtx.conversation.exit === "function") {
+          await sessionCtx.conversation.exit();
+          cleared = true;
+          logger.info("Successfully exited conversation for token display");
+        } else {
+          delete sessionCtx.conversation;
+          cleared = true;
+        }
+      } catch (haltError) {
+        logger.warn("Failed to halt conversation for token display, forcing clear:", haltError);
+        try {
+          delete sessionCtx.conversation;
+          cleared = true;
+        } catch (deleteError) {
+          logger.warn("Failed to delete conversation object for token display:", deleteError);
+        }
+      }
+    }
+
+    return cleared;
+  } catch (error: any) {
+    logger.error("Error in clearConversationStateForTokenDisplay:", error);
+    return false;
+  }
+}
+
 // Handle token address message helper
 async function handleTokenAddressMessage(ctx: any, tokenAddress: string) {
   try {
@@ -382,6 +453,30 @@ bot.use(async (ctx, next) => {
     // Re-throw other errors to be handled by global error handler
     throw error;
   }
+});
+
+// **CRITICAL FIX: Middleware to ensure token address messages always work**
+// This middleware runs before conversation middleware and allows token addresses to bypass conversation state
+bot.use(async (ctx, next) => {
+  // Check if this is a token address message
+  const text = ctx.message?.text?.trim();
+  if (text && /^[A-Za-z0-9]{32,44}$/.test(text)) {
+    try {
+      new PublicKey(text); // Validate if it's a valid Solana address
+      logger.info(`[token-display] Token address detected, bypassing conversation state: ${text}`);
+      
+      // Clear any active conversation state for token addresses
+      await clearConversationStateForTokenDisplay(ctx);
+      
+      // Continue to the token address handler
+      return next();
+    } catch (e) {
+      // Not a valid Solana address, continue normally
+    }
+  }
+  
+  // For non-token addresses, continue with normal middleware flow
+  return next();
 });
 
 bot.use(createConversation(createTokenConversation));
@@ -2607,6 +2702,22 @@ bot.on("message:text", async (ctx) => {
         new PublicKey(text); // Validate if it's a valid Solana address
         logger.info(`User sent token address: ${text}`);
 
+        // **CRITICAL FIX: Clear any active conversation state before processing token address**
+        // This ensures token display works even after actions are taken
+        try {
+          const cleared = await clearConversationStateForTokenDisplay(ctx);
+          if (cleared) {
+            logger.info(`[token-display] Successfully cleared conversation state for token: ${text}`);
+          } else {
+            logger.info(`[token-display] No conversation state to clear for token: ${text}`);
+          }
+        } catch (clearError: any) {
+          logger.warn(`[token-display] Failed to clear conversation state: ${clearError.message}`);
+          // Continue with token display even if clearing fails
+        }
+
+        logger.info(`[token-display] Proceeding with token display for: ${text}`);
+
         // **ULTRA-FAST DISPLAY: Show token page IMMEDIATELY with zero blocking operations**
         let initialTokenName = "Loading...";
         let initialTokenSymbol = "...";
@@ -3061,6 +3172,8 @@ bot.on("message:text", async (ctx) => {
           }
         });
 
+        logger.info(`[token-display] Token display handler completed for: ${text}`);
+
         return;
       } catch (e) {
         // Not a valid Solana address, ignore or handle as regular text
@@ -3172,6 +3285,43 @@ bot.command("fixlaunch", async (ctx) => {
     await sendMessage(
       ctx,
       "❌ Fix launch failed. Please try /forcefix or contact support."
+    );
+  }
+});
+
+bot.command("cleartoken", async (ctx) => {
+  try {
+    logger.info("Clear token state command used by user:", ctx.chat?.id);
+
+    // Clear conversation state specifically for token display
+    const cleared = await clearConversationStateForTokenDisplay(ctx);
+
+    if (cleared) {
+      await sendMessage(
+        ctx,
+        "🔧 **Token Display Fix Applied**\n\n" +
+          "✅ Conversation state cleared\n" +
+          "✅ Token display should now work\n\n" +
+          "**Test it:** Send any token address and it should display properly now.",
+        { parse_mode: "Markdown" }
+      );
+    } else {
+      await sendMessage(
+        ctx,
+        "⚠️ **No Active Conversation State**\n\n" +
+          "No conversation state was found to clear.\n" +
+          "Token display should work normally.\n\n" +
+          "**Test it:** Send any token address to verify.",
+        { parse_mode: "Markdown" }
+      );
+    }
+
+    logger.info("Clear token state completed for user:", ctx.chat?.id);
+  } catch (error: any) {
+    logger.error("Error in clear token command:", error);
+    await sendMessage(
+      ctx,
+      "❌ Clear token state failed. Please try /forcefix or contact support."
     );
   }
 });
