@@ -220,15 +220,17 @@ export const handleLaunchDataRefresh = async (
   try {
     const messageData = await buildLaunchSuccessMessage(tokenAddress, tokenName, symbol);
     
-    await bot.api.editMessageText(chatId, messageId, messageData.text, {
+    // Send a new message instead of editing the original success message
+    // This way users can always go back to the original success page
+    await bot.api.sendMessage(chatId, messageData.text, {
       parse_mode: "MarkdownV2",
       reply_markup: messageData.keyboard,
     });
   } catch (error) {
     console.error(`[handleLaunchDataRefresh] Error refreshing launch data:`, error);
-    // If edit fails, try to send a new message
+    // If sending fails, try to send a simple error message
     try {
-      await bot.api.sendMessage(chatId, "🔄 *Refreshing data\\.\\.\\.*", {
+      await bot.api.sendMessage(chatId, "❌ *Error refreshing data\\. Please try again\\.*", {
         parse_mode: "MarkdownV2",
       });
     } catch (fallbackError) {
@@ -248,15 +250,17 @@ export const handleBonkLaunchDataRefresh = async (
   try {
     const messageData = await buildBonkLaunchSuccessMessage(tokenAddress, tokenName, symbol);
     
-    await bot.api.editMessageText(chatId, messageId, messageData.text, {
+    // Send a new message instead of editing the original success message
+    // This way users can always go back to the original success page
+    await bot.api.sendMessage(chatId, messageData.text, {
       parse_mode: "MarkdownV2",
       reply_markup: messageData.keyboard,
     });
   } catch (error) {
     console.error(`[handleBonkLaunchDataRefresh] Error refreshing launch data:`, error);
-    // If edit fails, try to send a new message
+    // If sending fails, try to send a simple error message
     try {
-      await bot.api.sendMessage(chatId, "🔄 *Refreshing data\\.\\.\\.*", {
+      await bot.api.sendMessage(chatId, "❌ *Error refreshing data\\. Please try again\\.*", {
         parse_mode: "MarkdownV2",
       });
     } catch (fallbackError) {
