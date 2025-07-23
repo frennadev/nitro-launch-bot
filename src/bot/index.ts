@@ -1690,6 +1690,23 @@ bot.callbackQuery(/^(ftw_|fund_token_wallets_)/, async (ctx) => {
     tokenAddress = data.split('_').slice(2).join('_');
   }
 
+  // Validate and clean the token address
+  try {
+    // Remove any "wallets_" prefix that might have been accidentally added
+    if (tokenAddress.startsWith('wallets_')) {
+      tokenAddress = tokenAddress.substring(8); // Remove "wallets_" prefix
+      logger.warn(`[FundTokenWallets] Removed 'wallets_' prefix from token address: ${tokenAddress}`);
+    }
+    
+    // Validate that it's a valid Solana address
+    const { PublicKey } = await import("@solana/web3.js");
+    new PublicKey(tokenAddress);
+  } catch (error) {
+    logger.error(`[FundTokenWallets] Invalid token address: ${tokenAddress}`, error);
+    await sendMessage(ctx, "❌ Invalid token address in callback data.");
+    return;
+  }
+
   logger.info(`[FundTokenWallets] Fund button clicked for token: ${tokenAddress}`);
 
   // Start the fund token wallets conversation
@@ -1717,6 +1734,23 @@ bot.callbackQuery(/^(rld_|rbld_|refresh_launch_data_|refresh_bonk_launch_data_)/
     const parts = data.split('_');
     tokenAddress = parts.slice(3).join('_');
     isBonk = parts[2] === 'bonk';
+  }
+
+  // Validate and clean the token address
+  try {
+    // Remove any "wallets_" prefix that might have been accidentally added
+    if (tokenAddress.startsWith('wallets_')) {
+      tokenAddress = tokenAddress.substring(8); // Remove "wallets_" prefix
+      logger.warn(`[Refresh] Removed 'wallets_' prefix from token address: ${tokenAddress}`);
+    }
+    
+    // Validate that it's a valid Solana address
+    const { PublicKey } = await import("@solana/web3.js");
+    new PublicKey(tokenAddress);
+  } catch (error) {
+    logger.error(`[Refresh] Invalid token address: ${tokenAddress}`, error);
+    await sendMessage(ctx, "❌ Invalid token address in callback data.");
+    return;
   }
 
   logger.info(`[Refresh] Refresh clicked for ${isBonk ? 'Bonk' : 'PumpFun'} token: ${tokenAddress}`);

@@ -214,14 +214,17 @@ const CALLBACK_PREFIXES = {
 
 // Compress callback data by using short prefixes and base64 encoding for addresses
 export function compressCallbackData(action: string, tokenAddress: string): string {
+  // Clean the token address first
+  const cleanedTokenAddress = cleanTokenAddress(tokenAddress);
+  
   const prefix = CALLBACK_PREFIXES[action as keyof typeof CALLBACK_PREFIXES];
   if (!prefix) {
     // Fallback to original format if no compression available
-    return `${action}_${tokenAddress}`;
+    return `${action}_${cleanedTokenAddress}`;
   }
   
   // Use base64 encoding for the token address to make it shorter
-  const encodedAddress = Buffer.from(tokenAddress).toString('base64');
+  const encodedAddress = Buffer.from(cleanedTokenAddress).toString('base64');
   return `${prefix}_${encodedAddress}`;
 }
 
@@ -258,9 +261,23 @@ export function validateCallbackData(data: string): boolean {
   return data.length <= 64;
 }
 
+// Clean and validate token address
+export function cleanTokenAddress(tokenAddress: string): string {
+  // Remove any "wallets_" prefix that might have been accidentally added
+  if (tokenAddress.startsWith('wallets_')) {
+    const cleaned = tokenAddress.substring(8); // Remove "wallets_" prefix
+    console.warn(`[cleanTokenAddress] Removed 'wallets_' prefix from token address: ${cleaned}`);
+    return cleaned;
+  }
+  return tokenAddress;
+}
+
 // Create safe callback data that won't exceed Telegram's limits
 export function createSafeCallbackData(action: string, tokenAddress: string): string {
-  const compressed = compressCallbackData(action, tokenAddress);
+  // Clean the token address first
+  const cleanedTokenAddress = cleanTokenAddress(tokenAddress);
+  
+  const compressed = compressCallbackData(action, cleanedTokenAddress);
   
   // If compressed data is still too long, truncate the token address
   if (compressed.length > 64) {
@@ -268,7 +285,7 @@ export function createSafeCallbackData(action: string, tokenAddress: string): st
     
     // Try with a shorter prefix
     const shortPrefix = 'cb';
-    const truncatedAddress = tokenAddress.substring(0, 20); // Take first 20 chars
+    const truncatedAddress = cleanedTokenAddress.substring(0, 20); // Take first 20 chars
     return `${shortPrefix}_${truncatedAddress}`;
   }
   
