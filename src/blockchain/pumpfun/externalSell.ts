@@ -707,11 +707,46 @@ export async function executeExternalSell(
           }
           logger.info(`[${logId}] Bonk sell successful: ${bonkResult.signature}`);
           
+          // Get actual SOL received from Bonk result or parse from transaction
+          let actualSolReceived = bonkResult.actualSolReceived || 0;
+          
+          // If Bonk doesn't provide the amount, try to parse it from the transaction
+          if (actualSolReceived === 0) {
+            try {
+              const { parseTransactionAmounts } = await import("../../backend/utils");
+              const actualAmounts = await parseTransactionAmounts(
+                bonkResult.signature || "",
+                sellerKeypair.publicKey.toBase58(),
+                tokenAddress,
+                "sell"
+              );
+              
+              if (actualAmounts.success && actualAmounts.actualSolReceived) {
+                actualSolReceived = actualAmounts.actualSolReceived;
+                logger.info(`[${logId}] Actual SOL received from blockchain: ${actualSolReceived} SOL`);
+              } else {
+                logger.warn(`[${logId}] Failed to parse actual amounts from transaction: ${actualAmounts.error}`);
+                // Use a more realistic estimate based on token amount and price
+                if (tokenInfo?.price && tokenInfo.price > 0) {
+                  const tokenValueInUSD = (tokenAmount / Math.pow(10, tokenInfo.decimals || 6)) * tokenInfo.price;
+                  const estimatedSolPrice = 170; // Rough SOL price estimate
+                  actualSolReceived = tokenValueInUSD / estimatedSolPrice;
+                  logger.info(`[${logId}] Using price-based estimate: ${actualSolReceived} SOL`);
+                } else {
+                  actualSolReceived = 0.01; // Final fallback
+                  logger.warn(`[${logId}] Using fallback estimate: ${actualSolReceived} SOL`);
+                }
+              }
+            } catch (parseError: any) {
+              logger.warn(`[${logId}] Error parsing transaction amounts: ${parseError.message}`);
+              actualSolReceived = 0.01; // Fallback estimate
+            }
+          }
+          
           // Collect transaction fee after successful sell (non-blocking)
-          const solAmount = 0.01; // Fallback estimate for Bonk
           await collectFeeAsync(
             bs58.encode(sellerKeypair.secretKey),
-            solAmount,
+            actualSolReceived,
             "sell",
             logId
           );
@@ -720,9 +755,9 @@ export async function executeExternalSell(
             success: true,
             signature: bonkResult.signature,
             platform: "bonk",
-            solReceived: solAmount.toString(),
+            solReceived: actualSolReceived.toString(),
             tokensSold: tokenAmount.toString(),
-            tokenInfo,
+            tokenInfo: tokenInfo || undefined,
           };
         } else {
           logger.warn(`[${logId}] Bonk sell failed: ${bonkResult.error || bonkResult.message}`);
