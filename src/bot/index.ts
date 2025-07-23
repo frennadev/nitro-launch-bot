@@ -109,6 +109,7 @@ import { startLoadingState } from "./loading";
 import { TokenInfoService } from "../service/token-info-service";
 import { airdropSolConversation } from "./conversation/airdropSol";
 import { predictMcConversation } from "./conversation/predictMc";
+import { fundTokenWalletsConversation } from "./conversation/fundTokenWallets";
 
 // Platform detection and caching for external tokens
 const platformCache = new Map<
@@ -407,6 +408,7 @@ bot.use(createConversation(sellPercentageMessage));
 bot.use(createConversation(helpConversation));
 bot.use(createConversation(airdropSolConversation));
 bot.use(createConversation(predictMcConversation));
+bot.use(createConversation(fundTokenWalletsConversation));
 
 // Middleware to patch reply/sendMessage and hook deletion
 bot.use(async (ctx, next) => {

@@ -8,7 +8,7 @@ import { sendMessage } from "../../backend/sender";
 import { TokenState } from "../../backend/types";
 import { getTokenInfo } from "../../backend/utils";
 import { getAccurateSpendingStats } from "../../backend/functions-main";
-import { sendErrorWithAutoDelete } from "../utils";
+import { sendErrorWithAutoDelete, compressCallbackData } from "../utils";
 // import {  } from "../utils";
 
 const viewTokensConversation = async (
@@ -105,20 +105,20 @@ const viewTokensConversation = async (
       keyboard
         .text(
           "👨‍💻 Sell Dev Supply",
-          `${CallBackQueries.SELL_DEV}_${tokenAddress}`
+          compressCallbackData(CallBackQueries.SELL_DEV, tokenAddress)
         )
         .text(
           "📈 Sell % Supply",
-          `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`
+          compressCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress)
         )
         .row()
-        .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
-        .text("📊 Sell Individual Wallet", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`)
+        .text("🧨 Sell All", compressCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
+        .text("📊 Sell Individual Wallet", compressCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
         .row()
-        .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`)
-        .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
+        .text("🎁 Airdrop SOL", compressCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress))
+        .text("📈 CTO", compressCallbackData(CallBackQueries.CTO, tokenAddress))
         .row();
-      keyboard.text("💸 Fund Token Wallets", `${CallBackQueries.FUND_TOKEN_WALLETS}_${tokenAddress}`);
+      keyboard.text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress));
       
       // Debug: Log the callback data being generated
       console.log("Generated sell individual callback data:", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`);
@@ -126,7 +126,7 @@ const viewTokensConversation = async (
       keyboard
         .text(
           "🚀 Launch Token",
-          `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`
+          compressCallbackData(CallBackQueries.LAUNCH_TOKEN, tokenAddress)
         )
         .row();
     }
@@ -135,7 +135,7 @@ const viewTokensConversation = async (
     keyboard
       .text(
         "🗑️ Delete Token",
-        `${CallBackQueries.DELETE_TOKEN}_${tokenAddress}`
+        compressCallbackData(CallBackQueries.DELETE_TOKEN, tokenAddress)
       )
       .row();
 
@@ -176,7 +176,7 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
     const keyboard = new InlineKeyboard()
       .text(
         "✅ Yes, Delete",
-        `${CallBackQueries.CONFIRM_DELETE_TOKEN}_${tokenAddress}`
+        compressCallbackData(CallBackQueries.CONFIRM_DELETE_TOKEN, tokenAddress)
       )
       .text("❌ Cancel", "cancel_delete")
       .row();
