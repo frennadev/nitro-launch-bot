@@ -13,7 +13,7 @@ dotenv.config();
 
 const MONGODB_URI = env.MONGODB_URI;
 const DATABASE_NAME = process.env.DATABASE_NAME || "test";
-const SOLANA_RPC_ENDPOINT = env.HELIUS_MIXER_RPC_URL;
+const SOLANA_RPC_ENDPOINT = env.MIXER_HELIUS_RPC;
 const ENCRYPTION_KEY = env.ENCRYPTION_SECRET;
 
 // Constants for amount distribution

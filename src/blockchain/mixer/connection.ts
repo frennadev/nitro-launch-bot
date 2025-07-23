@@ -17,24 +17,11 @@ export class SolanaConnectionManager {
   constructor(
     rpcEndpoint: string,
     priorityFee: number = 1000,
-    useConnectionPool: boolean = true
+    useConnectionPool: boolean = false
   ) {
-    // Use dedicated mixer connection pool if available, otherwise fallback to direct connection
-    if (useConnectionPool && mixerConnectionPool) {
-      this.useConnectionPool = true;
-      this.connection = new Connection(rpcEndpoint, {
-        commitment: "processed", // Use processed for faster confirmation
-        confirmTransactionInitialTimeout: 60000, // Increase timeout to 60 seconds for mixer operations
-        disableRetryOnRateLimit: false,
-      });
-    } else {
-      this.useConnectionPool = false;
-      this.connection = new Connection(rpcEndpoint, {
-        commitment: "confirmed",
-        confirmTransactionInitialTimeout: 60000, // Increase timeout to 60 seconds for mixer operations
-        disableRetryOnRateLimit: false,
-      });
-    }
+    // Disable connection pool for mixer operations to avoid parameter conflicts
+    this.useConnectionPool = false;
+    this.connection = new Connection(rpcEndpoint, "confirmed");
     this.priorityFee = priorityFee;
   }
 
@@ -188,7 +175,7 @@ export class SolanaConnectionManager {
     if (this.useConnectionPool && mixerConnectionPool) {
       return await mixerConnectionPool.getLatestBlockhash("processed");
     }
-    return await this.connection.getLatestBlockhash("processed");
+    return await this.connection.getLatestBlockhash("confirmed");
   }
 
   /**
@@ -198,42 +185,16 @@ export class SolanaConnectionManager {
     transaction: Transaction,
     signers: Keypair[]
   ): Promise<string> {
-    const maxRetries = 3;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`📡 Sending transaction (attempt ${attempt}/${maxRetries})...`);
-        
-        if (this.useConnectionPool && mixerConnectionPool) {
-          const signature = await mixerConnectionPool.sendTransaction(transaction, signers);
-          console.log(`✅ Transaction sent successfully via pool: ${signature.slice(0, 8)}...`);
-          return signature;
-        } else {
-          const signature = await sendAndConfirmTransaction(
-            this.connection,
-            transaction,
-            signers
-          );
-          console.log(`✅ Transaction sent successfully via direct connection: ${signature.slice(0, 8)}...`);
-          return signature;
-        }
-        
-      } catch (error: any) {
-        console.error(`❌ Transaction send error (attempt ${attempt}/${maxRetries}):`, error.message);
-        
-        // If this is the last attempt, throw the error
-        if (attempt === maxRetries) {
-          throw new Error(`Failed to send transaction after ${maxRetries} attempts: ${error.message}`);
-        }
-        
-        // Wait before retry (exponential backoff)
-        const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 3000); // 1s, 2s, max 3s
-        console.log(`⏳ Retrying send in ${retryDelay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
+    if (this.useConnectionPool && mixerConnectionPool) {
+      return await mixerConnectionPool.sendTransaction(transaction, {
+        signers,
+      });
     }
-    
-    throw new Error("Failed to send transaction after all retries");
+    return await sendAndConfirmTransaction(
+      this.connection,
+      transaction,
+      signers
+    );
   }
 
   /**
