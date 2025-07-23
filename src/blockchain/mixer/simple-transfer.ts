@@ -25,7 +25,7 @@ export async function simpleDirectTransfer(
 
   const connection = new Connection(
     process.env.SOLANA_RPC_ENDPOINT || 'https://api.mainnet-beta.solana.com',
-    'confirmed'
+    'processed'
   );
   
   try {
@@ -61,7 +61,7 @@ export async function simpleDirectTransfer(
         );
 
         // Get recent blockhash
-        const { blockhash } = await connection.getLatestBlockhash('confirmed');
+        const { blockhash } = await connection.getLatestBlockhash('processed');
         transaction.recentBlockhash = blockhash;
         transaction.feePayer = fundingWallet.publicKey;
 
@@ -70,7 +70,7 @@ export async function simpleDirectTransfer(
         const signature = await connection.sendRawTransaction(transaction.serialize());
         
         // Wait for confirmation
-        await connection.confirmTransaction(signature, 'confirmed');
+        await connection.confirmTransaction(signature, 'processed');
 
         log(`✅ Success: ${signature}`);
         

@@ -17,11 +17,16 @@ export class SolanaConnectionManager {
   constructor(
     rpcEndpoint: string,
     priorityFee: number = 1000,
-    useConnectionPool: boolean = false
+    useConnectionPool: boolean = true
   ) {
-    // Disable connection pool for mixer operations to avoid parameter conflicts
-    this.useConnectionPool = false;
-    this.connection = new Connection(rpcEndpoint, "confirmed");
+    // Use dedicated mixer connection pool if available, otherwise fallback to direct connection
+    if (useConnectionPool && mixerConnectionPool) {
+      this.useConnectionPool = true;
+      this.connection = new Connection(rpcEndpoint, "processed"); // Use processed for faster confirmation
+    } else {
+      this.useConnectionPool = false;
+      this.connection = new Connection(rpcEndpoint, "confirmed");
+    }
     this.priorityFee = priorityFee;
   }
 
@@ -175,7 +180,7 @@ export class SolanaConnectionManager {
     if (this.useConnectionPool && mixerConnectionPool) {
       return await mixerConnectionPool.getLatestBlockhash("processed");
     }
-    return await this.connection.getLatestBlockhash("confirmed");
+    return await this.connection.getLatestBlockhash("processed");
   }
 
   /**
@@ -289,7 +294,7 @@ export class SolanaConnectionManager {
     try {
       const confirmation = await this.connection.confirmTransaction(
         signature,
-        "confirmed"
+        "processed"
       );
       return !confirmation.value.err;
     } catch (error) {
