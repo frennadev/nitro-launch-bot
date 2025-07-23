@@ -24,7 +24,7 @@ export async function simpleDirectTransfer(
   log(`📍 Distributing to ${destinationAddresses.length} wallets`);
 
   const connection = new Connection(
-    process.env.SOLANA_RPC_ENDPOINT || 'https://api.mainnet-beta.solana.com',
+    process.env.MIXER_HELIUS_RPC || 'https://api.mainnet-beta.solana.com',
     'confirmed'
   );
   
