@@ -4594,7 +4594,7 @@ export const launchBonkToken = async (
         // Record the failed dev buy transaction
         await recordTransaction(
           tokenAddress,
-          wallet && wallet.publicKey ? wallet.publicKey.toString() : "unknown_wallet",
+          "dev_wallet",
           "dev_buy",
           "FAILED",
           false,
@@ -5354,4 +5354,217 @@ export const calculateUserTokenSupplyPercentage = async (
       walletBreakdown: [],
     };
   }
+};
+
+/**
+ * Fund wallets that hold a specific token using mixer for privacy
+ * Users can choose to fund all wallets or top N wallets with most tokens
+ */
+export const fundTokenWallets = async (
+  userId: string,
+  tokenAddress: string,
+  totalAmount: number,
+  fundAllWallets: boolean = true,
+  topWalletCount?: number
+): Promise<{
+  success: boolean;
+  error?: string;
+  fundedWallets: number;
+  totalFunded: number;
+  walletDetails?: Array<{
+    address: string;
+    tokenBalance: number;
+    solReceived: number;
+  }>;
+}> => {
+  const logId = `fund-token-${tokenAddress.substring(0, 8)}`;
+  logger.info(`[${logId}]: Starting fund token wallets for user ${userId}`, {
+    tokenAddress,
+    totalAmount,
+    fundAllWallets,
+    topWalletCount,
+  });
+
+  try {
+    // Get user's buyer wallets
+    const buyerWallets = await getAllBuyerWallets(userId);
+    if (buyerWallets.length === 0) {
+      return {
+        success: false,
+        error: "No buyer wallets found. Please add buyer wallets first.",
+        fundedWallets: 0,
+        totalFunded: 0,
+      };
+    }
+
+    // Get funding wallet
+    const fundingWallet = await getFundingWallet(userId);
+    if (!fundingWallet) {
+      return {
+        success: false,
+        error: "No funding wallet found. Please configure a funding wallet first.",
+        fundedWallets: 0,
+        totalFunded: 0,
+      };
+    }
+
+    // Check funding wallet balance
+    const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
+    const totalNeeded = totalAmount + 0.01; // Add buffer for fees
+    if (fundingBalance < totalNeeded) {
+      return {
+        success: false,
+        error: `Insufficient funding wallet balance. Need ${totalNeeded.toFixed(6)} SOL, have ${fundingBalance.toFixed(6)} SOL.`,
+        fundedWallets: 0,
+        totalFunded: 0,
+      };
+    }
+
+    // Check which wallets hold the token
+    const { getTokenBalance } = await import("./utils");
+    const walletHoldings: Array<{
+      address: string;
+      privateKey: string;
+      tokenBalance: number;
+      solBalance: number;
+    }> = [];
+
+    for (const wallet of buyerWallets) {
+      try {
+        const tokenBalance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        const solBalance = await getWalletBalance(wallet.publicKey);
+        
+        if (tokenBalance > 0) {
+          const privateKey = await getBuyerWalletPrivateKey(userId, wallet.id);
+          walletHoldings.push({
+            address: wallet.publicKey,
+            privateKey: privateKey,
+            tokenBalance,
+            solBalance,
+          });
+        }
+      } catch (error) {
+        logger.warn(`[${logId}]: Error checking wallet ${wallet.publicKey}:`, error);
+      }
+    }
+
+    if (walletHoldings.length === 0) {
+      return {
+        success: false,
+        error: "No wallets found that hold this token.",
+        fundedWallets: 0,
+        totalFunded: 0,
+      };
+    }
+
+    // Sort wallets by token balance (highest first)
+    walletHoldings.sort((a, b) => b.tokenBalance - a.tokenBalance);
+
+    // Select wallets to fund
+    let walletsToFund: typeof walletHoldings;
+    if (fundAllWallets) {
+      walletsToFund = walletHoldings;
+    } else if (topWalletCount && topWalletCount > 0) {
+      walletsToFund = walletHoldings.slice(0, Math.min(topWalletCount, walletHoldings.length));
+    } else {
+      return {
+        success: false,
+        error: "Invalid wallet selection parameters.",
+        fundedWallets: 0,
+        totalFunded: 0,
+      };
+    }
+
+    logger.info(`[${logId}]: Selected ${walletsToFund.length} wallets to fund out of ${walletHoldings.length} wallets that hold tokens`);
+
+    // Generate random distribution amounts
+    const distributionAmounts = generateRandomDistribution(totalAmount, walletsToFund.length);
+
+    // Use mixer to distribute funds
+    const { runMixer } = await import("../blockchain/mixer/index");
+    const destinationAddresses = walletsToFund.map(w => w.address);
+    
+    logger.info(`[${logId}]: Starting mixer: ${totalAmount} SOL to ${destinationAddresses.length} wallets`);
+    
+    const mixerResult = await runMixer(
+      fundingWallet.privateKey,
+      fundingWallet.privateKey, // Use same wallet for fees
+      totalAmount,
+      destinationAddresses
+    );
+
+    // Check mixer results
+    const successfulRoutes = mixerResult.results?.filter(result => result.success) || [];
+    
+    if (successfulRoutes.length === 0) {
+      logger.error(`[${logId}]: Mixer failed completely - no successful routes:`, mixerResult);
+      return {
+        success: false,
+        error: `Mixer failed completely: ${mixerResult.results?.[0]?.error || "Unknown mixer error"}`,
+        fundedWallets: 0,
+        totalFunded: 0,
+      };
+    }
+
+    // Calculate actual amounts funded
+    const actualFundedAmounts = successfulRoutes.map(route => {
+      const destinationIndex = destinationAddresses.findIndex(addr => addr === route.route.destination.toString());
+      return {
+        address: route.route.destination.toString(),
+        tokenBalance: walletHoldings[destinationIndex]?.tokenBalance || 0,
+        solReceived: route.route.amount / 1e9, // Convert lamports to SOL
+      };
+    });
+
+    const totalFunded = actualFundedAmounts.reduce((sum, item) => sum + item.solReceived, 0);
+
+    logger.info(`[${logId}]: Fund token wallets completed successfully`, {
+      totalWallets: walletHoldings.length,
+      fundedWallets: successfulRoutes.length,
+      totalFunded,
+      requestedAmount: totalAmount,
+    });
+
+    return {
+      success: true,
+      fundedWallets: successfulRoutes.length,
+      totalFunded,
+      walletDetails: actualFundedAmounts,
+    };
+
+  } catch (error: any) {
+    logger.error(`[${logId}]: Fund token wallets failed:`, error);
+    return {
+      success: false,
+      error: error.message || "Unknown error occurred",
+      fundedWallets: 0,
+      totalFunded: 0,
+    };
+  }
+};
+
+/**
+ * Generate random distribution amounts for wallet funding
+ * Ensures no wallet gets less than 50% of the highest amount
+ */
+const generateRandomDistribution = (totalAmount: number, walletCount: number): number[] => {
+  const amounts: number[] = [];
+  let remainingAmount = totalAmount;
+  
+  // Generate random amounts for each wallet
+  for (let i = 0; i < walletCount; i++) {
+    if (i === walletCount - 1) {
+      // Last wallet gets remaining amount
+      amounts.push(remainingAmount);
+    } else {
+      // Generate random amount between 0.01 and remaining amount / remaining wallets
+      const maxAmount = remainingAmount / (walletCount - i);
+      const minAmount = Math.max(0.01, maxAmount * 0.5); // At least 50% of max
+      const randomAmount = Math.random() * (maxAmount - minAmount) + minAmount;
+      amounts.push(randomAmount);
+      remainingAmount -= randomAmount;
+    }
+  }
+  
+  return amounts;
 };

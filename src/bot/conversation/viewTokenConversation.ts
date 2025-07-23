@@ -118,6 +118,7 @@ const viewTokensConversation = async (
         .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`)
         .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
         .row();
+      keyboard.text("💸 Fund Token Wallets", `${CallBackQueries.FUND_TOKEN_WALLETS}_${tokenAddress}`);
       
       // Debug: Log the callback data being generated
       console.log("Generated sell individual callback data:", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`);

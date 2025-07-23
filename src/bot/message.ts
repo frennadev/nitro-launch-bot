@@ -3,6 +3,7 @@ import { CallBackQueries } from "./types";
 import { escape } from "./utils";
 import { getTokenInfo, calculateTokenHoldingsWorth } from "../backend/utils";
 import { getAccurateSpendingStats } from "../backend/functions-main";
+import { InlineKeyboard } from "grammy";
 
 // Add a new callback for refresh functionality
 export enum LaunchMessageCallbacks {
@@ -97,48 +98,22 @@ const buildLaunchSuccessMessage = async (tokenAddress: string, tokenName: string
     .filter(Boolean)
     .join("\n");
 
-  const keyboard = {
-    inline_keyboard: [
-      [
-        {
-          text: "🔄 Refresh",
-          callback_data: `${LaunchMessageCallbacks.REFRESH_LAUNCH_DATA}_${tokenAddress}`,
-        },
-      ],
-      [
-        {
-          text: "💯 Sell 100% Dev Supply",
-          callback_data: `${CallBackQueries.SELL_DEV_SUPPLY}_${tokenAddress}`,
-        },
-      ],
-      [
-        {
-          text: "👨‍💻 Sell Dev Supply",
-          callback_data: `${CallBackQueries.SELL_DEV}_${tokenAddress}`,
-        },
-        {
-          text: "📈 Sell % supply",
-          callback_data: `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`,
-        },
-      ],
-      [
-        {
-          text: "🧨 Sell All",
-          callback_data: `${CallBackQueries.SELL_ALL}_${tokenAddress}`,
-        },
-        {
-          text: "👥 Individual Wallet Sells",
-          callback_data: `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`,
-        },
-      ],
-      [
-        {
-          text: "🎁 Airdrop SOL",
-          callback_data: `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`,
-        },
-      ],
-    ],
-  };
+  const keyboard = new InlineKeyboard()
+    .text("💸 Fund Token Wallets", `${CallBackQueries.FUND_TOKEN_WALLETS}_${tokenAddress}`)
+    .row()
+    .text("🔄 Refresh", `${LaunchMessageCallbacks.REFRESH_LAUNCH_DATA}_${tokenAddress}`)
+    .row()
+    .text("💯 Sell 100% Dev Supply", `${CallBackQueries.SELL_DEV_SUPPLY}_${tokenAddress}`)
+    .row()
+    .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${tokenAddress}`)
+    .row()
+    .text("📈 Sell % supply", `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`)
+    .row()
+    .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
+    .row()
+    .text("👥 Individual Wallet Sells", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`)
+    .row()
+    .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`);
 
   return { text: msg, keyboard };
 };
@@ -184,48 +159,22 @@ const buildBonkLaunchSuccessMessage = async (tokenAddress: string, tokenName: st
     .filter(Boolean)
     .join("\n");
 
-  const keyboard = {
-    inline_keyboard: [
-      [
-        {
-          text: "🔄 Refresh",
-          callback_data: `${LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA}_${tokenAddress}`,
-        },
-      ],
-      [
-        {
-          text: "💯 Sell 100% Dev Supply",
-          callback_data: `${CallBackQueries.SELL_DEV_SUPPLY}_${tokenAddress}`,
-        },
-      ],
-      [
-        {
-          text: "👨‍💻 Sell Dev Supply",
-          callback_data: `${CallBackQueries.SELL_DEV}_${tokenAddress}`,
-        },
-        {
-          text: "📈 Sell % supply",
-          callback_data: `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`,
-        },
-      ],
-      [
-        {
-          text: "🧨 Sell All",
-          callback_data: `${CallBackQueries.SELL_ALL}_${tokenAddress}`,
-        },
-        {
-          text: "👥 Individual Wallet Sells",
-          callback_data: `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`,
-        },
-      ],
-      [
-        {
-          text: "🎁 Airdrop SOL",
-          callback_data: `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`,
-        },
-      ],
-    ],
-  };
+  const keyboard = new InlineKeyboard()
+    .text("💸 Fund Token Wallets", `${CallBackQueries.FUND_TOKEN_WALLETS}_${tokenAddress}`)
+    .row()
+    .text("🔄 Refresh", `${LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA}_${tokenAddress}`)
+    .row()
+    .text("💯 Sell 100% Dev Supply", `${CallBackQueries.SELL_DEV_SUPPLY}_${tokenAddress}`)
+    .row()
+    .text("👨‍💻 Sell Dev Supply", `${CallBackQueries.SELL_DEV}_${tokenAddress}`)
+    .row()
+    .text("📈 Sell % supply", `${CallBackQueries.SELL_PERCENT}_${tokenAddress}`)
+    .row()
+    .text("🧨 Sell All", `${CallBackQueries.SELL_ALL}_${tokenAddress}`)
+    .row()
+    .text("👥 Individual Wallet Sells", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`)
+    .row()
+    .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${tokenAddress}`);
 
   return { text: msg, keyboard };
 };

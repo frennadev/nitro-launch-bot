@@ -78,4 +78,10 @@ export enum CallBackQueries {
   PUMPFUN = "pumpfun",
   LETSBONK = "letsbonk",
   AIRDROP_SOL = "airdrop_sol",
+  
+  // Fund Token Wallets feature
+  FUND_TOKEN_WALLETS = "fund_token_wallets",
+  FUND_ALL_WALLETS = "fund_all_wallets",
+  FUND_TOP_WALLETS = "fund_top_wallets",
+  CANCEL_FUND_TOKEN = "cancel_fund_token",
 }
