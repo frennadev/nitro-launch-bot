@@ -34,7 +34,8 @@ export const fundTokenWalletsConversation = async (
     ctx,
     `💰 **Fund Token Wallets**\n\n` +
       `Token: \`${tokenAddress}\`\n\n` +
-      `🔍 Checking wallets that hold this token...`,
+      `🔍 Checking wallets that hold this token...\n\n` +
+      `💡 **Tip:** You can always use /menu or /start to return to the main menu.`,
     { parse_mode: "Markdown" }
   );
 

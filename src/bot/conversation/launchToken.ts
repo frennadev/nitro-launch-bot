@@ -157,6 +157,15 @@ const launchTokenConversation = async (
   tokenAddress: string
 ) => {
   await safeAnswerCallbackQuery(ctx);
+  // Show initial loading message
+  const loadingMessage = await sendMessage(
+    ctx,
+    `🚀 **Token Launch**\n\n` +
+      `Token: \`${tokenAddress}\`\n\n` +
+      `⏳ Preparing launch sequence...\n\n` +
+      `💡 **Tip:** You can always use /menu or /start to return to the main menu.`,
+    { parse_mode: "Markdown" }
+  );
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {

@@ -460,172 +460,43 @@ bot.use(async (ctx, next) => {
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
-  let user = await getUser(ctx.chat.id.toString());
-  let isFirstTime = user === null;
-
-  if (isFirstTime) {
-    // Check if there's a referral code in the start command
-    const startPayload = ctx.match; // This gets the text after /start
-    let referralCode: string | undefined;
-
-    if (
-      startPayload &&
-      typeof startPayload === "string" &&
-      startPayload.startsWith("REF_")
-    ) {
-      referralCode = startPayload.replace("REF_", "");
-      console.log(`New user with referral code: ${referralCode}`);
-    }
-
-    // Create user with or without referral
-    if (referralCode) {
-      user = await createUserWithReferral(
-        ctx.chat.first_name,
-        ctx.chat.last_name,
-        ctx.chat.username!,
-        ctx.chat.id.toString(),
-        referralCode
-      );
-    } else {
-      user = await createUser(
-        ctx.chat.first_name,
-        ctx.chat.last_name,
-        ctx.chat.username!,
-        ctx.chat.id.toString()
-      );
-    }
+  try {
+    logger.info("Start command used by user:", ctx.chat?.id);
+    
+    // Clear any existing conversation state
+    await clearConversationState(ctx);
+    
+    // Wait a moment for cleanup
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    
+    // Start main menu conversation
+    await ctx.conversation.enter("mainMenuConversation", {
+      overwrite: true,
+    });
+  } catch (error: any) {
+    logger.error("Error in start command:", error);
+    await sendMessage(ctx, "❌ Error starting bot. Please try again.");
   }
-
-  // Auto-create funding wallet for all users
-  await getOrCreateFundingWallet(String(user?.id));
-
-  const devWallet = await getDefaultDevWallet(String(user?.id));
-
-  // Get user's referral stats
-  const { getUserReferralStats } = await import("../backend/functions-main");
-  const referralStats = await getUserReferralStats(String(user?.id));
-
-  const welcomeMsg = `
-👋 Welcome to Nitro Launch Bot! 🚀
-
-Nitro Bot empowers you to deploy and manage Solana tokens on Pump.fun and LetsBonk.fun — no coding required!
-
-What you can do:
-• Create & launch tokens instantly on Pump.fun and LetsBonk.fun
-• Private buys & sells for full privacy
-• Easy token management with one click
-
-💳 Your Dev Wallet
-${devWallet}
-
-🔗 Referrals: ${referralStats.referralCount} friend(s) joined via your link
-Useful Links:
-• Pump.fun: https://pump.fun
-• LetsBonk.fun: https://letsbonk.fun
-Get started below:`;
-
-  const inlineKeyboard = new InlineKeyboard()
-    .text("➕ Create Token", CallBackQueries.CREATE_TOKEN)
-    .text("👁 View Tokens", CallBackQueries.VIEW_TOKENS)
-    .row()
-    .text("🔑 Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
-    .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
-    .row()
-    .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
-    .text("📊 Predict MC", CallBackQueries.PREDICT_MC)
-    .row()
-    .text("🆘 Help", CallBackQueries.HELP);
-
-  await sendMessage(ctx, welcomeMsg, {
-    reply_markup: inlineKeyboard,
-  });
 });
 
 bot.command("menu", async (ctx) => {
-  let user = await getUser(ctx.chat.id.toString());
-  let isFirstTime = user === null;
-
-  if (isFirstTime) {
-    // Check if there's a referral code in the start command
-    const startPayload = ctx.match; // This gets the text after /start
-    let referralCode: string | undefined;
-
-    if (
-      startPayload &&
-      typeof startPayload === "string" &&
-      startPayload.startsWith("REF_")
-    ) {
-      referralCode = startPayload.replace("REF_", "");
-      console.log(`New user with referral code: ${referralCode}`);
-    }
-
-    // Create user with or without referral
-    if (referralCode) {
-      user = await createUserWithReferral(
-        ctx.chat.first_name,
-        ctx.chat.last_name,
-        ctx.chat.username!,
-        ctx.chat.id.toString(),
-        referralCode
-      );
-    } else {
-      user = await createUser(
-        ctx.chat.first_name,
-        ctx.chat.last_name,
-        ctx.chat.username!,
-        ctx.chat.id.toString()
-      );
-    }
+  try {
+    logger.info("Menu command used by user:", ctx.chat?.id);
+    
+    // Clear any existing conversation state
+    await clearConversationState(ctx);
+    
+    // Wait a moment for cleanup
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    
+    // Start main menu conversation
+    await ctx.conversation.enter("mainMenuConversation", {
+      overwrite: true,
+    });
+  } catch (error: any) {
+    logger.error("Error in menu command:", error);
+    await sendMessage(ctx, "❌ Error accessing menu. Please try /start instead.");
   }
-
-  if (!user) {
-    await sendMessage(ctx, "Unrecognized user ❌");
-    return;
-  }
-
-  // Auto-create funding wallet for all users
-  await getOrCreateFundingWallet(String(user?.id));
-
-  const devWallet = await getDefaultDevWallet(String(user?.id));
-
-  // Get user's referral stats
-  const { getUserReferralStats } = await import("../backend/functions-main");
-  const referralStats = await getUserReferralStats(String(user?.id));
-
-  const welcomeMsg = `
-👋 Welcome to Nitro Launch Bot! 🚀
-
-Nitro Bot empowers you to deploy and manage Solana tokens on Pump.fun and LetsBonk.fun — no coding required!
-
-What you can do:
-• Create & launch tokens instantly on Pump.fun and LetsBonk.fun
-• Private buys & sells for full privacy
-• Easy token management with one click
-
-💳 Your Dev Wallet
-${devWallet}
-
-🔗 Referrals: ${referralStats.referralCount} friend(s) joined via your link
-Useful Links:
-• Pump.fun: https://pump.fun
-• LetsBonk.fun: https://letsbonk.fun
-Get started below:`;
-
-  const inlineKeyboard = new InlineKeyboard()
-    .text("➕ Create Token", CallBackQueries.CREATE_TOKEN)
-    .text("👁 View Tokens", CallBackQueries.VIEW_TOKENS)
-    .row()
-    .text("🔑 Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
-    .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
-    .row()
-    .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
-    .text("📊 Predict MC", CallBackQueries.PREDICT_MC)
-    .row()
-    .text("🆘 Help", CallBackQueries.HELP);
-
-  await sendMessage(ctx, welcomeMsg, {
-    reply_markup: inlineKeyboard,
-  });
 });
 
 bot.command("help", async (ctx) => {

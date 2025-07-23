@@ -5,6 +5,8 @@ import {
   getUser,
   getDefaultDevWallet,
   getOrCreateFundingWallet,
+  createUserWithReferral,
+  getUserReferralStats,
 } from "../../backend/functions-main";
 import { CallBackQueries } from "../types";
 import { InlineKeyboard } from "grammy";
@@ -15,7 +17,43 @@ export default async function mainMenuConversation(
   ctx: Context
 ) {
   await safeAnswerCallbackQuery(ctx);
+  
   let user = await getUser(ctx.chat!.id.toString());
+  let isFirstTime = user === null;
+
+  if (isFirstTime) {
+    // Check if there's a referral code in the start command
+    const startPayload = ctx.message?.text?.split(" ")[1]; // Get text after /start
+    let referralCode: string | undefined;
+
+    if (
+      startPayload &&
+      typeof startPayload === "string" &&
+      startPayload.startsWith("REF_")
+    ) {
+      referralCode = startPayload.replace("REF_", "");
+      console.log(`New user with referral code: ${referralCode}`);
+    }
+
+    // Create user with or without referral
+    if (referralCode) {
+      user = await createUserWithReferral(
+        ctx.chat!.first_name,
+        ctx.chat!.last_name,
+        ctx.chat!.username!,
+        ctx.chat!.id.toString(),
+        referralCode
+      );
+    } else {
+      user = await createUser(
+        ctx.chat!.first_name,
+        ctx.chat!.last_name,
+        ctx.chat!.username!,
+        ctx.chat!.id.toString()
+      );
+    }
+  }
+
   if (!user) {
     await sendErrorWithAutoDelete(ctx, "Unrecognized user ❌");
     return conversation.halt();
@@ -25,6 +63,10 @@ export default async function mainMenuConversation(
   await getOrCreateFundingWallet(String(user.id));
 
   const devWallet = await getDefaultDevWallet(String(user.id));
+  
+  // Get user's referral stats
+  const referralStats = await getUserReferralStats(String(user.id));
+
   const welcomeMsg = `
 👋 Welcome to Nitro Launch Bot! 🚀
 
@@ -38,7 +80,7 @@ What you can do:
 💳 Your Dev Wallet
 ${devWallet}
 
-🔗 Referrals: (see /start for your count) friend(s) joined via your link
+🔗 Referrals: ${referralStats.referralCount} friend(s) joined via your link
 Useful Links:
 • Pump.fun: https://pump.fun
 • LetsBonk.fun: https://letsbonk.fun
