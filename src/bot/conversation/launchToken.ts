@@ -162,7 +162,7 @@ const launchTokenConversation = async (
     ctx,
     `🚀 **Token Launch**\n\n` +
       `Token: \`${tokenAddress}\`\n\n` +
-      `⏳ Preparing launch sequence...\n\n` +
+      `⏳ Processing...\n\n` +
       `💡 **Tip:** You can always use /menu or /start to return to the main menu.`,
     { parse_mode: "Markdown" }
   );
