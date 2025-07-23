@@ -117,11 +117,12 @@ const viewTokensConversation = async (
         .row()
         .text("🎁 Airdrop SOL", compressCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress))
         .text("📈 CTO", compressCallbackData(CallBackQueries.CTO, tokenAddress))
-        .row();
-      keyboard.text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress));
+        .row()
+        .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress));
       
       // Debug: Log the callback data being generated
       console.log("Generated sell individual callback data:", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`);
+      console.log("Generated fund token wallets callback data:", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress));
     } else {
       keyboard
         .text(
