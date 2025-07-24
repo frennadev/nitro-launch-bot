@@ -1720,6 +1720,43 @@ bot.callbackQuery(/^(ftw_|fund_token_wallets_)/, async (ctx) => {
   }
 });
 
+// Handle fund all wallets button clicks (from conversation)
+bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
+  logger.info(`[FundAllWallets] Callback triggered with data: ${ctx.callbackQuery.data}`);
+  await safeAnswerCallbackQuery(ctx, "💸 Processing fund all wallets...");
+  
+  const tokenAddress = ctx.callbackQuery.data.split('_').slice(2).join('_');
+  logger.info(`[FundAllWallets] Fund all wallets for token: ${tokenAddress}`);
+  
+  // This should be handled by the conversation, but if it reaches here, redirect to conversation
+  try {
+    await ctx.conversation.enter("fundTokenWalletsConversation", tokenAddress);
+  } catch (error) {
+    logger.error(`[FundAllWallets] Failed to start conversation for token: ${tokenAddress}`, error);
+    await sendMessage(ctx, "❌ Error starting fund token wallets conversation. Please try again.");
+  }
+});
+
+// Handle fund top wallets button clicks (from conversation)
+bot.callbackQuery(/^fund_top_wallets_(.+)_(\d+)$/, async (ctx) => {
+  logger.info(`[FundTopWallets] Callback triggered with data: ${ctx.callbackQuery.data}`);
+  await safeAnswerCallbackQuery(ctx, "💸 Processing fund top wallets...");
+  
+  const parts = ctx.callbackQuery.data.split('_');
+  const tokenAddress = parts.slice(2, -1).join('_'); // Everything between fund_top_wallets_ and the count
+  const walletCount = parseInt(parts[parts.length - 1]);
+  
+  logger.info(`[FundTopWallets] Fund top ${walletCount} wallets for token: ${tokenAddress}`);
+  
+  // This should be handled by the conversation, but if it reaches here, redirect to conversation
+  try {
+    await ctx.conversation.enter("fundTokenWalletsConversation", tokenAddress);
+  } catch (error) {
+    logger.error(`[FundTopWallets] Failed to start conversation for token: ${tokenAddress}`, error);
+    await sendMessage(ctx, "❌ Error starting fund token wallets conversation. Please try again.");
+  }
+});
+
 // Handle refresh launch data button clicks
 bot.callbackQuery(/^(rld_|rbld_|refresh_launch_data_|refresh_bonk_launch_data_)/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Refreshing...");

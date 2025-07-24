@@ -134,10 +134,10 @@ export const fundTokenWalletsConversation = async (
     ].join("\n");
 
     const keyboard = new InlineKeyboard()
-      .text("💰 Fund All Wallets", `${CallBackQueries.FUND_ALL_WALLETS}_${tokenAddress}`)
+      .text("💰 Fund All Wallets", `fund_all_wallets_${tokenAddress}`)
       .row()
-      .text("🎯 Fund Top 5 Wallets", `${CallBackQueries.FUND_TOP_WALLETS}_${tokenAddress}_5`)
-      .text("🎯 Fund Top 10 Wallets", `${CallBackQueries.FUND_TOP_WALLETS}_${tokenAddress}_10`)
+      .text("🎯 Fund Top 5 Wallets", `fund_top_wallets_${tokenAddress}_5`)
+      .text("🎯 Fund Top 10 Wallets", `fund_top_wallets_${tokenAddress}_10`)
       .row()
       .text("❌ Cancel", CallBackQueries.CANCEL_FUND_TOKEN);
 
@@ -174,11 +174,11 @@ export const fundTokenWalletsConversation = async (
       return conversation.halt();
     }
 
-    if (data?.startsWith(`${CallBackQueries.FUND_ALL_WALLETS}_`)) {
+    if (data?.startsWith("fund_all_wallets_")) {
       await handleFundingSelection(ctx, conversation, tokenAddress, user.id, true);
-    } else if (data?.startsWith(`${CallBackQueries.FUND_TOP_WALLETS}_`)) {
-      const [, , count] = data.split("_");
-      const walletCount = parseInt(count);
+    } else if (data?.startsWith("fund_top_wallets_")) {
+      const parts = data.split("_");
+      const walletCount = parseInt(parts[parts.length - 1]);
       await handleFundingSelection(ctx, conversation, tokenAddress, user.id, false, walletCount);
     }
 
