@@ -1674,6 +1674,7 @@ function handleCompressedCallback(data: string): { action: string; tokenAddress:
 // Handle fund token wallets button clicks
 bot.callbackQuery(/^(ftw_|fund_token_wallets_)/, async (ctx) => {
   logger.info(`[FundTokenWallets] Callback triggered with data: ${ctx.callbackQuery.data}`);
+  logger.info(`[FundTokenWallets] Pattern matched: ${ctx.callbackQuery.data}`);
   await safeAnswerCallbackQuery(ctx, "💸 Loading fund options...");
   
   let tokenAddress: string;
@@ -3340,6 +3341,7 @@ bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
 
   console.log(data, "From firsttt");
+  logger.info(`[GenericHandler] Received callback data: ${data}`);
 
   // Apply specific rate limiting based on callback type
   try {
