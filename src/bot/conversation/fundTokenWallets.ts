@@ -182,6 +182,8 @@ export const fundTokenWalletsConversation = async (
 
   } catch (error: any) {
     logger.error("[fundTokenWallets] Error:", error);
+    
+    // Don't re-throw the error, just handle it gracefully
     try {
       await bot.api.editMessageText(
         ctx.chat!.id,
@@ -197,6 +199,9 @@ export const fundTokenWalletsConversation = async (
         await sendMessage(ctx, `❌ **Error occurred**\n\n${error.message || "Unknown error"}`);
       }
     }
+    
+    // End the conversation gracefully instead of letting it crash
+    return conversation.halt();
   }
 };
 
