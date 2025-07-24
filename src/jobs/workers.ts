@@ -430,6 +430,8 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
           parse_mode: "MarkdownV2"
         });
         logger.info(`[${logIdentifier}] Updated notification with accurate transaction data`);
+        // Always send a new message as well
+        await bot.api.sendMessage(data.userChatId, finalMessage, { parse_mode: "MarkdownV2" });
       } catch (error) {
         logger.warn(`[${logIdentifier}] Failed to edit notification, sending new message:`, error);
         // Fallback: send new message if editing fails
