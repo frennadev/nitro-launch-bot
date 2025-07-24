@@ -3349,6 +3349,11 @@ bot.on("callback_query:data", async (ctx) => {
   }
 
   // Handle other actions
+  // Skip fund token wallets callbacks - they have their own specific handler
+  if (data.startsWith("fund_token_wallets_") || data.startsWith("ftw_")) {
+    return; // Let the specific handler deal with this
+  }
+  
   const [action, token, address] = data.split("_");
   if (action && token === "token" && address) {
     logger.info(`${action} called`);
