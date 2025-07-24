@@ -13,6 +13,8 @@ export const fundTokenWalletsConversation = async (
   ctx: Context,
   tokenAddress: string
 ): Promise<void> => {
+  logger.info(`[fundTokenWalletsConversation] Conversation entered for token: ${tokenAddress}`);
+  
   try {
     await ctx.answerCallbackQuery();
   } catch (error: any) {

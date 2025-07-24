@@ -1673,6 +1673,7 @@ function handleCompressedCallback(data: string): { action: string; tokenAddress:
 
 // Handle fund token wallets button clicks
 bot.callbackQuery(/^(ftw_|fund_token_wallets_)/, async (ctx) => {
+  logger.info(`[FundTokenWallets] Callback triggered with data: ${ctx.callbackQuery.data}`);
   await safeAnswerCallbackQuery(ctx, "💸 Loading fund options...");
   
   let tokenAddress: string;
@@ -1710,7 +1711,13 @@ bot.callbackQuery(/^(ftw_|fund_token_wallets_)/, async (ctx) => {
   logger.info(`[FundTokenWallets] Fund button clicked for token: ${tokenAddress}`);
 
   // Start the fund token wallets conversation
-  await ctx.conversation.enter("fundTokenWalletsConversation", tokenAddress);
+  try {
+    await ctx.conversation.enter("fundTokenWalletsConversation", tokenAddress);
+    logger.info(`[FundTokenWallets] Conversation started successfully for token: ${tokenAddress}`);
+  } catch (error) {
+    logger.error(`[FundTokenWallets] Failed to start conversation for token: ${tokenAddress}`, error);
+    await sendMessage(ctx, "❌ Error starting fund token wallets conversation. Please try again.");
+  }
 });
 
 // Handle refresh launch data button clicks
