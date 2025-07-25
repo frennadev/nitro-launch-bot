@@ -3306,3 +3306,15 @@ bot.on("callback_query:data", async (ctx) => {
 });
 
 export default bot;
+
+// Add this at the end of the file, after all other handlers
+bot.on('callback_query', async (ctx) => {
+  try {
+    await ctx.answerCallbackQuery({
+      text: '❌ This button is no longer valid or has expired. Please try again from the main menu.',
+      show_alert: true,
+    });
+  } catch (e) {
+    // Ignore errors from answering callback
+  }
+});
