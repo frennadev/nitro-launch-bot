@@ -871,7 +871,9 @@ ${checkResult.message}`,
       "🚀 **Launching Bonk token...**\n\n⏳ Creating token on Raydium Launch Lab..."
     );
 
-    result = await launchBonkToken(user.id, tokenAddress, buyAmount, devBuy);
+    // Use the new combined launch function directly
+    const { launchBonkTokenWithDevBuy } = await import("../../blockchain/letsbonk/integrated-token-creator");
+    result = await launchBonkTokenWithDevBuy(tokenAddress, user.id, devBuy);
 
     if (result.success) {
       await checksLoading.update(
