@@ -266,9 +266,10 @@ export class SolanaConnectionManager {
     const balance = await this.getBalance(publicKey);
     const estimatedFee = await this.estimateTransactionFee();
     const rentExemption = await this.getMinimumBalanceForRentExemption();
+    const buffer = 5000; // Extra buffer to prevent rent errors
 
-    // Calculate required reserves (fees + rent exemption)
-    const requiredReserves = estimatedFee + rentExemption;
+    // Calculate required reserves (fees + rent exemption + buffer)
+    const requiredReserves = estimatedFee + rentExemption + buffer;
     const maxTransferable = balance - requiredReserves;
 
     // Log detailed breakdown for debugging
@@ -276,6 +277,7 @@ export class SolanaConnectionManager {
     console.log(`   Balance: ${balance} lamports (${(balance / 1e9).toFixed(6)} SOL)`);
     console.log(`   Estimated fee: ${estimatedFee} lamports (${(estimatedFee / 1e9).toFixed(6)} SOL)`);
     console.log(`   Rent exemption: ${rentExemption} lamports (${(rentExemption / 1e9).toFixed(6)} SOL)`);
+    console.log(`   Buffer: ${buffer} lamports (0.000005 SOL)`);
     console.log(`   Required reserves: ${requiredReserves} lamports (${(requiredReserves / 1e9).toFixed(6)} SOL)`);
     console.log(`   Max transferable: ${maxTransferable} lamports (${(maxTransferable / 1e9).toFixed(6)} SOL)`);
 

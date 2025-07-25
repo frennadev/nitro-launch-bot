@@ -4312,23 +4312,9 @@ export const launchBonkToken = async (
     // PHASE 2: EXECUTION (Token creation + Buys)
     logger.info(`[${logId}]: Starting execution phase (token creation + buys)`);
 
-    // 2.1 Create the Bonk token on-chain
-    const {
-      launchBonkToken: launchBonkTokenFunction,
-      launchBonkTokenWithDevBuy,
-    } = await import("../blockchain/letsbonk/integrated-token-creator");
-
-    // NEW: Use combined approach if dev buy is requested (PumpFun-style)
-    let result;
-    if (devBuy > 0) {
-      logger.info(
-        `[${logId}]: Using combined token creation + dev buy approach (PumpFun-style)`
-      );
-      result = await launchBonkTokenWithDevBuy(tokenAddress, userId, devBuy);
-    } else {
-      logger.info(`[${logId}]: Using separate token creation approach`);
-      result = await launchBonkTokenFunction(tokenAddress, userId, 0); // No dev buy here
-    }
+    // 2.1 Create the Bonk token on-chain with dev buy (always use combined approach)
+    const { launchBonkTokenWithDevBuy } = await import("../blockchain/letsbonk/integrated-token-creator");
+    let result = await launchBonkTokenWithDevBuy(tokenAddress, userId, devBuy);
 
     if (!result.success) {
       logger.error(`[${logId}]: Token creation failed`);
@@ -4340,6 +4326,7 @@ export const launchBonkToken = async (
 
     logger.info(`[${logId}]: Token creation successful: ${result.signature}`);
 
+<<<<<<< HEAD
     // 2.2 PRIORITIZED DEV BUY (immediate execution, no confirmation wait)
     let devBuySignature: string | undefined;
     if (devBuy > 0) {
@@ -4607,14 +4594,14 @@ export const launchBonkToken = async (
       }
     }
 
-    // 2.3 1.5s DELAY before snipe buys (wait for BONK pool creation)
+    // 2.2 50ms DELAY before snipe buys (optimized for speed)
     if (buyAmount > 0) {
-      logger.info(`[${logId}]: ⏱️ Waiting 1.5s before starting snipe buys (waiting for BONK pool creation)...`);
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      logger.info(`[${logId}]: 🚀 Starting snipe buys after 1.5s delay`);
+      logger.info(`[${logId}]: ⏱️ Waiting 50ms before starting snipe buys...`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      logger.info(`[${logId}]: 🚀 Starting snipe buys after 50ms delay`);
     }
 
-    // 2.4 Execute buys from the funded wallets (real implementation)
+    // 2.3 Execute buys from the funded wallets (real implementation)
     logger.info(`[${logId}]: Executing buys from funded wallets`);
 
     // Import required functions for buy execution
