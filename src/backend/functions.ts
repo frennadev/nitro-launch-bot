@@ -4333,13 +4333,6 @@ export const launchBonkToken = async (
       logger.info(`[${logId}]: 🚀 Starting snipe buys after 50ms delay`);
     }
 
-    // 2.2 50ms DELAY before snipe buys (optimized for speed)
-    if (buyAmount > 0) {
-      logger.info(`[${logId}]: ⏱️ Waiting 50ms before starting snipe buys...`);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      logger.info(`[${logId}]: 🚀 Starting snipe buys after 50ms delay`);
-    }
-
     // 2.3 Execute buys from the funded wallets (real implementation)
     logger.info(`[${logId}]: Executing buys from funded wallets`);
 
