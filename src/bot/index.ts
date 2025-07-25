@@ -934,7 +934,7 @@ bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Starting 100% dev sell...");
   const tokenAddressPrefix = ctx.match![1];
 
-  // Find token by address prefix
+  // Find token by address (improved order: exact match first)
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
     await sendMessage(ctx, "❌ User not found");
@@ -943,21 +943,21 @@ bot.callbackQuery(/^sell_dev_supply_(.+)$/, async (ctx) => {
 
   const { TokenModel } = await import("../backend/models");
 
-  // Try to find token with multiple lookup strategies
+  // 1. Try exact match first
   let token = await TokenModel.findOne({
     user: user.id,
-    tokenAddress: { $regex: `^${tokenAddressPrefix}` },
+    tokenAddress: tokenAddressPrefix,
   });
 
-  // If not found with prefix match, try exact match (for full addresses)
+  // 2. If not found, try prefix regex (case-sensitive)
   if (!token) {
     token = await TokenModel.findOne({
       user: user.id,
-      tokenAddress: tokenAddressPrefix,
+      tokenAddress: { $regex: `^${tokenAddressPrefix}` },
     });
   }
 
-  // If still not found, try case-insensitive match
+  // 3. If still not found, try case-insensitive regex
   if (!token) {
     token = await TokenModel.findOne({
       user: user.id,
