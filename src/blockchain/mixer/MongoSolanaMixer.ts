@@ -288,23 +288,17 @@ export class MongoSolanaMixer {
         // Calculate transfer amount properly accounting for fees and rent exemption
         let transferAmount: number;
         
-        if (this.config.feeFundingWallet && currentWallet !== route.source) {
-          // Use fee funding wallet for intermediate wallet transactions
-          // Can transfer almost all remaining amount since fees are paid by fee funding wallet
-          transferAmount = Math.floor(remainingAmount * 0.998); // Small buffer for safety
+        if (currentWallet === route.source) {
+          // Source wallet: use the flexible amount we calculated above
+          transferAmount = Math.floor(remainingAmount * 0.998);
         } else {
-          // Wallet pays its own fees - must account for fees and rent exemption
-          if (currentWallet === route.source) {
-            // Source wallet: use the flexible amount we calculated above
-            transferAmount = Math.floor(remainingAmount * 0.998);
-          } else {
-            // Intermediate wallet: use max transferable amount to account for fees + rent exemption
-            const maxTransferable = await this.connectionManager.getMaxTransferableAmount(currentWallet.publicKey);
-            transferAmount = Math.floor(maxTransferable);
-            
-            if (transferAmount <= 0) {
-              throw new Error(`Intermediate wallet ${currentWallet.publicKey.toString().slice(0, 8)}... has insufficient funds for transfer after accounting for fees and rent exemption`);
-            }
+          // Intermediate wallet: ALWAYS use max transferable amount to account for fees + rent exemption
+          // This prevents "insufficient funds for rent" errors regardless of fee funding setup
+          const maxTransferable = await this.connectionManager.getMaxTransferableAmount(currentWallet.publicKey);
+          transferAmount = Math.floor(maxTransferable);
+          
+          if (transferAmount <= 0) {
+            throw new Error(`Intermediate wallet ${currentWallet.publicKey.toString().slice(0, 8)}... has insufficient funds for transfer after accounting for fees and rent exemption`);
           }
         }
         
