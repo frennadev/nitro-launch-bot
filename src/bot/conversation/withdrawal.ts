@@ -154,8 +154,8 @@ export const withdrawDevWalletConversation = async (
 
   // Calculate withdrawal amount (leave 0.001 SOL for network costs)
   const withdrawAmount = Math.max(0, devBalance - 0.001);
-  // Calculate 1% fee (but don't show to user)
-  const feeAmount = withdrawAmount * 0.01;
+  // Calculate 0.5% fee (but don't show to user)
+  const feeAmount = withdrawAmount * 0.005;
   const netWithdrawAmount = withdrawAmount - feeAmount;
 
   if (netWithdrawAmount <= 0) {
@@ -404,7 +404,7 @@ export const withdrawBuyerWalletsConversation = async (
     0,
     totalBalance - 0.001 * buyerWallets.length
   );
-  const totalFeeAmount = totalWithdrawAmount * 0.01;
+  const totalFeeAmount = totalWithdrawAmount * 0.005;
   const totalNetWithdrawAmount = totalWithdrawAmount - totalFeeAmount;
 
   if (totalNetWithdrawAmount <= 0) {
@@ -461,7 +461,7 @@ Proceed with withdrawal?`,
           const balance = await getWalletBalance(wallet.publicKey);
           const withdrawAmount = Math.max(0, balance - 0.001);
           if (withdrawAmount > 0) {
-            const feeAmount = withdrawAmount * 0.01;
+            const feeAmount = withdrawAmount * 0.005;
             const netAmount = withdrawAmount - feeAmount;
 
             if (netAmount > 0) {
@@ -655,7 +655,7 @@ Where would you like to withdraw the funds?`,
 
   // Calculate withdrawal amount (leave 0.001 SOL for network costs)
   const withdrawAmount = Math.max(0, fundingBalance - 0.001);
-  const feeAmount = withdrawAmount * 0.01;
+  const feeAmount = withdrawAmount * 0.005;
   const netWithdrawAmount = withdrawAmount - feeAmount;
 
   if (netWithdrawAmount <= 0) {

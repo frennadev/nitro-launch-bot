@@ -45,7 +45,7 @@ Nitro Bot is a cutting-edge Telegram bot that revolutionizes Solana token launch
 - **Percentage-Based Selling**: Precise control over sell amounts (25%, 50%, 75%, 100%)
 
 ### 💸 **Integrated Fee System**
-- **Platform Fees**: Automatic 1% withdrawal fees to platform wallet
+- **Platform Fees**: Automatic 0.5% withdrawal fees to platform wallet
 - **Transaction Fees**: Smart fee management across all operations
 - **Fee Transparency**: Clear breakdown of all costs and fees
 - **Revenue Optimization**: Built-in monetization for platform operators
