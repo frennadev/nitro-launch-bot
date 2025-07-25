@@ -179,22 +179,59 @@ export class SolanaConnectionManager {
   }
 
   /**
-   * Send transaction with retry logic (uses connection pool if available)
+   * Send transaction with enhanced retry logic and blockhash refresh
    */
   async sendTransaction(
     transaction: Transaction,
-    signers: Keypair[]
+    signers: Keypair[],
+    maxRetries: number = 3
   ): Promise<string> {
     if (this.useConnectionPool && mixerConnectionPool) {
       return await mixerConnectionPool.sendTransaction(transaction, {
         signers,
       });
     }
-    return await sendAndConfirmTransaction(
-      this.connection,
-      transaction,
-      signers
-    );
+
+    // Enhanced retry logic with blockhash refresh
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Refresh blockhash on retries to prevent expiration
+        if (attempt > 1) {
+          console.log(`🔄 Refreshing blockhash for retry attempt ${attempt}/${maxRetries}`);
+          const { blockhash, lastValidBlockHeight } = await this.getRecentBlockhash();
+          transaction.recentBlockhash = blockhash;
+          transaction.lastValidBlockHeight = lastValidBlockHeight;
+        }
+
+        const signature = await this.connection.sendTransaction(transaction, signers, {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+          maxRetries: 3,
+        });
+
+        console.log(`📤 Transaction sent successfully: ${signature.slice(0, 8)}...`);
+        return signature;
+
+      } catch (error: any) {
+        console.error(`❌ Send transaction error (attempt ${attempt}/${maxRetries}):`, error.message);
+        
+        // Check if it's a blockhash expiration error
+        const isBlockhashError = error.message.includes('blockhash') || 
+                                error.message.includes('expired') ||
+                                error.message.includes('BlockhashNotFound');
+        
+        if (attempt === maxRetries) {
+          throw new Error(`Failed to send transaction after ${maxRetries} attempts: ${error.message}`);
+        }
+        
+        // Wait before retry with exponential backoff
+        const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        console.log(`⏳ Retrying send in ${retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+    
+    throw new Error('Failed to send transaction after all retries');
   }
 
   /**
@@ -285,16 +322,17 @@ export class SolanaConnectionManager {
   }
 
   /**
-   * Wait for transaction confirmation with retry logic
+   * Wait for transaction confirmation with enhanced retry logic and expiration handling
    */
-  async waitForConfirmation(signature: string, maxRetries: number = 3): Promise<boolean> {
+  async waitForConfirmation(signature: string, maxRetries: number = 5): Promise<boolean> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         console.log(`🔄 Confirming transaction ${signature.slice(0, 8)}... (attempt ${attempt}/${maxRetries})`);
         
+        // Use a more robust confirmation strategy
         const confirmation = await this.connection.confirmTransaction(
           signature,
-          "processed"
+          "confirmed" // Use "confirmed" instead of "processed" for better reliability
         );
         
         if (confirmation.value.err) {
@@ -308,20 +346,58 @@ export class SolanaConnectionManager {
       } catch (error: any) {
         console.error(`❌ Transaction confirmation error (attempt ${attempt}/${maxRetries}):`, error.message);
         
+        // Handle specific error types
+        const isExpirationError = error.message.includes('block height exceeded') || 
+                                 error.message.includes('TransactionExpiredBlockheightExceededError') ||
+                                 error.message.includes('expired');
+        
+        const isNetworkError = error.message.includes('network') || 
+                              error.message.includes('timeout') ||
+                              error.message.includes('rate limit');
+        
         // If this is the last attempt, return false
         if (attempt === maxRetries) {
           console.error(`❌ All confirmation attempts failed for signature: ${signature}`);
+          if (isExpirationError) {
+            console.error(`❌ Transaction expired - block height exceeded maximum allowed`);
+          }
           return false;
         }
         
-        // Wait before retry (exponential backoff)
-        const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 1s, 2s, 4s, max 5s
-        console.log(`⏳ Retrying in ${retryDelay}ms...`);
+        // Adaptive retry delay based on error type
+        let retryDelay: number;
+        if (isExpirationError) {
+          // For expiration errors, wait longer as the transaction might still be processing
+          retryDelay = Math.min(2000 * Math.pow(2, attempt - 1), 10000); // 2s, 4s, 8s, max 10s
+          console.log(`⏳ Transaction may have expired, waiting longer before retry: ${retryDelay}ms...`);
+        } else if (isNetworkError) {
+          // For network errors, use shorter delays
+          retryDelay = Math.min(500 * Math.pow(2, attempt - 1), 3000); // 0.5s, 1s, 2s, max 3s
+          console.log(`⏳ Network error detected, retrying in ${retryDelay}ms...`);
+        } else {
+          // Default exponential backoff
+          retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 1s, 2s, 4s, max 5s
+          console.log(`⏳ Retrying in ${retryDelay}ms...`);
+        }
+        
         await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
     }
     
     return false;
+  }
+
+  /**
+   * Check if a transaction signature is still valid (not expired)
+   */
+  async isTransactionValid(signature: string): Promise<boolean> {
+    try {
+      const status = await this.connection.getSignatureStatus(signature);
+      return status !== null && status.value !== null;
+    } catch (error) {
+      console.error(`❌ Error checking transaction validity:`, error);
+      return false;
+    }
   }
 
   /**
