@@ -506,24 +506,23 @@ bot.command("start", async (ctx) => {
   const referralStats = await getUserReferralStats(String(user?.id));
 
   const welcomeMsg = `
-👋 <b>Welcome to Nitro Launch Bot!</b> 🚀
+👋 Welcome to Nitro Launch Bot! 🚀
 
-Nitro Bot empowers you to deploy and manage Solana tokens on <a href="https://pump.fun">Pump.fun</a> and <a href="https://letsbonk.fun">LetsBonk.fun</a> — <i>no coding required</i>!
+Nitro Bot empowers you to deploy and manage Solana tokens on Pump.fun and LetsBonk.fun — no coding required!
 
-<b>What you can do:</b>
-• <b>Create & launch tokens</b> instantly on Pump.fun and LetsBonk.fun
-• <b>Private buys & sells</b> for full privacy
-• <b>Easy token management</b> with one click
+What you can do:
+• Create & launch tokens instantly on Pump.fun and LetsBonk.fun
+• Private buys & sells for full privacy
+• Easy token management with one click
 
-💳 <b>Your Dev Wallet</b>
-<code>${devWallet}</code>
+💳 Your Dev Wallet
+${devWallet}
 
-🔗 <b>Referrals:</b> <code>${referralStats.referralCount}</code> friend(s) joined via your link
-<b>Useful Links:</b>
-• <a href="https://pump.fun">Pump.fun</a>
-• <a href="https://letsbonk.fun">LetsBonk.fun</a>
-<b>Get started below:</b>
-`;
+🔗 Referrals: ${referralStats.referralCount} friend(s) joined via your link
+Useful Links:
+• Pump.fun: https://pump.fun
+• LetsBonk.fun: https://letsbonk.fun
+Get started below:`;
 
   const inlineKeyboard = new InlineKeyboard()
     .text("➕ Create Token", CallBackQueries.CREATE_TOKEN)
@@ -533,12 +532,11 @@ Nitro Bot empowers you to deploy and manage Solana tokens on <a href="https://pu
     .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
     .row()
     .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
+    .text("📊 Predict MC", CallBackQueries.PREDICT_MC)
+    .row()
     .text("🆘 Help", CallBackQueries.HELP);
-  // .text("Add Wallet", CallBackQueries.ADD_WALLET)
-  // .text("Generate Wallet", CallBackQueries.GENERATE_WALLET);
 
   await sendMessage(ctx, welcomeMsg, {
-    parse_mode: "Markdown",
     reply_markup: inlineKeyboard,
   });
 });
@@ -595,24 +593,23 @@ bot.command("menu", async (ctx) => {
   const referralStats = await getUserReferralStats(String(user?.id));
 
   const welcomeMsg = `
-👋 <b>Welcome to Nitro Launch Bot!</b> 🚀
+👋 Welcome to Nitro Launch Bot! 🚀
 
-Nitro Bot empowers you to deploy and manage Solana tokens on <a href="https://pump.fun">Pump.fun</a> and <a href="https://letsbonk.fun">LetsBonk.fun</a> — <i>no coding required</i>!
+Nitro Bot empowers you to deploy and manage Solana tokens on Pump.fun and LetsBonk.fun — no coding required!
 
-<b>What you can do:</b>
-• <b>Create & launch tokens</b> instantly on Pump.fun and LetsBonk.fun
-• <b>Private buys & sells</b> for full privacy
-• <b>Easy token management</b> with one click
+What you can do:
+• Create & launch tokens instantly on Pump.fun and LetsBonk.fun
+• Private buys & sells for full privacy
+• Easy token management with one click
 
-💳 <b>Your Dev Wallet</b>
-<code>${devWallet}</code>
+💳 Your Dev Wallet
+${devWallet}
 
-🔗 <b>Referrals:</b> <code>${referralStats.referralCount}</code> friend(s) joined via your link
-<b>Useful Links:</b>
-• <a href="https://pump.fun">Pump.fun</a>
-• <a href="https://letsbonk.fun">LetsBonk.fun</a>
-<b>Get started below:</b>
-`;
+🔗 Referrals: ${referralStats.referralCount} friend(s) joined via your link
+Useful Links:
+• Pump.fun: https://pump.fun
+• LetsBonk.fun: https://letsbonk.fun
+Get started below:`;
 
   const inlineKeyboard = new InlineKeyboard()
     .text("➕ Create Token", CallBackQueries.CREATE_TOKEN)
@@ -622,10 +619,11 @@ Nitro Bot empowers you to deploy and manage Solana tokens on <a href="https://pu
     .text("⚙️ Wallet Config", CallBackQueries.WALLET_CONFIG)
     .row()
     .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
+    .text("📊 Predict MC", CallBackQueries.PREDICT_MC)
+    .row()
     .text("🆘 Help", CallBackQueries.HELP);
 
   await sendMessage(ctx, welcomeMsg, {
-    parse_mode: "HTML",
     reply_markup: inlineKeyboard,
   });
 });
@@ -3308,3 +3306,15 @@ bot.on("callback_query:data", async (ctx) => {
 });
 
 export default bot;
+
+// Add this at the end of the file, after all other handlers
+bot.on('callback_query', async (ctx) => {
+  try {
+    await ctx.answerCallbackQuery({
+      text: '❌ This button is no longer valid or has expired. Please try again from the main menu.',
+      show_alert: true,
+    });
+  } catch (e) {
+    // Ignore errors from answering callback
+  }
+});

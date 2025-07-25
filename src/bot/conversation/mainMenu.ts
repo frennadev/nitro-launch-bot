@@ -26,16 +26,23 @@ export default async function mainMenuConversation(
 
   const devWallet = await getDefaultDevWallet(String(user.id));
   const welcomeMsg = `
-👋 *Welcome to Nitro Bot*
+👋 Welcome to Nitro Launch Bot! 🚀
 
-Launch your own tokens on [Pump\\.fun](https://pump\\.fun) in minutes—no coding, no fuss\\.
-Here's what you can do right from this chat:
+Nitro Bot empowers you to deploy and manage Solana tokens on Pump.fun and LetsBonk.fun — no coding required!
 
-💳 *Your current dev wallet:*  
-\`${devWallet}\`
+What you can do:
+• Create & launch tokens instantly on Pump.fun and LetsBonk.fun
+• Private buys & sells for full privacy
+• Easy token management with one click
 
-To proceed, you can choose any of the actions below ⬇️
-`;
+💳 Your Dev Wallet
+${devWallet}
+
+🔗 Referrals: (see /start for your count) friend(s) joined via your link
+Useful Links:
+• Pump.fun: https://pump.fun
+• LetsBonk.fun: https://letsbonk.fun
+Get started below:`;
 
   const keyboard = new InlineKeyboard()
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
@@ -50,7 +57,6 @@ To proceed, you can choose any of the actions below ⬇️
     .text("🆘 Help", CallBackQueries.HELP);
 
   await ctx.reply(welcomeMsg, {
-    parse_mode: "MarkdownV2",
     reply_markup: keyboard,
   });
 }

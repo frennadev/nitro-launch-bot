@@ -798,79 +798,16 @@ EXPECTED MARKET CAP: ${expectedMarketCap}
     "🔍 **Performing pre-launch checks...**\n\n💰 Checking wallet balances..."
   );
 
-  let checkResult: any;
-
-  if (isBonkToken) {
-    // For Bonk tokens, do simplified checks (no complex PumpFun validation)
-    checkResult = await preLaunchChecks(
-      fundingWallet.privateKey,
-      (token.launchData!.devWallet! as unknown as { privateKey: string })
-        .privateKey,
-      buyAmount,
-      devBuy,
-      buyerKeys.length
-    );
-  } else {
-    // For PumpFun tokens, do full validation
-    checkResult = await preLaunchChecks(
-      fundingWallet.privateKey,
-      (token.launchData!.devWallet! as unknown as { privateKey: string })
-        .privateKey,
-      buyAmount,
-      devBuy,
-      buyerKeys.length
-    );
-  }
-
-  if (!checkResult.success) {
-    await checksLoading.update(
-      `❌ **Pre-launch checks failed**\n\n${checkResult.message}\n\nPlease resolve the issues and try again.`
-    );
-
-    await sendMessage(
-      ctx,
-      `❌ <b>PreLaunch checks failed</b>
-
-Please resolve the issues below and retry:
-
-${checkResult.message}`,
-      { parse_mode: "HTML", reply_markup: retryKeyboard }
-    );
-
-    // Wait for retry or cancel
-    const response = await conversation.waitFor("callback_query:data");
-    await response.answerCallbackQuery();
-
-    if (response.callbackQuery?.data === LaunchCallBackQueries.RETRY) {
-      // Exit conversation and let user manually retry from tokens list
-      await sendMessage(
-        response,
-        "🔄 Please resolve the issues and try launching again from your tokens list."
-      );
-      await conversation.halt();
-      return;
-    } else {
-      await sendMessage(response, "Process cancelled.");
-      await clearRetryData(user.id, "launch_token");
-      await conversation.halt();
-      return;
-    }
-  }
-
-  await checksLoading.update(
-    "✅ **Pre-launch checks completed successfully!**\n\n🚀 Submitting launch to queue..."
-  );
-
-  // ------ HANDLE LAUNCH BASED ON TOKEN TYPE -----
   let result: any;
 
-  // Check if this is a Bonk token
   if (isBonkToken) {
-    // Bonk tokens use direct launch (no complex staging)
+    // Bonk tokens: ensure mixing is performed before on-chain launch
     await checksLoading.update(
-      "🚀 **Launching Bonk token...**\n\n⏳ Creating token on Raydium Launch Lab..."
+      "🚀 **Launching Bonk token...**\n\n⏳ Mixing funds and creating token on Raydium Launch Lab..."
     );
 
+    // Use backend function to handle mixing and launch
+    const { launchBonkToken } = await import("../../backend/functions");
     result = await launchBonkToken(user.id, tokenAddress, buyAmount, devBuy);
 
     if (result.success) {
@@ -893,11 +830,7 @@ ${checkResult.message}`,
 
       await sendMessage(
         ctx,
-        `❌ <b>Bonk token launch failed</b>
-
-Error: ${result.error}
-
-Please try again or contact support if the issue persists.`,
+        `❌ <b>Bonk token launch failed</b>\n\nError: ${result.error}\n\nPlease try again or contact support if the issue persists.`,
         { parse_mode: "HTML", reply_markup: retryKeyboard }
       );
     }

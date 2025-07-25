@@ -146,6 +146,32 @@ export const sellDevWorker = new Worker<SellDevJob>(
           data.devWallet,
           data.tokenAddress
         );
+        // Record the transaction with actual SOL received
+        const { recordTransactionWithActualAmounts } = await import("../backend/utils");
+        const { Keypair } = await import("@solana/web3.js");
+        const bs58 = await import("bs58");
+        const devWalletPubkey = Keypair.fromSecretKey(bs58.default.decode(data.devWallet)).publicKey.toBase58();
+        // Type guard for Bonk sell result
+        function isBonkSellResult(obj: any): obj is { success: boolean; signature: string; actualSolReceived: number } {
+          return obj && typeof obj.success === 'boolean' && typeof obj.signature === 'string' && 'actualSolReceived' in obj;
+        }
+
+        if (isBonkSellResult(result) && result.success && result.signature) {
+          await recordTransactionWithActualAmounts(
+            data.tokenAddress,
+            devWalletPubkey,
+            "dev_sell",
+            result.signature,
+            true,
+            0,
+            {
+              amountSol: result.actualSolReceived,
+              amountTokens: undefined,
+              sellPercent: data.sellPercent,
+            },
+            false // Don't parse again, already have actual amount
+          );
+        }
       } else {
         // PumpFun token - use PumpFun sell mechanism
         logger.info(`[jobs-sell-dev]: Using PumpFun sell mechanism for token ${data.tokenAddress}`);
@@ -200,10 +226,9 @@ export const sellDevWorker = new Worker<SellDevJob>(
       
       await sendNotification(
         data.userChatId,
-        `🎉 **Dev Sell completed successfully\\!**\n\n` +
-        `💰 **Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\\.')} SOL\n` +
-        `🪙 **Sold:** ${tokensSoldFormatted.replace(/\./g, '\\.')} tokens \\(${data.sellPercent}%\\)\n` +
-        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\\.')}%\\)\n\n` +
+        `🎉 **Dev Sell completed successfully\!**\n\n` +
+        `💰 **Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\.')} SOL\n` +
+        `🪙 **Sold:** ${tokensSoldFormatted.replace(/\./g, '\.')} tokens \\(${data.sellPercent}%\\)\n` +
         `[View Transaction](https://solscan\\.io/tx/${result.signature})`,
       );
     } catch (error: any) {
@@ -259,6 +284,9 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         // Bonk token - use Bonk sell mechanism for each wallet
         logger.info(`[jobs-sell-wallet]: Using Bonk sell mechanism for token ${data.tokenAddress}`);
         const { executeBonkSell } = await import("../service/bonk-transaction-handler");
+        const { recordTransactionWithActualAmounts } = await import("../backend/utils");
+        const { Keypair } = await import("@solana/web3.js");
+        const bs58 = await import("bs58");
         
         // Execute Bonk sells for each wallet
         const sellPromises = data.buyerWallets.map(async (walletPrivateKey: string) => {
@@ -268,11 +296,32 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
               walletPrivateKey,
               data.tokenAddress
             );
+            // Record the transaction with actual SOL received
+            let walletPubkey = "unknown";
+            try {
+              walletPubkey = Keypair.fromSecretKey(bs58.default.decode(walletPrivateKey)).publicKey.toBase58();
+            } catch {}
+            if (result && result.success && result.signature) {
+              await recordTransactionWithActualAmounts(
+                data.tokenAddress,
+                walletPubkey,
+                "wallet_sell",
+                result.signature,
+                true,
+                0,
+                {
+                  amountSol: result.actualSolReceived,
+                  amountTokens: undefined,
+                  sellPercent: data.sellPercent,
+                },
+                false // Don't parse again, already have actual amount
+              );
+            }
             return {
               success: result.success,
               signature: result.signature,
               error: result.error,
-              expectedSolOut: 0, // Bonk doesn't provide expected SOL out
+              expectedSolOut: result.actualSolReceived || 0,
             };
           } catch (error: any) {
             return {
@@ -307,7 +356,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       const immediateSuccessRate = Math.round((successfulSells.length / results.length) * 100);
       
       // Send immediate success notification with basic info
-      const initialMessage = `🎉 **Wallet Sells completed successfully\\!**\n\n` +
+      const initialMessage = `🎉 **Wallet Sells completed successfully\!**\n\n` +
         `✅ **Success Rate:** ${successfulSells.length}/${results.length} wallets \\(${immediateSuccessRate}%\\)\n` +
         `💰 **Total Received:** Calculating\\.\\.\\.\n` +
         `🪙 **Tokens Sold:** Calculating\\.\\.\\.\n` +
@@ -368,11 +417,11 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       );
       
       // Update the initial notification with accurate data
-      const finalMessage = `🎉 **Wallet Sells completed successfully\\!**\n\n` +
+      const finalMessage = `🎉 **Wallet Sells completed successfully\!**\n\n` +
         `✅ **Success Rate:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets \\(${sellSummary.successRate}%\\)\n` +
-        `💰 **Total Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\\.')} SOL\n` +
-        `🪙 **Tokens Sold:** ${tokensSoldFormatted.replace(/\./g, '\\.')} tokens \\(${data.sellPercent}%\\)\n` +
-        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\\.')}%\\)\n\n` +
+        `💰 **Total Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\.')} SOL\n` +
+        `🪙 **Tokens Sold:** ${tokensSoldFormatted.replace(/\./g, '\.')} tokens \\(${data.sellPercent}%\\)\n` +
+        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\.')}%\\)\n\n` +
         `${sellSummary.failedWallets > 0 ? `⚠️ ${sellSummary.failedWallets} wallet\\(s\\) failed to sell\n\n` : ''}` +
         `💡 View individual transactions in your token list for more details\\.`;
       
@@ -481,7 +530,7 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       
       await sendNotification(
         data.userChatId,
-        `🛠️ **Preparation Complete\\!**\n\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token\\.\\.\\.**`,
+        `🛠️ **Preparation Complete\!**\n\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token\\.\\.\\.**`,
       );
       
     } catch (error: any) {
@@ -634,7 +683,7 @@ sellDevWorker.on("failed", async (job) => {
   await releaseDevSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Dev Wallet Sell Failed\\. Please try again 🔄",
+    "❌ Dev Wallet Sell Failed\. Please try again 🔄",
   );
 });
 sellDevWorker.on("closed", () => {
@@ -654,7 +703,7 @@ sellWalletWorker.on("failed", async (job) => {
   await releaseWalletSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Wallet Sells Failed\\. Please try again 🔄",
+    "❌ Wallet Sells Failed\. Please try again 🔄",
   );
 });
 sellWalletWorker.on("closed", async () => {
