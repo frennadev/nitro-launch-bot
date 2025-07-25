@@ -565,10 +565,14 @@ export class MongoSolanaMixer {
           );
 
           // Record in MongoDB
+          const feeAmount = await this.connectionManager.estimateTransactionFee();
+          const rentExemption = await this.connectionManager.getMinimumBalanceForRentExemption();
+          const totalAmount = feeAmount + rentExemption;
+          
           await this.walletManager.recordTransaction(publicKey, {
             signature,
             type: "fee_funding",
-            amount: await this.connectionManager.estimateTransactionFee(),
+            amount: totalAmount,
             fromAddress: this.config.feeFundingWallet.publicKey.toString(),
           });
 
@@ -619,13 +623,16 @@ export class MongoSolanaMixer {
     // Check fee funding wallet balance if provided
     if (this.config.feeFundingWallet) {
       const feeFundingBalance = await this.connectionManager.getBalance(this.config.feeFundingWallet.publicKey);
+      const rentExemption = await this.connectionManager.getMinimumBalanceForRentExemption();
 
       const totalIntermediateTransactions = destinationWallets.length * (this.config.intermediateWalletCount + 1);
       const totalFeesNeeded = estimatedFees * totalIntermediateTransactions;
+      const totalRentExemptionNeeded = rentExemption * totalIntermediateTransactions;
+      const totalAmountNeeded = totalFeesNeeded + totalRentExemptionNeeded;
 
-      if (feeFundingBalance < totalFeesNeeded) {
+      if (feeFundingBalance < totalAmountNeeded) {
         throw new Error(
-          `Insufficient funds in fee funding wallet. Need ${totalFeesNeeded} lamports, have ${feeFundingBalance}`
+          `Insufficient funds in fee funding wallet. Need ${totalAmountNeeded} lamports (${totalFeesNeeded} fees + ${totalRentExemptionNeeded} rent), have ${feeFundingBalance}`
         );
       }
     }

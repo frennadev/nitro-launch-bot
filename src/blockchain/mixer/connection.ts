@@ -66,6 +66,8 @@ export class SolanaConnectionManager {
    * Get the minimum rent-exempt balance for an account
    */
   async getMinimumBalanceForRentExemption(): Promise<number> {
+    // Get rent exemption for a new account (SystemAccount)
+    // This is needed when creating new wallet accounts
     return await this.connection.getMinimumBalanceForRentExemption(0);
   }
 
@@ -206,12 +208,13 @@ export class SolanaConnectionManager {
     numberOfTransactions: number = 1
   ): Promise<string> {
     const feeAmount = await this.estimateTransactionFee();
-    const totalFeeAmount = feeAmount * numberOfTransactions;
+    const rentExemption = await this.getMinimumBalanceForRentExemption();
+    const totalAmount = (feeAmount * numberOfTransactions) + rentExemption;
 
     const transaction = await this.createTransferTransaction(
       feeFundingWallet.publicKey,
       intermediateWallet,
-      totalFeeAmount
+      totalAmount
     );
 
     return await this.sendTransaction(transaction, [feeFundingWallet]);
@@ -231,7 +234,7 @@ export class SolanaConnectionManager {
     const estimatedFee = await this.estimateTransactionFee();
     const rentExemption = await this.getMinimumBalanceForRentExemption();
 
-    // Need balance for transfer + fees + rent exemption
+    // Need balance for transfer + fees + rent exemption (for new accounts)
     const requiredBalance = transferAmount + estimatedFee + rentExemption;
     const hasSufficient = balance >= requiredBalance;
 
@@ -253,9 +256,10 @@ export class SolanaConnectionManager {
   ): Promise<boolean> {
     const balance = await this.getBalance(publicKey);
     const estimatedFee = await this.estimateTransactionFee();
-    const totalFeeAmount = estimatedFee * numberOfTransactions;
+    const rentExemption = await this.getMinimumBalanceForRentExemption();
+    const totalAmount = (estimatedFee * numberOfTransactions) + rentExemption;
 
-    return balance >= totalFeeAmount;
+    return balance >= totalAmount;
   }
 
   /**
@@ -266,9 +270,10 @@ export class SolanaConnectionManager {
     const balance = await this.getBalance(publicKey);
     const estimatedFee = await this.estimateTransactionFee();
     const rentExemption = await this.getMinimumBalanceForRentExemption();
-    const buffer = 5000; // Extra buffer to prevent rent errors
+    const buffer = 5000; // Extra buffer to prevent transaction errors
 
     // Calculate required reserves (fees + rent exemption + buffer)
+    // Rent exemption is needed for new accounts
     const requiredReserves = estimatedFee + rentExemption + buffer;
     const maxTransferable = balance - requiredReserves;
 

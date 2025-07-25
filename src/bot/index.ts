@@ -1739,7 +1739,7 @@ bot.callbackQuery(/^refresh_launch_data_(.+)$/, async (ctx) => {
 // Callback handler for Bonk launch data refresh button
 bot.callbackQuery(/^refresh_bonk_launch_data_(.+)$/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🔄 Refreshing Bonk data...");
-  const tokenAddressPrefix = ctx.match![1];
+  const tokenAddress = ctx.match![1];
 
   // Get token info to get name and symbol
   const user = await getUser(ctx.chat!.id!.toString());
@@ -1748,11 +1748,11 @@ bot.callbackQuery(/^refresh_bonk_launch_data_(.+)$/, async (ctx) => {
     return;
   }
 
-  // Find token by address prefix
+  // Find token by full address
   const { TokenModel } = await import("../backend/models");
   const token = await TokenModel.findOne({
     user: user.id,
-    tokenAddress: { $regex: `^${tokenAddressPrefix}` },
+    tokenAddress: tokenAddress,
   });
 
   if (!token) {
