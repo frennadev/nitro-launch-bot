@@ -126,12 +126,14 @@ const createTokenConversation = async (
   let telegram: string = "";
   let website: string = "";
 
-  // Twitter/X first
+  // Ask for all socials in a single message
   await ctx.reply(
-    "🐦 (Optional) Send your Twitter/X profile or post link for the token, or type 'skip' to continue.\n" +
-      "<i>Example: <code>https://twitter.com/example</code></i>\n\n",
+    "🌐 (Optional) Send your token's socials as <b>Twitter/X, Telegram, Website</b> links, separated by commas. Type 'skip' to leave any field blank.\n" +
+      "<i>Example: <code>https://twitter.com/example, https://t.me/examplegroup, https://example.com</code></i>\n\n" +
+      "You can also type 'skip' to leave all blank.",
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
+
   while (true) {
     const upd = await conversation.wait();
     if (upd.callbackQuery?.data === CallBackQueries.BACK) {
@@ -143,79 +145,56 @@ const createTokenConversation = async (
       const text = upd.message.text.trim();
       if (text.toLowerCase() === "skip" || text === "") {
         twitter = "";
-        break;
-      }
-      // Basic Twitter URL validation
-      if (/^https?:\/\/(twitter\.com|x\.com)\/\S+/.test(text)) {
-        twitter = text;
-        break;
-      }
-      await ctx.reply(
-        "Invalid Twitter/X link format. Please send a valid Twitter/X URL or type 'skip' to continue.",
-        { parse_mode: "HTML", reply_markup: cancelKeyboard }
-      );
-    }
-  }
-
-  // Telegram second
-  await ctx.reply(
-    "💬 (Optional) Send your Telegram group/channel link for the token, or type 'skip' to continue.\n" +
-      "<i>Example: <code>https://t.me/examplegroup</code></i>\n\n",
-    { parse_mode: "HTML", reply_markup: cancelKeyboard }
-  );
-  while (true) {
-    const upd = await conversation.wait();
-    if (upd.callbackQuery?.data === CallBackQueries.BACK) {
-      await upd.answerCallbackQuery();
-      await ctx.reply("Token creation cancelled.");
-      return conversation.halt();
-    }
-    if (upd.message?.text) {
-      const text = upd.message.text.trim();
-      if (text.toLowerCase() === "skip" || text === "") {
         telegram = "";
-        break;
-      }
-      // Basic Telegram URL validation
-      if (/^https?:\/\/t\.me\/\S+/.test(text)) {
-        telegram = text;
-        break;
-      }
-      await ctx.reply(
-        "Invalid Telegram link format. Please send a valid Telegram URL or type 'skip' to continue.",
-        { parse_mode: "HTML", reply_markup: cancelKeyboard }
-      );
-    }
-  }
-
-  // Website third
-  await ctx.reply(
-    "🌐 (Optional) Send your website URL for the token, or type 'skip' to continue.\n" +
-      "<i>Example: <code>https://example.com</code></i>\n\n",
-    { parse_mode: "HTML", reply_markup: cancelKeyboard }
-  );
-  while (true) {
-    const upd = await conversation.wait();
-    if (upd.callbackQuery?.data === CallBackQueries.BACK) {
-      await upd.answerCallbackQuery();
-      await ctx.reply("Token creation cancelled.");
-      return conversation.halt();
-    }
-    if (upd.message?.text) {
-      const text = upd.message.text.trim();
-      if (text.toLowerCase() === "skip" || text === "") {
         website = "";
         break;
       }
-      // Basic URL validation (optional, can be improved)
-      if (/^https?:\/\/.+\..+/.test(text)) {
-        website = text;
-        break;
+      const parts = text.split(",").map((s) => s.trim());
+      // Fill missing fields with empty string
+      while (parts.length < 3) parts.push("");
+      const [tw, tg, web] = parts;
+
+      // Validate Twitter/X
+      if (
+        tw &&
+        !/^https?:\/\/(twitter\.com|x\.com)\/\S+/.test(tw) &&
+        tw.toLowerCase() !== "skip"
+      ) {
+        await ctx.reply(
+          "Invalid Twitter/X link format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
+          { parse_mode: "HTML", reply_markup: cancelKeyboard }
+        );
+        continue;
       }
-      await ctx.reply(
-        "Invalid URL format. Please send a valid website URL or type 'skip' to continue.",
-        { parse_mode: "HTML", reply_markup: cancelKeyboard }
-      );
+      // Validate Telegram
+      if (
+        tg &&
+        !/^https?:\/\/t\.me\/\S+/.test(tg) &&
+        tg.toLowerCase() !== "skip"
+      ) {
+        await ctx.reply(
+          "Invalid Telegram link format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
+          { parse_mode: "HTML", reply_markup: cancelKeyboard }
+        );
+        continue;
+      }
+      // Validate Website (basic)
+      if (
+        web &&
+        !/^https?:\/\/.+\..+/.test(web) &&
+        web.toLowerCase() !== "skip"
+      ) {
+        await ctx.reply(
+          "Invalid website URL format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
+          { parse_mode: "HTML", reply_markup: cancelKeyboard }
+        );
+        continue;
+      }
+
+      twitter = tw.toLowerCase() === "skip" ? "" : tw;
+      telegram = tg.toLowerCase() === "skip" ? "" : tg;
+      website = web.toLowerCase() === "skip" ? "" : web;
+      break;
     }
   }
 
