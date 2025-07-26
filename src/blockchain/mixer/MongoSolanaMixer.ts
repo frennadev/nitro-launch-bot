@@ -343,9 +343,16 @@ export class MongoSolanaMixer {
 
         // CRITICAL FIX: Wait for transaction confirmation before proceeding
         // This ensures the intermediate wallet has received funds before we try to transfer from it
-        const confirmationSuccess = await this.connectionManager.waitForConfirmation(signature);
+        let confirmationSuccess = await this.connectionManager.waitForConfirmation(signature);
         if (!confirmationSuccess) {
-          throw new Error(`Transaction confirmation failed for signature: ${signature}`);
+          // Tolerant mode: check if the destination wallet actually received the funds
+          const actualBalance = await this.connectionManager.getBalance(nextWallet.publicKey);
+          if (actualBalance >= transferAmount) {
+            console.warn(`⚠️ Confirmation failed for signature: ${signature}, but destination wallet ${nextWallet.publicKey.toString().slice(0, 8)}... has the expected funds. Continuing...`);
+            confirmationSuccess = true;
+          } else {
+            throw new Error(`Transaction confirmation failed for signature: ${signature} and destination wallet did not receive expected funds.`);
+          }
         }
 
         // CRITICAL FIX: Verify the intermediate wallet actually received the funds
@@ -392,10 +399,11 @@ export class MongoSolanaMixer {
       );
 
       let finalSignature: string;
+      let finalAmount: number;
 
       if (this.config.feeFundingWallet) {
         // Use fee funding wallet for final intermediate wallet transaction - ENSURE INTEGER
-        const finalAmount = Math.floor(remainingAmount); // Ensure integer
+        finalAmount = Math.floor(remainingAmount); // Ensure integer
         
         if (finalAmount <= 0) {
           throw new Error(`Invalid final transfer amount: ${remainingAmount} (floored to ${finalAmount})`);
@@ -415,7 +423,7 @@ export class MongoSolanaMixer {
       } else {
         // Intermediate wallet pays its own fees - ENSURE INTEGER AND ACCOUNT FOR RENT EXEMPTION
         const maxTransferable = await this.connectionManager.getMaxTransferableAmount(currentWallet.publicKey);
-        const finalAmount = Math.floor(maxTransferable); // This already accounts for fees + rent exemption
+        finalAmount = Math.floor(maxTransferable); // This already accounts for fees + rent exemption
 
         if (finalAmount <= 0) {
           throw new Error(`Insufficient funds for final transfer. Wallet has no transferable balance after accounting for fees and rent exemption.`);
@@ -433,9 +441,16 @@ export class MongoSolanaMixer {
       signatures.push(finalSignature);
 
       // CRITICAL FIX: Wait for final transaction confirmation
-      const finalConfirmationSuccess = await this.connectionManager.waitForConfirmation(finalSignature);
+      let finalConfirmationSuccess = await this.connectionManager.waitForConfirmation(finalSignature);
       if (!finalConfirmationSuccess) {
-        throw new Error(`Final transaction confirmation failed for signature: ${finalSignature}`);
+        // Tolerant mode: check if the destination wallet actually received the funds
+        const actualBalance = await this.connectionManager.getBalance(route.destination);
+        if (actualBalance >= finalAmount) {
+          console.warn(`⚠️ Final confirmation failed for signature: ${finalSignature}, but destination wallet ${route.destination.toString().slice(0, 8)}... has the expected funds. Continuing...`);
+          finalConfirmationSuccess = true;
+        } else {
+          throw new Error(`Final transaction confirmation failed for signature: ${finalSignature} and destination wallet did not receive expected funds.`);
+        }
       }
 
       // Batch final MongoDB operations
