@@ -42,7 +42,7 @@ const operationMessages = {
       "⚡ Funding buyer wallets...",
       "✅ Preparation complete...",
     ],
-    success: "🎉 **Preparation completed successfully!**",
+    success: "🎉 **Preparation completed successfully\\!**",
     error: "❌ **Preparation failed**",
   },
   mixer_operation: {
@@ -59,7 +59,7 @@ const operationMessages = {
       "💰 Finalizing distributions...",
       "🔒 Releasing intermediate wallets...",
     ],
-    success: "🎉 **Funds mixed successfully!**",
+    success: "🎉 **Funds mixed successfully\\!**",
     error: "❌ **Mixing operation failed**",
   },
   dev_sell: {
@@ -70,7 +70,7 @@ const operationMessages = {
       "📤 Executing sell transaction...",
       "✅ Confirming transaction...",
     ],
-    success: "🎉 **Dev sell completed successfully!**",
+    success: "🎉 **Dev sell completed successfully\\!**",
     error: "❌ **Dev sell failed**",
   },
   wallet_sell: {
@@ -81,7 +81,7 @@ const operationMessages = {
       "📤 Executing sell transactions...",
       "✅ Confirming transactions...",
     ],
-    success: "🎉 **Wallet sells completed successfully!**",
+    success: "🎉 **Wallet sells completed successfully\\!**",
     error: "❌ **Wallet sells failed**",
   },
   transaction: {
@@ -91,7 +91,7 @@ const operationMessages = {
       "📤 Broadcasting to network...",
       "⏰ Waiting for confirmation...",
     ],
-    success: "✅ **Transaction confirmed!**",
+    success: "✅ **Transaction confirmed\\!**",
     error: "❌ **Transaction failed**",
   },
 };

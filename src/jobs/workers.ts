@@ -532,7 +532,7 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       
       await sendNotification(
         data.userChatId,
-        `🛠️ **Preparation Complete\!**\n\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token\\.\\.\\.**`,
+        `🛠️ **Preparation Complete\\!**\n\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token\\.\\.\\.**`,
       );
       
     } catch (error: any) {
