@@ -2,7 +2,10 @@
 
 import * as dotenv from "dotenv";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { MongoSolanaMixer, type MongoMixerConfig } from "../mixer/MongoSolanaMixer";
+import {
+  MongoSolanaMixer,
+  type MongoMixerConfig,
+} from "../mixer/MongoSolanaMixer";
 import bs58 from "bs58";
 import { MongoClient } from "mongodb";
 import { env } from "../../config";
@@ -23,22 +26,29 @@ const MAX_AMOUNT_PER_DESTINATION = 2.0; // 2 SOL maximum
 /**
  * Generate optimized amounts for efficient wallet distribution
  * Uses smart wallet count calculation and incremental pattern distribution
- * 
+ *
  * Logic:
  * - 0.5 SOL → 1 wallet
  * - 0.5-1.2 SOL → 2 wallets (0.5 + 0.7 = 1.2 max)
  * - 1.2-2.1 SOL → 3 wallets (0.5 + 0.7 + 0.9 = 2.1 max)
  * - etc.
- * 
+ *
  * Distribution uses incremental pattern but gives remainder to last wallet if needed
  */
-function generateRandomAmounts(totalSol: number, destinationCount: number): number[] {
+function generateRandomAmounts(
+  totalSol: number,
+  destinationCount: number
+): number[] {
   const totalLamports = Math.floor(totalSol * 1e9);
-  
+
   // Incremental sequence in SOL: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5...
-  const incrementalSequence = [0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1];
-  const incrementalLamports = incrementalSequence.map(sol => Math.floor(sol * 1e9));
-  
+  const incrementalSequence = [
+    0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1,
+  ];
+  const incrementalLamports = incrementalSequence.map((sol) =>
+    Math.floor(sol * 1e9)
+  );
+
   // Calculate the optimal number of wallets needed for this amount
   function calculateOptimalWalletCount(amount: number): number {
     let cumulativeTotal = 0;
@@ -50,26 +60,30 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
     }
     // For amounts larger than our sequence, use more wallets proportionally
     const baseTotal = incrementalLamports.reduce((sum, amt) => sum + amt, 0);
-    const extraWallets = Math.ceil((amount - baseTotal) / (Math.floor(2.5 * 1e9))); // 2.5 SOL per extra wallet
+    const extraWallets = Math.ceil(
+      (amount - baseTotal) / Math.floor(2.5 * 1e9)
+    ); // 2.5 SOL per extra wallet
     return incrementalSequence.length + extraWallets;
   }
-  
+
   // Calculate optimal wallet count for this buy amount
   const optimalWalletCount = calculateOptimalWalletCount(totalLamports);
-  
+
   // Use the minimum of optimal count and available destinations
   const walletsToUse = Math.min(optimalWalletCount, destinationCount);
-  
-  console.log(`🎯 Buy Amount: ${totalSol} SOL → Using ${walletsToUse}/${destinationCount} wallets (optimized from potential ${destinationCount})`);
-  
+
+  console.log(
+    `🎯 Buy Amount: ${totalSol} SOL → Using ${walletsToUse}/${destinationCount} wallets (optimized from potential ${destinationCount})`
+  );
+
   const amounts: number[] = [];
   let remainingLamports = totalLamports;
-  
+
   // Distribute using incremental pattern for the wallets we're using
   for (let i = 0; i < walletsToUse; i++) {
     if (i < incrementalSequence.length) {
       const incrementAmount = incrementalLamports[i];
-      
+
       if (i === walletsToUse - 1) {
         // Last wallet gets all remaining amount
         amounts.push(remainingLamports);
@@ -86,7 +100,7 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
       // For wallets beyond sequence, distribute remaining evenly
       const walletsLeft = walletsToUse - i;
       const amountPerWallet = Math.floor(remainingLamports / walletsLeft);
-      
+
       if (i === walletsToUse - 1) {
         amounts.push(remainingLamports);
       } else {
@@ -95,18 +109,20 @@ function generateRandomAmounts(totalSol: number, destinationCount: number): numb
       }
     }
   }
-  
+
   // Pad the amounts array with zeros for unused destinations to maintain array length
   while (amounts.length < destinationCount) {
     amounts.push(0);
   }
-  
+
   // Validate total matches (within rounding tolerance)
   const actualTotal = amounts.reduce((sum, amount) => sum + amount, 0);
   if (Math.abs(actualTotal - totalLamports) > walletsToUse) {
-    console.warn(`Amount distribution mismatch: expected ${totalLamports}, got ${actualTotal}`);
+    console.warn(
+      `Amount distribution mismatch: expected ${totalLamports}, got ${actualTotal}`
+    );
   }
-  
+
   return amounts;
 }
 
@@ -133,20 +149,29 @@ async function runMixer(
 
     // Load wallets from private keys (base58 encoded)
     const fundingWallet = Keypair.fromSecretKey(bs58.decode(fundingPrivateKey));
-    const feeFundingWallet = Keypair.fromSecretKey(bs58.decode(feeFundingPrivateKey));
+    const feeFundingWallet = Keypair.fromSecretKey(
+      bs58.decode(feeFundingPrivateKey)
+    );
 
     // Parse destination wallets
-    const destinationWallets = destinationAddresses.map((addr) => new PublicKey(addr));
+    const destinationWallets = destinationAddresses.map(
+      (addr) => new PublicKey(addr)
+    );
 
     console.log(`\n💳 Funding wallet: ${fundingWallet.publicKey.toString()}`);
-    console.log(`💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`);
+    console.log(
+      `💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`
+    );
     console.log(`📍 Destination wallets:`);
     destinationWallets.forEach((dest, i) => {
       console.log(`   ${i + 1}. ${dest.toString()}`);
     });
 
     // Generate random amounts for each destination
-    const amounts = generateRandomAmounts(totalAmountSol, destinationWallets.length);
+    const amounts = generateRandomAmounts(
+      totalAmountSol,
+      destinationWallets.length
+    );
 
     console.log(`\n🎲 Random amount distribution:`);
     amounts.forEach((amount, i) => {
@@ -191,19 +216,28 @@ async function runMixer(
     console.log(`   Total wallets: ${walletStats.total}`);
     console.log(`   Available: ${walletStats.available}`);
 
-    const walletsNeeded = destinationWallets.length * config.intermediateWalletCount;
+    const walletsNeeded =
+      destinationWallets.length * config.intermediateWalletCount;
     if (walletStats.available < walletsNeeded) {
-      throw new Error(`Insufficient wallets in pool. Need: ${walletsNeeded}, Available: ${walletStats.available}`);
+      throw new Error(
+        `Insufficient wallets in pool. Need: ${walletsNeeded}, Available: ${walletStats.available}`
+      );
     }
 
     // Check balances
     const connectionManager = (mixer as any).connectionManager;
-    const fundingBalance = await connectionManager.getBalance(fundingWallet.publicKey);
-    const feeFundingBalance = await connectionManager.getBalance(feeFundingWallet.publicKey);
+    const fundingBalance = await connectionManager.getBalance(
+      fundingWallet.publicKey
+    );
+    const feeFundingBalance = await connectionManager.getBalance(
+      feeFundingWallet.publicKey
+    );
 
     console.log(`\n💰 Wallet balances:`);
     console.log(`   Funding wallet: ${(fundingBalance / 1e9).toFixed(6)} SOL`);
-    console.log(`   Fee funding wallet: ${(feeFundingBalance / 1e9).toFixed(6)} SOL`);
+    console.log(
+      `   Fee funding wallet: ${(feeFundingBalance / 1e9).toFixed(6)} SOL`
+    );
 
     // Check if funding wallet has enough SOL
     const totalNeeded = Math.floor(totalAmountSol * 1e9);
@@ -215,12 +249,15 @@ async function runMixer(
 
     // Estimate fees
     const estimatedFeePerTx = 6000; // ~6000 lamports per transaction
-    const totalTransactions = destinationWallets.length * (config.intermediateWalletCount + 1);
+    const totalTransactions =
+      destinationWallets.length * (config.intermediateWalletCount + 1);
     const totalFeesNeeded = totalTransactions * estimatedFeePerTx;
 
     console.log(`\n📊 Fee estimation:`);
     console.log(`   Total transactions: ${totalTransactions}`);
-    console.log(`   Estimated fees needed: ${(totalFeesNeeded / 1e9).toFixed(6)} SOL`);
+    console.log(
+      `   Estimated fees needed: ${(totalFeesNeeded / 1e9).toFixed(6)} SOL`
+    );
 
     if (feeFundingBalance < totalFeesNeeded) {
       console.log(`⚠️  Warning: Fee funding wallet may not have enough SOL`);
@@ -230,7 +267,12 @@ async function runMixer(
     console.log(`⏱️  Operation will complete in 3-7 seconds`);
 
     // Create custom mixing routes with specific amounts
-    const routes = await createCustomMixingRoutes(mixer, fundingWallet, destinationWallets, amounts);
+    const routes = await createCustomMixingRoutes(
+      mixer,
+      fundingWallet,
+      destinationWallets,
+      amounts
+    );
 
     // Execute the mixing with custom routes
     const startTime = Date.now();
@@ -238,13 +280,17 @@ async function runMixer(
     const endTime = Date.now();
 
     // Process results
-    console.log(`\n📊 Mixing Results (completed in ${((endTime - startTime) / 1000).toFixed(1)}s):`);
+    console.log(
+      `\n📊 Mixing Results (completed in ${((endTime - startTime) / 1000).toFixed(1)}s):`
+    );
     let successCount = 0;
     let totalSignatures = 0;
 
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
-      console.log(`\n🛤️  Route ${i + 1} to ${result.route.destination.toString()}:`);
+      console.log(
+        `\n🛤️  Route ${i + 1} to ${result.route.destination.toString()}:`
+      );
       console.log(`   Success: ${result.success ? "✅" : "❌"}`);
       console.log(`   Amount: ${(result.route.amount / 1e9).toFixed(6)} SOL`);
 
@@ -261,12 +307,20 @@ async function runMixer(
     }
 
     // Check final balances
-    const finalFundingBalance = await connectionManager.getBalance(fundingWallet.publicKey);
-    const finalFeeFundingBalance = await connectionManager.getBalance(feeFundingWallet.publicKey);
+    const finalFundingBalance = await connectionManager.getBalance(
+      fundingWallet.publicKey
+    );
+    const finalFeeFundingBalance = await connectionManager.getBalance(
+      feeFundingWallet.publicKey
+    );
 
     console.log(`\n💰 Final balances:`);
-    console.log(`   Funding wallet: ${(finalFundingBalance / 1e9).toFixed(6)} SOL`);
-    console.log(`   Fee funding wallet: ${(finalFeeFundingBalance / 1e9).toFixed(6)} SOL`);
+    console.log(
+      `   Funding wallet: ${(finalFundingBalance / 1e9).toFixed(6)} SOL`
+    );
+    console.log(
+      `   Fee funding wallet: ${(finalFeeFundingBalance / 1e9).toFixed(6)} SOL`
+    );
     console.log(
       `   Total spent: ${((fundingBalance - finalFundingBalance + feeFundingBalance - finalFeeFundingBalance) / 1e9).toFixed(6)} SOL`
     );
@@ -274,8 +328,12 @@ async function runMixer(
     // Check destination balances
     console.log(`\n📍 Destination wallet balances:`);
     for (let i = 0; i < destinationWallets.length; i++) {
-      const destBalance = await connectionManager.getBalance(destinationWallets[i]);
-      console.log(`   ${i + 1}. ${destinationWallets[i].toString()}: ${(destBalance / 1e9).toFixed(6)} SOL`);
+      const destBalance = await connectionManager.getBalance(
+        destinationWallets[i]
+      );
+      console.log(
+        `   ${i + 1}. ${destinationWallets[i].toString()}: ${(destBalance / 1e9).toFixed(6)} SOL`
+      );
     }
 
     // Summary
@@ -283,7 +341,9 @@ async function runMixer(
     console.log(`   Successful routes: ${successCount}/${results.length}`);
     console.log(`   Total transactions: ${totalSignatures}`);
     console.log(`   Duration: ${((endTime - startTime) / 1000).toFixed(1)}s`);
-    console.log(`   Success rate: ${Math.round((successCount / results.length) * 100)}%`);
+    console.log(
+      `   Success rate: ${Math.round((successCount / results.length) * 100)}%`
+    );
 
     await mixer.cleanup();
 
@@ -339,7 +399,7 @@ async function createCustomMixingRoutes(
       intermediates: intermediateWallets.slice(0, 5).map((wallet: any) => ({
         keypair: walletManager.getKeypairFromStoredWallet(wallet),
         publicKey: new PublicKey(wallet.publicKey),
-        balance: wallet.balance,
+        balance: wallet.balance - 0.006,
       })),
       destination,
       amount,
@@ -348,7 +408,9 @@ async function createCustomMixingRoutes(
     routes.push(route);
   }
 
-  console.log(`🎯 Created ${routes.length} routes for ${amounts.length} amounts`);
+  console.log(
+    `🎯 Created ${routes.length} routes for ${amounts.length} amounts`
+  );
   return routes;
 }
 
@@ -361,7 +423,13 @@ async function executeCustomMixing(mixer: any, routes: any[]) {
 
   for (const route of routes) {
     try {
-      const result = await mixer.executeSingleRouteOptimized(route, 1000, 0, routes.length - 1, 0);
+      const result = await mixer.executeSingleRouteOptimized(
+        route,
+        1000,
+        0,
+        routes.length - 1,
+        0
+      );
       results.push(result);
     } catch (error) {
       results.push({
@@ -369,7 +437,9 @@ async function executeCustomMixing(mixer: any, routes: any[]) {
         transactionSignatures: [],
         error: error instanceof Error ? error.message : "Unknown error",
         route,
-        usedWalletIds: route.intermediates.map((w: any) => w.publicKey.toString()),
+        usedWalletIds: route.intermediates.map((w: any) =>
+          w.publicKey.toString()
+        ),
       });
     }
   }
@@ -390,10 +460,18 @@ if (require.main === module) {
     );
     console.log("");
     console.log("Arguments:");
-    console.log("  funding_private_key      - Base58 private key of wallet containing SOL to mix");
-    console.log("  fee_funding_private_key  - Base58 private key of wallet that pays transaction fees");
-    console.log("  total_amount_sol         - Total amount of SOL to mix (e.g., 1.5)");
-    console.log("  destination1, 2, 3...    - Public keys of wallets to receive mixed SOL");
+    console.log(
+      "  funding_private_key      - Base58 private key of wallet containing SOL to mix"
+    );
+    console.log(
+      "  fee_funding_private_key  - Base58 private key of wallet that pays transaction fees"
+    );
+    console.log(
+      "  total_amount_sol         - Total amount of SOL to mix (e.g., 1.5)"
+    );
+    console.log(
+      "  destination1, 2, 3...    - Public keys of wallets to receive mixed SOL"
+    );
     console.log("");
     console.log("Amount Distribution:");
     console.log("  • Each destination receives 0.01 to 2.0 SOL randomly");
@@ -410,7 +488,9 @@ if (require.main === module) {
     console.log("  • Mixes SOL through intermediate wallets for privacy");
     console.log("  • Uses separate wallet for transaction fees");
     console.log("  • Completes mixing in 3-7 seconds regardless of size");
-    console.log("  • Randomly distributes amounts between 0.01-2 SOL per destination");
+    console.log(
+      "  • Randomly distributes amounts between 0.01-2 SOL per destination"
+    );
     console.log("  • Stores intermediate wallets in MongoDB for reuse");
     process.exit(1);
   }
@@ -425,7 +505,9 @@ if (require.main === module) {
 
   runMixer(fundingKey, feeKey, totalAmount, destinations)
     .then((result) => {
-      console.log(`\n✅ Mixing completed: ${result.successCount}/${result.totalRoutes} routes successful`);
+      console.log(
+        `\n✅ Mixing completed: ${result.successCount}/${result.totalRoutes} routes successful`
+      );
       process.exit(result.success ? 0 : 1);
     })
     .catch((error) => {
