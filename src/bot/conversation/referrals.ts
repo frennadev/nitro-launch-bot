@@ -13,7 +13,9 @@ export const referralsConversation = async (
   ctx: Context
 ): Promise<void> => {
   try {
-    await ctx.answerCallbackQuery();
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery();
+    }
     // Get user ID from chat
     const userId = ctx.chat!.id.toString();
 
@@ -63,7 +65,7 @@ export const referralsConversation = async (
       .text("🔙 Back", CallBackQueries.BACK);
 
     await sendMessage(ctx, message, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup: keyboard,
     });
 
@@ -84,11 +86,11 @@ export const referralsConversation = async (
       // Restart the referrals conversation to refresh stats
       return await referralsConversation(conversation, next);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error in referrals conversation:", error);
     await sendMessage(
       ctx,
-      `❌ Error loading referral information: ${error.message}`
+      `❌ Error loading referral information: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 

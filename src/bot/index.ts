@@ -187,9 +187,9 @@ async function detectPlatformInBackground(
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
 // Apply rate limiting middleware globally
-bot.use(rateLimitCommands()); // Rate limit all commands
-bot.use(rateLimitCallbacks()); // Rate limit callback queries
-bot.use(rateLimitMessages()); // Rate limit message handling
+// bot.use(rateLimitCommands()); // Rate limit all commands
+// bot.use(rateLimitCallbacks()); // Rate limit callback queries
+// bot.use(rateLimitMessages()); // Rate limit message handling
 
 // Global error handler
 bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
@@ -456,98 +456,72 @@ bot.use(
 );
 
 // Middleware to handle conversation errors at the conversation level
-bot.use(async (ctx, next) => {
-  try {
-    await next();
-  } catch (error: any) {
-    // Handle conversation-specific errors
-    if (error.message && error.message.includes("Bad replay, expected op")) {
-      logger.warn(
-        "Conversation replay error caught in middleware:",
-        error.message
-      );
+// bot.use(async (ctx, next) => {
+//   try {
+//     await next();
+//   } catch (error: any) {
+//     // Handle conversation-specific errors
+//     if (error.message && error.message.includes("Bad replay, expected op")) {
+//       logger.warn(
+//         "Conversation replay error caught in middleware:",
+//         error.message
+//       );
 
-      // Clear conversation state completely
-      const cleared = await clearConversationState(ctx);
+//       // Clear conversation state completely
+//       const cleared = await clearConversationState(ctx);
 
-      // Instead of just showing an error, provide immediate recovery options
-      const keyboard = new InlineKeyboard()
-        .text("🚀 Direct Launch Token", "direct_launch_recovery")
-        .row()
-        .text("🔧 Fix & Try Again", "fix_and_retry")
-        .row()
-        .text("📋 View Tokens", CallBackQueries.VIEW_TOKENS);
+//       // Instead of just showing an error, provide immediate recovery options
+//       const keyboard = new InlineKeyboard()
+//         .text("🚀 Direct Launch Token", "direct_launch_recovery")
+//         .row()
+//         .text("🔧 Fix & Try Again", "fix_and_retry")
+//         .row()
+//         .text("📋 View Tokens", CallBackQueries.VIEW_TOKENS);
 
-      await sendMessage(
-        ctx,
-        "🔧 **Conversation State Fixed**\n\n" +
-          "✅ Error cleared automatically\n" +
-          "✅ Session reset completed\n\n" +
-          "**Choose how to continue:**",
-        {
-          parse_mode: "Markdown",
-          reply_markup: keyboard,
-        }
-      );
-      return;
-    }
+//       await sendMessage(
+//         ctx,
+//         "🔧 **Conversation State Fixed**\n\n" +
+//           "✅ Error cleared automatically\n" +
+//           "✅ Session reset completed\n\n" +
+//           "**Choose how to continue:**",
+//         {
+//           parse_mode: "Markdown",
+//           reply_markup: keyboard,
+//         }
+//       );
+//       return;
+//     }
 
-    // Re-throw other errors to be handled by global error handler
-    throw error;
-  }
-});
+//     // Re-throw other errors to be handled by global error handler
+//     throw error;
+//   }
+// });
 
 // **CRITICAL FIX: Middleware to ensure token address messages always work**
 // This middleware runs before conversation middleware and allows token addresses to bypass conversation state
-bot.use(async (ctx, next) => {
-  // Check if this is a token address message
-  const text = ctx.message?.text?.trim();
-  if (text && /^[A-Za-z0-9]{32,44}$/.test(text)) {
-    try {
-      new PublicKey(text); // Validate if it's a valid Solana address
-      logger.info(
-        `[token-display] Token address detected, bypassing conversation state: ${text}`
-      );
+// bot.use(async (ctx, next) => {
+//   // Check if this is a token address message
+//   const text = ctx.message?.text?.trim();
+//   if (text && /^[A-Za-z0-9]{32,44}$/.test(text)) {
+//     try {
+//       new PublicKey(text); // Validate if it's a valid Solana address
+//       logger.info(
+//         `[token-display] Token address detected, bypassing conversation state: ${text}`
+//       );
 
-      // Clear any active conversation state for token addresses
-      await clearConversationStateForTokenDisplay(ctx);
+//       // Clear any active conversation state for token addresses
+//       await clearConversationStateForTokenDisplay(ctx);
 
-      // Continue to the token address handler
-      return next();
-    } catch (e) {
-      // Not a valid Solana address, continue normally
-    }
-  }
+//       // Continue to the token address handler
+//       return next();
+//     } catch (e) {
+//       // Not a valid Solana address, continue normally
+//     }
+//   }
 
-  // For non-token addresses, continue with normal middleware flow
-  return next();
-});
-
-bot.use(createConversation(createTokenConversation));
-bot.use(createConversation(launchTokenConversation));
-bot.use(createConversation(devSellConversation));
-bot.use(createConversation(devSell100Conversation));
-bot.use(createConversation(walletSellConversation));
-bot.use(createConversation(walletConfigConversation));
-bot.use(createConversation(mainMenuConversation));
-bot.use(createConversation(manageDevWalletsConversation));
-bot.use(createConversation(manageBuyerWalletsConversation));
-bot.use(createConversation(withdrawDevWalletConversation));
-bot.use(createConversation(withdrawBuyerWalletsConversation));
-bot.use(createConversation(withdrawFundingWalletConversation));
-bot.use(createConversation(viewTokensConversation));
-bot.use(createConversation(externalTokenSellConversation));
-bot.use(createConversation(buyExternalTokenConversation));
-bot.use(createConversation(referralsConversation));
-bot.use(createConversation(ctoConversation));
-bot.use(createConversation(ctoMonitorConversation));
-bot.use(createConversation(buyCustonConversation));
-bot.use(createConversation(sellIndividualToken));
-bot.use(createConversation(sellPercentageMessage));
-bot.use(createConversation(helpConversation));
-bot.use(createConversation(airdropSolConversation));
-bot.use(createConversation(predictMcConversation));
-bot.use(createConversation(fundTokenWalletsConversation));
+//   // For non-token addresses, continue with normal middleware flow
+//   return next();
+// });
 
 // Message cleaner to delete user messages after 1 minute
 const messageCleanupQueue = new Map<string, Set<number>>();
@@ -693,6 +667,32 @@ bot.use(async (ctx, next) => {
     }, 2500);
   }
 });
+
+bot.use(createConversation(createTokenConversation));
+bot.use(createConversation(launchTokenConversation));
+bot.use(createConversation(devSellConversation));
+bot.use(createConversation(devSell100Conversation));
+bot.use(createConversation(walletSellConversation));
+bot.use(createConversation(walletConfigConversation));
+bot.use(createConversation(mainMenuConversation));
+bot.use(createConversation(manageDevWalletsConversation));
+bot.use(createConversation(manageBuyerWalletsConversation));
+bot.use(createConversation(withdrawDevWalletConversation));
+bot.use(createConversation(withdrawBuyerWalletsConversation));
+bot.use(createConversation(withdrawFundingWalletConversation));
+bot.use(createConversation(viewTokensConversation));
+bot.use(createConversation(externalTokenSellConversation));
+bot.use(createConversation(buyExternalTokenConversation));
+bot.use(createConversation(referralsConversation));
+bot.use(createConversation(ctoConversation));
+bot.use(createConversation(ctoMonitorConversation));
+bot.use(createConversation(buyCustonConversation));
+bot.use(createConversation(sellIndividualToken));
+bot.use(createConversation(sellPercentageMessage));
+bot.use(createConversation(helpConversation));
+bot.use(createConversation(airdropSolConversation));
+bot.use(createConversation(predictMcConversation));
+bot.use(createConversation(fundTokenWalletsConversation));
 
 // ----- Commands ------
 bot.command("start", async (ctx) => {
@@ -855,6 +855,10 @@ bot.command("removetoken", async (ctx) => {
       await sendMessage(ctx, `❌ Error removing token: ${error.message}`);
     }
   }
+});
+
+bot.command("referrals", async (ctx) => {
+  await ctx.conversation.enter("referralsConversation");
 });
 
 bot.command("wallets", async (ctx) => {
@@ -1253,10 +1257,6 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_TO_FUNDING, async (ctx) => {
 bot.callbackQuery(CallBackQueries.WITHDRAW_TO_EXTERNAL, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("withdrawBuyerWalletsConversation");
-});
-
-bot.command("referrals", async (ctx) => {
-  await ctx.conversation.enter("referralsConversation");
 });
 
 bot.callbackQuery(CallBackQueries.VIEW_REFERRALS, async (ctx) => {
