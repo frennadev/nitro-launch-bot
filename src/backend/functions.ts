@@ -4313,7 +4313,9 @@ export const launchBonkToken = async (
     logger.info(`[${logId}]: Starting execution phase (token creation + buys)`);
 
     // 2.1 Create the Bonk token on-chain with dev buy (always use combined approach)
-    const { launchBonkTokenWithDevBuy } = await import("../blockchain/letsbonk/integrated-token-creator");
+    const { launchBonkTokenWithDevBuy } = await import(
+      "../blockchain/letsbonk/integrated-token-creator"
+    );
     let result = await launchBonkTokenWithDevBuy(tokenAddress, userId, devBuy);
 
     if (!result.success) {
@@ -4328,7 +4330,9 @@ export const launchBonkToken = async (
 
     // 2.2 1 second DELAY before snipe buys (wait for BONK pool creation)
     if (buyAmount > 0) {
-      logger.info(`[${logId}]: ⏱️ Waiting 1 second before starting snipe buys...`);
+      logger.info(
+        `[${logId}]: ⏱️ Waiting 1 second before starting snipe buys...`
+      );
       await new Promise((resolve) => setTimeout(resolve, 1000));
       logger.info(`[${logId}]: 🚀 Starting snipe buys after 1 second delay`);
     }
@@ -4630,7 +4634,7 @@ export const launchBonkToken = async (
         `[${logId}]: Starting simultaneous buy execution with max ${maxConcurrentWallets} concurrent wallets (${walletsWithSufficientFunds.length}/${walletsToProcess.length} wallets have sufficient funds)`
       );
 
-              // Process wallets sequentially with 50ms delay between each buy (give time for BONK pool operations)
+      // Process wallets sequentially with 50ms delay between each buy (give time for BONK pool operations)
       for (const wallet of walletsToProcess) {
         if (processedWallets.has(wallet.publicKey)) continue;
 
@@ -5037,10 +5041,17 @@ export const calculateUserTokenSupplyPercentage = async (
     }
 
     // Calculate total percentage of supply
+    // Get token decimals from token info, defaulting to 6 if not available
+    const tokenDecimals =
+      tokenInfo.baseToken?.decimals || tokenInfo.decimals || 6;
+
+    // Adjust total balance by token decimals before calculating percentage
+    const adjustedTotalBalance = totalBalance / Math.pow(10, tokenDecimals);
+
     const supplyPercentage =
-      totalSupply > 0 ? (totalBalance / Number(totalSupply)) * 100 : 0;
+      totalSupply > 0 ? (adjustedTotalBalance / Number(totalSupply)) * 100 : 0;
     const supplyPercentageFormatted = supplyPercentage.toFixed(4) + "%";
-    const totalBalanceFormatted = (totalBalance / 1e6).toLocaleString(
+    const totalBalanceFormatted = adjustedTotalBalance.toLocaleString(
       undefined,
       {
         maximumFractionDigits: 2,
@@ -5121,7 +5132,8 @@ export const fundTokenWallets = async (
     if (!fundingWallet) {
       return {
         success: false,
-        error: "No funding wallet found. Please configure a funding wallet first.",
+        error:
+          "No funding wallet found. Please configure a funding wallet first.",
         fundedWallets: 0,
         totalFunded: 0,
       };
@@ -5150,9 +5162,12 @@ export const fundTokenWallets = async (
 
     for (const wallet of buyerWallets) {
       try {
-        const tokenBalance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        const tokenBalance = await getTokenBalance(
+          tokenAddress,
+          wallet.publicKey
+        );
         const solBalance = await getWalletBalance(wallet.publicKey);
-        
+
         if (tokenBalance > 0) {
           const privateKey = await getBuyerWalletPrivateKey(userId, wallet.id);
           walletHoldings.push({
@@ -5163,7 +5178,10 @@ export const fundTokenWallets = async (
           });
         }
       } catch (error) {
-        logger.warn(`[${logId}]: Error checking wallet ${wallet.publicKey}:`, error);
+        logger.warn(
+          `[${logId}]: Error checking wallet ${wallet.publicKey}:`,
+          error
+        );
       }
     }
 
@@ -5184,7 +5202,10 @@ export const fundTokenWallets = async (
     if (fundAllWallets) {
       walletsToFund = walletHoldings;
     } else if (topWalletCount && topWalletCount > 0) {
-      walletsToFund = walletHoldings.slice(0, Math.min(topWalletCount, walletHoldings.length));
+      walletsToFund = walletHoldings.slice(
+        0,
+        Math.min(topWalletCount, walletHoldings.length)
+      );
     } else {
       return {
         success: false,
@@ -5194,17 +5215,24 @@ export const fundTokenWallets = async (
       };
     }
 
-    logger.info(`[${logId}]: Selected ${walletsToFund.length} wallets to fund out of ${walletHoldings.length} wallets that hold tokens`);
+    logger.info(
+      `[${logId}]: Selected ${walletsToFund.length} wallets to fund out of ${walletHoldings.length} wallets that hold tokens`
+    );
 
     // Generate random distribution amounts
-    const distributionAmounts = generateRandomDistribution(totalAmount, walletsToFund.length);
+    const distributionAmounts = generateRandomDistribution(
+      totalAmount,
+      walletsToFund.length
+    );
 
     // Use mixer to distribute funds
     const { runMixer } = await import("../blockchain/mixer/index");
-    const destinationAddresses = walletsToFund.map(w => w.address);
-    
-    logger.info(`[${logId}]: Starting mixer: ${totalAmount} SOL to ${destinationAddresses.length} wallets`);
-    
+    const destinationAddresses = walletsToFund.map((w) => w.address);
+
+    logger.info(
+      `[${logId}]: Starting mixer: ${totalAmount} SOL to ${destinationAddresses.length} wallets`
+    );
+
     const mixerResult = await runMixer(
       fundingWallet.privateKey,
       fundingWallet.privateKey, // Use same wallet for fees
@@ -5213,10 +5241,14 @@ export const fundTokenWallets = async (
     );
 
     // Check mixer results
-    const successfulRoutes = mixerResult.results?.filter(result => result.success) || [];
-    
+    const successfulRoutes =
+      mixerResult.results?.filter((result) => result.success) || [];
+
     if (successfulRoutes.length === 0) {
-      logger.error(`[${logId}]: Mixer failed completely - no successful routes:`, mixerResult);
+      logger.error(
+        `[${logId}]: Mixer failed completely - no successful routes:`,
+        mixerResult
+      );
       return {
         success: false,
         error: `Mixer failed completely: ${mixerResult.results?.[0]?.error || "Unknown mixer error"}`,
@@ -5226,8 +5258,10 @@ export const fundTokenWallets = async (
     }
 
     // Calculate actual amounts funded
-    const actualFundedAmounts = successfulRoutes.map(route => {
-      const destinationIndex = destinationAddresses.findIndex(addr => addr === route.route.destination.toString());
+    const actualFundedAmounts = successfulRoutes.map((route) => {
+      const destinationIndex = destinationAddresses.findIndex(
+        (addr) => addr === route.route.destination.toString()
+      );
       return {
         address: route.route.destination.toString(),
         tokenBalance: walletHoldings[destinationIndex]?.tokenBalance || 0,
@@ -5235,7 +5269,10 @@ export const fundTokenWallets = async (
       };
     });
 
-    const totalFunded = actualFundedAmounts.reduce((sum, item) => sum + item.solReceived, 0);
+    const totalFunded = actualFundedAmounts.reduce(
+      (sum, item) => sum + item.solReceived,
+      0
+    );
 
     logger.info(`[${logId}]: Fund token wallets completed successfully`, {
       totalWallets: walletHoldings.length,
@@ -5250,7 +5287,6 @@ export const fundTokenWallets = async (
       totalFunded,
       walletDetails: actualFundedAmounts,
     };
-
   } catch (error: any) {
     logger.error(`[${logId}]: Fund token wallets failed:`, error);
     return {
@@ -5266,10 +5302,13 @@ export const fundTokenWallets = async (
  * Generate random distribution amounts for wallet funding
  * Ensures no wallet gets less than 50% of the highest amount
  */
-const generateRandomDistribution = (totalAmount: number, walletCount: number): number[] => {
+const generateRandomDistribution = (
+  totalAmount: number,
+  walletCount: number
+): number[] => {
   const amounts: number[] = [];
   let remainingAmount = totalAmount;
-  
+
   // Generate random amounts for each wallet
   for (let i = 0; i < walletCount; i++) {
     if (i === walletCount - 1) {
@@ -5284,6 +5323,6 @@ const generateRandomDistribution = (totalAmount: number, walletCount: number): n
       remainingAmount -= randomAmount;
     }
   }
-  
+
   return amounts;
 };
