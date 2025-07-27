@@ -17,8 +17,8 @@ export async function drainAllMixerWallets(
   
   // Initialize wallet manager
   const walletManager = new MongoWalletManager(
-    "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/nitro_launch",
-    "nitro-launch",
+    "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/test",
+    "test",
     "294f6d574446132dcb92d050612dea7aa8cdfe918f29adc9681e1cdf75ad42bb"
   );
 
