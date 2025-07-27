@@ -857,6 +857,10 @@ bot.command("removetoken", async (ctx) => {
   }
 });
 
+bot.command("referrals", async (ctx) => {
+  await ctx.conversation.enter("referralsConversation");
+});
+
 bot.command("wallets", async (ctx) => {
   await ctx.conversation.enter("walletConfigConversation");
 });
@@ -1253,10 +1257,6 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_TO_FUNDING, async (ctx) => {
 bot.callbackQuery(CallBackQueries.WITHDRAW_TO_EXTERNAL, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("withdrawBuyerWalletsConversation");
-});
-
-bot.command("referrals", async (ctx) => {
-  await ctx.conversation.enter("referralsConversation");
 });
 
 bot.callbackQuery(CallBackQueries.VIEW_REFERRALS, async (ctx) => {
