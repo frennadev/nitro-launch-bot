@@ -1,9 +1,14 @@
-import { bot } from ".";
+import { Api } from "grammy";
 import { CallBackQueries } from "./types";
 import { escape, compressCallbackData, createSafeCallbackData } from "./utils";
 import { getTokenInfo, calculateTokenHoldingsWorth } from "../backend/utils";
 import { getAccurateSpendingStats } from "../backend/functions-main";
 import { InlineKeyboard } from "grammy";
+
+// Define a minimal bot interface for the functions
+interface BotInterface {
+  api: Api;
+}
 
 // Add a new callback for refresh functionality
 export enum LaunchMessageCallbacks {
@@ -12,6 +17,7 @@ export enum LaunchMessageCallbacks {
 }
 
 export const sendLaunchSuccessNotification = async (
+  bot: BotInterface,
   chatId: number,
   tokenAddress: string,
   tokenName: string,
@@ -43,6 +49,7 @@ export const sendLaunchSuccessNotification = async (
 
 // Bonk-specific success notification
 export const sendBonkLaunchSuccessNotification = async (
+  bot: BotInterface,
   chatId: number,
   tokenAddress: string,
   tokenName: string,
@@ -71,7 +78,7 @@ export const sendBonkLaunchSuccessNotification = async (
         error
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(
       `[sendBonkLaunchSuccessNotification] Error sending message:`,
       error
@@ -79,7 +86,10 @@ export const sendBonkLaunchSuccessNotification = async (
 
     // If there's a button data error, send a simplified message without buttons
     if (
-      error.description &&
+      error &&
+      typeof error === "object" &&
+      "description" in error &&
+      typeof error.description === "string" &&
       error.description.includes("BUTTON_DATA_INVALID")
     ) {
       console.warn(
@@ -251,7 +261,6 @@ const buildBonkLaunchSuccessMessage = async (
   const formatUSD = (amount: number) =>
     `$${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const formatSOL = (amount: number) => `${amount.toFixed(6)} SOL`;
-  const formatPercentage = (percentage: number) => `${percentage.toFixed(1)}%`;
 
   // Calculate estimated market cap for Bonk tokens (similar to PumpFun but adapted)
   const estimatedMarketCap = Math.max(4000, financialStats.totalSpent * 2500); // Rough estimate
@@ -339,6 +348,7 @@ const buildBonkLaunchSuccessMessage = async (
 
 // Function to handle refresh callback
 export const handleLaunchDataRefresh = async (
+  bot: BotInterface,
   chatId: number,
   messageId: number,
   tokenAddress: string,
@@ -383,6 +393,7 @@ export const handleLaunchDataRefresh = async (
 
 // Function to handle Bonk refresh callback
 export const handleBonkLaunchDataRefresh = async (
+  bot: BotInterface,
   chatId: number,
   messageId: number,
   tokenAddress: string,
@@ -426,6 +437,7 @@ export const handleBonkLaunchDataRefresh = async (
 };
 
 export const sendLaunchFailureNotification = async (
+  bot: BotInterface,
   chatId: number,
   tokenAddress: string,
   tokenName: string,
@@ -460,6 +472,10 @@ export const sendLaunchFailureNotification = async (
   });
 };
 
-export const sendNotification = async (chatId: number, message: string) => {
+export const sendNotification = async (
+  bot: BotInterface,
+  chatId: number,
+  message: string
+) => {
   await bot.api.sendMessage(chatId, message, { parse_mode: "MarkdownV2" });
 };

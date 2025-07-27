@@ -909,6 +909,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
       // Send Bonk-specific success notification
       const { sendBonkLaunchSuccessNotification } = await import("../message");
       await sendBonkLaunchSuccessNotification(
+        ctx,
         ctx.chat!.id,
         tokenAddress,
         result.tokenName,

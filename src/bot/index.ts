@@ -1609,6 +1609,7 @@ bot.callbackQuery(/^refresh_launch_data_(.+)$/, async (ctx) => {
 
   const { handleLaunchDataRefresh } = await import("./message");
   await handleLaunchDataRefresh(
+    bot,
     ctx.chat!.id,
     ctx.callbackQuery!.message!.message_id,
     tokenAddress,
@@ -1643,6 +1644,7 @@ bot.callbackQuery(/^refresh_bonk_launch_data_(.+)$/, async (ctx) => {
 
   const { handleBonkLaunchDataRefresh } = await import("./message");
   await handleBonkLaunchDataRefresh(
+    bot,
     ctx.chat!.id,
     ctx.callbackQuery!.message!.message_id,
     token.tokenAddress,
@@ -2015,6 +2017,7 @@ bot.callbackQuery(
 
       if (isBonk) {
         await handleBonkLaunchDataRefresh(
+          bot,
           ctx.chat!.id,
           ctx.callbackQuery.message!.message_id,
           tokenAddress,
@@ -2023,6 +2026,7 @@ bot.callbackQuery(
         );
       } else {
         await handleLaunchDataRefresh(
+          bot,
           ctx.chat!.id,
           ctx.callbackQuery.message!.message_id,
           tokenAddress,

@@ -101,6 +101,7 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
       );
 
       await sendLaunchSuccessNotification(
+        bot,
         data.userChatId,
         data.tokenAddress,
         data.tokenName,
@@ -287,6 +288,7 @@ export const sellDevWorker = new Worker<SellDevJob>(
 
       // Send detailed notification with enhanced formatting
       await sendNotification(
+        bot,
         data.userChatId,
         `🎉 **Dev Sell Completed Successfully\\!**\n\n` +
           `🎯 **Sale Details:**\n` +
@@ -555,7 +557,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
           error
         );
         // Fallback: send new message if editing fails
-        await sendNotification(data.userChatId, finalMessage);
+        await sendNotification(bot, data.userChatId, finalMessage);
       }
     } catch (error: any) {
       logger.error(
@@ -659,6 +661,7 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       }
 
       await sendNotification(
+        bot,
         data.userChatId,
         `🎉 **Preparation Phase Complete\\!** 🎉\n\n` +
           `✨ **What's Been Done:**\n` +
@@ -760,6 +763,7 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
       );
 
       await sendLaunchSuccessNotification(
+        bot,
         data.userChatId,
         data.tokenAddress,
         data.tokenName,
@@ -812,6 +816,7 @@ launchTokenWorker.on("failed", async (job) => {
 
   const token = job!.data;
   await sendLaunchFailureNotification(
+    bot,
     job!.data.userChatId,
     token.tokenAddress,
     token.tokenName,
@@ -834,6 +839,7 @@ sellDevWorker.on("error", async (error) => {
 sellDevWorker.on("failed", async (job) => {
   await releaseDevSellLock(job!.data.tokenAddress);
   await sendNotification(
+    bot,
     job!.data.userChatId,
     "❌ Dev Wallet Sell Failed\. Please try again 🔄"
   );
@@ -854,6 +860,7 @@ sellWalletWorker.on("error", async (error) => {
 sellWalletWorker.on("failed", async (job) => {
   await releaseWalletSellLock(job!.data.tokenAddress);
   await sendNotification(
+    bot,
     job!.data.userChatId,
     "❌ Wallet Sells Failed\. Please try again 🔄"
   );
@@ -880,6 +887,7 @@ prepareLaunchWorker.on("failed", async (job) => {
 
   const token = job!.data;
   await sendNotification(
+    bot,
     job!.data.userChatId,
     `❌ **Token preparation failed**\n\nToken: ${token.tokenName} \\($${token.tokenSymbol}\\)\n\n🔄 You can try again from your tokens list\\.`
   );
@@ -909,6 +917,7 @@ executeLaunchWorker.on("failed", async (job) => {
 
   const token = job!.data;
   await sendLaunchFailureNotification(
+    bot,
     job!.data.userChatId,
     token.tokenAddress,
     token.tokenName,
