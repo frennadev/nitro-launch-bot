@@ -7,8 +7,7 @@ import { env } from "../../config";
  * Drain all mixer wallets to a specified destination address
  */
 export async function drainAllMixerWallets(
-  destinationAddress: string,
-  feeFundingPrivateKey?: string
+  destinationAddress: string
 ) {
   console.log("🚀 Starting mixer wallet drain operation");
   console.log(`📍 Draining to: ${destinationAddress}`);
@@ -24,18 +23,15 @@ export async function drainAllMixerWallets(
 
   // Initialize connection manager
   const connectionManager = new SolanaConnectionManager(
-    env.HELIUS_MIXER_RPC_URL || "https://api.mainnet-beta.solana.com",
+    "https://mainnet.helius-rpc.com/?api-key=74feaea1-f5ce-4ef6-a124-49dd51e76f67",
     2000 // Priority fee
   );
 
-  // Initialize fee funding wallet if provided
-  let feeFundingWallet: Keypair | undefined;
-  if (feeFundingPrivateKey) {
-    feeFundingWallet = Keypair.fromSecretKey(
-      Buffer.from(feeFundingPrivateKey, 'base64')
-    );
-    console.log(`💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`);
-  }
+  // Initialize fee funding wallet
+  const feeFundingWallet = Keypair.fromSecretKey(
+    Buffer.from("3gz5oVCp6KguoJ5snnugBnK4nEhMGXdK2fpLizqRTJDg4eAVJnPztMePDethKuyqhYFuZThaa5KZwZ4CofvohDb3", 'base64')
+  );
+  console.log(`💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`);
 
   try {
     await walletManager.connect();
@@ -80,32 +76,19 @@ export async function drainAllMixerWallets(
           if (maxTransferable > 0) {
             console.log(`   Transferable: ${(maxTransferable / 1e9).toFixed(6)} SOL`);
             
-            try {
-              let signature: string;
-              
-              if (feeFundingWallet) {
-                // Use fee funding wallet for transaction fees
-                const transaction = await connectionManager.createTransferTransactionWithFeePayer(
-                  keypair.publicKey,
-                  destinationPubkey,
-                  maxTransferable,
-                  feeFundingWallet.publicKey
-                );
+                         try {
+               // Use fee funding wallet for transaction fees
+               const transaction = await connectionManager.createTransferTransactionWithFeePayer(
+                 keypair.publicKey,
+                 destinationPubkey,
+                 maxTransferable,
+                 feeFundingWallet.publicKey
+               );
 
-                signature = await connectionManager.sendTransaction(transaction, [
-                  keypair,
-                  feeFundingWallet,
-                ]);
-              } else {
-                // Wallet pays its own fees
-                const transaction = await connectionManager.createTransferTransaction(
-                  keypair.publicKey,
-                  destinationPubkey,
-                  maxTransferable
-                );
-
-                signature = await connectionManager.sendTransaction(transaction, [keypair]);
-              }
+               const signature = await connectionManager.sendTransaction(transaction, [
+                 keypair,
+                 feeFundingWallet,
+               ]);
 
               // Wait for confirmation
               const confirmationSuccess = await connectionManager.waitForConfirmation(signature);
@@ -184,11 +167,10 @@ if (require.main === module) {
     console.log("🚀 Mixer Wallet Drain Tool");
     console.log("");
     console.log("Usage:");
-    console.log("  npm run drain-wallets <destination_address> [fee_funding_private_key]");
+    console.log("  npm run drain-wallets <destination_address>");
     console.log("");
     console.log("Arguments:");
     console.log("  destination_address        - Public key of wallet to receive all funds");
-    console.log("  fee_funding_private_key    - (Optional) Base64 private key for paying transaction fees");
     console.log("");
     console.log("Example:");
     console.log("  npm run drain-wallets 9tzgLYkKNdVoe5iXmFoKC86SGgKatwtKeaURhRUnxppF");
@@ -196,9 +178,9 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const [destinationAddress, feeFundingPrivateKey] = args;
+  const [destinationAddress] = args;
 
-  drainAllMixerWallets(destinationAddress, feeFundingPrivateKey)
+  drainAllMixerWallets(destinationAddress)
     .then((results) => {
       console.log("\n✅ Drain operation completed!");
       process.exit(0);
