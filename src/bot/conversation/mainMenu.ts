@@ -11,6 +11,7 @@ import {
 import { CallBackQueries } from "../types";
 import { InlineKeyboard } from "grammy";
 import { safeAnswerCallbackQuery, sendErrorWithAutoDelete } from "../utils";
+import { sendMessage } from "../../backend/sender";
 
 export default async function mainMenuConversation(
   conversation: Conversation<Context>,
@@ -20,7 +21,7 @@ export default async function mainMenuConversation(
   if (ctx.callbackQuery) {
     await safeAnswerCallbackQuery(ctx);
   }
-  
+
   let user = await getUser(ctx.chat!.id.toString());
   let isFirstTime = user === null;
 
@@ -66,7 +67,7 @@ export default async function mainMenuConversation(
   await getOrCreateFundingWallet(String(user.id));
 
   const devWallet = await getDefaultDevWallet(String(user.id));
-  
+
   // Get user's referral stats
   const referralStats = await getUserReferralStats(String(user.id));
 
@@ -101,7 +102,7 @@ Get started below:`;
     .row()
     .text("🆘 Help", CallBackQueries.HELP);
 
-  await ctx.reply(welcomeMsg, {
+  await sendMessage(ctx, welcomeMsg, {
     reply_markup: keyboard,
   });
 }

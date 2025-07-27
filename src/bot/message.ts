@@ -17,8 +17,12 @@ export const sendLaunchSuccessNotification = async (
   tokenName: string,
   symbol: string
 ) => {
-  const messageData = await buildLaunchSuccessMessage(tokenAddress, tokenName, symbol);
-  
+  const messageData = await buildLaunchSuccessMessage(
+    tokenAddress,
+    tokenName,
+    symbol
+  );
+
   const message = await bot.api.sendMessage(chatId, messageData.text, {
     parse_mode: "MarkdownV2",
     reply_markup: messageData.keyboard,
@@ -30,7 +34,10 @@ export const sendLaunchSuccessNotification = async (
       disable_notification: true, // Don't notify users about the pin
     });
   } catch (error) {
-    console.warn(`[sendLaunchSuccessNotification] Could not pin message:`, error);
+    console.warn(
+      `[sendLaunchSuccessNotification] Could not pin message:`,
+      error
+    );
   }
 };
 
@@ -42,8 +49,12 @@ export const sendBonkLaunchSuccessNotification = async (
   symbol: string
 ) => {
   try {
-    const messageData = await buildBonkLaunchSuccessMessage(tokenAddress, tokenName, symbol);
-    
+    const messageData = await buildBonkLaunchSuccessMessage(
+      tokenAddress,
+      tokenName,
+      symbol
+    );
+
     const message = await bot.api.sendMessage(chatId, messageData.text, {
       parse_mode: "MarkdownV2",
       reply_markup: messageData.keyboard,
@@ -55,106 +66,190 @@ export const sendBonkLaunchSuccessNotification = async (
         disable_notification: true, // Don't notify users about the pin
       });
     } catch (error) {
-      console.warn(`[sendBonkLaunchSuccessNotification] Could not pin message:`, error);
+      console.warn(
+        `[sendBonkLaunchSuccessNotification] Could not pin message:`,
+        error
+      );
     }
   } catch (error: any) {
-    console.error(`[sendBonkLaunchSuccessNotification] Error sending message:`, error);
-    
+    console.error(
+      `[sendBonkLaunchSuccessNotification] Error sending message:`,
+      error
+    );
+
     // If there's a button data error, send a simplified message without buttons
-    if (error.description && error.description.includes('BUTTON_DATA_INVALID')) {
-      console.warn(`[sendBonkLaunchSuccessNotification] Button data invalid, sending simplified message`);
-      
+    if (
+      error.description &&
+      error.description.includes("BUTTON_DATA_INVALID")
+    ) {
+      console.warn(
+        `[sendBonkLaunchSuccessNotification] Button data invalid, sending simplified message`
+      );
+
       const simplifiedMessage = [
-        `🎉 *Bonk Token Launched Successfully\\!*`,
-        `*Name:* ${escape(tokenName)}`,
-        `*Symbol:* \`${escape(symbol)}\``,
-        `*Address:* \`${tokenAddress}\``,
+        `🎉 <b>Bonk Token Launched Successfully!</b>`,
         ``,
-        `✅ Your token is now live on Raydium Launch Lab\\!`,
+        `🪙 <b>Token Details</b>`,
+        `┌─────────────────────────────────`,
+        `│ <b>Name:</b> ${tokenName}`,
+        `│ <b>Symbol:</b> <code>${symbol}</code>`,
+        `│ <b>Address:</b> <code>${tokenAddress}</code>`,
+        `└─────────────────────────────────`,
         ``,
-        `Use /view\\_tokens to manage your tokens\\!`
+        `🚀 <b>Platform:</b> Raydium Launch Lab`,
+        `✅ <b>Status:</b> <i>Live & Trading</i>`,
+        ``,
+        `💡 <i>Use the buttons below to manage your token</i>`,
       ].join("\n");
-      
+
+      const keyboard = new InlineKeyboard()
+        .text("📊 View Tokens", "view_tokens")
+        .row()
+        .text(
+          "🔄 Try Again",
+          createSafeCallbackData(CallBackQueries.LAUNCH_TOKEN, tokenAddress)
+        );
+
       await bot.api.sendMessage(chatId, simplifiedMessage, {
-        parse_mode: "MarkdownV2"
+        parse_mode: "HTML",
+        reply_markup: keyboard,
       });
     } else {
       // For other errors, send a basic success message
-      await bot.api.sendMessage(chatId, 
-        `🎉 Bonk token launched successfully! Token: ${tokenAddress}`, 
+      await bot.api.sendMessage(
+        chatId,
+        `🎉 Bonk token launched successfully! Token: ${tokenAddress}`,
         { parse_mode: "MarkdownV2" }
       );
     }
   }
 };
 
-const buildLaunchSuccessMessage = async (tokenAddress: string, tokenName: string, symbol: string) => {
+const buildLaunchSuccessMessage = async (
+  tokenAddress: string,
+  tokenName: string,
+  symbol: string
+) => {
   // Get accurate financial statistics
   const financialStats = await getAccurateSpendingStats(tokenAddress);
 
   // Get enhanced token worth calculation from bonding curve
-  const tokenWorth = await calculateTokenHoldingsWorth(tokenAddress, financialStats.totalTokens);
+  const tokenWorth = await calculateTokenHoldingsWorth(
+    tokenAddress,
+    financialStats.totalTokens
+  );
 
   // Fix market cap calculation - PumpFun minimum is ~$4000
   const correctedMarketCap = Math.max(tokenWorth.marketCap, 4000);
 
   // Format numbers for display
-  const formatUSD = (amount: number) => `$${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const formatUSD = (amount: number) =>
+    `$${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const formatSOL = (amount: number) => `${amount.toFixed(6)} SOL`;
   const formatPercentage = (percentage: number) => `${percentage.toFixed(1)}%`;
 
   const msg = [
-    `🎉 *Token Launched Successfully\\!*`,
-    `*Name:* ${escape(tokenName)}`,
-    `*Symbol:* \`${escape(symbol)}\``,
-    `*Address:* \`${tokenAddress}\``,
+    `🎉 <b>Token Launched Successfully!</b>`,
     ``,
-    `💰 *Financial Overview:*`,
-    `➡️ Total Spent: ${escape(formatSOL(financialStats.totalSpent))}`,
-    `➡️ Dev Allocation: ${escape(formatSOL(financialStats.totalDevSpent))}`,
-    `➡️ Snipe Buys: ${escape(formatSOL(financialStats.totalSnipeSpent))}`,
-    `➡️ Unique Buy Wallets: ${financialStats.successfulBuyWallets}`,
+    `🪙 <b>Token Details</b>`,
+    `┌─────────────────────────────────`,
+    `│ <b>Name:</b> ${tokenName}`,
+    `│ <b>Symbol:</b> <code>${symbol}</code>`,
+    `│ <b>Address:</b> <code>${tokenAddress}</code>`,
+    `└─────────────────────────────────`,
     ``,
-    `📊 *Current Market Data:*`,
-    `➡️ Market Cap: ${escape(formatUSD(correctedMarketCap))}`,
-    tokenWorth.bondingCurveProgress > 0 ? `➡️ Bonding Curve: ${escape(formatPercentage(tokenWorth.bondingCurveProgress))}` : "",
+    `💰 <b>Financial Overview</b>`,
+    `┌─────────────────────────────────`,
+    `│ 💸 <b>Total Spent:</b> ${formatSOL(financialStats.totalSpent)}`,
+    `│ 👨‍💻 <b>Dev Allocation:</b> ${formatSOL(financialStats.totalDevSpent)}`,
+    `│ ⚡ <b>Snipe Buys:</b> ${formatSOL(financialStats.totalSnipeSpent)}`,
+    `│ 👥 <b>Unique Buyers:</b> ${financialStats.successfulBuyWallets}`,
+    `└─────────────────────────────────`,
     ``,
-    `💎 *Your Holdings:*`,
-    tokenWorth.worthInUsd > 0 ? `➡️ Current Value: ${escape(formatUSD(tokenWorth.worthInUsd))}` : "",
-    tokenWorth.worthInSol > 0 ? `➡️ Worth in SOL: ${escape(formatSOL(tokenWorth.worthInSol))}` : "",
+    `📊 <b>Market Data</b>`,
+    `┌─────────────────────────────────`,
+    `│ 💎 <b>Market Cap:</b> ${formatUSD(correctedMarketCap)}`,
+    tokenWorth.bondingCurveProgress > 0
+      ? `│ 📈 <b>Bonding Curve:</b> ${formatPercentage(tokenWorth.bondingCurveProgress)}`
+      : "",
+    `└─────────────────────────────────`,
     ``,
-    `Use the buttons below for next steps ⬇️`,
+    tokenWorth.worthInUsd > 0 || tokenWorth.worthInSol > 0
+      ? `💎 <b>Your Holdings</b>`
+      : "",
+    tokenWorth.worthInUsd > 0 || tokenWorth.worthInSol > 0
+      ? `┌─────────────────────────────────`
+      : "",
+    tokenWorth.worthInUsd > 0
+      ? `│ 💵 <b>Current Value:</b> ${formatUSD(tokenWorth.worthInUsd)}`
+      : "",
+    tokenWorth.worthInSol > 0
+      ? `│ ◎ <b>Worth in SOL:</b> ${formatSOL(tokenWorth.worthInSol)}`
+      : "",
+    tokenWorth.worthInUsd > 0 || tokenWorth.worthInSol > 0
+      ? `└─────────────────────────────────`
+      : "",
+    ``,
+    `🎛️ <b>Choose an action below:</b>`,
   ]
     .filter(Boolean)
     .join("\n");
 
   const keyboard = new InlineKeyboard()
-    .text("💸 Fund Token Wallets", createSafeCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
+    .text(
+      "💸 Fund Wallets",
+      createSafeCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress)
+    )
+    .text(
+      "🔄 Refresh",
+      createSafeCallbackData(
+        LaunchMessageCallbacks.REFRESH_LAUNCH_DATA,
+        tokenAddress
+      )
+    )
     .row()
-    .text("🔄 Refresh", createSafeCallbackData(LaunchMessageCallbacks.REFRESH_LAUNCH_DATA, tokenAddress))
+    .text(
+      "💯 Sell 100% Dev",
+      createSafeCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress)
+    )
+    .text(
+      "👨‍💻 Sell Dev Supply",
+      createSafeCallbackData(CallBackQueries.SELL_DEV, tokenAddress)
+    )
     .row()
-    .text("💯 Sell 100% Dev Supply", createSafeCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress))
+    .text(
+      "📈 Sell % Supply",
+      createSafeCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress)
+    )
+    .text(
+      "🧨 Sell All",
+      createSafeCallbackData(CallBackQueries.SELL_ALL, tokenAddress)
+    )
     .row()
-    .text("👨‍💻 Sell Dev Supply", createSafeCallbackData(CallBackQueries.SELL_DEV, tokenAddress))
-    .row()
-    .text("📈 Sell % supply", createSafeCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress))
-    .row()
-    .text("🧨 Sell All", createSafeCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
-    .row()
-    .text("👥 Individual Wallet Sells", createSafeCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
-    .row()
-    .text("🎁 Airdrop SOL", createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress));
+    .text(
+      "👥 Individual Sells",
+      createSafeCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress)
+    )
+    .text(
+      "🎁 Airdrop SOL",
+      createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress)
+    );
 
   return { text: msg, keyboard };
 };
 
 // Bonk-specific success message builder
-const buildBonkLaunchSuccessMessage = async (tokenAddress: string, tokenName: string, symbol: string) => {
+const buildBonkLaunchSuccessMessage = async (
+  tokenAddress: string,
+  tokenName: string,
+  symbol: string
+) => {
   // Get accurate financial statistics for Bonk tokens
   const financialStats = await getAccurateSpendingStats(tokenAddress);
 
   // Format numbers for display
-  const formatUSD = (amount: number) => `$${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const formatUSD = (amount: number) =>
+    `$${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const formatSOL = (amount: number) => `${amount.toFixed(6)} SOL`;
   const formatPercentage = (percentage: number) => `${percentage.toFixed(1)}%`;
 
@@ -166,45 +261,78 @@ const buildBonkLaunchSuccessMessage = async (tokenAddress: string, tokenName: st
   const estimatedHoldingsSOL = estimatedHoldingsWorth;
 
   const msg = [
-    `🎉 *Bonk Token Launched Successfully\\!*`,
-    `*Name:* ${escape(tokenName)}`,
-    `*Symbol:* \`${escape(symbol)}\``,
-    `*Address:* \`${tokenAddress}\``,
+    `🎉 <b>Bonk Token Launched Successfully!</b>`,
     ``,
-    `💰 *Financial Overview:*`,
-    `➡️ Total Spent: ${escape(formatSOL(financialStats.totalSpent))}`,
-    `➡️ Dev Allocation: ${escape(formatSOL(financialStats.totalDevSpent))}`,
-    `➡️ Snipe Buys: ${escape(formatSOL(financialStats.totalSnipeSpent))}`,
-    `➡️ Unique Buy Wallets: ${financialStats.successfulBuyWallets}`,
+    `🪙 <b>Token Details</b>`,
+    `┌─────────────────────────────────`,
+    `│ <b>Name:</b> ${tokenName}`,
+    `│ <b>Symbol:</b> <code>${symbol}</code>`,
+    `│ <b>Address:</b> <code>${tokenAddress}</code>`,
+    `└─────────────────────────────────`,
     ``,
-    `📊 *Current Market Data:*`,
-    `➡️ Market Cap: ${escape(formatUSD(estimatedMarketCap))}`,
-    `➡️ Platform: Raydium Launch Lab`,
+    `💰 <b>Financial Overview</b>`,
+    `┌─────────────────────────────────`,
+    `│ 💸 <b>Total Spent:</b> ${formatSOL(financialStats.totalSpent)}`,
+    `│ 👨‍💻 <b>Dev Allocation:</b> ${formatSOL(financialStats.totalDevSpent)}`,
+    `│ ⚡ <b>Snipe Buys:</b> ${formatSOL(financialStats.totalSnipeSpent)}`,
+    `│ 👥 <b>Unique Buyers:</b> ${financialStats.successfulBuyWallets}`,
+    `└─────────────────────────────────`,
     ``,
-    `💎 *Your Holdings:*`,
-    `➡️ Worth in SOL: ${escape(formatSOL(estimatedHoldingsSOL))}`,
+    `📊 <b>Market Data</b>`,
+    `┌─────────────────────────────────`,
+    `│ 💎 <b>Market Cap:</b> ${formatUSD(estimatedMarketCap)}`,
+    `│ 🚀 <b>Platform:</b> Raydium Launch Lab`,
+    `└─────────────────────────────────`,
     ``,
-    `Use the buttons below for next steps ⬇️`,
+    `💎 <b>Your Holdings</b>`,
+    `┌─────────────────────────────────`,
+    `│ ◎ <b>Worth in SOL:</b> ${formatSOL(estimatedHoldingsSOL)}`,
+    `└─────────────────────────────────`,
+    ``,
+    `🎛️ <b>Choose an action below:</b>`,
   ]
     .filter(Boolean)
     .join("\n");
 
   const keyboard = new InlineKeyboard()
-    .text("💸 Fund Token Wallets", createSafeCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
+    .text(
+      "💸 Fund Wallets",
+      createSafeCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress)
+    )
+    .text(
+      "🔄 Refresh",
+      createSafeCallbackData(
+        LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA,
+        tokenAddress
+      )
+    )
     .row()
-    .text("🔄 Refresh", createSafeCallbackData(LaunchMessageCallbacks.REFRESH_BONK_LAUNCH_DATA, tokenAddress))
+    .text(
+      "💯 Sell 100% Dev",
+      createSafeCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress)
+    )
+    .text(
+      "👨‍💻 Sell Dev Supply",
+      createSafeCallbackData(CallBackQueries.SELL_DEV, tokenAddress)
+    )
     .row()
-    .text("💯 Sell 100% Dev Supply", createSafeCallbackData(CallBackQueries.SELL_DEV_SUPPLY, tokenAddress))
+    .text(
+      "📈 Sell % Supply",
+      createSafeCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress)
+    )
+    .text(
+      "🧨 Sell All",
+      createSafeCallbackData(CallBackQueries.SELL_ALL, tokenAddress)
+    )
     .row()
-    .text("👨‍💻 Sell Dev Supply", createSafeCallbackData(CallBackQueries.SELL_DEV, tokenAddress))
-    .row()
-    .text("📈 Sell % supply", createSafeCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress))
-    .row()
-    .text("🧨 Sell All", createSafeCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
-    .row()
-    .text("👥 Individual Wallet Sells", createSafeCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
-    .row()
-    .text("🎁 Airdrop SOL", createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress));
+    .text(
+      "👥 Individual Sells",
+      createSafeCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress)
+    )
+    .text(
+      "🎁 Airdrop SOL",
+      createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress)
+    );
 
   return { text: msg, keyboard };
 };
@@ -218,8 +346,12 @@ export const handleLaunchDataRefresh = async (
   symbol: string
 ) => {
   try {
-    const messageData = await buildLaunchSuccessMessage(tokenAddress, tokenName, symbol);
-    
+    const messageData = await buildLaunchSuccessMessage(
+      tokenAddress,
+      tokenName,
+      symbol
+    );
+
     // Send a new message instead of editing the original success message
     // This way users can always go back to the original success page
     await bot.api.sendMessage(chatId, messageData.text, {
@@ -227,14 +359,24 @@ export const handleLaunchDataRefresh = async (
       reply_markup: messageData.keyboard,
     });
   } catch (error) {
-    console.error(`[handleLaunchDataRefresh] Error refreshing launch data:`, error);
+    console.error(
+      `[handleLaunchDataRefresh] Error refreshing launch data:`,
+      error
+    );
     // If sending fails, try to send a simple error message
     try {
-      await bot.api.sendMessage(chatId, "❌ *Error refreshing data\\. Please try again\\.*", {
-        parse_mode: "MarkdownV2",
-      });
+      await bot.api.sendMessage(
+        chatId,
+        "❌ *Error refreshing data\\. Please try again\\.*",
+        {
+          parse_mode: "MarkdownV2",
+        }
+      );
     } catch (fallbackError) {
-      console.error(`[handleLaunchDataRefresh] Fallback message also failed:`, fallbackError);
+      console.error(
+        `[handleLaunchDataRefresh] Fallback message also failed:`,
+        fallbackError
+      );
     }
   }
 };
@@ -248,8 +390,12 @@ export const handleBonkLaunchDataRefresh = async (
   symbol: string
 ) => {
   try {
-    const messageData = await buildBonkLaunchSuccessMessage(tokenAddress, tokenName, symbol);
-    
+    const messageData = await buildBonkLaunchSuccessMessage(
+      tokenAddress,
+      tokenName,
+      symbol
+    );
+
     // Send a new message instead of editing the original success message
     // This way users can always go back to the original success page
     await bot.api.sendMessage(chatId, messageData.text, {
@@ -257,14 +403,24 @@ export const handleBonkLaunchDataRefresh = async (
       reply_markup: messageData.keyboard,
     });
   } catch (error) {
-    console.error(`[handleBonkLaunchDataRefresh] Error refreshing launch data:`, error);
+    console.error(
+      `[handleBonkLaunchDataRefresh] Error refreshing launch data:`,
+      error
+    );
     // If sending fails, try to send a simple error message
     try {
-      await bot.api.sendMessage(chatId, "❌ *Error refreshing data\\. Please try again\\.*", {
-        parse_mode: "MarkdownV2",
-      });
+      await bot.api.sendMessage(
+        chatId,
+        "❌ *Error refreshing data\\. Please try again\\.*",
+        {
+          parse_mode: "MarkdownV2",
+        }
+      );
     } catch (fallbackError) {
-      console.error(`[handleBonkLaunchDataRefresh] Fallback message also failed:`, fallbackError);
+      console.error(
+        `[handleBonkLaunchDataRefresh] Fallback message also failed:`,
+        fallbackError
+      );
     }
   }
 };
@@ -276,24 +432,31 @@ export const sendLaunchFailureNotification = async (
   symbol: string
 ) => {
   const msg = [
-    `❌ *Token launch Failed* \n`,
-    `*Name*: ${escape(tokenName)}`,
-    `*Symbol:* $\`${escape(symbol)}\``,
-    `*Token Address*: \`${tokenAddress}\``,
-    `\nClick the buttons below to retry the launch ⬇️`,
+    `❌ <b>Token Launch Failed</b>`,
+    ``,
+    `🪙 <b>Token Details</b>`,
+    `┌─────────────────────────────────`,
+    `│ <b>Name:</b> ${tokenName}`,
+    `│ <b>Symbol:</b> <code>${symbol}</code>`,
+    `│ <b>Address:</b> <code>${tokenAddress}</code>`,
+    `└─────────────────────────────────`,
+    ``,
+    `💡 <i>Something went wrong during the launch process.</i>`,
+    `🔄 <i>You can retry using the buttons below:</i>`,
   ].join("\n");
+
+  const keyboard = new InlineKeyboard()
+    .text(
+      "🚀 Retry Launch",
+      createSafeCallbackData(CallBackQueries.LAUNCH_TOKEN, tokenAddress)
+    )
+    .row()
+    .text("📊 View Tokens", "view_tokens")
+    .text("🏠 Main Menu", "main_menu");
+
   await bot.api.sendMessage(chatId, msg, {
-    parse_mode: "MarkdownV2",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "🚀 Launch Token",
-            callback_data: `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`,
-          },
-        ],
-      ],
-    },
+    parse_mode: "HTML",
+    reply_markup: keyboard,
   });
 };
 

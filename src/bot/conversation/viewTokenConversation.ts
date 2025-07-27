@@ -285,13 +285,15 @@ const viewTokensConversation = async (
         const result = await deleteToken(String(user._id), tokenAddress);
 
         if (result.success) {
-          await ctx.reply(
+          await sendMessage(
+            ctx,
             `✅ <b>Token Deleted</b>\n\n<i>Successfully removed from your account.</i>`,
             { parse_mode: "HTML" }
           );
           return conversation.halt();
         } else {
-          await ctx.reply(
+          await sendMessage(
+            ctx,
             `❌ <b>Delete Failed</b>\n\n<i>${result.message}</i>`,
             { parse_mode: "HTML" }
           );

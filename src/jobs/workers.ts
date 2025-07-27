@@ -1,6 +1,18 @@
 import { Worker } from "bullmq";
-import { tokenLaunchQueue, devSellQueue, walletSellQueue, prepareLaunchQueue, executeLaunchQueue } from "./queues";
-import type { LaunchTokenJob, PrepareTokenLaunchJob, ExecuteTokenLaunchJob, SellDevJob, SellWalletJob } from "./types";
+import {
+  tokenLaunchQueue,
+  devSellQueue,
+  walletSellQueue,
+  prepareLaunchQueue,
+  executeLaunchQueue,
+} from "./queues";
+import type {
+  LaunchTokenJob,
+  PrepareTokenLaunchJob,
+  ExecuteTokenLaunchJob,
+  SellDevJob,
+  SellWalletJob,
+} from "./types";
 import { redisClient } from "./db";
 import {
   releaseDevSellLock,
@@ -19,30 +31,40 @@ import {
   sendNotification,
 } from "../bot/message";
 import bot from "../bot";
-import { executeTokenLaunch, prepareTokenLaunch } from "../blockchain/pumpfun/launch";
+import {
+  executeTokenLaunch,
+  prepareTokenLaunch,
+} from "../blockchain/pumpfun/launch";
 import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { logger } from "./logger";
-import { updateLoadingState, completeLoadingState, failLoadingState, updateMixerProgress, updateMixerStatus, startMixerHeartbeat } from "../bot/loading";
+import {
+  updateLoadingState,
+  completeLoadingState,
+  failLoadingState,
+  updateMixerProgress,
+  updateMixerStatus,
+  startMixerHeartbeat,
+} from "../bot/loading";
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
   async (job) => {
     const data = job.data;
     const loadingKey = `${data.userChatId}-token_launch-${data.tokenAddress}`;
-    
+
     try {
       logger.info("[jobs]: Token Launch Job starting...");
       logger.info("[jobs-launch-token]: Job Data", data);
-      
+
       // Update loading state - Phase 0: Validating parameters
       await updateLoadingState(loadingKey, 0);
-      
+
       // Update loading state - Phase 1: Checking balances
       await updateLoadingState(loadingKey, 1);
-      
+
       // Update loading state - Phase 2: Creating token
       await updateLoadingState(loadingKey, 2);
-      
+
       await executeTokenLaunch(
         data.tokenPrivateKey,
         data.funderWallet,
@@ -54,47 +76,57 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         data.tokenMetadataUri,
         data.buyAmount,
         data.devBuy,
-        data.launchStage,
+        data.launchStage
       );
-      
+
       // Update loading state - Phase 5: Finalizing
       await updateLoadingState(loadingKey, 5);
-      
-      await updateTokenState(data.tokenAddress, TokenState.LAUNCHED, data.userId);
-      
+
+      await updateTokenState(
+        data.tokenAddress,
+        TokenState.LAUNCHED,
+        data.userId
+      );
+
       // Pump addresses are never released - they remain permanently allocated to the user
-      logger.info(`Pump address ${data.tokenAddress} remains permanently allocated to user ${data.userId}`);
-      
+      logger.info(
+        `Pump address ${data.tokenAddress} remains permanently allocated to user ${data.userId}`
+      );
+
       // Complete loading state
       await completeLoadingState(
         loadingKey,
         undefined,
         `**Token:** ${data.tokenName} ($${data.tokenSymbol})\n**Address:** \`${data.tokenAddress}\``
       );
-      
+
       await sendLaunchSuccessNotification(
         data.userChatId,
         data.tokenAddress,
         data.tokenName,
-        data.tokenSymbol,
+        data.tokenSymbol
       );
 
       // After Bonk dev buy/launch, wait 2 seconds before sniping (PumpFun-style best practice)
       const { TokenModel } = await import("../backend/models");
-      const tokenRecord = await TokenModel.findOne({ tokenAddress: data.tokenAddress });
+      const tokenRecord = await TokenModel.findOne({
+        tokenAddress: data.tokenAddress,
+      });
       if (tokenRecord?.launchData?.destination === "letsbonk") {
-        logger.info("[jobs]: Waiting 2 seconds after Bonk dev buy/launch before starting pool polling/snipes...");
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        logger.info(
+          "[jobs]: Waiting 2 seconds after Bonk dev buy/launch before starting pool polling/snipes..."
+        );
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     } catch (error: any) {
       logger.error(
         "[jobs-launch-token]: Error Occurred while launching token",
-        error,
+        error
       );
-      
+
       // Fail loading state
       await failLoadingState(loadingKey, error.message);
-      
+
       throw error;
     }
   },
@@ -110,7 +142,7 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
     // Set lock duration to 5 minutes (300 seconds) for launch operations
     lockDuration: 5 * 60 * 1000, // 5 minutes in milliseconds
     lockRenewTime: 30 * 1000, // Renew lock every 30 seconds
-  },
+  }
 );
 
 export const sellDevWorker = new Worker<SellDevJob>(
@@ -118,42 +150,61 @@ export const sellDevWorker = new Worker<SellDevJob>(
   async (job) => {
     const data = job.data;
     const loadingKey = `${data.userChatId}-dev_sell-${data.tokenAddress}`;
-    
+
     try {
       logger.info("[jobs]: Sell Dev Job starting...");
       logger.info("[jobs-sell-dev]: Job Data", data);
-      
+
       // Update loading state - Phase 0: Validating parameters
       await updateLoadingState(loadingKey, 0);
-      
+
       // Update loading state - Phase 1: Calculating amounts
       await updateLoadingState(loadingKey, 1);
-      
+
       // Update loading state - Phase 2: Executing transaction
       await updateLoadingState(loadingKey, 2);
-      
+
       // Check token type to determine which sell mechanism to use
       const { TokenModel } = await import("../backend/models");
-      const token = await TokenModel.findOne({ tokenAddress: data.tokenAddress });
-      
+      const token = await TokenModel.findOne({
+        tokenAddress: data.tokenAddress,
+      });
+
       let result;
       if (token?.launchData?.destination === "letsbonk") {
         // Bonk token - use Bonk sell mechanism
-        logger.info(`[jobs-sell-dev]: Using Bonk sell mechanism for token ${data.tokenAddress}`);
-        const { executeBonkSell } = await import("../service/bonk-transaction-handler");
+        logger.info(
+          `[jobs-sell-dev]: Using Bonk sell mechanism for token ${data.tokenAddress}`
+        );
+        const { executeBonkSell } = await import(
+          "../service/bonk-transaction-handler"
+        );
         result = await executeBonkSell(
           data.sellPercent,
           data.devWallet,
           data.tokenAddress
         );
         // Record the transaction with actual SOL received
-        const { recordTransactionWithActualAmounts } = await import("../backend/utils");
+        const { recordTransactionWithActualAmounts } = await import(
+          "../backend/utils"
+        );
         const { Keypair } = await import("@solana/web3.js");
         const bs58 = await import("bs58");
-        const devWalletPubkey = Keypair.fromSecretKey(bs58.default.decode(data.devWallet)).publicKey.toBase58();
+        const devWalletPubkey = Keypair.fromSecretKey(
+          bs58.default.decode(data.devWallet)
+        ).publicKey.toBase58();
         // Type guard for Bonk sell result
-        function isBonkSellResult(obj: any): obj is { success: boolean; signature: string; actualSolReceived: number } {
-          return obj && typeof obj.success === 'boolean' && typeof obj.signature === 'string' && 'actualSolReceived' in obj;
+        function isBonkSellResult(obj: any): obj is {
+          success: boolean;
+          signature: string;
+          actualSolReceived: number;
+        } {
+          return (
+            obj &&
+            typeof obj.success === "boolean" &&
+            typeof obj.signature === "string" &&
+            "actualSolReceived" in obj
+          );
         }
 
         if (isBonkSellResult(result) && result.success && result.signature) {
@@ -174,28 +225,32 @@ export const sellDevWorker = new Worker<SellDevJob>(
         }
       } else {
         // PumpFun token - use PumpFun sell mechanism
-        logger.info(`[jobs-sell-dev]: Using PumpFun sell mechanism for token ${data.tokenAddress}`);
+        logger.info(
+          `[jobs-sell-dev]: Using PumpFun sell mechanism for token ${data.tokenAddress}`
+        );
         const { executeDevSell } = await import("../blockchain/pumpfun/sell");
         result = await executeDevSell(
           data.tokenAddress,
           data.devWallet,
-          data.sellPercent,
+          data.sellPercent
         );
       }
-      
+
       // Update loading state - Phase 3: Confirming
       await updateLoadingState(loadingKey, 3);
-      
+
       await releaseDevSellLock(data.tokenAddress);
-      
+
       // Get transaction stats and financial data for detailed reporting
       const transactionStats = await getTransactionStats(data.tokenAddress);
       const financialStats = await getAccurateSpendingStats(data.tokenAddress);
-      
+
       // Calculate sell-specific statistics
-      const devSellTransactions = transactionStats.byType.dev_sell.filter((t: any) => t.success);
+      const devSellTransactions = transactionStats.byType.dev_sell.filter(
+        (t: any) => t.success
+      );
       const latestDevSell = devSellTransactions[devSellTransactions.length - 1];
-      
+
       const sellSummary = {
         solReceived: latestDevSell?.amountSol || 0,
         tokensSold: latestDevSell?.amountTokens || "0",
@@ -207,39 +262,51 @@ export const sellDevWorker = new Worker<SellDevJob>(
         profitLossPercentage: financialStats.profitLossPercentage,
         isProfit: financialStats.isProfit,
       };
-      
+
       // Format tokens sold for display (convert from raw to human readable)
-      const tokensSoldFormatted = (Number(sellSummary.tokensSold) / 1e6).toLocaleString(undefined, {
+      const tokensSoldFormatted = (
+        Number(sellSummary.tokensSold) / 1e6
+      ).toLocaleString(undefined, {
         maximumFractionDigits: 2,
       });
-      
+
       // Complete loading state with detailed information
       await completeLoadingState(
         loadingKey,
         undefined,
         `**💸 Dev Sell Complete**\n\n` +
-        `**SOL Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n` +
-        `**Tokens Sold:** ${tokensSoldFormatted} tokens (${data.sellPercent}%)\n` +
-        `**Transaction:** [View on Solscan](https://solscan.io/tx/${result.signature})\n\n` +
-        `**Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '+' : ''}${sellSummary.netProfitLoss.toFixed(6)} SOL (${sellSummary.profitLossPercentage >= 0 ? '+' : ''}${sellSummary.profitLossPercentage.toFixed(1)}%)`
+          `🎯 **Sell Details:**\n` +
+          `   • **Percentage:** ${data.sellPercent}%\n` +
+          `   • **Tokens Sold:** ${tokensSoldFormatted} tokens\n` +
+          `   • **SOL Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n\n` +
+          `📊 **Overall Performance:**\n` +
+          `   • **Total P&L:** ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "+" : ""}${sellSummary.netProfitLoss.toFixed(6)} SOL\n` +
+          `   • **Return:** ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "+" : ""}${sellSummary.profitLossPercentage.toFixed(1)}%\n\n` +
+          `🔗 **[View Transaction](https://solscan.io/tx/${result.signature})**`
       );
-      
+
+      // Send detailed notification with enhanced formatting
       await sendNotification(
         data.userChatId,
-        `🎉 **Dev Sell completed successfully\!**\n\n` +
-        `💰 **Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\.')} SOL\n` +
-        `🪙 **Sold:** ${tokensSoldFormatted.replace(/\./g, '\.')} tokens \\(${data.sellPercent}%\\)\n` +
-        `[View Transaction](https://solscan\\.io/tx/${result.signature})`,
+        `🎉 **Dev Sell Completed Successfully\\!**\n\n` +
+          `🎯 **Sale Details:**\n` +
+          `   • **Percentage:** ${data.sellPercent}%\n` +
+          `   • **Tokens Sold:** ${tokensSoldFormatted.replace(/\./g, "\.")} tokens\n` +
+          `   • **SOL Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, "\.")} SOL\n\n` +
+          `📊 **Overall Performance:**\n` +
+          `   • **Total P&L:** ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "\\+" : "\\-"}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, "\.")} SOL\n` +
+          `   • **Return:** ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "\\+" : "\\-"}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, "\.")}%\n\n` +
+          `🔗 **[View Transaction](https://solscan\\.io/tx/${result.signature})**`
       );
     } catch (error: any) {
       logger.error(
         "[jobs-sell-dev]: Error Occurred while selling dev supply",
-        error,
+        error
       );
-      
+
       // Fail loading state
       await failLoadingState(loadingKey, error.message);
-      
+
       throw error;
     }
   },
@@ -252,7 +319,7 @@ export const sellDevWorker = new Worker<SellDevJob>(
     removeOnFail: {
       count: 20,
     },
-  },
+  }
 );
 
 export const sellWalletWorker = new Worker<SellWalletJob>(
@@ -261,130 +328,160 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
     const data = job.data;
     const loadingKey = `${data.userChatId}-wallet_sell-${data.tokenAddress}`;
     const logIdentifier = `jobs-sell-wallet-${data.tokenAddress}`;
-    
+
     try {
       logger.info("[jobs]: Wallet Sell Job starting...");
       logger.info("[jobs-sell-wallet]: Job Data", data);
-      
+
       // Update loading state - Phase 0: Validating holdings
       await updateLoadingState(loadingKey, 0);
-      
+
       // Update loading state - Phase 1: Calculating amounts
       await updateLoadingState(loadingKey, 1);
-      
+
       // Update loading state - Phase 2: Executing transactions
       await updateLoadingState(loadingKey, 2);
-      
+
       // Check token type to determine which sell mechanism to use
       const { TokenModel } = await import("../backend/models");
-      const token = await TokenModel.findOne({ tokenAddress: data.tokenAddress });
-      
+      const token = await TokenModel.findOne({
+        tokenAddress: data.tokenAddress,
+      });
+
       let results;
       if (token?.launchData?.destination === "letsbonk") {
         // Bonk token - use Bonk sell mechanism for each wallet
-        logger.info(`[jobs-sell-wallet]: Using Bonk sell mechanism for token ${data.tokenAddress}`);
-        const { executeBonkSell } = await import("../service/bonk-transaction-handler");
-        const { recordTransactionWithActualAmounts } = await import("../backend/utils");
+        logger.info(
+          `[jobs-sell-wallet]: Using Bonk sell mechanism for token ${data.tokenAddress}`
+        );
+        const { executeBonkSell } = await import(
+          "../service/bonk-transaction-handler"
+        );
+        const { recordTransactionWithActualAmounts } = await import(
+          "../backend/utils"
+        );
         const { Keypair } = await import("@solana/web3.js");
         const bs58 = await import("bs58");
-        
+
         // Execute Bonk sells for each wallet
-        const sellPromises = data.buyerWallets.map(async (walletPrivateKey: string) => {
-          try {
-            const result = await executeBonkSell(
-              data.sellPercent,
-              walletPrivateKey,
-              data.tokenAddress
-            );
-            // Record the transaction with actual SOL received
-            let walletPubkey = "unknown";
+        const sellPromises = data.buyerWallets.map(
+          async (walletPrivateKey: string) => {
             try {
-              walletPubkey = Keypair.fromSecretKey(bs58.default.decode(walletPrivateKey)).publicKey.toBase58();
-            } catch {}
-            if (result && result.success && result.signature) {
-              await recordTransactionWithActualAmounts(
-                data.tokenAddress,
-                walletPubkey,
-                "wallet_sell",
-                result.signature,
-                true,
-                0,
-                {
-                  amountSol: result.actualSolReceived,
-                  amountTokens: undefined,
-                  sellPercent: data.sellPercent,
-                },
-                false // Don't parse again, already have actual amount
+              const result = await executeBonkSell(
+                data.sellPercent,
+                walletPrivateKey,
+                data.tokenAddress
               );
+              // Record the transaction with actual SOL received
+              let walletPubkey = "unknown";
+              try {
+                walletPubkey = Keypair.fromSecretKey(
+                  bs58.default.decode(walletPrivateKey)
+                ).publicKey.toBase58();
+              } catch {}
+              if (result && result.success && result.signature) {
+                await recordTransactionWithActualAmounts(
+                  data.tokenAddress,
+                  walletPubkey,
+                  "wallet_sell",
+                  result.signature,
+                  true,
+                  0,
+                  {
+                    amountSol: result.actualSolReceived,
+                    amountTokens: undefined,
+                    sellPercent: data.sellPercent,
+                  },
+                  false // Don't parse again, already have actual amount
+                );
+              }
+              return {
+                success: result.success,
+                signature: result.signature,
+                error: result.error,
+                expectedSolOut: result.actualSolReceived || 0,
+              };
+            } catch (error: any) {
+              return {
+                success: false,
+                error: error.message,
+                expectedSolOut: 0,
+              };
             }
-            return {
-              success: result.success,
-              signature: result.signature,
-              error: result.error,
-              expectedSolOut: result.actualSolReceived || 0,
-            };
-          } catch (error: any) {
-            return {
-              success: false,
-              error: error.message,
-              expectedSolOut: 0,
-            };
           }
-        });
-        
+        );
+
         results = await Promise.all(sellPromises);
       } else {
         // PumpFun token - use PumpFun sell mechanism
-        logger.info(`[jobs-sell-wallet]: Using PumpFun sell mechanism for token ${data.tokenAddress}`);
-        const { executeWalletSell } = await import("../blockchain/pumpfun/sell");
+        logger.info(
+          `[jobs-sell-wallet]: Using PumpFun sell mechanism for token ${data.tokenAddress}`
+        );
+        const { executeWalletSell } = await import(
+          "../blockchain/pumpfun/sell"
+        );
         results = await executeWalletSell(
           data.tokenAddress,
           data.buyerWallets,
           data.devWallet,
-          data.sellPercent,
+          data.sellPercent
         );
       }
-      
+
       // Update loading state - Phase 3: Confirming
       await updateLoadingState(loadingKey, 3);
-      
+
       await releaseWalletSellLock(data.tokenAddress);
-      
+
       // Calculate immediate sell statistics
-      const successfulSells = results.filter(r => r.success);
-      const failedSells = results.filter(r => !r.success);
-      const immediateSuccessRate = Math.round((successfulSells.length / results.length) * 100);
-      
+      const successfulSells = results.filter((r) => r.success);
+      const failedSells = results.filter((r) => !r.success);
+      const immediateSuccessRate = Math.round(
+        (successfulSells.length / results.length) * 100
+      );
+
       // Send immediate success notification with basic info
-      const initialMessage = `🎉 **Wallet Sells completed successfully\!**\n\n` +
-        `✅ **Success Rate:** ${successfulSells.length}/${results.length} wallets \\(${immediateSuccessRate}%\\)\n` +
-        `💰 **Total Received:** Calculating\\.\\.\\.\n` +
-        `🪙 **Tokens Sold:** Calculating\\.\\.\\.\n` +
-        `📊 **Overall P&L:** Calculating\\.\\.\\.\n\n` +
-        `${failedSells.length > 0 ? `⚠️ ${failedSells.length} wallet\\(s\\) failed to sell\n\n` : ''}` +
-        `⏳ **Fetching detailed transaction data\\.\\.\\.**`;
-      
-      const initialNotification = await bot.api.sendMessage(data.userChatId, initialMessage, { 
-        parse_mode: "MarkdownV2" 
-      });
-      
+      const initialMessage =
+        `🎉 <b>Wallet Sells Completed Successfully!</b>\n\n` +
+        `✅ <b>Success Rate:</b> ${successfulSells.length}/${results.length} wallets (${immediateSuccessRate}%)\n` +
+        `💰 <b>Total Received:</b> Calculating...\n` +
+        `🪙 <b>Tokens Sold:</b> Calculating...\n` +
+        `📊 <b>Overall P&L:</b> Calculating...\n\n` +
+        `${failedSells.length > 0 ? `⚠️ ${failedSells.length} wallet(s) failed to sell\n\n` : ""}` +
+        `⏳ <b>Fetching detailed transaction data...</b>`;
+
+      const initialNotification = await bot.api.sendMessage(
+        data.userChatId,
+        initialMessage,
+        {
+          parse_mode: "HTML",
+        }
+      );
+
       // Wait for transaction confirmation and parsing (3-5 seconds)
-      logger.info(`[${logIdentifier}] Waiting 4 seconds for transaction parsing to complete...`);
-      await new Promise(resolve => setTimeout(resolve, 4000));
-      
+      logger.info(
+        `[${logIdentifier}] Waiting 4 seconds for transaction parsing to complete...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+
       // Now get accurate transaction stats and financial data
       const transactionStats = await getTransactionStats(data.tokenAddress);
       const financialStats = await getAccurateSpendingStats(data.tokenAddress);
-      
+
       // Calculate wallet sell-specific statistics
-      const walletSellTransactions = transactionStats.byType.wallet_sell.filter((t: any) => t.success);
-      
+      const walletSellTransactions = transactionStats.byType.wallet_sell.filter(
+        (t: any) => t.success
+      );
+
       // Calculate totals from this sell batch
-      const totalSolReceived = successfulSells.reduce((sum, r) => sum + (r.expectedSolOut || 0), 0);
+      const totalSolReceived = successfulSells.reduce(
+        (sum, r) => sum + (r.expectedSolOut || 0),
+        0
+      );
       const totalTokensSold = walletSellTransactions
         .slice(-successfulSells.length) // Get the most recent transactions
         .reduce((sum, t) => sum + BigInt(t.amountTokens || "0"), BigInt(0));
-      
+
       const sellSummary = {
         successfulWallets: successfulSells.length,
         failedWallets: failedSells.length,
@@ -397,55 +494,78 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         netProfitLoss: financialStats.netProfitLoss,
         profitLossPercentage: financialStats.profitLossPercentage,
         isProfit: financialStats.isProfit,
-        successRate: Math.round((successfulSells.length / results.length) * 100),
+        successRate: Math.round(
+          (successfulSells.length / results.length) * 100
+        ),
       };
-      
+
       // Format tokens sold for display
-      const tokensSoldFormatted = (Number(sellSummary.tokensSold) / 1e6).toLocaleString(undefined, {
+      const tokensSoldFormatted = (
+        Number(sellSummary.tokensSold) / 1e6
+      ).toLocaleString(undefined, {
         maximumFractionDigits: 2,
       });
-      
+
       // Complete loading state with detailed information
       await completeLoadingState(
         loadingKey,
         undefined,
         `**💸 Wallet Sells Complete**\n\n` +
-        `**Successful:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets (${sellSummary.successRate}%)\n` +
-        `**SOL Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n` +
-        `**Tokens Sold:** ${tokensSoldFormatted} tokens (${data.sellPercent}%)\n\n` +
-        `**Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '+' : ''}${sellSummary.netProfitLoss.toFixed(6)} SOL (${sellSummary.profitLossPercentage >= 0 ? '+' : ''}${sellSummary.profitLossPercentage.toFixed(1)}%)`
+          `✅ **Success Rate:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets (${sellSummary.successRate}%)\n` +
+          `💰 **SOL Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n` +
+          `🪙 **Tokens Sold:** ${tokensSoldFormatted} tokens (${data.sellPercent}%)\n\n` +
+          `📊 **Overall Performance:**\n` +
+          `   • **Total P&L:** ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "+" : ""}${sellSummary.netProfitLoss.toFixed(6)} SOL\n` +
+          `   • **Return:** ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "+" : ""}${sellSummary.profitLossPercentage.toFixed(1)}%\n\n` +
+          `${sellSummary.failedWallets > 0 ? `⚠️ ${sellSummary.failedWallets} wallet(s) failed to sell\n\n` : ""}` +
+          `🎯 **All wallet sells completed successfully!**`
       );
-      
+
       // Update the initial notification with accurate data
-      const finalMessage = `🎉 **Wallet Sells completed successfully\!**\n\n` +
-        `✅ **Success Rate:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets \\(${sellSummary.successRate}%\\)\n` +
-        `💰 **Total Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, '\.')} SOL\n` +
-        `🪙 **Tokens Sold:** ${tokensSoldFormatted.replace(/\./g, '\.')} tokens \\(${data.sellPercent}%\\)\n` +
-        `📊 **Overall P&L:** ${sellSummary.isProfit ? '🟢' : '🔴'} ${sellSummary.netProfitLoss >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, '\.')} SOL \\(${sellSummary.profitLossPercentage >= 0 ? '\\+' : '\\-'}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, '\.')}%\\)\n\n` +
-        `${sellSummary.failedWallets > 0 ? `⚠️ ${sellSummary.failedWallets} wallet\\(s\\) failed to sell\n\n` : ''}` +
-        `💡 View individual transactions in your token list for more details\\.`;
-      
+      const finalMessage =
+        `🎉 <b>Wallet Sells Completed Successfully!</b>\n\n` +
+        `✅ <b>Success Rate:</b> ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets (${sellSummary.successRate}%)\n` +
+        `💰 <b>Total Received:</b> ${sellSummary.solReceived.toFixed(6)} SOL\n` +
+        `🪙 <b>Tokens Sold:</b> ${tokensSoldFormatted} tokens (${data.sellPercent}%)\n\n` +
+        `📊 <b>Overall Performance:</b>\n` +
+        `   • <b>Total P&L:</b> ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "+" : ""}${sellSummary.netProfitLoss.toFixed(6)} SOL\n` +
+        `   • <b>Return:</b> ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "+" : ""}${sellSummary.profitLossPercentage.toFixed(1)}%\n\n` +
+        `${sellSummary.failedWallets > 0 ? `⚠️ <i>${sellSummary.failedWallets} wallet(s) failed to sell</i>\n\n` : ""}` +
+        `💡 <i>View individual transactions in your token list for more details.</i>`;
+
       try {
-        await bot.api.editMessageText(data.userChatId, initialNotification.message_id, finalMessage, {
-          parse_mode: "MarkdownV2"
-        });
-        logger.info(`[${logIdentifier}] Updated notification with accurate transaction data`);
+        await bot.api.editMessageText(
+          data.userChatId,
+          initialNotification.message_id,
+          finalMessage,
+          {
+            parse_mode: "HTML",
+          }
+        );
+        logger.info(
+          `[${logIdentifier}] Updated notification with accurate transaction data`
+        );
         // Always send a new message as well
-        await bot.api.sendMessage(data.userChatId, finalMessage, { parse_mode: "MarkdownV2" });
+        await bot.api.sendMessage(data.userChatId, finalMessage, {
+          parse_mode: "MarkdownV2",
+        });
       } catch (error) {
-        logger.warn(`[${logIdentifier}] Failed to edit notification, sending new message:`, error);
+        logger.warn(
+          `[${logIdentifier}] Failed to edit notification, sending new message:`,
+          error
+        );
         // Fallback: send new message if editing fails
         await sendNotification(data.userChatId, finalMessage);
       }
     } catch (error: any) {
       logger.error(
         "[jobs-sell-wallet]: Error Occurred while selling wallet supply",
-        error,
+        error
       );
-      
+
       // Fail loading state
       await failLoadingState(loadingKey, error.message);
-      
+
       throw error;
     }
   },
@@ -458,7 +578,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
     removeOnFail: {
       count: 20,
     },
-  },
+  }
 );
 
 export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
@@ -466,29 +586,32 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
   async (job) => {
     const data = job.data;
     const loadingKey = `${data.userChatId}-prepare_launch-${data.tokenAddress}`;
-    
+
     try {
       logger.info("[jobs]: Prepare Launch Job starting...");
       logger.info("[jobs-prepare-launch]: Job Data", data);
-      
+
       // Update loading state - Phase 0: Validating parameters
       await updateLoadingState(loadingKey, 0);
-      
+
       // Update loading state - Phase 1: Collecting platform fee
       await updateLoadingState(loadingKey, 1);
-      
+
       // Update loading state - Phase 2: Initializing mixer
       await updateLoadingState(loadingKey, 2);
-      
+
       // Start heartbeat for long mixing operations (with safety wrapper)
       let heartbeatInterval: NodeJS.Timeout | null = null;
       try {
         heartbeatInterval = startMixerHeartbeat(loadingKey, 15);
       } catch (heartbeatError) {
         // If heartbeat fails to start, log but continue with operation
-        logger.warn("Failed to start mixer heartbeat, continuing without it:", heartbeatError);
+        logger.warn(
+          "Failed to start mixer heartbeat, continuing without it:",
+          heartbeatError
+        );
       }
-      
+
       try {
         await prepareTokenLaunch(
           data.tokenPrivateKey,
@@ -499,7 +622,7 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
           data.tokenSymbol,
           data.buyAmount,
           data.devBuy,
-          loadingKey, // Pass loading key for progress tracking
+          loadingKey // Pass loading key for progress tracking
         );
       } finally {
         // Safely clear heartbeat interval
@@ -511,39 +634,49 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
           }
         }
       }
-      
+
       // Complete preparation loading state
       await completeLoadingState(
         loadingKey,
         undefined,
-        `**Token:** ${data.tokenName} ($${data.tokenSymbol})\n**Status:** Ready for launch`
+        `🎉 **Preparation Complete!**\n\n` +
+          `🪙 **Token:** ${data.tokenName} ($${data.tokenSymbol})\n` +
+          `✅ **Status:** Ready for launch\n` +
+          `🚀 **Next:** Execution phase starting...`
       );
-      
+
       // Automatically enqueue the execution phase
       const executeResult = await enqueueExecuteTokenLaunch(
         data.userId,
         data.userChatId,
         data.tokenAddress
       );
-      
+
       if (!executeResult.success) {
-        throw new Error(`Failed to enqueue execution phase: ${executeResult.message}`);
+        throw new Error(
+          `Failed to enqueue execution phase: ${executeResult.message}`
+        );
       }
-      
+
       await sendNotification(
         data.userChatId,
-        `🛠️ **Preparation Complete\\!**\n\n✅ Wallets funded via mixer\n\n🚀 **Now launching your token\\.\\.\\.**`,
+        `🎉 **Preparation Phase Complete\\!** 🎉\n\n` +
+          `✨ **What's Been Done:**\n` +
+          `   • 🔄 Wallets funded via mixer\n` +
+          `   • ⚡ All systems ready\n\n` +
+          `🚀 **Next Phase:** Token Launch Execution\n` +
+          `⏳ **Status:** Starting launch sequence\\.\\.\\.\n\n` +
+          `🎯 **Your token is about to go live\\!**`
       );
-      
     } catch (error: any) {
       logger.error(
         "[jobs-prepare-launch]: Error Occurred while preparing token launch",
-        error,
+        error
       );
-      
+
       // Fail loading state
       await failLoadingState(loadingKey, error.message);
-      
+
       throw error;
     }
   },
@@ -558,7 +691,7 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
     },
     lockDuration: 3 * 60 * 1000, // 3 minutes for preparation
     lockRenewTime: 30 * 1000,
-  },
+  }
 );
 
 export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
@@ -566,24 +699,27 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
   async (job) => {
     const data = job.data;
     const loadingKey = `${data.userChatId}-execute_launch-${data.tokenAddress}`;
-    
+
     try {
       logger.info("[jobs]: Execute Launch Job starting...");
       logger.info("[jobs-execute-launch]: Job Data", data);
-      
+
       // Update loading state - Phase 0: Starting execution
       await updateLoadingState(loadingKey, 0);
-      
+
       // Update loading state - Phase 1: Creating token
       await updateLoadingState(loadingKey, 1);
-      
+
       // Update loading state - Phase 2: Executing buys
       await updateLoadingState(loadingKey, 2);
-      
+
       // Generate buy distribution for sequential buying
       const { generateBuyDistribution } = await import("../backend/functions");
-      const buyDistribution = generateBuyDistribution(data.buyAmount, data.buyerWallets.length);
-      
+      const buyDistribution = generateBuyDistribution(
+        data.buyAmount,
+        data.buyerWallets.length
+      );
+
       await executeTokenLaunch(
         data.tokenPrivateKey,
         "", // funderWallet not needed for execution phase
@@ -595,39 +731,49 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
         data.tokenMetadataUri,
         data.buyAmount,
         data.devBuy,
-        data.launchStage,
+        data.launchStage
       );
-      
+
       // Update loading state - Phase 3: Finalizing
       await updateLoadingState(loadingKey, 3);
-      
-      await updateTokenState(data.tokenAddress, TokenState.LAUNCHED, data.userId);
-      
+
+      await updateTokenState(
+        data.tokenAddress,
+        TokenState.LAUNCHED,
+        data.userId
+      );
+
       // Pump addresses are never released - they remain permanently allocated to the user
-      logger.info(`Pump address ${data.tokenAddress} remains permanently allocated to user ${data.userId}`);
-      
+      logger.info(
+        `Pump address ${data.tokenAddress} remains permanently allocated to user ${data.userId}`
+      );
+
       // Complete loading state
       await completeLoadingState(
         loadingKey,
         undefined,
-        `**Token:** ${data.tokenName} ($${data.tokenSymbol})\n**Address:** \`${data.tokenAddress}\``
+        `🎉 **Launch Complete!**\n\n` +
+          `🪙 **Token:** ${data.tokenName} ($${data.tokenSymbol})\n` +
+          `📍 **Address:** \`${data.tokenAddress}\`\n` +
+          `✅ **Status:** Successfully launched\n\n` +
+          `🚀 **Your token is now live and ready for trading!**`
       );
-      
+
       await sendLaunchSuccessNotification(
         data.userChatId,
         data.tokenAddress,
         data.tokenName,
-        data.tokenSymbol,
+        data.tokenSymbol
       );
     } catch (error: any) {
       logger.error(
         "[jobs-execute-launch]: Error Occurred while executing token launch",
-        error,
+        error
       );
-      
+
       // Fail loading state
       await failLoadingState(loadingKey, error.message);
-      
+
       throw error;
     }
   },
@@ -642,7 +788,7 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
     },
     lockDuration: 3 * 60 * 1000, // 3 minutes for execution
     lockRenewTime: 30 * 1000,
-  },
+  }
 );
 
 launchTokenWorker.on("ready", () => {
@@ -655,22 +801,26 @@ launchTokenWorker.on("error", async (error) => {
   logger.error("Token Launch Worker Error", error);
 });
 launchTokenWorker.on("failed", async (job) => {
-  await updateTokenState(job!.data.tokenAddress, TokenState.LISTED, job!.data.userId);
-  
+  await updateTokenState(
+    job!.data.tokenAddress,
+    TokenState.LISTED,
+    job!.data.userId
+  );
+
   // Handle pump address release on launch failure with error context
   await handleTokenLaunchFailure(job!.data.tokenAddress, job?.failedReason);
-  
+
   const token = job!.data;
   await sendLaunchFailureNotification(
     job!.data.userChatId,
     token.tokenAddress,
     token.tokenName,
-    token.tokenSymbol,
+    token.tokenSymbol
   );
 });
 launchTokenWorker.on("closed", () => {
-  logger.info("Launch Token worker closed successfully")
-})
+  logger.info("Launch Token worker closed successfully");
+});
 
 sellDevWorker.on("ready", () => {
   logger.info("Dev Sell worker ready");
@@ -685,7 +835,7 @@ sellDevWorker.on("failed", async (job) => {
   await releaseDevSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Dev Wallet Sell Failed\. Please try again 🔄",
+    "❌ Dev Wallet Sell Failed\. Please try again 🔄"
   );
 });
 sellDevWorker.on("closed", () => {
@@ -705,7 +855,7 @@ sellWalletWorker.on("failed", async (job) => {
   await releaseWalletSellLock(job!.data.tokenAddress);
   await sendNotification(
     job!.data.userChatId,
-    "❌ Wallet Sells Failed\. Please try again 🔄",
+    "❌ Wallet Sells Failed\. Please try again 🔄"
   );
 });
 sellWalletWorker.on("closed", async () => {
@@ -722,12 +872,16 @@ prepareLaunchWorker.on("error", async (error) => {
   logger.error("Prepare Launch Worker Error", error);
 });
 prepareLaunchWorker.on("failed", async (job) => {
-  await updateTokenState(job!.data.tokenAddress, TokenState.LISTED, job!.data.userId);
-  
+  await updateTokenState(
+    job!.data.tokenAddress,
+    TokenState.LISTED,
+    job!.data.userId
+  );
+
   const token = job!.data;
   await sendNotification(
     job!.data.userChatId,
-    `❌ **Token preparation failed**\n\nToken: ${token.tokenName} \\($${token.tokenSymbol}\\)\n\n🔄 You can try again from your tokens list\\.`,
+    `❌ **Token preparation failed**\n\nToken: ${token.tokenName} \\($${token.tokenSymbol}\\)\n\n🔄 You can try again from your tokens list\\.`
   );
 });
 prepareLaunchWorker.on("closed", () => {
@@ -744,19 +898,23 @@ executeLaunchWorker.on("error", async (error) => {
   logger.error("Execute Launch Worker Error", error);
 });
 executeLaunchWorker.on("failed", async (job) => {
-  await updateTokenState(job!.data.tokenAddress, TokenState.LISTED, job!.data.userId);
-  
+  await updateTokenState(
+    job!.data.tokenAddress,
+    TokenState.LISTED,
+    job!.data.userId
+  );
+
   // Handle pump address release on execution failure with error context
   await handleTokenLaunchFailure(job!.data.tokenAddress, job?.failedReason);
-  
+
   const token = job!.data;
   await sendLaunchFailureNotification(
     job!.data.userChatId,
     token.tokenAddress,
     token.tokenName,
-    token.tokenSymbol,
+    token.tokenSymbol
   );
 });
 executeLaunchWorker.on("closed", () => {
-  logger.info("Execute launch worker closed successfully")
+  logger.info("Execute launch worker closed successfully");
 });

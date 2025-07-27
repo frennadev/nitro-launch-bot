@@ -3,6 +3,7 @@ import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { CallBackQueries } from "../types";
 import { safeAnswerCallbackQuery } from "../utils";
+import { sendMessage } from "../../backend/sender";
 
 // Market cap calculation function (same as in launchToken.ts)
 async function calculateExpectedMarketCap(
@@ -121,7 +122,7 @@ ${bonkMcResults.map((r) => `  ${r.amount} SOL → $${r.mc}`).join("\n")}
     .text("💰 Custom Amount", "custom_mc_amount")
     .text("🔙 Back", CallBackQueries.BACK);
 
-  await ctx.reply(message, {
+  await sendMessage(ctx, message, {
     parse_mode: "HTML",
     reply_markup: keyboard,
   });

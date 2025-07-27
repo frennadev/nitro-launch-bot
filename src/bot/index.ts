@@ -549,6 +549,117 @@ bot.use(createConversation(airdropSolConversation));
 bot.use(createConversation(predictMcConversation));
 bot.use(createConversation(fundTokenWalletsConversation));
 
+// Message cleaner to delete user messages after 1 minute
+const messageCleanupQueue = new Map<string, Set<number>>();
+
+bot.use(async (ctx, next) => {
+  if (ctx.message?.text) {
+    setImmediate(() =>
+      logger.info(
+        `[DebugMiddleware] ALL text message received: "${ctx.message?.text}" from user ${ctx.chat?.id}`
+      )
+    );
+    const detectedAddresses = TokenInfoService.detectTokenAddresses(
+      ctx.message.text
+    );
+    if (ctx.message.text.startsWith("/") || detectedAddresses.length > 0) {
+      logger.info(ctx.conversation.active());
+      if (ctx.conversation.active()) {
+        logger.info(
+          `[DebugMiddleware] Exiting all conversations for user ${ctx.chat?.id}`
+        );
+        await ctx.conversation.exitAll();
+      }
+    }
+  }
+  return next();
+});
+
+bot.use(async (ctx, next) => {
+  // Store user messages for cleanup
+  if (ctx.message?.text && ctx.from && ctx.chat) {
+    const userId = ctx.from.id.toString();
+    const messageId = ctx.message.message_id;
+    const chatId = ctx.chat.id;
+
+    // Initialize user's message set if not exists
+    if (!messageCleanupQueue.has(userId)) {
+      messageCleanupQueue.set(userId, new Set());
+    }
+
+    // Add message to cleanup queue
+    messageCleanupQueue.get(userId)!.add(messageId);
+
+    // Schedule message deletion after 1 minute
+    setTimeout(async () => {
+      try {
+        await ctx.api.deleteMessage(chatId, messageId);
+        messageCleanupQueue.get(userId)?.delete(messageId);
+
+        // Clean up empty sets
+        if (messageCleanupQueue.get(userId)?.size === 0) {
+          messageCleanupQueue.delete(userId);
+        }
+      } catch (error) {
+        // Message might already be deleted or bot lacks permissions
+        logger.error(
+          `Failed to delete message ${messageId} for user ${userId}:`,
+          error
+        );
+        messageCleanupQueue.get(userId)?.delete(messageId);
+      }
+    }, 60000); // 1 minute
+  }
+
+  return next();
+});
+
+bot.use(async (ctx, next) => {
+  if (ctx.message && ctx.message.text) {
+    logger.info(
+      `[DebugMiddleware] Received text message: "${ctx.message.text}" from user ${ctx.chat?.id}`
+    );
+    const detectedAddresses = TokenInfoService.detectTokenAddresses(
+      ctx.message.text
+    );
+
+    logger.info(
+      `[DebugMiddleware] Solana address match: ${
+        detectedAddresses.length > 0 ? detectedAddresses[0] : "None"
+      }`
+    );
+    if (
+      detectedAddresses.length > 0
+      // (ctx.message.text.startsWith("/") && !ctx.callbackQuery)
+    ) {
+      logger.info(
+        `[MessageHandler] Detected Solana address, exiting conversations: "${ctx.message.text}"`
+      );
+
+      const conv = ctx.conversation.active();
+
+      const conversationName = conv;
+
+      if (conv) {
+        for (const key of Object.keys(conv)) {
+          await ctx.conversation.exit(key);
+          logger.info(
+            `[MessageHandler] Exiting conversation key: ${key} for user ${ctx.chat?.id}`
+          );
+        }
+
+        // After exiting conversations, continue to intended text handlers
+        logger.info(
+          `[MessageHandler] Conversations exited, processing text message: "${ctx.message?.text}"`
+        );
+        return next();
+      }
+    }
+  }
+
+  return next();
+});
+
 // Middleware to patch reply/sendMessage and hook deletion
 bot.use(async (ctx, next) => {
   const chatId = ctx.chat?.id;

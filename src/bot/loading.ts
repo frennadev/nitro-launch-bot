@@ -1,5 +1,6 @@
 import bot from ".";
 import type { Context } from "grammy";
+import { sendMessage } from "../backend/sender";
 
 export interface LoadingState {
   chatId: number;
@@ -19,80 +20,101 @@ const processingFrames = ["⚡", "✨", "⚡", "✨"];
 // Operation-specific messages
 const operationMessages = {
   token_launch: {
-    initial: "🚀 **Launching your token...**\n\n⏳ Preparing launch sequence...",
+    initial:
+      "🚀 **Launching your token...**\n\n✨ *Initiating launch sequence with maximum privacy*",
     phases: [
-      "🔍 Validating token parameters...",
-      "💰 Checking wallet balances...",
-      "🏗️ Creating token on Pump.fun...",
-      "💎 Executing dev buy...",
-      "🛒 Distributing to buyer wallets...",
-      "📊 Finalizing launch...",
+      "🔍 Validating token parameters and metadata...",
+      "💰 Verifying wallet balances and permissions...",
+      "🏗️ Deploying smart contract on Pump.fun...",
+      "💎 Executing strategic dev buy transaction...",
+      "🛒 Distributing tokens to buyer wallets...",
+      "📊 Finalizing launch and updating records...",
     ],
-    success: "🎉 **Token launched successfully!**",
-    error: "❌ **Token launch failed**",
+    success:
+      "🎉 **Token launched successfully!** 🚀\n\n✨ *Your token is now live and trading*",
+    error:
+      "❌ **Token launch failed** 💔\n\n🔧 *Please check your parameters and try again*",
   },
+
   prepare_launch: {
-    initial: "🛠️ **Preparing token launch...**\n\n⏳ Initializing preparation sequence...",
+    initial:
+      "🛠️ **Preparing token launch...**\n\n🎯 *Setting up privacy-first launch infrastructure*",
     phases: [
-      "🔍 Validating launch parameters...",
-      "💰 Collecting platform fee...",
-      "🔀 Initializing mixer system...",
-      "🏦 Reserving intermediate wallets...",
-      "💸 Distributing funds through mixer...",
-      "⚡ Funding buyer wallets...",
-      "✅ Preparation complete...",
+      "🔍 Validating launch parameters and requirements...",
+      "💰 Processing platform fee and securing funds...",
+      "🔀 Initializing advanced mixer system...",
+      "🏦 Allocating secure intermediate wallets...",
+      "💸 Distributing funds through privacy layers...",
+      "⚡ Funding designated buyer wallets...",
+      "✅ Launch preparation completed successfully...",
     ],
-    success: "🎉 **Preparation completed successfully\\!**",
-    error: "❌ **Preparation failed**",
+    success:
+      "🎉 **Preparation completed!** ✨\n\n🚀 *Ready for secure token launch*",
+    error:
+      "❌ **Preparation failed** ⚠️\n\n🔄 *Reverting changes and securing funds*",
   },
+
   mixer_operation: {
-    initial: "🔀 **Mixing funds for privacy...**\n\n⏳ Initializing secure mixing process...",
+    initial:
+      "🔀 **Mixing funds for privacy...**\n\n🛡️ *Applying advanced obfuscation layers*",
     phases: [
-      "🔐 Validating wallet pool...",
-      "🏦 Reserving intermediate wallets...",
-      "💫 Creating mixing routes...",
-      "⚡ Executing hop 1/5...",
-      "⚡ Executing hop 2/5...",
-      "⚡ Executing hop 3/5...",
-      "⚡ Executing hop 4/5...",
-      "⚡ Executing hop 5/5...",
-      "💰 Finalizing distributions...",
-      "🔒 Releasing intermediate wallets...",
+      "🔐 Validating secure wallet pool integrity...",
+      "🏦 Reserving anonymous intermediate wallets...",
+      "💫 Generating randomized mixing routes...",
+      "⚡ Executing privacy hop 1 of 5...",
+      "⚡ Executing privacy hop 2 of 5...",
+      "⚡ Executing privacy hop 3 of 5...",
+      "⚡ Executing privacy hop 4 of 5...",
+      "⚡ Executing privacy hop 5 of 5...",
+      "💰 Finalizing secure fund distributions...",
+      "🔒 Cleaning up and releasing wallets...",
     ],
-    success: "🎉 **Funds mixed successfully\\!**",
-    error: "❌ **Mixing operation failed**",
+    success:
+      "🎉 **Funds mixed successfully!** 🛡️\n\n🔐 *Maximum privacy achieved*",
+    error:
+      "❌ **Mixing operation failed** 🚨\n\n🔄 *Funds safely returned to origin*",
   },
+
   dev_sell: {
-    initial: "💰 **Processing dev sell...**\n\n⏳ Preparing transaction...",
+    initial:
+      "💰 **Processing dev sell...**\n\n📈 *Executing strategic token liquidation*",
     phases: [
-      "🔍 Validating sell parameters...",
-      "💎 Calculating token amounts...",
-      "📤 Executing sell transaction...",
-      "✅ Confirming transaction...",
+      "🔍 Validating sell parameters and timing...",
+      "💎 Calculating optimal token amounts...",
+      "📤 Broadcasting sell transaction to network...",
+      "✅ Confirming transaction and updating balance...",
     ],
-    success: "🎉 **Dev sell completed successfully\\!**",
-    error: "❌ **Dev sell failed**",
+    success:
+      "🎉 **Dev sell completed!** 💰\n\n📊 *Funds successfully liquidated*",
+    error: "❌ **Dev sell failed** ⚠️\n\n🔄 *Transaction reverted safely*",
   },
+
   wallet_sell: {
-    initial: "💸 **Processing wallet sells...**\n\n⏳ Preparing transactions...",
+    initial:
+      "💸 **Processing wallet sells...**\n\n🎯 *Coordinating multi-wallet liquidation*",
     phases: [
-      "🔍 Validating wallet holdings...",
-      "💎 Calculating sell amounts...",
-      "📤 Executing sell transactions...",
-      "✅ Confirming transactions...",
+      "🔍 Scanning wallet holdings and balances...",
+      "💎 Computing optimal sell amounts per wallet...",
+      "📤 Broadcasting coordinated sell transactions...",
+      "✅ Confirming all transactions and settlements...",
     ],
-    success: "🎉 **Wallet sells completed successfully\\!**",
-    error: "❌ **Wallet sells failed**",
+    success:
+      "🎉 **Wallet sells completed!** 💸\n\n📈 *All positions successfully liquidated*",
+    error:
+      "❌ **Wallet sells failed** ⚠️\n\n🔄 *Partial sales may have occurred*",
   },
+
   transaction: {
-    initial: "📡 **Processing transaction...**\n\n⏳ Preparing...",
+    initial:
+      "📡 **Processing transaction...**\n\n🌐 *Broadcasting to Solana network*",
     phases: [
-      "🔍 Validating transaction...",
-      "📤 Broadcasting to network...",
-      "⏰ Waiting for confirmation...",
+      "🔍 Validating transaction parameters...",
+      "📤 Broadcasting to network validators...",
+      "⏰ Awaiting network confirmation...",
     ],
-    success: "✅ **Transaction confirmed\\!**",
-    error: "❌ **Transaction failed**",
+    success:
+      "✅ **Transaction confirmed!** 🎉\n\n🌐 *Successfully recorded on blockchain*",
+    error: "❌ **Transaction failed** 💔\n\n🔄 *Network rejected transaction*",
   },
 };
 
@@ -105,23 +127,27 @@ export async function startLoadingState(
   identifier?: string
 ): Promise<string> {
   const chatId = ctx.chat!.id;
-  const loadingKey = identifier ? `${chatId}-${operation}-${identifier}` : `${chatId}-${operation}`;
-  
+  const loadingKey = identifier
+    ? `${chatId}-${operation}-${identifier}`
+    : `${chatId}-${operation}`;
+
   const config = operationMessages[operation];
-  const message = await ctx.reply(config.initial, { parse_mode: "Markdown" });
-  
+  const message = await sendMessage(ctx, config.initial, {
+    parse_mode: "Markdown",
+  });
+
   const loadingState: LoadingState = {
     chatId,
     messageId: message.message_id,
     operation,
     startTime: Date.now(),
   };
-  
+
   activeLoadingStates.set(loadingKey, loadingState);
-  
+
   // Start animation
   startLoadingAnimation(loadingKey);
-  
+
   return loadingKey;
 }
 
@@ -135,16 +161,18 @@ export async function updateLoadingState(
 ): Promise<void> {
   const state = activeLoadingStates.get(loadingKey);
   if (!state) return;
-  
-  const config = operationMessages[state.operation as keyof typeof operationMessages];
+
+  const config =
+    operationMessages[state.operation as keyof typeof operationMessages];
   const phaseMessage = customMessage || config.phases[phase] || "Processing...";
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-  
+
   const progressBar = generateProgressBar(phase, config.phases.length);
-  const frame = processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
-  
-  const message = `🚀 **${state.operation.replace('_', ' ').toUpperCase()}**\n\n${frame} ${phaseMessage}\n\n${progressBar}\n\n⏱️ Elapsed: ${elapsed}s`;
-  
+  const frame =
+    processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
+
+  const message = `🚀 **${state.operation.replace("_", " ").toUpperCase()}**\n\n${frame} ${phaseMessage}\n\n${progressBar}\n\n⏱️ Elapsed: ${elapsed}s`;
+
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
       parse_mode: "Markdown",
@@ -165,25 +193,28 @@ export async function completeLoadingState(
 ): Promise<void> {
   const state = activeLoadingStates.get(loadingKey);
   if (!state) return;
-  
-  const config = operationMessages[state.operation as keyof typeof operationMessages];
+
+  const config =
+    operationMessages[state.operation as keyof typeof operationMessages];
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-  
+
   let message = customSuccessMessage || config.success;
   if (additionalInfo) {
     message += `\n\n${additionalInfo}`;
   }
   message += `\n\n⏱️ Completed in ${elapsed}s`;
-  
+
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
       parse_mode: "Markdown",
     });
   } catch (error) {
     // If editing fails, send a new message
-    await bot.api.sendMessage(state.chatId, message, { parse_mode: "Markdown" });
+    await bot.api.sendMessage(state.chatId, message, {
+      parse_mode: "Markdown",
+    });
   }
-  
+
   activeLoadingStates.delete(loadingKey);
 }
 
@@ -197,25 +228,28 @@ export async function failLoadingState(
 ): Promise<void> {
   const state = activeLoadingStates.get(loadingKey);
   if (!state) return;
-  
-  const config = operationMessages[state.operation as keyof typeof operationMessages];
+
+  const config =
+    operationMessages[state.operation as keyof typeof operationMessages];
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-  
+
   let message = customFailMessage || config.error;
   if (errorMessage) {
     message += `\n\n📝 **Details:** ${errorMessage}`;
   }
   message += `\n\n⏱️ Failed after ${elapsed}s`;
-  
+
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
       parse_mode: "Markdown",
     });
   } catch (error) {
     // If editing fails, send a new message
-    await bot.api.sendMessage(state.chatId, message, { parse_mode: "Markdown" });
+    await bot.api.sendMessage(state.chatId, message, {
+      parse_mode: "Markdown",
+    });
   }
-  
+
   activeLoadingStates.delete(loadingKey);
 }
 
@@ -229,18 +263,28 @@ function startLoadingAnimation(loadingKey: string): void {
       clearInterval(animationInterval);
       return;
     }
-    
-    const config = operationMessages[state.operation as keyof typeof operationMessages];
+
+    const config =
+      operationMessages[state.operation as keyof typeof operationMessages];
     const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-    const frame = loadingFrames[Math.floor(Date.now() / 800) % loadingFrames.length];
-    
-    // Only show mixing message for token launch operations
-    let message = `🚀 **${state.operation.replace('_', ' ').toUpperCase()}**\n\n${frame} Preparing launch sequence...\n\n⏱️ Elapsed: ${elapsed}s`;
-    
-    if (state.operation === 'token_launch') {
-      message += `\n\n💡 *May take up to a minute dependent on your buy amount, we're trying to mix the funds and ensure it is untraceable*`;
+    const frame =
+      loadingFrames[Math.floor(Date.now() / 800) % loadingFrames.length];
+
+    const frame =
+      loadingFrames[Math.floor(Date.now() / 800) % loadingFrames.length];
+    const operationName = state.operation.replace(/_/g, " ").toUpperCase();
+
+    let message = `<b>🚀 ${operationName}</b>\n\n`;
+    message += `${frame} <i>Preparing launch sequence...</i>\n\n`;
+    message += `⏱️ <b>Elapsed:</b> ${elapsed}s`;
+
+    if (state.operation === "token_launch") {
+      message += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `💡 <i>Processing may take up to a minute depending on your buy amount</i>\n`;
+      message += `🔒 <i>We're mixing funds to ensure complete untraceability</i>\n`;
+      message += `🛡️ <i>Maximum privacy protection is being applied</i>`;
     }
-    
+
     try {
       await bot.api.editMessageText(state.chatId, state.messageId, message, {
         parse_mode: "Markdown",
@@ -250,7 +294,7 @@ function startLoadingAnimation(loadingKey: string): void {
       clearInterval(animationInterval);
     }
   }, 800);
-  
+
   // Stop animation after 30 seconds to prevent infinite loops
   setTimeout(() => {
     clearInterval(animationInterval);
@@ -264,7 +308,7 @@ function generateProgressBar(current: number, total: number): string {
   const percentage = Math.floor((current / total) * 100);
   const filled = Math.floor(percentage / 10);
   const empty = 10 - filled;
-  
+
   const bar = "█".repeat(filled) + "░".repeat(empty);
   return `▓${bar}▓ ${percentage}%`;
 }
@@ -277,8 +321,10 @@ export async function sendLoadingMessage(
   initialMessage: string,
   operation: string = "processing"
 ): Promise<{ messageId: number; update: (message: string) => Promise<void> }> {
-  const sent = await ctx.reply(initialMessage, { parse_mode: "Markdown" });
-  
+  const sent = await sendMessage(ctx, initialMessage, {
+    parse_mode: "Markdown",
+  });
+
   const update = async (message: string) => {
     try {
       await bot.api.editMessageText(ctx.chat!.id, sent.message_id, message, {
@@ -288,7 +334,7 @@ export async function sendLoadingMessage(
       console.warn("Failed to update loading message:", error);
     }
   };
-  
+
   return { messageId: sent.message_id, update };
 }
 
@@ -298,7 +344,7 @@ export async function sendLoadingMessage(
 export function cleanupStaleLoadingStates(): void {
   const now = Date.now();
   const staleThreshold = 10 * 60 * 1000; // 10 minutes
-  
+
   for (const [key, state] of activeLoadingStates.entries()) {
     if (now - state.startTime > staleThreshold) {
       activeLoadingStates.delete(key);
@@ -323,13 +369,14 @@ export async function updateMixerProgress(
 ): Promise<void> {
   const state = activeLoadingStates.get(loadingKey);
   if (!state) return;
-  
-  const config = operationMessages[state.operation as keyof typeof operationMessages];
+
+  const config =
+    operationMessages[state.operation as keyof typeof operationMessages];
   let phaseMessage = config.phases[phase] || "Processing...";
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-  
+
   // Enhanced mixer-specific messaging
-  if (state.operation === 'mixer_operation') {
+  if (state.operation === "mixer_operation") {
     if (routeIndex !== undefined && totalRoutes !== undefined) {
       if (hopIndex !== undefined && totalHops !== undefined) {
         phaseMessage = `⚡ Route ${routeIndex + 1}/${totalRoutes} - Hop ${hopIndex + 1}/${totalHops}`;
@@ -338,30 +385,31 @@ export async function updateMixerProgress(
       }
     }
   }
-  
+
   const progressBar = generateProgressBar(phase, config.phases.length);
-  const frame = processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
-  
+  const frame =
+    processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
+
   let message = `🔀 **MIXER OPERATION**\n\n${frame} ${phaseMessage}\n\n${progressBar}`;
-  
+
   // Add route progress for mixer operations
   if (routeIndex !== undefined && totalRoutes !== undefined) {
     const routeProgress = generateProgressBar(routeIndex, totalRoutes);
     message += `\n\n📊 **Route Progress:**\n${routeProgress}`;
   }
-  
+
   message += `\n\n⏱️ Elapsed: ${elapsed}s`;
-  
+
   // Add time estimate for large operations
   if (estimatedTimeRemaining && estimatedTimeRemaining > 0) {
     message += ` | ETA: ~${estimatedTimeRemaining}s`;
   }
-  
+
   // Add helpful context for long operations
   if (elapsed > 30) {
     message += `\n\n💡 Large mixing operations ensure maximum privacy through multiple intermediate wallets`;
   }
-  
+
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
       parse_mode: "Markdown",
@@ -382,25 +430,26 @@ export async function updateMixerStatus(
 ): Promise<void> {
   const state = activeLoadingStates.get(loadingKey);
   if (!state) return;
-  
+
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-  const frame = processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
-  
+  const frame =
+    processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
+
   let message = `🔀 **MIXER OPERATION**\n\n${frame} ${statusMessage}`;
-  
+
   if (details) {
     message += `\n\n📋 ${details}`;
   }
-  
+
   if (showElapsed) {
     message += `\n\n⏱️ Elapsed: ${elapsed}s`;
   }
-  
+
   // Add context for operations taking longer than expected
   if (elapsed > 60) {
     message += `\n\n🔐 Complex mixing ensures your transactions are completely untraceable`;
   }
-  
+
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
       parse_mode: "Markdown",
@@ -413,14 +462,17 @@ export async function updateMixerStatus(
 /**
  * Send periodic heartbeat updates for long-running operations
  */
-export function startMixerHeartbeat(loadingKey: string, intervalSeconds: number = 15): NodeJS.Timeout {
+export function startMixerHeartbeat(
+  loadingKey: string,
+  intervalSeconds: number = 15
+): NodeJS.Timeout {
   return setInterval(async () => {
     try {
       const state = activeLoadingStates.get(loadingKey);
       if (!state) return;
-      
+
       const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-      
+
       // Send heartbeat every 15 seconds for operations longer than 30 seconds
       if (elapsed > 30) {
         await updateMixerStatus(
@@ -435,4 +487,4 @@ export function startMixerHeartbeat(loadingKey: string, intervalSeconds: number 
       console.warn("Heartbeat update failed:", error);
     }
   }, intervalSeconds * 1000);
-} 
+}

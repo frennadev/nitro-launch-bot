@@ -34,18 +34,19 @@ const devSellConversation = async (
     return;
   }
   if (token.state !== TokenState.LAUNCHED) {
-    await ctx.reply("Token is not launched yet 😑");
+    await sendMessage(ctx, "Token is not launched yet 😑");
     await conversation.halt();
     return;
   }
   if (token.launchData?.lockDevSell === true) {
-    await ctx.reply("Dev sell job is currently processing 😏");
+    await sendMessage(ctx, "Dev sell job is currently processing 😏");
     await conversation.halt();
     return;
   }
 
   // -------- Request & validate % of dev holdings to sell ----------
-  await ctx.reply(
+  await sendMessage(
+    ctx,
     "Enter the % of dev holdings to sell \\(must not be less than 1 or greater than 100\\): ",
     {
       parse_mode: "MarkdownV2",
@@ -61,7 +62,8 @@ const devSellConversation = async (
         throw new Error("Invalid percentage");
       isValid = true;
     } catch (error) {
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "Invalid % entered ❌. Please re-enter a correct percentage: "
       );
       updatedCtx = await conversation.waitFor("message:text");
@@ -92,7 +94,8 @@ const devSellConversation = async (
       await submitLoading.update(
         "❌ **Failed to submit dev sell**\n\nAn error occurred while submitting dev sell details for execution. Please try again."
       );
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "An error occurred while submitting dev sell details for execution ❌. Please try again.."
       );
     } else {
@@ -124,7 +127,7 @@ const devSell100Conversation = async (
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("❌ User not found");
+    await sendMessage(ctx, "❌ User not found");
     await conversation.halt();
     return;
   }
@@ -132,19 +135,22 @@ const devSell100Conversation = async (
   // -------- VALIDATE TOKEN ----------
   const token = await getUserToken(user.id, tokenAddress);
   if (!token) {
-    await ctx.reply("❌ Token not found");
+    await sendMessage(ctx, "❌ Token not found");
     await conversation.halt();
     return;
   }
 
   if (token.state !== TokenState.LAUNCHED) {
-    await ctx.reply("❌ Token is not launched yet");
+    await sendMessage(ctx, "❌ Token is not launched yet");
     await conversation.halt();
     return;
   }
 
   if (token.launchData?.lockDevSell === true) {
-    await ctx.reply("❌ Dev sell job is currently processing. Please wait...");
+    await sendMessage(
+      ctx,
+      "❌ Dev sell job is currently processing. Please wait..."
+    );
     await conversation.halt();
     return;
   }
