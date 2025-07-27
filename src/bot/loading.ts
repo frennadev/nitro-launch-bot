@@ -267,8 +267,8 @@ function startLoadingAnimation(loadingKey: string): void {
     const config =
       operationMessages[state.operation as keyof typeof operationMessages];
     const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-    const frame =
-      loadingFrames[Math.floor(Date.now() / 800) % loadingFrames.length];
+    // const frame =
+    //   loadingFrames[Math.floor(Date.now() / 800) % loadingFrames.length];
 
     const frame =
       loadingFrames[Math.floor(Date.now() / 800) % loadingFrames.length];
