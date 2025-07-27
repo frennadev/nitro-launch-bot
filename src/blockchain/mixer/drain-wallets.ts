@@ -18,7 +18,7 @@ export async function drainAllMixerWallets(
   const walletManager = new MongoWalletManager(
     env.MONGODB_URI,
     "nitro-launch",
-    env.ENCRYPTION_SECRET
+    "294f6d574446132dcb92d050612dea7aa8cdfe918f29adc9681e1cdf75ad42bb"
   );
 
   // Initialize connection manager
