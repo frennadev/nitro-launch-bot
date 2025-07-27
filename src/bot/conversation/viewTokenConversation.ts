@@ -18,12 +18,17 @@ const viewTokensConversation = async (
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await sendMessage(ctx, "Unrecognized user ❌");
+    await sendMessage(
+      ctx,
+      "❌ <b>Access Denied</b>\n\n<i>User not recognized</i>",
+      {
+        parse_mode: "HTML",
+      }
+    );
     return conversation.halt();
   }
 
   // First, let's check if the user lookup is working correctly
-  const userId = String(user._id);
 
   const tokens = await TokenModel.find({ user: user._id })
     .populate("launchData.devWallet")
@@ -35,10 +40,11 @@ const viewTokensConversation = async (
   if (tokens.length === 0) {
     await sendMessage(
       ctx,
-      `No tokens found for user ${user.userName}.\n\nUser ID: \`${userId}\`\nTelegram ID: \`${user.telegramId}\``,
-      {
-        parse_mode: "Markdown",
-      }
+      `🚀 <b>No Tokens Found</b>\n\n` +
+        `💡 <i>Ready to launch your first token?</i>\n\n` +
+        `🎯 Use the menu below to get started!\n\n` +
+        `👤 <b>User:</b> ${user.userName}`,
+      { parse_mode: "HTML" }
     );
     return conversation.halt();
   }
@@ -78,83 +84,124 @@ const viewTokensConversation = async (
           : 0;
     }
 
+    const formatCurrency = (value: number, currency: string = "$") =>
+      `${currency}${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const formatSOL = (value: number) =>
+      `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SOL`;
+
+    const formatPercentage = (value: number) =>
+      `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+
     const lines = [
-      `💊 **${name}**`,
-      `🔑 Address: \`${tokenAddress}\``,
-      `🏷️ Symbol: \`${symbol}\``,
-      `📝 Description: ${description || "–"}`,
-      "",
-      `👨‍💻 Dev allocation: \`${devBuy || 0}\` SOL`,
-      `🛒 Buyer allocation: \`${buyAmount || 0}\` SOL`,
-      `👥 Worker wallets: \`${(buyWallets as any[])?.length || 0}\``,
-      "",
-      state === TokenState.LAUNCHED && tokenInfo
-        ? `📊 Market Cap: ${`$${tokenInfo.marketCap.toLocaleString()}`} \n💸 Price: ${`$${tokenInfo.priceUsd}`} \n`
-        : "",
-      state === TokenState.LAUNCHED && financialStats
-        ? `💰 **Financial Summary:**\n• Total Spent: ${financialStats.totalSpent.toString()} SOL\n• Unique Buy Wallets: ${financialStats.successfulBuyWallets}\n${totalTokenValue > 0 ? `• Token Value: ${`$${totalTokenValue.toFixed(2)}`}\n` : ""}${profitLoss !== 0 ? `• P&L: ${profitLoss >= 0 ? "🟢" : "🔴"} ${`$${profitLoss.toFixed(2)}`} \\(${`${profitLossPercentage >= 0 ? "+" : ""}${profitLossPercentage.toFixed(1)}%`}\\)\n` : ""}`
-        : "",
-      `📊 Status: ${state === TokenState.LAUNCHED ? "✅ Launched" : "⌛ Pending"}`,
-      "",
-      `Showing ${index + 1} of ${tokens.length}`,
-    ].join("\n");
+      `🚀 <b>${name}</b> • <code>${symbol}</code>`,
+      `📋 <code>${tokenAddress}</code>`,
+      ...(description ? [`💬 ${description}`] : []),
+      ``,
+      `💰 <b>Investment</b>`,
+      `├ Dev Buy: <b>${formatSOL(devBuy || 0)}</b>`,
+      `├ Total Buy: <b>${formatSOL(buyAmount || 0)}</b>`,
+      `└ Wallets: <b>${(buyWallets as unknown[])?.length || 0}</b>`,
+      ``,
+      ...(state === TokenState.LAUNCHED && tokenInfo
+        ? [
+            `📊 <b>Market Data</b>`,
+            `├ Market Cap: <b>${formatCurrency(tokenInfo.marketCap)}</b>`,
+            `└ Price: <b>${formatCurrency(parseFloat(tokenInfo.priceUsd))}</b>`,
+            ``,
+          ]
+        : []),
+      ...(state === TokenState.LAUNCHED && financialStats
+        ? [
+            `📈 <b>Performance</b>`,
+            `├ Total Spent: <b>${formatSOL(financialStats.totalSpent)}</b>`,
+            `├ Successful Buys: <b>${financialStats.successfulBuyWallets}</b>`,
+            ...(totalTokenValue > 0
+              ? [`├ Current Value: <b>${formatCurrency(totalTokenValue)}</b>`]
+              : []),
+            ...(profitLoss !== 0
+              ? [
+                  `└ ${profitLoss >= 0 ? "🟢" : "🔴"} P&L: <b>${formatCurrency(profitLoss)}</b> (${formatPercentage(profitLossPercentage)})`,
+                ]
+              : []),
+            ``,
+          ]
+        : []),
+      `🎯 <b>Status:</b> ${state === TokenState.LAUNCHED ? "🟢 <b>Live</b>" : "🟡 <b>Pending Launch</b>"}`,
+      ``,
+      `<i>Token ${index + 1} of ${tokens.length}</i>`,
+    ]
+      .filter((line) => line.trim() !== "")
+      .join("\n");
 
     const keyboard = new InlineKeyboard();
 
     if (state === TokenState.LAUNCHED) {
       keyboard
         .text(
-          "👨‍💻 Sell Dev Supply",
+          "💰 Sell Dev",
           compressCallbackData(CallBackQueries.SELL_DEV, tokenAddress)
         )
         .text(
-          "📈 Sell % Supply",
+          "📊 Sell %",
           compressCallbackData(CallBackQueries.SELL_PERCENT, tokenAddress)
         )
         .row()
-        .text("🧨 Sell All", compressCallbackData(CallBackQueries.SELL_ALL, tokenAddress))
-        .text("📊 Sell Individual Wallet", compressCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress))
-        .row()
-        .text("🎁 Airdrop SOL", compressCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress))
-        .text("📈 CTO", compressCallbackData(CallBackQueries.CTO, tokenAddress))
-        .row()
-        .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress));
-      
-      // Debug: Log the callback data being generated
-      console.log("Generated sell individual callback data:", `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`);
-      console.log("Generated fund token wallets callback data:", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress));
-    } else {
-      keyboard
         .text(
-          "🚀 Launch Token",
-          compressCallbackData(CallBackQueries.LAUNCH_TOKEN, tokenAddress)
+          "💥 Sell All",
+          compressCallbackData(CallBackQueries.SELL_ALL, tokenAddress)
         )
-        .row();
+        .text(
+          "🎯 Individual",
+          compressCallbackData(CallBackQueries.SELL_INDIVIDUAL, tokenAddress)
+        )
+        .row()
+        .text(
+          "🎁 Airdrop",
+          compressCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress)
+        )
+        .text("👑 CTO", compressCallbackData(CallBackQueries.CTO, tokenAddress))
+        .row()
+        .text(
+          "💸 Fund Wallets",
+          compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress)
+        );
+
+      // Debug: Log the callback data being generated
+      console.log(
+        "Generated sell individual callback data:",
+        `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`
+      );
+      console.log(
+        "Generated fund token wallets callback data:",
+        compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress)
+      );
+    } else {
+      keyboard.text(
+        "🚀 Launch",
+        compressCallbackData(CallBackQueries.LAUNCH_TOKEN, tokenAddress)
+      );
     }
 
-    // Add delete button for all tokens
+    // Management buttons
     keyboard
+      .row()
       .text(
-        "🗑️ Delete Token",
+        "🗑️ Delete",
         compressCallbackData(CallBackQueries.DELETE_TOKEN, tokenAddress)
-      )
-      .row();
+      );
 
-    // Navigation buttons
+    // Navigation
     if (tokens.length > 1) {
-      if (index > 0) {
-        keyboard.text("⬅️", "prev");
-      }
-      if (index < tokens.length - 1) {
-        keyboard.text("➡️", "next");
-      }
       keyboard.row();
+      if (index > 0) keyboard.text("⬅️ Previous", "prev");
+      if (index < tokens.length - 1) keyboard.text("➡️ Next", "next");
     }
 
-    keyboard.text("🔙 Back", CallBackQueries.BACK);
+    keyboard.row().text("🔙 Back", CallBackQueries.BACK);
 
     sendMessage(ctx, lines, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup: keyboard,
     });
   };
@@ -163,27 +210,26 @@ const viewTokensConversation = async (
     tokenAddress: string,
     tokenName: string
   ) => {
-    const message = `⚠️ **Delete Token Confirmation**
-
-Are you sure you want to delete this token?
-
-**Token:** ${tokenName}
-**Address:** \`${tokenAddress}\`
-
-⚠️ **Warning:** This action cannot be undone. The token will be permanently removed from your account.
-
-Note: If this token was launched, it will continue to exist on the blockchain, but you will lose access to manage it through this bot.`;
+    const message = [
+      `⚠️ <b>Delete Token?</b>`,
+      ``,
+      `🚀 <b>${tokenName}</b>`,
+      `📋 <code>${tokenAddress}</code>`,
+      ``,
+      `<i>This action cannot be undone.</i>`,
+      ``,
+      `💡 <b>Note:</b> Token will remain on blockchain but you'll lose bot access.`,
+    ].join("\n");
 
     const keyboard = new InlineKeyboard()
       .text(
-        "✅ Yes, Delete",
+        "✅ Confirm",
         compressCallbackData(CallBackQueries.CONFIRM_DELETE_TOKEN, tokenAddress)
       )
-      .text("❌ Cancel", "cancel_delete")
-      .row();
+      .text("❌ Cancel", "cancel_delete");
 
-    await ctx.reply(message, {
-      parse_mode: "Markdown",
+    await sendMessage(ctx, message, {
+      parse_mode: "HTML",
       reply_markup: keyboard,
     });
   };
@@ -196,11 +242,12 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
     const data = response.callbackQuery?.data;
 
     // Check if this is a sell/launch button that should be handled by global handlers
-    const isSellButton = data?.startsWith(`${CallBackQueries.SELL_DEV}_`) ||
-                        data?.startsWith(`${CallBackQueries.SELL_ALL}_`) ||
-                        data?.startsWith(`${CallBackQueries.SELL_PERCENT}_`) ||
-                        data?.startsWith(`${CallBackQueries.SELL_INDIVIDUAL}_`);
-    
+    const isSellButton =
+      data?.startsWith(`${CallBackQueries.SELL_DEV}_`) ||
+      data?.startsWith(`${CallBackQueries.SELL_ALL}_`) ||
+      data?.startsWith(`${CallBackQueries.SELL_PERCENT}_`) ||
+      data?.startsWith(`${CallBackQueries.SELL_INDIVIDUAL}_`);
+
     const isLaunchButton = data?.startsWith(`${CallBackQueries.LAUNCH_TOKEN}_`);
 
     // For sell/launch buttons, DON'T answer callback query and halt to let global handlers take over
@@ -239,24 +286,23 @@ Note: If this token was launched, it will continue to exist on the blockchain, b
 
         if (result.success) {
           await ctx.reply(
-            "✅ **Token deleted successfully!**\n\nThe token has been removed from your account.",
-            {
-              parse_mode: "Markdown",
-            }
+            `✅ <b>Token Deleted</b>\n\n<i>Successfully removed from your account.</i>`,
+            { parse_mode: "HTML" }
           );
-
-          // Refresh the tokens list and return to main menu
           return conversation.halt();
         } else {
           await ctx.reply(
-            `❌ **Failed to delete token**\n\n${result.message}`,
-            {
-              parse_mode: "Markdown",
-            }
+            `❌ <b>Delete Failed</b>\n\n<i>${result.message}</i>`,
+            { parse_mode: "HTML" }
           );
         }
-      } catch (error: any) {
-        await sendErrorWithAutoDelete(ctx, `❌ **Error deleting token**\n\n${error.message}`);
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+        await sendErrorWithAutoDelete(
+          ctx,
+          `❌ <b>Error</b>\n\n<i>${errorMessage}</i>`
+        );
       }
     } else if (data === "cancel_delete") {
       await showToken(currentIndex);

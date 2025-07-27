@@ -21,13 +21,25 @@ export const buyExternalTokenConversation = async (
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await sendMessage(ctx, "Unrecognized user ❌");
+    await sendMessage(
+      ctx,
+      "❌ <b>Access Denied</b>\n\nUnrecognized user. Please start the bot first.",
+      { parse_mode: "HTML" }
+    );
     return conversation.halt();
   }
 
   await sendMessage(
     ctx,
-    "💰 <b>Buy External Token</b>\n\nPlease enter the token address you wish to buy:",
+    [
+      "💰 <b>External Token Purchase</b>",
+      "",
+      "🎯 <b>Step 1:</b> Token Address",
+      "",
+      "Please enter the token address you wish to purchase:",
+      "",
+      "<i>💡 Make sure to double-check the address before proceeding</i>",
+    ].join("\n"),
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard().text(
@@ -40,7 +52,11 @@ export const buyExternalTokenConversation = async (
   const tokenInput = await conversation.wait();
   if (tokenInput.callbackQuery?.data === CallBackQueries.CANCEL_EXTERNAL_BUY) {
     await tokenInput.answerCallbackQuery();
-    await sendMessage(tokenInput, "External token purchase cancelled.");
+    await sendMessage(
+      tokenInput,
+      "❌ <b>Purchase Cancelled</b>\n\nExternal token purchase has been cancelled.",
+      { parse_mode: "HTML" }
+    );
     return conversation.halt();
   }
 
@@ -48,7 +64,14 @@ export const buyExternalTokenConversation = async (
   if (!tokenAddress) {
     await sendMessage(
       tokenInput,
-      "❌ No token address provided. Purchase cancelled."
+      [
+        "❌ <b>Invalid Input</b>",
+        "",
+        "No token address provided.",
+        "",
+        "<i>Purchase cancelled.</i>",
+      ].join("\n"),
+      { parse_mode: "HTML" }
     );
     return conversation.halt();
   }
@@ -58,7 +81,14 @@ export const buyExternalTokenConversation = async (
   } catch (error) {
     await sendMessage(
       tokenInput,
-      "❌ Invalid token address. Purchase cancelled."
+      [
+        "❌ <b>Invalid Token Address</b>",
+        "",
+        "The provided address is not a valid Solana address.",
+        "",
+        "<i>Please check the address and try again.</i>",
+      ].join("\n"),
+      { parse_mode: "HTML" }
     );
     return conversation.halt();
   }
@@ -70,7 +100,15 @@ export const buyExternalTokenConversation = async (
   if (usage.isUsed && usage.state && usage.state !== "LAUNCHED") {
     await sendMessage(
       tokenInput,
-      `⚠️ <b>Token Launch in Progress</b>\n\nThis token is currently being launched${usage.tokenName ? ` (${usage.tokenName})` : ""}. Please wait for the launch to complete before attempting to buy.\n\n<i>You can only buy tokens that are already launched or available on the market.</i>`,
+      [
+        "⚠️ <b>Token Launch in Progress</b>",
+        "",
+        `This token is currently being launched${usage.tokenName ? ` (<b>${usage.tokenName}</b>)` : ""}.`,
+        "",
+        "⏳ <b>Please wait</b> for the launch to complete before attempting to buy.",
+        "",
+        "<i>💡 You can only purchase tokens that are already launched or available on the market.</i>",
+      ].join("\n"),
       { parse_mode: "HTML" }
     );
     return conversation.halt();
@@ -82,7 +120,16 @@ export const buyExternalTokenConversation = async (
   if (!fundingWallet) {
     await sendMessage(
       tokenInput,
-      "❌ No funding wallet available for purchase. Please configure a funding wallet first."
+      [
+        "❌ <b>No Funding Wallet</b>",
+        "",
+        "No funding wallet available for purchase.",
+        "",
+        "⚙️ Please configure a funding wallet first.",
+        "",
+        "<i>Use the wallet management menu to set up your funding wallet.</i>",
+      ].join("\n"),
+      { parse_mode: "HTML" }
     );
     return conversation.halt();
   }
@@ -93,7 +140,16 @@ export const buyExternalTokenConversation = async (
   if (fundingBalance < 0.001) {
     await sendMessage(
       tokenInput,
-      `❌ Insufficient balance in funding wallet.\n\n<b>Current Balance:</b> ${fundingBalance.toFixed(6)} SOL\n<b>Minimum Required:</b> 0.001 SOL`,
+      [
+        "❌ <b>Insufficient Balance</b>",
+        "",
+        "💰 <b>Current Balance:</b> <code>" +
+          fundingBalance.toFixed(6) +
+          " SOL</code>",
+        "⚡ <b>Minimum Required:</b> <code>0.001 SOL</code>",
+        "",
+        "<i>Please fund your wallet before proceeding.</i>",
+      ].join("\n"),
       { parse_mode: "HTML" }
     );
     return conversation.halt();
@@ -101,7 +157,22 @@ export const buyExternalTokenConversation = async (
 
   await sendMessage(
     tokenInput,
-    `💰 <b>Buy External Token</b>\n\n<b>Token Address:</b> <code>${tokenAddress}</code>\n<b>Funding Wallet Balance:</b> ${fundingBalance.toFixed(6)} SOL\n\nHow much SOL would you like to spend on this token?`,
+    [
+      "💰 <b>External Token Purchase</b>",
+      "",
+      "🎯 <b>Step 2:</b> Purchase Amount",
+      "",
+      "📍 <b>Token Address:</b>",
+      `<code>${tokenAddress}</code>`,
+      "",
+      "💳 <b>Funding Wallet Balance:</b> <code>" +
+        fundingBalance.toFixed(6) +
+        " SOL</code>",
+      "",
+      "💵 <b>How much SOL would you like to spend?</b>",
+      "",
+      "<i>💡 Reserve at least 0.001 SOL for transaction fees</i>",
+    ].join("\n"),
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard().text(
@@ -114,7 +185,11 @@ export const buyExternalTokenConversation = async (
   const amountInput = await conversation.wait();
   if (amountInput.callbackQuery?.data === CallBackQueries.CANCEL_EXTERNAL_BUY) {
     await amountInput.answerCallbackQuery();
-    await sendMessage(amountInput, "External token purchase cancelled.");
+    await sendMessage(
+      amountInput,
+      "❌ <b>Purchase Cancelled</b>\n\nExternal token purchase has been cancelled.",
+      { parse_mode: "HTML" }
+    );
     return conversation.halt();
   }
 
@@ -122,21 +197,49 @@ export const buyExternalTokenConversation = async (
   if (!buyAmountText) {
     await sendMessage(
       amountInput,
-      "❌ No amount provided. Purchase cancelled."
+      [
+        "❌ <b>Invalid Input</b>",
+        "",
+        "No amount provided.",
+        "",
+        "<i>Purchase cancelled.</i>",
+      ].join("\n"),
+      { parse_mode: "HTML" }
     );
     return conversation.halt();
   }
 
   const buyAmount = parseFloat(buyAmountText);
   if (isNaN(buyAmount) || buyAmount <= 0) {
-    await sendMessage(amountInput, "❌ Invalid amount. Purchase cancelled.");
+    await sendMessage(
+      amountInput,
+      [
+        "❌ <b>Invalid Amount</b>",
+        "",
+        "Please enter a valid positive number.",
+        "",
+        "<i>Purchase cancelled.</i>",
+      ].join("\n"),
+      { parse_mode: "HTML" }
+    );
     return conversation.halt();
   }
 
   if (buyAmount > fundingBalance - 0.001) {
     await sendMessage(
       amountInput,
-      `❌ Insufficient balance for the requested purchase amount.\n\n<b>Requested Amount:</b> ${buyAmount.toFixed(6)} SOL\n<b>Available Balance:</b> ${fundingBalance.toFixed(6)} SOL`,
+      [
+        "❌ <b>Insufficient Balance</b>",
+        "",
+        "💵 <b>Requested Amount:</b> <code>" +
+          buyAmount.toFixed(6) +
+          " SOL</code>",
+        "💳 <b>Available Balance:</b> <code>" +
+          fundingBalance.toFixed(6) +
+          " SOL</code>",
+        "",
+        "<i>Please reduce the amount or fund your wallet.</i>",
+      ].join("\n"),
       { parse_mode: "HTML" }
     );
     return conversation.halt();
@@ -148,16 +251,22 @@ export const buyExternalTokenConversation = async (
     [
       "🔍 <b>Confirm External Token Purchase</b>",
       "",
-      `<b>Token Address:</b>\n<code>${tokenAddress}</code>`,
-      `<b>Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
-      `<b>Wallet:</b> <code>Funding Wallet</code>`,
+      "📍 <b>Token Address:</b>",
+      `<code>${tokenAddress}</code>`,
       "",
-      "<i>Do you want to proceed with this purchase?</i>",
+      "💵 <b>Purchase Amount:</b> <code>" +
+        buyAmount.toFixed(6) +
+        " SOL</code>",
+      "💳 <b>Payment Method:</b> <code>Funding Wallet</code>",
+      "",
+      "⚡ <b>Are you ready to proceed?</b>",
+      "",
+      "<i>⚠️ This action cannot be undone</i>",
     ].join("\n"),
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
-        .text("✅ Confirm", "confirm_external_buy")
+        .text("✅ Confirm Purchase", "confirm_external_buy")
         .row()
         .text("❌ Cancel", CallBackQueries.CANCEL_EXTERNAL_BUY),
     }
@@ -169,7 +278,11 @@ export const buyExternalTokenConversation = async (
   if (
     confirmation.callbackQuery?.data === CallBackQueries.CANCEL_EXTERNAL_BUY
   ) {
-    await sendMessage(confirmation, "External token purchase cancelled.");
+    await sendMessage(
+      confirmation,
+      "❌ <b>Purchase Cancelled</b>\n\nExternal token purchase has been cancelled.",
+      { parse_mode: "HTML" }
+    );
     return conversation.halt();
   }
 
@@ -177,7 +290,14 @@ export const buyExternalTokenConversation = async (
     try {
       await sendMessage(
         confirmation,
-        "🔄 Processing external token purchase..."
+        [
+          "🔄 <b>Processing Purchase</b>",
+          "",
+          "⏳ Executing external token purchase...",
+          "",
+          "<i>Please wait while we process your transaction</i>",
+        ].join("\n"),
+        { parse_mode: "HTML" }
       );
 
       // Execute single buy transaction using funding wallet
@@ -197,31 +317,55 @@ export const buyExternalTokenConversation = async (
         await sendMessage(
           confirmation,
           [
-            "✅ <b>External Token Purchase Successful!</b>",
+            "✅ <b>Purchase Successful!</b>",
             "",
-            `<b>Amount Spent:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
-            `<b>Platform:</b> <code>${platformText}</code>`,
-            `<b>Token Address:</b>`,
+            "🎉 Your external token purchase has been completed successfully.",
+            "",
+            "💵 <b>Amount Spent:</b> <code>" +
+              buyAmount.toFixed(6) +
+              " SOL</code>",
+            "🔗 <b>Platform:</b> <code>" + platformText + "</code>",
+            "",
+            "📍 <b>Token Address:</b>",
             `<code>${tokenAddress}</code>`,
             "",
-            `<b>Transaction Signature:</b>`,
+            "📝 <b>Transaction Signature:</b>",
             `<code>${result.signature}</code>`,
             "",
-            "<i>Your purchase has been processed successfully.</i>",
+            "💡 <i>Your tokens should appear in your wallet shortly.</i>",
           ].join("\n"),
           { parse_mode: "HTML" }
         );
       } else {
         await sendMessage(
           confirmation,
-          `❌ <b>External Token Purchase Failed</b>\n\n<b>Error:</b> ${result.error || "Unknown error"}`,
+          [
+            "❌ <b>Purchase Failed</b>",
+            "",
+            "Unfortunately, your external token purchase could not be completed.",
+            "",
+            "🔍 <b>Error Details:</b>",
+            `<code>${result.error || "Unknown error occurred"}</code>`,
+            "",
+            "<i>Please try again or contact support if the issue persists.</i>",
+          ].join("\n"),
           { parse_mode: "HTML" }
         );
       }
     } catch (error: any) {
       await sendMessage(
         confirmation,
-        `❌ External token purchase failed: ${error.message}`
+        [
+          "❌ <b>Purchase Failed</b>",
+          "",
+          "An unexpected error occurred during the purchase process.",
+          "",
+          "🔍 <b>Error Details:</b>",
+          `<code>${error.message}</code>`,
+          "",
+          "<i>Please try again or contact support if the issue persists.</i>",
+        ].join("\n"),
+        { parse_mode: "HTML" }
       );
     }
   }

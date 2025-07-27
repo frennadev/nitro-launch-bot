@@ -251,7 +251,7 @@ const createTokenConversation = async (
 
   if (mode === CallBackQueries.PUMPFUN) {
     await update(
-      `🎉 **Token created successfully!**\n\n✅ Your token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
+      `🎉 **Token Created Successfully!**\n\n✅ Your PumpFun token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
     );
 
     const launchKb = new InlineKeyboard().text(
@@ -261,30 +261,36 @@ const createTokenConversation = async (
 
     let socialsInfo = "";
     if (twitter) {
-      socialsInfo += `twitter: <code>${twitter}</code>\n`;
+      socialsInfo += `🐦 **Twitter:** <code>${twitter}</code>\n`;
     }
     if (telegram) {
-      socialsInfo += `telegram: <code>${telegram}</code>\n`;
+      socialsInfo += `💬 **Telegram:** <code>${telegram}</code>\n`;
     }
     if (website) {
-      socialsInfo += `<b>Website:</b> <code>${website}</code>\n`;
+      socialsInfo += `🌐 **Website:** <code>${website}</code>\n`;
     }
 
     await ctx.reply(
-      `<b>Token created successfully!</b>
+      `🎉 <b>Token Created Successfully!</b>
 
-  <b>Launch Mode:</b> <code>${mode}</code>
-  <b>Name:</b> <code>${token.name}</code>
-  <b>Symbol:</b> <code>${token.symbol}</code>
-  <b>Description:</b> ${token.description}
-  <b>Token Address:</b> <code>${token.tokenAddress}</code>
-  ${socialsInfo}`,
+🚀 <b>Platform:</b> <code>PumpFun</code>
+
+📊 <b>Token Details:</b>
+┌─────────────────────────
+│ <b>Name:</b> <code>${token.name}</code>
+│ <b>Symbol:</b> <code>${token.symbol}</code>
+│ <b>Description:</b> ${token.description}
+│ <b>Address:</b> <code>${token.tokenAddress}</code>
+└─────────────────────────
+
+${socialsInfo ? `🔗 <b>Social Links:</b>\n${socialsInfo}` : ""}
+
+✅ <b>Status:</b> Ready for launch on PumpFun! 🚀`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
   } else {
-    // Bonk tokens - metadata uploaded, ready for launch
     await update(
-      `🎉 **Bonk Token Created Successfully!**\n\n✅ Metadata uploaded and token address assigned!\n\n**Token Address:** \`${token.tokenAddress}\``
+      `🎉 **Token Created Successfully!**\n\n✅ Your LetsBonk token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
     );
 
     const launchKb = new InlineKeyboard().text(
@@ -292,20 +298,33 @@ const createTokenConversation = async (
       `${CallBackQueries.LAUNCH_TOKEN}_${token.tokenAddress}`
     );
 
+    let socialsInfo = "";
+    if (twitter) {
+      socialsInfo += `🐦 **Twitter:** <code>${twitter}</code>\n`;
+    }
+    if (telegram) {
+      socialsInfo += `💬 **Telegram:** <code>${telegram}</code>\n`;
+    }
+    if (website) {
+      socialsInfo += `🌐 **Website:** <code>${website}</code>\n`;
+    }
+
     await ctx.reply(
-      `<b>Bonk Token Created Successfully!</b>
+      `🎉 <b>Token Created Successfully!</b>
 
-<b>Launch Mode:</b> <code>${mode}</code>
-<b>Name:</b> <code>${token.tokenName}</code>
-<b>Symbol:</b> <code>${token.tokenSymbol}</code>
-<b>Description:</b> ${token.description}
-<b>Token Address:</b> <code>${token.tokenAddress}</code>
+🚀 <b>Platform:</b> <code>LetsBonk (Raydium Launch Lab)</code>
 
-<b>Status:</b> ✅ Metadata uploaded, ready for launch
-<b>Platform:</b> Raydium Launch Lab (LetsBonk.fun)
+📊 <b>Token Details:</b>
+┌─────────────────────────
+│ <b>Name:</b> <code>${token.tokenName}</code>
+│ <b>Symbol:</b> <code>${token.tokenSymbol}</code>
+│ <b>Description:</b> ${token.description}
+│ <b>Address:</b> <code>${token.tokenAddress}</code>
+└─────────────────────────
 
-<i>💡 Your token metadata has been uploaded. Click "Launch Token" to create the token on Raydium Launch Lab.</i>
-`,
+  ${socialsInfo ? `🔗 <b>Social Links:</b>\n${socialsInfo}` : ""}
+
+  ✅ <b>Status:</b> Ready for launch on LetsBonk! 🚀`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
   }

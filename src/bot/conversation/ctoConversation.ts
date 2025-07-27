@@ -116,11 +116,17 @@ export const ctoConversation = async (
   if (fundingBalance < 0.01) {
     await sendMessage(
       ctx,
-      `❌ **Insufficient Balance**\n\n` +
-        `Your funding wallet needs at least 0.01 SOL for CTO operations.\n\n` +
-        `**Current Balance:** ${fundingBalance.toFixed(6)} SOL\n` +
-        `**Required:** 0.01 SOL minimum`,
-      { parse_mode: "Markdown" }
+      [
+        "❌ <b>Insufficient Balance</b>",
+        "",
+        "<b>Your funding wallet needs at least 0.01 SOL for CTO operations.</b>",
+        "",
+        `<b>Current Balance:</b> <code>${fundingBalance.toFixed(6)} SOL</code>`,
+        `<b>Required Minimum:</b> <code>0.01 SOL</code>`,
+        "",
+        "<i>Please add more SOL to your funding wallet to continue.</i>",
+      ].join("\n"),
+      { parse_mode: "HTML" }
     );
     return conversation.halt();
   }
@@ -129,19 +135,20 @@ export const ctoConversation = async (
   await sendMessage(
     ctx,
     [
-      "📈 <b>CTO - Call To Others</b>",
+      "🎯 <b>CTO - Call To Others</b>",
       "",
-      `<b>Token:</b> <code>${tokenAddress}</code>`,
-      `<b>Funding Wallet Balance:</b> <b>${fundingBalance.toFixed(6)} SOL</b>`,
+      `<b>📍 Token:</b> <code>${tokenAddress}</code>`,
+      `<b>💰 Available Balance:</b> ${fundingBalance.toFixed(6)} SOL`,
       "",
-      "💰 <b>How much SOL do you want to spend on this token?</b>",
+      "💸 <b>How much SOL would you like to spend?</b>",
       "",
-      "<i>This will:</i>",
-      "• Distribute funds to buy wallets via mixer",
-      "• Execute coordinated buy transactions",
-      "• Create buying pressure on the token",
+      "<b>🔄 Process Overview:</b>",
+      "• <i>Distribute funds via secure mixer</i>",
+      "• <i>Execute coordinated buy transactions</i>",
+      "• <i>Generate buying pressure on token</i>",
       "",
-      "<b>Enter the amount in SOL</b> (e.g., <code>0.5</code>, <code>1</code>, <code>2.5</code>):",
+      "💡 <b>Enter amount in SOL:</b>",
+      "Examples: <code>0.5</code> | <code>1.0</code> | <code>2.5</code>",
     ].join("\n"),
     {
       parse_mode: "HTML",
@@ -184,13 +191,23 @@ export const ctoConversation = async (
     await sendMessage(
       amountInput,
       [
-        "❌ <b>Insufficient Balance</b>",
+        "💰 <b>Insufficient Funding Balance</b>",
         "",
-        `<b>Requested:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
-        `<b>Available:</b> <code>${fundingBalance.toFixed(6)} SOL</code>`,
-        `<b>Required (with fees):</b> <code>${requiredBalance.toFixed(6)} SOL</code>`,
+        "┌─────────────────────────────────",
+        `│ <b>Requested Amount:</b> ${buyAmount.toFixed(6)} SOL`,
+        `│ <b>Available Balance:</b> ${fundingBalance.toFixed(6)} SOL`,
+        `│ <b>Required (+ fees):</b> ${requiredBalance.toFixed(6)} SOL`,
+        `│ <b>Shortage:</b> ${(requiredBalance - fundingBalance).toFixed(6)} SOL`,
+        "└─────────────────────────────────",
         "",
-        "<i>Please enter a smaller amount or add more SOL to your funding wallet.</i>",
+        "⚠️ <b>Your funding wallet needs more SOL to proceed.</b>",
+        "",
+        "💡 <b>Options:</b>",
+        "• Enter a smaller amount",
+        "• Top up your funding wallet",
+        "• Check wallet balance and try again",
+        "",
+        "<i>🔒 Fee buffer: 0.01 SOL for transaction costs</i>",
       ].join("\n"),
       { parse_mode: "HTML" }
     );
@@ -201,11 +218,21 @@ export const ctoConversation = async (
   const platformDetectionMessage = await sendMessage(
     amountInput,
     [
-      "🔍 <b>Detecting Token Platform...</b>",
+      "🔍 <b>Platform Detection</b>",
       "",
-      `<b>Token:</b> <code>${tokenAddress}</code>`,
+      "┌─────────────────────────────────",
+      `│ <b>Token:</b> <code>${tokenAddress}</code>`,
+      "└─────────────────────────────────",
       "",
-      "⏳ <i>Analyzing token to determine optimal trading platform...</i>",
+      "⏳ <b>Analyzing token platform...</b>",
+      "",
+      "🔎 <i>Checking supported exchanges:</i>",
+      "• PumpFun Bonding Curve",
+      "• PumpSwap DEX",
+      "• Bonk Pool (Raydium)",
+      "• CPMM (Graduated)",
+      "",
+      "⚡ <i>Optimizing trading strategy...</i>",
     ].join("\n"),
     { parse_mode: "HTML" }
   );
@@ -255,16 +282,17 @@ export const ctoConversation = async (
     }
 
     // Update the message with platform detection results and proceed automatically
-    await ctx.api.editMessageText(
-      ctx.chat!.id,
-      platformDetectionMessage.message_id,
+    await sendMessage(
+      ctx,
       [
         "✅ <b>Platform Detection Complete</b>",
         "",
-        `<b>Token:</b> <code>${tokenAddress}</code>`,
-        `<b>Detected Platform:</b> ${platformIcon} ${platformDetails}`,
+        "┌─────────────────────────────────",
+        `│ <b>Token:</b> <code>${tokenAddress}</code>`,
+        `│ <b>Platform:</b> ${platformIcon} ${platformDetails}`,
+        "└─────────────────────────────────",
         "",
-        "<b>Trading Strategy:</b>",
+        "🎯 <b>Trading Strategy:</b>",
         (() => {
           switch (platform) {
             case "pumpfun":
@@ -280,7 +308,7 @@ export const ctoConversation = async (
           }
         })(),
         "",
-        "🔄 <i>Proceeding automatically with optimal platform routing...</i>",
+        "⚡ <i>Proceeding automatically with optimal platform routing...</i>",
       ].join("\n"),
       { parse_mode: "HTML" }
     );
@@ -303,28 +331,31 @@ export const ctoConversation = async (
     await sendMessage(
       amountInput,
       [
-        "🔍 <b>CTO Confirmation</b>",
+        "🎯 <b>CTO Operation Confirmation</b>",
         "",
-        `<b>Token:</b> <code>${tokenAddress}</code>`,
-        `<b>Platform:</b> ${platformIcon} ${platformDetails}`,
-        `<b>Buy Amount:</b> <b>${buyAmount.toFixed(6)} SOL</b>`,
-        `<b>Expected Market Cap:</b> <b>${expectedMarketCap}</b>`,
-        `<b>Funding Wallet Balance:</b> <b>${fundingBalance.toFixed(6)} SOL</b>`,
+        "┌─────────────────────────────────",
+        `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
+        `│ <b>🏢 Platform:</b> ${platformIcon} ${platformDetails}`,
+        `│ <b>💰 Buy Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+        `│ <b>📈 Expected MC:</b> <code>$${expectedMarketCap}</code>`,
+        `│ <b>💳 Balance:</b> <code>${fundingBalance.toFixed(6)} SOL</code>`,
+        "└─────────────────────────────────",
         "",
-        "<b>Process:</b>",
-        `1. Distribute <b>${buyAmount.toFixed(6)} SOL</b> to buy wallets via mixer`,
-        `2. Execute coordinated buy transactions on <b>${platformDetails}</b>`,
-        "3. Create buying pressure on the token",
+        "🔄 <b>Operation Process:</b>",
+        `• Distribute <code>${buyAmount.toFixed(6)} SOL</code> via secure mixer`,
+        `• Execute coordinated buys on <b>${platformDetails}</b>`,
+        "• Generate market buying pressure",
         "",
-        "⚠️ <b>Important:</b> This operation cannot be undone.",
+        "⚠️ <b>Warning:</b> This operation is irreversible",
         "",
-        "<b>Do you want to proceed with the CTO operation?</b>",
+        "💡 <b>Ready to proceed?</b>",
       ].join("\n"),
       {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard()
-          .text("✅ Confirm CTO", "confirm_cto")
-          .text("❌ Cancel", CallBackQueries.CANCEL),
+          .text("✅ Confirm & Execute", "confirm_cto")
+          .row()
+          .text("❌ Cancel Operation", CallBackQueries.CANCEL),
       }
     );
   } catch (platformError: any) {
@@ -335,20 +366,23 @@ export const ctoConversation = async (
     platform = "unknown"; // Set to unknown for fallback routing
 
     // Update the detection message with error and proceed automatically with fallback
-    await ctx.api.editMessageText(
-      ctx.chat!.id,
-      platformDetectionMessage.message_id,
+    await sendMessage(
+      ctx,
       [
         "⚠️ <b>Platform Detection Failed</b>",
         "",
-        `<b>Token:</b> <code>${tokenAddress}</code>`,
-        `<b>Error:</b> ${platformError.message || "Unknown error"}`,
+        "┌─────────────────────────────────",
+        `│ <b>Token:</b> <code>${tokenAddress}</code>`,
+        `│ <b>Status:</b> ❌ Detection Error`,
+        `│ <b>Error:</b> ${platformError.message || "Unknown error"}`,
+        "└─────────────────────────────────",
         "",
-        "<b>Fallback Strategy:</b>",
-        "• Multi-platform routing: Jupiter → PumpSwap → PumpFun",
-        "• Ensures maximum compatibility for trading",
+        "🔄 <b>Fallback Strategy Activated:</b>",
+        "• Multi-platform routing enabled",
+        "• Jupiter → PumpSwap → PumpFun",
+        "• Ensures maximum trading compatibility",
         "",
-        "🔄 <i>Proceeding automatically with fallback routing...</i>",
+        "⚡ <i>Proceeding automatically with fallback routing...</i>",
       ].join("\n"),
       { parse_mode: "HTML" }
     );
@@ -362,30 +396,46 @@ export const ctoConversation = async (
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
     // Show final confirmation with fallback information
+    // Calculate expected market cap for fallback operation
+    const expectedMarketCapFallback = await calculateExpectedMarketCap(
+      buyAmount,
+      false // Use pumpfun progression as default for unknown platforms
+    );
+
+    // Show final confirmation with fallback information
     await sendMessage(
       amountInput,
       [
-        "🔍 <b>CTO Confirmation (Fallback)</b>",
+        "🎯 <b>CTO Operation Confirmation</b>",
         "",
-        `<b>Token:</b> <code>${tokenAddress}</code>`,
-        `<b>Platform:</b> ❓ Unknown (Fallback Routing)`,
-        `<b>Buy Amount:</b> <b>${buyAmount.toFixed(6)} SOL</b>`,
-        `<b>Funding Wallet Balance:</b> <b>${fundingBalance.toFixed(6)} SOL</b>`,
+        "┌─────────────────────────────────",
+        `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
+        `│ <b>🏢 Platform:</b> ❓ Multi-Platform Fallback`,
+        `│ <b>💰 Buy Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+        `│ <b>📈 Expected MC:</b> <code>$${expectedMarketCapFallback}</code>`,
+        `│ <b>💳 Balance:</b> <code>${fundingBalance.toFixed(6)} SOL</code>`,
+        "└─────────────────────────────────",
         "",
-        "<b>Process:</b>",
-        `1. Distribute <b>${buyAmount.toFixed(6)} SOL</b> to buy wallets via mixer`,
-        "2. Execute coordinated buy transactions with fallback routing",
-        "3. Create buying pressure on the token",
+        "🔄 <b>Operation Process:</b>",
+        `• Distribute <code>${buyAmount.toFixed(6)} SOL</code> via secure mixer`,
+        "• Execute coordinated buys with multi-platform routing",
+        "• Generate market buying pressure",
         "",
-        "⚠️ <b>Important:</b> This operation cannot be undone.",
+        "🛡️ <b>Fallback Strategy:</b>",
+        "• Jupiter → PumpSwap → PumpFun routing",
+        "• Maximum compatibility across platforms",
+        "• Auto-retry on different DEXs if needed",
         "",
-        "<b>Do you want to proceed with the CTO operation?</b>",
+        "⚠️ <b>Warning:</b> This operation is irreversible",
+        "",
+        "💡 <b>Ready to proceed?</b>",
       ].join("\n"),
       {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard()
-          .text("✅ Confirm CTO", "confirm_cto")
-          .text("❌ Cancel", CallBackQueries.CANCEL),
+          .text("✅ Confirm & Execute", "confirm_cto")
+          .row()
+          .text("❌ Cancel Operation", CallBackQueries.CANCEL),
       }
     );
   }
@@ -415,11 +465,24 @@ export const ctoConversation = async (
       // Show processing message
       const processingMessage = await sendMessage(
         confirmation,
-        `🔄 **Processing CTO Operation...**\n\n` +
-          `⏳ Step 1: Distributing ${buyAmount.toFixed(6)} SOL to buy wallets via mixer...\n` +
-          `⏳ Step 2: Executing buy transactions...\n\n` +
-          `This may take 30-60 seconds. Please wait...`,
-        { parse_mode: "Markdown" }
+        [
+          "🔄 <b>CTO Operation In Progress</b>",
+          "",
+          "┌─────────────────────────────────",
+          `│ <b>Token:</b> <code>${tokenAddress}</code>`,
+          `│ <b>Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+          `│ <b>Platform:</b> ${platform === "bonk" ? "🐕 Bonk Pool" : platform === "pumpfun" ? "🎯 PumpFun" : platform === "pumpswap" ? "🔄 PumpSwap" : "❓ Multi-Platform"}`,
+          "└─────────────────────────────────",
+          "",
+          "⏳ <b>Step 1:</b> Distributing SOL via secure mixer...",
+          "⏳ <b>Step 2:</b> Executing coordinated buy transactions...",
+          "⏳ <b>Step 3:</b> Generating buying pressure...",
+          "",
+          "🕐 <b>Estimated Time:</b> 30-60 seconds",
+          "",
+          "<i>⚡ Please wait while we process your CTO operation...</i>",
+        ].join("\n"),
+        { parse_mode: "HTML" }
       );
 
       // Execute CTO operation with detected platform
@@ -435,20 +498,23 @@ export const ctoConversation = async (
 
       if (result.success) {
         // Success message with detailed results
-        await confirmation.api.editMessageText(
-          confirmation.chat!.id,
-          processingMessage.message_id,
+        await sendMessage(
+          confirmation,
           [
             "✅ <b>CTO Operation Completed Successfully!</b>",
             "",
-            `<b>Token:</b> <code>${tokenAddress}</code>`,
-            `<b>Total Spent:</b> <b>${buyAmount.toFixed(6)} SOL</b>`,
-            `<b>Successful Buys:</b> <b>${result.successfulBuys || 0}</b>`,
-            `<b>Failed Buys:</b> <b>${result.failedBuys || 0}</b>`,
+            "┌─────────────────────────────────",
+            `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
+            `│ <b>💰 Total Spent:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+            `│ <b>🎯 Successful Buys:</b> <code>${result.successfulBuys || 0}</code>`,
+            `│ <b>❌ Failed Buys:</b> <code>${result.failedBuys || 0}</code>`,
+            "└─────────────────────────────────",
             "",
             "🎉 <b>Buying pressure has been applied to the token!</b>",
             "",
             "📊 <b>Opening monitor page to track your position...</b>",
+            "",
+            "<i>⚡ Please wait while we load the monitoring interface...</i>",
           ].join("\n"),
           { parse_mode: "HTML" }
         );
@@ -463,22 +529,27 @@ export const ctoConversation = async (
         // Check if this was a partial success that we should handle differently
         if (result.successfulBuys && result.successfulBuys > 0) {
           // Partial success - some buys worked
-          await confirmation.api.editMessageText(
-            confirmation.chat!.id,
-            processingMessage.message_id,
+          await sendMessage(
+            confirmation,
             [
               "⚠️ <b>CTO Operation Partially Completed</b>",
               "",
-              `<b>Token:</b> <code>${tokenAddress}</code>`,
-              `<b>Successful Buys:</b> <b>${result.successfulBuys || 0}</b>`,
-              `<b>Failed Buys:</b> <b>${result.failedBuys || 0}</b>`,
+              "┌─────────────────────────────────",
+              `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
+              `│ <b>✅ Successful Buys:</b> <code>${result.successfulBuys || 0}</code>`,
+              `│ <b>❌ Failed Buys:</b> <code>${result.failedBuys || 0}</code>`,
+              "└─────────────────────────────────",
               "",
-              "✅ <b>Some buying pressure was applied!</b>",
+              "🎯 <b>Some buying pressure was successfully applied!</b>",
               "",
-              "⚠️ <b>Note:</b> Not all transactions succeeded.",
-              `<b>Reason:</b> ${result.error || "Unknown mixer issues"}`,
+              "⚠️ <b>Partial Success Details:</b>",
+              "• Some transactions completed successfully",
+              "• Others failed due to network/mixer issues",
+              `• Reason: ${result.error || "Unknown mixer issues"}`,
               "",
               "📊 <b>Opening monitor page to track your position...</b>",
+              "",
+              "<i>⚡ Your successful buys are still active and trackable...</i>",
             ].join("\n"),
             { parse_mode: "HTML" }
           );
@@ -493,37 +564,43 @@ export const ctoConversation = async (
           );
         } else {
           // Complete failure
-          await confirmation.api.editMessageText(
-            confirmation.chat!.id,
-            processingMessage.message_id,
+          await sendMessage(
+            confirmation,
             [
               "❌ <b>CTO Operation Failed</b>",
               "",
-              `<b>Token:</b> <code>${tokenAddress}</code>`,
-              `<b>Error:</b> ${result.error || "Unknown error occurred"}`,
+              "┌─────────────────────────────────",
+              `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
+              `│ <b>💰 Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+              `│ <b>🚫 Status:</b> Complete Failure`,
+              "└─────────────────────────────────",
               "",
-              "<b>Details:</b>",
-              `• <b>Successful Buys:</b> ${result.successfulBuys || 0}`,
-              `• <b>Failed Buys:</b> ${result.failedBuys || 0}`,
+              "📊 <b>Operation Results:</b>",
+              `• <b>✅ Successful Buys:</b> <code>${result.successfulBuys || 0}</code>`,
+              `• <b>❌ Failed Buys:</b> <code>${result.failedBuys || 0}</code>`,
               "",
-              "⚠️ <b>No buying pressure was applied due to failure.</b>",
+              "🔍 <b>Error Details:</b>",
+              `<code>${result.error || "Unknown error occurred"}</code>`,
               "",
-              "<b>Actions:</b>",
-              "• Withdraw remaining funds",
-              "• Try again",
-              "• Close this message",
+              "⚠️ <b>No buying pressure was applied to the token.</b>",
               "",
-              "<i>If the issue persists, please contact support.</i>",
+              "💡 <b>Recommended Actions:</b>",
+              "• Check your wallet balances",
+              "• Withdraw any remaining funds",
+              "• Retry the operation",
+              "• Contact support if issues persist",
+              "",
+              "<i>🔒 Your funds are safe and can be withdrawn anytime.</i>",
             ].join("\n"),
             {
               parse_mode: "HTML",
               reply_markup: new InlineKeyboard()
                 .text(
-                  "💳 Withdraw to Funding Wallet",
+                  "💳 Withdraw to Funding",
                   CallBackQueries.WITHDRAW_TO_FUNDING
                 )
                 .text(
-                  "🌐 Withdraw to External Wallet",
+                  "🌐 Withdraw to External",
                   CallBackQueries.WITHDRAW_TO_EXTERNAL
                 )
                 .row()

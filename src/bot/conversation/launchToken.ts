@@ -266,15 +266,17 @@ Error: ${error.message}`,
       ctx,
       `<b>🔄 Previous Launch Attempt Detected</b>
 
-<i>This token has a previous launch attempt. You can:</i>
-• <b>Enter new launch amounts</b> (recommended)
-• <b>Continue with previous values</b>
+Your token has a previous launch attempt that was not completed.
 
-<b>Previous Values:</b>
+<b>📊 Previous Launch Parameters:</b>
 • <b>Buy Amount:</b> <code>${token.launchData?.buyAmount || 0}</code> SOL
 • <b>Dev Buy:</b> <code>${token.launchData?.devBuy || 0}</code> SOL
 
-<b>What would you like to do?</b>`,
+<b>🎯 Choose your next action:</b>
+• <b>New Values:</b> Enter fresh launch parameters
+• <b>Previous Values:</b> Continue with stored parameters
+
+<i>💡 We recommend entering new values to ensure optimal launch conditions.</i>`,
       {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard()
@@ -310,11 +312,17 @@ Error: ${error.message}`,
       } else {
         await sendMessage(
           ctx,
-          `<b>✅ Token Launch Submitted for Retry</b>
+          `<b>🔄 Token Launch Retry Submitted</b>
 
-Your token launch details have been successfully submitted for retry. 🚀
+Your token launch has been successfully resubmitted using your previous parameters.
 
-<i>You will receive a notification once your launch is completed.</i>`,
+<b>📊 Launch Details:</b>
+• <b>Buy Amount:</b> <code>${token.launchData?.buyAmount || 0}</code> SOL
+• <b>Dev Buy:</b> <code>${token.launchData?.devBuy || 0}</code> SOL
+
+<b>⏳ Status:</b> Processing in queue
+
+<i>🔔 You will receive a notification once your launch is completed.</i>`,
           { parse_mode: "HTML" }
         );
       }
@@ -364,17 +372,19 @@ Your token launch details have been successfully submitted for retry. 🚀
     );
     await sendMessage(
       ctx,
-      `<b>❌ Insufficient Dev Wallet Balance</b>
+      `❌ <b>Insufficient Dev Wallet Balance</b>
 
-<b>Required:</b> <code>${minDevBalance.toFixed(4)} SOL</code>
-<b>Available:</b> <code>${devBalance.toFixed(4)} SOL</code>
+💰 <b>Balance Details:</b>
+• <b>Required:</b> <code>${minDevBalance.toFixed(4)} SOL</code>
+• <b>Current:</b> <code>${devBalance.toFixed(4)} SOL</code>
+• <b>Shortfall:</b> <code>${(minDevBalance - devBalance).toFixed(4)} SOL</code>
 
-Your dev wallet needs additional funds for token creation and dev buy operations.
+⚠️ Your dev wallet needs additional SOL to cover platform fees and transaction costs.
 
-<b>Please fund your dev wallet:</b>
+<b>💳 Dev Wallet Address:</b>
 <code>${devWalletAddress}</code>
 
-<i>💡 Tap the address above to copy it.</i>`,
+<i>💡 Tap the address above to copy it, then send the required SOL to continue with the launch.</i>`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
 
@@ -386,13 +396,18 @@ Your dev wallet needs additional funds for token creation and dev buy operations
   const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
   await sendMessage(
     ctx,
-    `<b>💳 Funding Wallet</b>
+    `📊 <b>Wallet Status Check</b>
+
+💳 <b>Funding Wallet:</b>
 <code>${fundingWallet.publicKey}</code>
-<b>Balance:</b> <code>${fundingBalance.toFixed(4)} SOL</code>
 
-<b>👥 Buyer Wallets:</b> <code>${buyerWallets.length}</code>
+💰 <b>Available Balance:</b>
+<code>${fundingBalance.toFixed(4)} SOL</code>
 
-<i>✅ All wallets are ready for launch.</i>`,
+👥 <b>Buyer Wallets:</b>
+<code>${buyerWallets.length} wallet${buyerWallets.length !== 1 ? "s" : ""} configured</code>
+
+✅ <b>Status:</b> All wallets ready for launch`,
     { parse_mode: "HTML" }
   );
 
@@ -405,13 +420,16 @@ Your dev wallet needs additional funds for token creation and dev buy operations
     devBuy = existingRetryData.devBuy;
     await sendMessage(
       ctx,
-      `<b>🔄 Retrying Token Launch with Previous Values</b>
+      `🔄 **Retrying Token Launch**
 
-<b>Buy Amount:</b> <code>${buyAmount}</code> SOL
-<b>Dev Buy:</b> <code>${devBuy}</code> SOL
+**📊 Using Previous Parameters:**
+• **Buy Amount:** \`${buyAmount}\` SOL
+• **Dev Buy:** \`${devBuy}\` SOL
 
-<i>Proceeding with your previous launch parameters.</i>`,
-      { parse_mode: "HTML" }
+⏳ **Status:** Proceeding with stored launch parameters
+
+💡 **Note:** These values were saved from your previous launch attempt.`,
+      { parse_mode: "Markdown" }
     );
 
     // Clear retry data after use
@@ -428,14 +446,16 @@ Your dev wallet needs additional funds for token creation and dev buy operations
 
     await sendMessage(
       ctx,
-      `💰 <b>Enter the total SOL amount to buy tokens with:</b>
+      `💰 <b>Enter Buy Amount</b>
 
-📊 <b>Your Wallet Capacity:</b>
-• Current wallets: ${buyerWallets.length}/40
-• Maximum buy amount: ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL
-• System maximum: ${maxBuyAmount.toFixed(1)} SOL (with 40 wallets)
+📊 <b>Wallet Configuration:</b>
+• <b>Current Wallets:</b> ${buyerWallets.length}/40
+• <b>Your Maximum:</b> ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL
+• <b>System Maximum:</b> ${maxBuyAmount.toFixed(1)} SOL (with 40 wallets)
 
-💡 <i>Enter a value between 0.1 and ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</i>`,
+💡 <b>Please enter a value between 0.1 and ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</b>
+
+<i>💭 This is the total SOL amount that will be used to purchase tokens across all your buyer wallets.</i>`,
       {
         parse_mode: "HTML",
         reply_markup: cancelKeyboard,
@@ -465,12 +485,17 @@ Your dev wallet needs additional funds for token creation and dev buy operations
         } else if (parsed > maxBuyAmountWithCurrentWallets) {
           await sendMessage(
             ctx,
-            `⚠️ <b>Buy Amount Too Large</b>
+            `❌ <b>Buy Amount Exceeds Limit</b>
 
-💰 <b>Requested:</b> ${parsed} SOL
-📊 <b>Your Maximum:</b> ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL (with ${buyerWallets.length} wallets)
+<b>💰 Amount Details:</b>
+• <b>Requested:</b> <code>${parsed} SOL</code>
+• <b>Your Maximum:</b> <code>${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</code>
+• <b>Current Wallets:</b> <code>${buyerWallets.length} wallet${buyerWallets.length !== 1 ? "s" : ""}</code>
 
-Please enter a smaller amount between 0.1 and ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL:`,
+<b>📋 Valid Range:</b>
+<code>0.1 - ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</code>
+
+<i>💡 Please enter an amount within the valid range to continue.</i>`,
             { parse_mode: "HTML" }
           );
           continue;
@@ -490,14 +515,19 @@ Please enter a smaller amount between 0.1 and ${maxBuyAmountWithCurrentWallets.t
 
               await sendMessage(
                 ctx,
-                `🔍 <b>Wallet Check</b>
+                `🔍 <b>Wallet Configuration Check</b>
 
-💰 <b>Buy Amount:</b> ${buyAmount} SOL
-👥 <b>Required Wallets:</b> ${requiredWallets}
-📊 <b>Current Wallets:</b> ${currentWalletCount}
-⚠️ <b>Missing Wallets:</b> ${walletsNeeded}
+<b>📊 Launch Parameters:</b>
+• <b>Buy Amount:</b> <code>${buyAmount} SOL</code>
+• <b>Required Wallets:</b> <code>${requiredWallets}</code>
+• <b>Current Wallets:</b> <code>${currentWalletCount}</code>
 
-You need ${walletsNeeded} more wallet${walletsNeeded > 1 ? "s" : ""} for this buy amount. Choose an option:`,
+<b>⚠️ Missing Wallets:</b> <code>${walletsNeeded} wallet${walletsNeeded > 1 ? "s" : ""}</code>
+
+<b>🎯 Choose your next action:</b>
+To proceed with this buy amount, you need ${walletsNeeded} additional wallet${walletsNeeded > 1 ? "s" : ""}. Select an option below:
+
+<i>💡 Generated wallets are permanently added to your account for future use.</i>`,
                 {
                   parse_mode: "HTML",
                   reply_markup: new InlineKeyboard()
@@ -534,15 +564,22 @@ You need ${walletsNeeded} more wallet${walletsNeeded > 1 ? "s" : ""} for this bu
                 // Import wallets flow
                 await sendMessage(
                   walletChoice,
-                  `📥 <b>Import ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}</b>
+                  `📥 <b>Import Missing Wallets</b>
 
-Please send the private key of wallet 1/${walletsNeeded}:
+<b>📊 Import Progress:</b> Wallet 1/${walletsNeeded}
 
-<i>💡 Send one private key per message. You'll be prompted for each wallet.</i>`,
+<b>🔑 Please send the private key for wallet 1:</b>
+
+<b>📋 Instructions:</b>
+• Send one private key per message
+• You'll be prompted for each wallet individually
+• Private keys are encrypted and stored securely
+
+<i>💡 Make sure your private key is valid and has some SOL for transactions.</i>`,
                   {
                     parse_mode: "HTML",
                     reply_markup: new InlineKeyboard().text(
-                      "❌ Cancel",
+                      "❌ Cancel Import",
                       LaunchCallBackQueries.CANCEL
                     ),
                   }
@@ -630,11 +667,18 @@ Please send the private key of wallet 1/${walletsNeeded}:
                       await allocateWalletsFromPool(user.id, walletsNeeded);
                       await sendMessage(
                         walletChoice,
-                        `🎉 <b>Successfully generated ${walletsNeeded} wallet${walletsNeeded > 1 ? "s" : ""}!</b>
+                        `<b>🎉 Wallet Generation Complete</b>
 
-✅ All wallets have been permanently added to your account and can be reused for future launches.
+<b>✅ Successfully Generated:</b>
+<code>${walletsNeeded} wallet${walletsNeeded > 1 ? "s" : ""}</code>
 
-Proceeding with token launch...`,
+<b>💾 Wallet Status:</b>
+• <i>Permanently added to your account</i>
+• <i>Ready for immediate use</i>
+• <i>Available for future launches</i>
+
+<b>🚀 Next Step:</b>
+<i>Proceeding with token launch configuration...</i>`,
                         { parse_mode: "HTML" }
                       );
                       break;
@@ -706,10 +750,34 @@ Please enter a smaller buy amount:`,
     );
     await sendMessage(
       ctx,
-      `BUY AMOUNT: ${buyAmount}SOL
-EXPECTED MARKET CAP: ${expectedMarketCap}
-💎 Enter SOL amount for dev to buy (0 to skip, recommended: 10-20% of buy amount = ${(buyAmount * 0.15).toFixed(3)} SOL):`,
-      { reply_markup: cancelKeyboard }
+      `💎 <b>Developer Buy Configuration</b>
+
+<b>📊 Launch Summary:</b>
+• <b>Total Buy Amount:</b> <code>${buyAmount} SOL</code>
+• <b>Expected Market Cap:</b> <code>$${expectedMarketCap}</code>
+
+<b>🎯 Developer Buy Amount:</b>
+Enter the SOL amount for the developer to purchase (or 0 to skip)
+
+<b>💡 Recommendation:</b>
+<code>${(buyAmount * 0.15).toFixed(3)} SOL</code> (15% of total buy amount)
+
+<b>📋 Valid Range:</b>
+<code>0 - ${buyAmount} SOL</code>
+
+<i>💭 Developer buys help establish initial liquidity and show confidence in the project.</i>`,
+      {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard()
+          .text(
+            `💎 Use Recommended (${(buyAmount * 0.15).toFixed(3)} SOL)`,
+            `DEV_BUY_${(buyAmount * 0.15).toFixed(3)}`
+          )
+          .row()
+          .text("⏭️ Skip (0 SOL)", "DEV_BUY_0")
+          .row()
+          .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
+      }
     );
 
     while (true) {
@@ -765,23 +833,33 @@ EXPECTED MARKET CAP: ${expectedMarketCap}
 
     await sendMessage(
       ctx,
-      `❌ <b>Insufficient funding wallet balance!</b>
+      `❌ <b>Insufficient Funding Wallet Balance</b>
 
-💰 <b>Required Amount Breakdown:</b>
-• Buy Amount: ${buyAmount} SOL
-• Dev Buy: ${devBuy} SOL
-• Wallet Fees: ${walletFees.toFixed(3)} SOL (${buyerWallets.length} wallets × 0.005)
-• Buffer: 0.1 SOL
+<b>💰 Balance Analysis:</b>
+• <b>Required:</b> <code>${requiredFundingAmount.toFixed(4)} SOL</code>
+• <b>Available:</b> <code>${fundingBalance.toFixed(4)} SOL</code>
+• <b>Shortfall:</b> <code>${(requiredFundingAmount - fundingBalance).toFixed(4)} SOL</code>
 
-<b>Total Required:</b> ${requiredFundingAmount.toFixed(4)} SOL
-<b>Available:</b> ${fundingBalance.toFixed(4)} SOL
-<b>Shortfall:</b> ${(requiredFundingAmount - fundingBalance).toFixed(4)} SOL
+<b>📊 Cost Breakdown:</b>
+• <b>Buy Amount:</b> <code>${buyAmount} SOL</code>
+• <b>Dev Buy:</b> <code>${devBuy} SOL</code>
+• <b>Transaction Fees:</b> <code>${walletFees.toFixed(3)} SOL</code> (${buyerWallets.length} wallets)
+• <b>Network Buffer:</b> <code>0.1 SOL</code>
 
-<b>Please fund your wallet:</b>
+<b>💳 Funding Wallet Address:</b>
 <code>${fundingWallet.publicKey}</code>
 
-<i>💡 Tap the address above to copy it, then send the required SOL.</i>`,
-      { parse_mode: "HTML", reply_markup: launchKb }
+<i>💡 Tap the address above to copy it, then send the required SOL to continue with your launch.</i>`,
+      {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard()
+          .text(
+            "🚀 Launch Token",
+            `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`
+          )
+          .row()
+          .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
+      }
     );
 
     await conversation.halt();
