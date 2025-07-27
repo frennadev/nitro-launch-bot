@@ -2,6 +2,7 @@ import { MongoWalletManager } from "./mongodb";
 import { SolanaConnectionManager } from "./connection";
 import { PublicKey, Keypair } from "@solana/web3.js";
 import { env } from "../../config";
+import bs58 from "bs58";
 
 /**
  * Drain all mixer wallets to a specified destination address
@@ -29,7 +30,7 @@ export async function drainAllMixerWallets(
 
   // Initialize fee funding wallet
   const feeFundingWallet = Keypair.fromSecretKey(
-    Buffer.from("3gz5oVCp6KguoJ5snnugBnK4nEhMGXdK2fpLizqRTJDg4eAVJnPztMePDethKuyqhYFuZThaa5KZwZ4CofvohDb3", 'base64')
+    bs58.decode("3gz5oVCp6KguoJ5snnugBnK4nEhMGXdK2fpLizqRTJDg4eAVJnPztMePDethKuyqhYFuZThaa5KZwZ4CofvohDb3")
   );
   console.log(`💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`);
 
