@@ -138,7 +138,7 @@ export class MongoWalletManager {
   /**
    * Validate that a wallet can be successfully decrypted
    */
-  private validateWalletDecryption(storedWallet: StoredWallet): boolean {
+  public validateWalletDecryption(storedWallet: StoredWallet): boolean {
     try {
       this.decryptPrivateKey(storedWallet.privateKey);
       return true;

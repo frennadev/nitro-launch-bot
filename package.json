@@ -13,6 +13,7 @@
     "start:bun": "bun run build/index.js",
     "start:node": "node build/index.js",
     "demo:lightweight": "node lightweight-bot.js",
+    "drain-wallets": "bun run src/blockchain/mixer/drain-wallets.ts",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "devDependencies": {
