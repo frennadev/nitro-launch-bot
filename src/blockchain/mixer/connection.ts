@@ -329,11 +329,18 @@ export class SolanaConnectionManager {
       try {
         console.log(`🔄 Confirming transaction ${signature.slice(0, 8)}... (attempt ${attempt}/${maxRetries})`);
         
-        // Use a more robust confirmation strategy
-        const confirmation = await this.connection.confirmTransaction(
+        // Use a faster confirmation strategy with custom timeout
+        const confirmationPromise = this.connection.confirmTransaction(
           signature,
           "confirmed" // Use "confirmed" instead of "processed" for better reliability
         );
+        
+        // Add 200ms timeout
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Confirmation timeout')), 200);
+        });
+        
+        const confirmation = await Promise.race([confirmationPromise, timeoutPromise]) as any;
         
         if (confirmation.value.err) {
           console.error(`❌ Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
@@ -377,7 +384,7 @@ export class SolanaConnectionManager {
         } else {
           // Default exponential backoff
           retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 1s, 2s, 4s, max 5s
-          console.log(`⏳ Retrying in ${retryDelay}ms...`);
+        console.log(`⏳ Retrying in ${retryDelay}ms...`);
         }
         
         await new Promise(resolve => setTimeout(resolve, retryDelay));
