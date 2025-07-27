@@ -4,19 +4,30 @@ import { sendMessage } from "../../backend/sender";
 import { InlineKeyboard } from "grammy";
 import { CallBackQueries } from "../types";
 
-export const modeSelectionConversation = async (conversation: Conversation<Context>, ctx: Context): Promise<void> => {
+export const modeSelectionConversation = async (
+  conversation: Conversation<Context>,
+  ctx: Context
+): Promise<void> => {
   try {
     // If this conversation was triggered by a callback, acknowledge it
     await ctx.answerCallbackQuery();
 
     // Ask the user to choose between PumpFun or LetsBonk
-    const prompt = "❓ Which mode would you like to use?";
+    const prompt = `
+🤖 <b>Select Your Trading Mode</b>
+
+Choose which platform you'd like to use for token launching:
+
+<i>Select an option below to continue...</i>
+`.trim();
+
     const keyboard = new InlineKeyboard()
       .text("🎉 PumpFun", CallBackQueries.PUMPFUN)
       .row()
       .text("🚀 LetsBonk", CallBackQueries.LETSBONK);
 
     await sendMessage(ctx, prompt, {
+      parse_mode: "HTML",
       reply_markup: keyboard,
     });
 
@@ -32,13 +43,21 @@ export const modeSelectionConversation = async (conversation: Conversation<Conte
 
     // Handle the two options
     if (data === CallBackQueries.PUMPFUN) {
-      await sendMessage(next, "✅ You selected *PumpFun*! Let's get the party started.", {
-        parse_mode: "Markdown",
-      });
+      await sendMessage(
+        next,
+        "✅ You selected *PumpFun*! Let's get the party started.",
+        {
+          parse_mode: "Markdown",
+        }
+      );
     } else if (data === CallBackQueries.LETSBONK) {
-      await sendMessage(next, "✅ You selected *LetsBonk*! Ready to blast off.", {
-        parse_mode: "Markdown",
-      });
+      await sendMessage(
+        next,
+        "✅ You selected *LetsBonk*! Ready to blast off.",
+        {
+          parse_mode: "Markdown",
+        }
+      );
     } else {
       // Fallback for unexpected callback data
       await sendMessage(next, "⚠️ Unknown option. Please try again.");

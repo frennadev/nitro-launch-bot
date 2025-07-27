@@ -286,7 +286,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
       user: ctx.from?.username || ctx.from?.id,
       callback_data: ctx.callbackQuery?.data,
     });
-    
+
     // Send a user-friendly message about the error
     if (ctx.chat) {
       try {
@@ -298,7 +298,10 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
           { parse_mode: "Markdown" }
         );
       } catch (replyError: any) {
-        logger.error("Failed to send button error message:", replyError.message);
+        logger.error(
+          "Failed to send button error message:",
+          replyError.message
+        );
       }
     }
     return;
@@ -332,7 +335,6 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
 
 // Safe wrapper for answerCallbackQuery to handle timeout errors
 
-
 // Clear conversation state helper function
 async function clearConversationState(ctx: any): Promise<boolean> {
   try {
@@ -347,7 +349,9 @@ async function clearConversationState(ctx: any): Promise<boolean> {
 }
 
 // Enhanced conversation state clearing for token display
-async function clearConversationStateForTokenDisplay(ctx: any): Promise<boolean> {
+async function clearConversationStateForTokenDisplay(
+  ctx: any
+): Promise<boolean> {
   try {
     const sessionCtx = ctx as any;
     let cleared = false;
@@ -374,13 +378,17 @@ async function clearConversationStateForTokenDisplay(ctx: any): Promise<boolean>
       // Clear Grammy.js internal conversation state keys
       const grammyConversationKeys = sessionKeys.filter(
         (key) =>
-          key.startsWith("__grammyjs_conversations") || key.startsWith("__conversations") || key.includes("__conv_")
+          key.startsWith("__grammyjs_conversations") ||
+          key.startsWith("__conversations") ||
+          key.includes("__conv_")
       );
 
       grammyConversationKeys.forEach((key) => {
         delete sessionCtx.session[key];
         cleared = true;
-        logger.info(`Cleared Grammy conversation key for token display: ${key}`);
+        logger.info(
+          `Cleared Grammy conversation key for token display: ${key}`
+        );
       });
     }
 
@@ -400,12 +408,18 @@ async function clearConversationStateForTokenDisplay(ctx: any): Promise<boolean>
           cleared = true;
         }
       } catch (haltError) {
-        logger.warn("Failed to halt conversation for token display, forcing clear:", haltError);
+        logger.warn(
+          "Failed to halt conversation for token display, forcing clear:",
+          haltError
+        );
         try {
           delete sessionCtx.conversation;
           cleared = true;
         } catch (deleteError) {
-          logger.warn("Failed to delete conversation object for token display:", deleteError);
+          logger.warn(
+            "Failed to delete conversation object for token display:",
+            deleteError
+          );
         }
       }
     }
@@ -491,18 +505,20 @@ bot.use(async (ctx, next) => {
   if (text && /^[A-Za-z0-9]{32,44}$/.test(text)) {
     try {
       new PublicKey(text); // Validate if it's a valid Solana address
-      logger.info(`[token-display] Token address detected, bypassing conversation state: ${text}`);
-      
+      logger.info(
+        `[token-display] Token address detected, bypassing conversation state: ${text}`
+      );
+
       // Clear any active conversation state for token addresses
       await clearConversationStateForTokenDisplay(ctx);
-      
+
       // Continue to the token address handler
       return next();
     } catch (e) {
       // Not a valid Solana address, continue normally
     }
   }
-  
+
   // For non-token addresses, continue with normal middleware flow
   return next();
 });
@@ -532,6 +548,117 @@ bot.use(createConversation(helpConversation));
 bot.use(createConversation(airdropSolConversation));
 bot.use(createConversation(predictMcConversation));
 bot.use(createConversation(fundTokenWalletsConversation));
+
+// Message cleaner to delete user messages after 1 minute
+const messageCleanupQueue = new Map<string, Set<number>>();
+
+bot.use(async (ctx, next) => {
+  if (ctx.message?.text) {
+    setImmediate(() =>
+      logger.info(
+        `[DebugMiddleware] ALL text message received: "${ctx.message?.text}" from user ${ctx.chat?.id}`
+      )
+    );
+    const detectedAddresses = TokenInfoService.detectTokenAddresses(
+      ctx.message.text
+    );
+    if (ctx.message.text.startsWith("/") || detectedAddresses.length > 0) {
+      logger.info(ctx.conversation.active());
+      if (ctx.conversation.active()) {
+        logger.info(
+          `[DebugMiddleware] Exiting all conversations for user ${ctx.chat?.id}`
+        );
+        await ctx.conversation.exitAll();
+      }
+    }
+  }
+  return next();
+});
+
+bot.use(async (ctx, next) => {
+  // Store user messages for cleanup
+  if (ctx.message?.text && ctx.from && ctx.chat) {
+    const userId = ctx.from.id.toString();
+    const messageId = ctx.message.message_id;
+    const chatId = ctx.chat.id;
+
+    // Initialize user's message set if not exists
+    if (!messageCleanupQueue.has(userId)) {
+      messageCleanupQueue.set(userId, new Set());
+    }
+
+    // Add message to cleanup queue
+    messageCleanupQueue.get(userId)!.add(messageId);
+
+    // Schedule message deletion after 1 minute
+    setTimeout(async () => {
+      try {
+        await ctx.api.deleteMessage(chatId, messageId);
+        messageCleanupQueue.get(userId)?.delete(messageId);
+
+        // Clean up empty sets
+        if (messageCleanupQueue.get(userId)?.size === 0) {
+          messageCleanupQueue.delete(userId);
+        }
+      } catch (error) {
+        // Message might already be deleted or bot lacks permissions
+        logger.error(
+          `Failed to delete message ${messageId} for user ${userId}:`,
+          error
+        );
+        messageCleanupQueue.get(userId)?.delete(messageId);
+      }
+    }, 60000); // 1 minute
+  }
+
+  return next();
+});
+
+bot.use(async (ctx, next) => {
+  if (ctx.message && ctx.message.text) {
+    logger.info(
+      `[DebugMiddleware] Received text message: "${ctx.message.text}" from user ${ctx.chat?.id}`
+    );
+    const detectedAddresses = TokenInfoService.detectTokenAddresses(
+      ctx.message.text
+    );
+
+    logger.info(
+      `[DebugMiddleware] Solana address match: ${
+        detectedAddresses.length > 0 ? detectedAddresses[0] : "None"
+      }`
+    );
+    if (
+      detectedAddresses.length > 0
+      // (ctx.message.text.startsWith("/") && !ctx.callbackQuery)
+    ) {
+      logger.info(
+        `[MessageHandler] Detected Solana address, exiting conversations: "${ctx.message.text}"`
+      );
+
+      const conv = ctx.conversation.active();
+
+      const conversationName = conv;
+
+      if (conv) {
+        for (const key of Object.keys(conv)) {
+          await ctx.conversation.exit(key);
+          logger.info(
+            `[MessageHandler] Exiting conversation key: ${key} for user ${ctx.chat?.id}`
+          );
+        }
+
+        // After exiting conversations, continue to intended text handlers
+        logger.info(
+          `[MessageHandler] Conversations exited, processing text message: "${ctx.message?.text}"`
+        );
+        return next();
+      }
+    }
+  }
+
+  return next();
+});
 
 // Middleware to patch reply/sendMessage and hook deletion
 bot.use(async (ctx, next) => {
@@ -571,13 +698,13 @@ bot.use(async (ctx, next) => {
 bot.command("start", async (ctx) => {
   try {
     logger.info("Start command used by user:", ctx.chat?.id);
-    
+
     // Clear any existing conversation state
     await clearConversationState(ctx);
-    
+
     // Wait a moment for cleanup
     await new Promise((resolve) => setTimeout(resolve, 100));
-    
+
     // Start main menu conversation
     await ctx.conversation.enter("mainMenuConversation", {
       overwrite: true,
@@ -591,20 +718,23 @@ bot.command("start", async (ctx) => {
 bot.command("menu", async (ctx) => {
   try {
     logger.info("Menu command used by user:", ctx.chat?.id);
-    
+
     // Clear any existing conversation state
     await clearConversationState(ctx);
-    
+
     // Wait a moment for cleanup
     await new Promise((resolve) => setTimeout(resolve, 100));
-    
+
     // Start main menu conversation
     await ctx.conversation.enter("mainMenuConversation", {
       overwrite: true,
     });
   } catch (error: any) {
     logger.error("Error in menu command:", error);
-    await sendMessage(ctx, "❌ Error accessing menu. Please try /start instead.");
+    await sendMessage(
+      ctx,
+      "❌ Error accessing menu. Please try /start instead."
+    );
   }
 });
 
@@ -861,15 +991,13 @@ bot.callbackQuery(CallBackQueries.EXPORT_DEV_WALLET, async (ctx) => {
 
   const { wallet } = await getDevWallet(user.id);
   const msg = [
-    "*Your dev wallet private key*",
-    "```",
-    wallet,
-    "```",
-    "_Copy it now and delete the message as soon as you're done\\._",
+    "<b>Your Dev Wallet Private Key</b>\n",
+    '<span class="tg-spoiler">' + wallet + "</span>",
+    "<i>⚠️ Copy it now and delete this message as soon as you're done. Never share your private key with anyone!</i>",
   ].join("\n");
   const keyboard = new InlineKeyboard().text("🗑 Delete", "del_message");
   const sent = await sendMessage(ctx, msg, {
-    parse_mode: "MarkdownV2",
+    parse_mode: "HTML",
     reply_markup: keyboard,
   });
 });
@@ -1128,7 +1256,6 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_TO_EXTERNAL, async (ctx) => {
 });
 
 bot.command("referrals", async (ctx) => {
-  await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("referralsConversation");
 });
 
@@ -1662,7 +1789,9 @@ bot.command("buyexternal", async (ctx) => {
 });
 
 // Handle compressed callback data
-function handleCompressedCallback(data: string): { action: string; tokenAddress: string } | null {
+function handleCompressedCallback(
+  data: string
+): { action: string; tokenAddress: string } | null {
   if (isCompressedCallbackData(data)) {
     return decompressCallbackData(data);
   }
@@ -1673,13 +1802,15 @@ function handleCompressedCallback(data: string): { action: string; tokenAddress:
 
 // Handle fund token wallets button clicks
 bot.callbackQuery(/^(ftw_|fund_token_wallets_)/, async (ctx) => {
-  logger.info(`[FundTokenWallets] Callback triggered with data: ${ctx.callbackQuery.data}`);
+  logger.info(
+    `[FundTokenWallets] Callback triggered with data: ${ctx.callbackQuery.data}`
+  );
   logger.info(`[FundTokenWallets] Pattern matched: ${ctx.callbackQuery.data}`);
   await safeAnswerCallbackQuery(ctx, "💸 Loading fund options...");
-  
+
   let tokenAddress: string;
   const data = ctx.callbackQuery.data;
-  
+
   if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
@@ -1689,178 +1820,235 @@ bot.callbackQuery(/^(ftw_|fund_token_wallets_)/, async (ctx) => {
     tokenAddress = decompressed.tokenAddress;
   } else {
     // Handle legacy uncompressed format
-    tokenAddress = data.split('_').slice(2).join('_');
+    tokenAddress = data.split("_").slice(2).join("_");
   }
 
   // Validate and clean the token address
   try {
     // Remove any "wallets_" prefix that might have been accidentally added
-    if (tokenAddress.startsWith('wallets_')) {
+    if (tokenAddress.startsWith("wallets_")) {
       tokenAddress = tokenAddress.substring(8); // Remove "wallets_" prefix
-      logger.warn(`[FundTokenWallets] Removed 'wallets_' prefix from token address: ${tokenAddress}`);
+      logger.warn(
+        `[FundTokenWallets] Removed 'wallets_' prefix from token address: ${tokenAddress}`
+      );
     }
-    
+
     // Validate that it's a valid Solana address
     const { PublicKey } = await import("@solana/web3.js");
     new PublicKey(tokenAddress);
   } catch (error) {
-    logger.error(`[FundTokenWallets] Invalid token address: ${tokenAddress}`, error);
+    logger.error(
+      `[FundTokenWallets] Invalid token address: ${tokenAddress}`,
+      error
+    );
     await sendMessage(ctx, "❌ Invalid token address in callback data.");
     return;
   }
 
-  logger.info(`[FundTokenWallets] Fund button clicked for token: ${tokenAddress}`);
+  logger.info(
+    `[FundTokenWallets] Fund button clicked for token: ${tokenAddress}`
+  );
 
   // Start the fund token wallets conversation
   try {
     await ctx.conversation.enter("fundTokenWalletsConversation", tokenAddress);
-    logger.info(`[FundTokenWallets] Conversation started successfully for token: ${tokenAddress}`);
+    logger.info(
+      `[FundTokenWallets] Conversation started successfully for token: ${tokenAddress}`
+    );
   } catch (error) {
-    logger.error(`[FundTokenWallets] Failed to start conversation for token: ${tokenAddress}`, error);
-    await sendMessage(ctx, "❌ Error starting fund token wallets conversation. Please try again.");
+    logger.error(
+      `[FundTokenWallets] Failed to start conversation for token: ${tokenAddress}`,
+      error
+    );
+    await sendMessage(
+      ctx,
+      "❌ Error starting fund token wallets conversation. Please try again."
+    );
   }
 });
 
 // Handle fund all wallets button clicks (from conversation)
 bot.callbackQuery(/^fund_all_wallets_(.+)$/, async (ctx) => {
-  logger.info(`[FundAllWallets] Callback triggered with data: ${ctx.callbackQuery.data}`);
+  logger.info(
+    `[FundAllWallets] Callback triggered with data: ${ctx.callbackQuery.data}`
+  );
   await safeAnswerCallbackQuery(ctx, "💸 Processing fund all wallets...");
-  
-  const tokenAddress = ctx.callbackQuery.data.split('_').slice(2).join('_');
+
+  const tokenAddress = ctx.callbackQuery.data.split("_").slice(2).join("_");
   logger.info(`[FundAllWallets] Fund all wallets for token: ${tokenAddress}`);
-  
+
   // This should be handled by the conversation, but if it reaches here, redirect to conversation
   try {
     await ctx.conversation.enter("fundTokenWalletsConversation", tokenAddress);
   } catch (error) {
-    logger.error(`[FundAllWallets] Failed to start conversation for token: ${tokenAddress}`, error);
-    await sendMessage(ctx, "❌ Error starting fund token wallets conversation. Please try again.");
+    logger.error(
+      `[FundAllWallets] Failed to start conversation for token: ${tokenAddress}`,
+      error
+    );
+    await sendMessage(
+      ctx,
+      "❌ Error starting fund token wallets conversation. Please try again."
+    );
   }
 });
 
 // Handle fund top wallets button clicks (from conversation)
 bot.callbackQuery(/^fund_top_wallets_(.+)_(\d+)$/, async (ctx) => {
-  logger.info(`[FundTopWallets] Callback triggered with data: ${ctx.callbackQuery.data}`);
+  logger.info(
+    `[FundTopWallets] Callback triggered with data: ${ctx.callbackQuery.data}`
+  );
   await safeAnswerCallbackQuery(ctx, "💸 Processing fund top wallets...");
-  
-  const parts = ctx.callbackQuery.data.split('_');
-  const tokenAddress = parts.slice(2, -1).join('_'); // Everything between fund_top_wallets_ and the count
+
+  const parts = ctx.callbackQuery.data.split("_");
+  const tokenAddress = parts.slice(2, -1).join("_"); // Everything between fund_top_wallets_ and the count
   const walletCount = parseInt(parts[parts.length - 1]);
-  
-  logger.info(`[FundTopWallets] Fund top ${walletCount} wallets for token: ${tokenAddress}`);
-  
+
+  logger.info(
+    `[FundTopWallets] Fund top ${walletCount} wallets for token: ${tokenAddress}`
+  );
+
   // This should be handled by the conversation, but if it reaches here, redirect to conversation
   try {
     await ctx.conversation.enter("fundTokenWalletsConversation", tokenAddress);
   } catch (error) {
-    logger.error(`[FundTopWallets] Failed to start conversation for token: ${tokenAddress}`, error);
-    await sendMessage(ctx, "❌ Error starting fund token wallets conversation. Please try again.");
+    logger.error(
+      `[FundTopWallets] Failed to start conversation for token: ${tokenAddress}`,
+      error
+    );
+    await sendMessage(
+      ctx,
+      "❌ Error starting fund token wallets conversation. Please try again."
+    );
   }
 });
 
 // Handle refresh launch data button clicks
-bot.callbackQuery(/^(rld_|rbld_|refresh_launch_data_|refresh_bonk_launch_data_)/, async (ctx) => {
-  await safeAnswerCallbackQuery(ctx, "🔄 Refreshing...");
-  
-  let tokenAddress: string;
-  let isBonk = false;
-  const data = ctx.callbackQuery.data;
-  
-  if (isCompressedCallbackData(data)) {
-    const decompressed = decompressCallbackData(data);
-    if (!decompressed) {
-      await sendMessage(ctx, "❌ Invalid callback data.");
+bot.callbackQuery(
+  /^(rld_|rbld_|refresh_launch_data_|refresh_bonk_launch_data_)/,
+  async (ctx) => {
+    await safeAnswerCallbackQuery(ctx, "🔄 Refreshing...");
+
+    let tokenAddress: string;
+    let isBonk = false;
+    const data = ctx.callbackQuery.data;
+
+    if (isCompressedCallbackData(data)) {
+      const decompressed = decompressCallbackData(data);
+      if (!decompressed) {
+        await sendMessage(ctx, "❌ Invalid callback data.");
+        return;
+      }
+      tokenAddress = decompressed.tokenAddress;
+      isBonk = decompressed.action === "REFRESH_BONK_LAUNCH_DATA";
+    } else {
+      // Handle legacy uncompressed format
+      const parts = data.split("_");
+      tokenAddress = parts.slice(3).join("_");
+      isBonk = parts[2] === "bonk";
+    }
+
+    // Validate and clean the token address
+    try {
+      // Remove any "wallets_" prefix that might have been accidentally added
+      if (tokenAddress.startsWith("wallets_")) {
+        tokenAddress = tokenAddress.substring(8); // Remove "wallets_" prefix
+        logger.warn(
+          `[Refresh] Removed 'wallets_' prefix from token address: ${tokenAddress}`
+        );
+      }
+
+      // Validate that it's a valid Solana address
+      const { PublicKey } = await import("@solana/web3.js");
+      new PublicKey(tokenAddress);
+    } catch (error) {
+      logger.error(`[Refresh] Invalid token address: ${tokenAddress}`, error);
+      await sendMessage(ctx, "❌ Invalid token address in callback data.");
       return;
     }
-    tokenAddress = decompressed.tokenAddress;
-    isBonk = decompressed.action === 'REFRESH_BONK_LAUNCH_DATA';
-  } else {
-    // Handle legacy uncompressed format
-    const parts = data.split('_');
-    tokenAddress = parts.slice(3).join('_');
-    isBonk = parts[2] === 'bonk';
-  }
 
-  // Validate and clean the token address
-  try {
-    // Remove any "wallets_" prefix that might have been accidentally added
-    if (tokenAddress.startsWith('wallets_')) {
-      tokenAddress = tokenAddress.substring(8); // Remove "wallets_" prefix
-      logger.warn(`[Refresh] Removed 'wallets_' prefix from token address: ${tokenAddress}`);
-    }
-    
-    // Validate that it's a valid Solana address
-    const { PublicKey } = await import("@solana/web3.js");
-    new PublicKey(tokenAddress);
-  } catch (error) {
-    logger.error(`[Refresh] Invalid token address: ${tokenAddress}`, error);
-    await sendMessage(ctx, "❌ Invalid token address in callback data.");
-    return;
-  }
+    logger.info(
+      `[Refresh] Refresh clicked for ${isBonk ? "Bonk" : "PumpFun"} token: ${tokenAddress}`
+    );
 
-  logger.info(`[Refresh] Refresh clicked for ${isBonk ? 'Bonk' : 'PumpFun'} token: ${tokenAddress}`);
+    try {
+      // First try to get token info from user's database
+      const user = await getUser(ctx.chat!.id.toString());
+      let tokenName = "Unknown Token";
+      let tokenSymbol = "UNK";
 
-  try {
-    // First try to get token info from user's database
-    const user = await getUser(ctx.chat!.id.toString());
-    let tokenName = "Unknown Token";
-    let tokenSymbol = "UNK";
-    
-    if (user) {
-      const userToken = await getUserTokenWithBuyWallets(user.id, tokenAddress);
-      if (userToken) {
-        tokenName = userToken.name;
-        tokenSymbol = userToken.symbol;
-        logger.info(`[Refresh] Found token in user database: ${tokenName} (${tokenSymbol})`);
+      if (user) {
+        const userToken = await getUserTokenWithBuyWallets(
+          user.id,
+          tokenAddress
+        );
+        if (userToken) {
+          tokenName = userToken.name;
+          tokenSymbol = userToken.symbol;
+          logger.info(
+            `[Refresh] Found token in user database: ${tokenName} (${tokenSymbol})`
+          );
+        }
       }
-    }
-    
-    // If not found in user database, try external APIs
-    if (tokenName === "Unknown Token") {
-      const tokenInfo = await getTokenInfo(tokenAddress);
-      if (tokenInfo) {
-        tokenName = tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
-        tokenSymbol = tokenInfo.baseToken?.symbol || tokenInfo.symbol || "UNK";
-        logger.info(`[Refresh] Found token in external API: ${tokenName} (${tokenSymbol})`);
+
+      // If not found in user database, try external APIs
+      if (tokenName === "Unknown Token") {
+        const tokenInfo = await getTokenInfo(tokenAddress);
+        if (tokenInfo) {
+          tokenName =
+            tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
+          tokenSymbol =
+            tokenInfo.baseToken?.symbol || tokenInfo.symbol || "UNK";
+          logger.info(
+            `[Refresh] Found token in external API: ${tokenName} (${tokenSymbol})`
+          );
+        } else {
+          logger.warn(
+            `[Refresh] Token not found in external APIs: ${tokenAddress}`
+          );
+          // Still proceed with unknown token name/symbol
+        }
+      }
+
+      // Import and call the appropriate refresh function
+      const { handleLaunchDataRefresh, handleBonkLaunchDataRefresh } =
+        await import("./message");
+
+      if (isBonk) {
+        await handleBonkLaunchDataRefresh(
+          ctx.chat!.id,
+          ctx.callbackQuery.message!.message_id,
+          tokenAddress,
+          tokenName,
+          tokenSymbol
+        );
       } else {
-        logger.warn(`[Refresh] Token not found in external APIs: ${tokenAddress}`);
-        // Still proceed with unknown token name/symbol
+        await handleLaunchDataRefresh(
+          ctx.chat!.id,
+          ctx.callbackQuery.message!.message_id,
+          tokenAddress,
+          tokenName,
+          tokenSymbol
+        );
       }
-    }
-
-    // Import and call the appropriate refresh function
-    const { handleLaunchDataRefresh, handleBonkLaunchDataRefresh } = await import("./message");
-    
-    if (isBonk) {
-      await handleBonkLaunchDataRefresh(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
-        tokenAddress,
-        tokenName,
-        tokenSymbol
+    } catch (error) {
+      logger.error(
+        `[Refresh] Error refreshing token data: ${(error as Error).message}`
       );
-    } else {
-      await handleLaunchDataRefresh(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
-        tokenAddress,
-        tokenName,
-        tokenSymbol
+      await sendMessage(
+        ctx,
+        "❌ Error refreshing token data. Please try again."
       );
     }
-  } catch (error) {
-    logger.error(`[Refresh] Error refreshing token data: ${(error as Error).message}`);
-    await sendMessage(ctx, "❌ Error refreshing token data. Please try again.");
   }
-});
+);
 
 // Handle sell dev supply button clicks
 bot.callbackQuery(/^(sds_|sell_dev_supply_)/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "💸 Selling dev supply...");
-  
+
   let tokenAddress: string;
   const data = ctx.callbackQuery.data;
-  
+
   if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
@@ -1870,10 +2058,12 @@ bot.callbackQuery(/^(sds_|sell_dev_supply_)/, async (ctx) => {
     tokenAddress = decompressed.tokenAddress;
   } else {
     // Handle legacy uncompressed format
-    tokenAddress = data.split('_').slice(2).join('_');
+    tokenAddress = data.split("_").slice(2).join("_");
   }
 
-  logger.info(`[SellDevSupply] Sell dev supply clicked for token: ${tokenAddress}`);
+  logger.info(
+    `[SellDevSupply] Sell dev supply clicked for token: ${tokenAddress}`
+  );
 
   // Start the sell dev supply conversation
   await ctx.conversation.enter("sellDevSupplyConversation", tokenAddress);
@@ -1882,10 +2072,10 @@ bot.callbackQuery(/^(sds_|sell_dev_supply_)/, async (ctx) => {
 // Handle sell dev button clicks
 bot.callbackQuery(/^(sd_|sell_dev_)/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "💸 Selling dev tokens...");
-  
+
   let tokenAddress: string;
   const data = ctx.callbackQuery.data;
-  
+
   if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
@@ -1895,7 +2085,7 @@ bot.callbackQuery(/^(sd_|sell_dev_)/, async (ctx) => {
     tokenAddress = decompressed.tokenAddress;
   } else {
     // Handle legacy uncompressed format
-    tokenAddress = data.split('_').slice(2).join('_');
+    tokenAddress = data.split("_").slice(2).join("_");
   }
 
   logger.info(`[SellDev] Sell dev clicked for token: ${tokenAddress}`);
@@ -1907,10 +2097,10 @@ bot.callbackQuery(/^(sd_|sell_dev_)/, async (ctx) => {
 // Handle sell percent button clicks
 bot.callbackQuery(/^(sp_|sell_percent_)/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "💸 Loading sell options...");
-  
+
   let tokenAddress: string;
   const data = ctx.callbackQuery.data;
-  
+
   if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
@@ -1920,7 +2110,7 @@ bot.callbackQuery(/^(sp_|sell_percent_)/, async (ctx) => {
     tokenAddress = decompressed.tokenAddress;
   } else {
     // Handle legacy uncompressed format
-    tokenAddress = data.split('_').slice(2).join('_');
+    tokenAddress = data.split("_").slice(2).join("_");
   }
 
   logger.info(`[SellPercent] Sell percent clicked for token: ${tokenAddress}`);
@@ -1932,10 +2122,10 @@ bot.callbackQuery(/^(sp_|sell_percent_)/, async (ctx) => {
 // Handle sell all button clicks
 bot.callbackQuery(/^(sa_|sell_all_)/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "💸 Selling all tokens...");
-  
+
   let tokenAddress: string;
   const data = ctx.callbackQuery.data;
-  
+
   if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
@@ -1945,7 +2135,7 @@ bot.callbackQuery(/^(sa_|sell_all_)/, async (ctx) => {
     tokenAddress = decompressed.tokenAddress;
   } else {
     // Handle legacy uncompressed format
-    tokenAddress = data.split('_').slice(2).join('_');
+    tokenAddress = data.split("_").slice(2).join("_");
   }
 
   logger.info(`[SellAll] Sell all clicked for token: ${tokenAddress}`);
@@ -1957,10 +2147,10 @@ bot.callbackQuery(/^(sa_|sell_all_)/, async (ctx) => {
 // Handle sell individual button clicks
 bot.callbackQuery(/^(si_|sell_individual_)/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "💸 Loading individual sells...");
-  
+
   let tokenAddress: string;
   const data = ctx.callbackQuery.data;
-  
+
   if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
@@ -1970,10 +2160,12 @@ bot.callbackQuery(/^(si_|sell_individual_)/, async (ctx) => {
     tokenAddress = decompressed.tokenAddress;
   } else {
     // Handle legacy uncompressed format
-    tokenAddress = data.split('_').slice(2).join('_');
+    tokenAddress = data.split("_").slice(2).join("_");
   }
 
-  logger.info(`[SellIndividual] Sell individual clicked for token: ${tokenAddress}`);
+  logger.info(
+    `[SellIndividual] Sell individual clicked for token: ${tokenAddress}`
+  );
 
   // Start the sell individual conversation
   await ctx.conversation.enter("sellIndividualTokenConversation", tokenAddress);
@@ -1982,10 +2174,10 @@ bot.callbackQuery(/^(si_|sell_individual_)/, async (ctx) => {
 // Handle airdrop SOL button clicks
 bot.callbackQuery(/^(as_|airdrop_sol_)/, async (ctx) => {
   await safeAnswerCallbackQuery(ctx, "🎁 Loading airdrop options...");
-  
+
   let tokenAddress: string;
   const data = ctx.callbackQuery.data;
-  
+
   if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
@@ -1995,7 +2187,7 @@ bot.callbackQuery(/^(as_|airdrop_sol_)/, async (ctx) => {
     tokenAddress = decompressed.tokenAddress;
   } else {
     // Handle legacy uncompressed format
-    tokenAddress = data.split('_').slice(2).join('_');
+    tokenAddress = data.split("_").slice(2).join("_");
   }
 
   logger.info(`[AirdropSol] Airdrop SOL clicked for token: ${tokenAddress}`);
@@ -2018,7 +2210,7 @@ bot.callbackQuery(
 
     let tokenAddress: string;
     const data = ctx.callbackQuery.data;
-    
+
     if (isCompressedCallbackData(data)) {
       const decompressed = decompressCallbackData(data);
       if (!decompressed) {
@@ -2030,7 +2222,7 @@ bot.callbackQuery(
       // Handle legacy uncompressed format
       tokenAddress = data.split("_").pop() || "";
     }
-    
+
     if (!tokenAddress) {
       await sendMessage(ctx, "❌ Invalid token address.");
       return;
@@ -2333,8 +2525,10 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
     });
 
     // Extract token name and symbol from the correct structure
-    const tokenName = tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
-    const tokenSymbol = tokenInfo.baseToken?.symbol || tokenInfo.symbol || "Unknown";
+    const tokenName =
+      tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
+    const tokenSymbol =
+      tokenInfo.baseToken?.symbol || tokenInfo.symbol || "Unknown";
 
     const monitorMessage = [
       `📊 **Token Monitor**`,
@@ -2349,7 +2543,7 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
       `• Price: $${tokenInfo.priceUsd || "N/A"}`,
       `• Market Cap: $${tokenInfo.marketCap ? tokenInfo.marketCap.toLocaleString() : "N/A"}`,
       `• Volume (24h): $${tokenInfo.volume24h ? tokenInfo.volume24h.toLocaleString() : "N/A"}`,
-      `• Liquidity: $${tokenInfo.liquidity ? (typeof tokenInfo.liquidity === 'object' ? tokenInfo.liquidity.usd?.toLocaleString() : tokenInfo.liquidity.toLocaleString()) : "N/A"}`,
+      `• Liquidity: $${tokenInfo.liquidity ? (typeof tokenInfo.liquidity === "object" ? tokenInfo.liquidity.usd?.toLocaleString() : tokenInfo.liquidity.toLocaleString()) : "N/A"}`,
       ``,
       `💡 **Tip:** Use /menu or /start to return to the main menu.`,
     ].join("\n");
@@ -2358,7 +2552,10 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
     const keyboard = new InlineKeyboard()
       .text("🔄 Refresh", `remonitor_data_${tokenAddress}`)
       .row()
-      .text("💸 Fund Token Wallets", compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress))
+      .text(
+        "💸 Fund Token Wallets",
+        compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress)
+      )
       .row()
       .text("🔙 Back to Tokens", CallBackQueries.VIEW_TOKENS);
 
@@ -2368,8 +2565,9 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
       reply_markup: keyboard,
     });
 
-    logger.info(`[RefreshMonitorData] Successfully refreshed monitor data for ${tokenAddress}`);
-    
+    logger.info(
+      `[RefreshMonitorData] Successfully refreshed monitor data for ${tokenAddress}`
+    );
   } catch (error) {
     logger.error("Error refreshing monitor data:", error);
     await sendMessage(
@@ -2662,16 +2860,24 @@ bot.on("message:text", async (ctx) => {
         try {
           const cleared = await clearConversationStateForTokenDisplay(ctx);
           if (cleared) {
-            logger.info(`[token-display] Successfully cleared conversation state for token: ${text}`);
+            logger.info(
+              `[token-display] Successfully cleared conversation state for token: ${text}`
+            );
           } else {
-            logger.info(`[token-display] No conversation state to clear for token: ${text}`);
+            logger.info(
+              `[token-display] No conversation state to clear for token: ${text}`
+            );
           }
         } catch (clearError: any) {
-          logger.warn(`[token-display] Failed to clear conversation state: ${clearError.message}`);
+          logger.warn(
+            `[token-display] Failed to clear conversation state: ${clearError.message}`
+          );
           // Continue with token display even if clearing fails
         }
 
-        logger.info(`[token-display] Proceeding with token display for: ${text}`);
+        logger.info(
+          `[token-display] Proceeding with token display for: ${text}`
+        );
 
         // **ULTRA-FAST DISPLAY: Show token page IMMEDIATELY with zero blocking operations**
         let initialTokenName = "Loading...";
@@ -3127,7 +3333,9 @@ bot.on("message:text", async (ctx) => {
           }
         });
 
-        logger.info(`[token-display] Token display handler completed for: ${text}`);
+        logger.info(
+          `[token-display] Token display handler completed for: ${text}`
+        );
 
         return;
       } catch (e) {
@@ -3399,7 +3607,7 @@ bot.on("callback_query:data", async (ctx) => {
   if (data.startsWith("fund_token_wallets_") || data.startsWith("ftw_")) {
     return; // Let the specific handler deal with this
   }
-  
+
   const [action, token, address] = data.split("_");
   if (action && token === "token" && address) {
     logger.info(`${action} called`);
@@ -3475,10 +3683,10 @@ bot.on("callback_query:data", async (ctx) => {
 export default bot;
 
 // Add this at the end of the file, after all other handlers
-bot.on('callback_query', async (ctx) => {
+bot.on("callback_query", async (ctx) => {
   try {
     await ctx.answerCallbackQuery({
-      text: '❌ This button is no longer valid or has expired. Please try again from the main menu.',
+      text: "❌ This button is no longer valid or has expired. Please try again from the main menu.",
       show_alert: true,
     });
   } catch (e) {

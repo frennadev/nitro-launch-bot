@@ -9,6 +9,8 @@ import { TokenState } from "../../backend/types";
 import { startLoadingState, sendLoadingMessage } from "../loading";
 import { decryptPrivateKey } from "../../backend/utils";
 import { sendErrorWithAutoDelete } from "../utils";
+import { sendMessage } from "../../backend/sender";
+import { logger } from "../../utils/logger";
 
 const devSellConversation = async (
   conversation: Conversation,
@@ -32,18 +34,19 @@ const devSellConversation = async (
     return;
   }
   if (token.state !== TokenState.LAUNCHED) {
-    await ctx.reply("Token is not launched yet 😑");
+    await sendMessage(ctx, "Token is not launched yet 😑");
     await conversation.halt();
     return;
   }
   if (token.launchData?.lockDevSell === true) {
-    await ctx.reply("Dev sell job is currently processing 😏");
+    await sendMessage(ctx, "Dev sell job is currently processing 😏");
     await conversation.halt();
     return;
   }
 
   // -------- Request & validate % of dev holdings to sell ----------
-  await ctx.reply(
+  await sendMessage(
+    ctx,
     "Enter the % of dev holdings to sell \\(must not be less than 1 or greater than 100\\): ",
     {
       parse_mode: "MarkdownV2",
@@ -59,7 +62,8 @@ const devSellConversation = async (
         throw new Error("Invalid percentage");
       isValid = true;
     } catch (error) {
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "Invalid % entered ❌. Please re-enter a correct percentage: "
       );
       updatedCtx = await conversation.waitFor("message:text");
@@ -77,7 +81,7 @@ const devSellConversation = async (
     const devWalletPrivateKey = decryptPrivateKey(
       (token.launchData!.devWallet! as any).privateKey
     );
-    
+
     const result = await enqueueDevSell(
       user.id,
       updatedCtx.message!.chat.id,
@@ -90,7 +94,8 @@ const devSellConversation = async (
       await submitLoading.update(
         "❌ **Failed to submit dev sell**\n\nAn error occurred while submitting dev sell details for execution. Please try again."
       );
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "An error occurred while submitting dev sell details for execution ❌. Please try again.."
       );
     } else {
@@ -105,7 +110,10 @@ const devSellConversation = async (
     await submitLoading.update(
       "❌ **Failed to decrypt dev wallet**\n\nThere was an issue accessing your dev wallet data. Please try again."
     );
-    await sendErrorWithAutoDelete(ctx, `Dev wallet decryption error: ${error.message} ❌`);
+    await sendErrorWithAutoDelete(
+      ctx,
+      `Dev wallet decryption error: ${error.message} ❌`
+    );
   }
 };
 
@@ -115,11 +123,11 @@ const devSell100Conversation = async (
   tokenAddress: string
 ) => {
   // Don't answer callback query here - already handled by main handler
-  
+
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await ctx.reply("❌ User not found");
+    await sendMessage(ctx, "❌ User not found");
     await conversation.halt();
     return;
   }
@@ -127,34 +135,38 @@ const devSell100Conversation = async (
   // -------- VALIDATE TOKEN ----------
   const token = await getUserToken(user.id, tokenAddress);
   if (!token) {
-    await ctx.reply("❌ Token not found");
+    await sendMessage(ctx, "❌ Token not found");
     await conversation.halt();
     return;
   }
-  
+
   if (token.state !== TokenState.LAUNCHED) {
-    await ctx.reply("❌ Token is not launched yet");
+    await sendMessage(ctx, "❌ Token is not launched yet");
     await conversation.halt();
     return;
   }
-  
+
   if (token.launchData?.lockDevSell === true) {
-    await ctx.reply("❌ Dev sell job is currently processing. Please wait...");
+    await sendMessage(
+      ctx,
+      "❌ Dev sell job is currently processing. Please wait..."
+    );
     await conversation.halt();
     return;
   }
 
   // Send loading message
-  const loadingMsg = await ctx.reply("🔄 **Submitting 100% Dev Supply Sell...**\n\n⏳ Adding to queue...", {
-    parse_mode: "Markdown"
-  });
+  const loadingMsg = await sendLoadingMessage(
+    ctx,
+    "💰 **Submitting 100% dev sell...**\n\n⏳ Adding to queue..."
+  );
 
   try {
     // Get dev wallet private key
     const devWalletPrivateKey = decryptPrivateKey(
       (token.launchData!.devWallet! as any).privateKey
     );
-    
+
     // Use the proper queue system for dev sell (100% = sell all)
     const result = await enqueueDevSell(
       user.id,
@@ -163,35 +175,29 @@ const devSell100Conversation = async (
       devWalletPrivateKey,
       100 // 100% dev sell
     );
-    
+
     if (result.success) {
-      await ctx.api.editMessageText(
-        ctx.chat!.id,
-        loadingMsg.message_id,
-        `✅ **100% Dev Supply Sell Submitted!**\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed.`,
-        { parse_mode: "Markdown" }
+      await sendMessage(
+        ctx,
+        "🎉 <b>100% Dev Supply Sell Submitted!</b>\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed."
       );
-      
+
       // Start the loading state for the actual dev sell process
       await startLoadingState(ctx, "dev_sell", tokenAddress);
     } else {
-      await ctx.api.editMessageText(
-        ctx.chat!.id,
-        loadingMsg.message_id,
-        `❌ **Failed to submit 100% dev sell**\n\n🔍 **Error:** ${result.message}\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`,
-        { parse_mode: "Markdown" }
+      await sendMessage(
+        ctx,
+        `❌ <b>Failed to submit 100% dev sell</b>\n\n🔍 <b>Error:</b> ${result.message}\n\n💡 <b>Try:</b> Use the regular "Sell Dev Supply" button for custom amounts.`
       );
     }
   } catch (error: any) {
     logger.error("Error in 100% dev sell conversation:", error);
-    await ctx.api.editMessageText(
-      ctx.chat!.id,
-      loadingMsg.message_id,
-      `❌ **Sell Failed**\n\n🔍 **Error:** ${error.message}\n\n💡 **Try:** Use the regular "Sell Dev Supply" button for custom amounts.`,
-      { parse_mode: "Markdown" }
+    await sendMessage(
+      ctx,
+      `❌ <b>Failed to process 100% dev sell</b>\n\n🔍 <b>Error:</b> ${error.message}\n\n💡 <b>Try:</b> Use the regular "Sell Dev Supply" button for custom amounts.`
     );
   }
-  
+
   await conversation.halt();
 };
 

@@ -9,6 +9,7 @@ import { TokenState } from "../../backend/types";
 import { startLoadingState, sendLoadingMessage } from "../loading";
 import { decryptPrivateKey } from "../../backend/utils";
 import { sendErrorWithAutoDelete } from "../utils";
+import { sendMessage } from "../../backend/sender";
 
 const walletSellConversation = async (
   conversation: Conversation,
@@ -33,19 +34,19 @@ const walletSellConversation = async (
     return;
   }
   if (token.state !== TokenState.LAUNCHED) {
-    await ctx.reply("Token is not launched yet 😑");
+    await sendMessage(ctx, "Token is not launched yet 😑");
     await conversation.halt();
     return;
   }
   if (token.launchData?.lockWalletSell === true) {
-
     await conversation.halt();
     return;
   }
 
   // -------- Request & validate % of wallet holdings to sell ----------
   if (!sellPercent) {
-    await ctx.reply(
+    await sendMessage(
+      ctx,
       "Enter the % of wallet holdings to sell \\(must not be less than 1 or greater than 100\\): ",
       {
         parse_mode: "MarkdownV2",
@@ -61,7 +62,8 @@ const walletSellConversation = async (
           throw new Error("Invalid percentage");
         isValid = true;
       } catch (error) {
-        await ctx.reply(
+        await sendMessage(
+          ctx,
           "Invalid % entered ❌. Please re-enter a correct percentage: "
         );
         updatedCtx = await conversation.waitFor("message:text");
@@ -83,12 +85,12 @@ const walletSellConversation = async (
       }
       return decryptPrivateKey(wallet.privateKey);
     });
-    
+
     // FIXED: Properly decrypt dev wallet private key
     const devWalletPrivateKey = decryptPrivateKey(
       (token.launchData!.devWallet! as any).privateKey
     );
-    
+
     const result = await enqueueWalletSell(
       user.id,
       Number(user.telegramId),
@@ -102,7 +104,8 @@ const walletSellConversation = async (
       await submitLoading.update(
         "❌ **Failed to submit wallet sells**\n\nAn error occurred while submitting wallet sell details for execution. Please try again."
       );
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "An error occurred while submitting wallet sell details for execution ❌. Please try again.."
       );
     } else {
@@ -117,7 +120,10 @@ const walletSellConversation = async (
     await submitLoading.update(
       "❌ **Failed to decrypt wallet keys**\n\nThere was an issue accessing your wallet data. Please try again."
     );
-    await sendErrorWithAutoDelete(ctx, `Wallet decryption error: ${error.message} ❌`);
+    await sendErrorWithAutoDelete(
+      ctx,
+      `Wallet decryption error: ${error.message} ❌`
+    );
   }
 };
 

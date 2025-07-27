@@ -169,15 +169,13 @@ export const withdrawDevWalletConversation = async (
   // Confirm withdrawal
   await sendMessage(
     destinationChoice,
-    [
-      "🔍 <b>Confirm Withdrawal</b>",
-      "",
-      `<b>From:</b> Dev Wallet`,
-      `<b>To:</b> ${destinationLabel}`,
-      `<b>Amount:</b> <b>${netWithdrawAmount.toFixed(6)} SOL</b>`,
-      "",
-      "Proceed with withdrawal?",
-    ].join("\n"),
+    `🔍 <b>Confirm Withdrawal from Dev Wallet</b>
+
+<b>From:</b> Dev Wallet
+<b>To:</b> ${destinationLabel}
+<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
+
+Proceed with withdrawal?`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
@@ -226,15 +224,13 @@ export const withdrawDevWalletConversation = async (
 
       await sendMessage(
         confirmation,
-        [
-          "✅ <b>Withdrawal Successful!</b>",
-          "",
-          `<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL`,
-          `<b>Destination:</b> ${destinationLabel}`,
-          `<b>Transaction:</b> <code>${signature}</code>`,
-          "",
-          `<i>🔗 View on Solscan: https://solscan.io/tx/${signature}</i>`,
-        ].join("\n"),
+        `✅ <b>Withdrawal from Dev Wallet Successful!</b>
+
+<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
+<b>Destination:</b> ${destinationLabel}
+<b>Transaction:</b> <code>${signature}</code>
+
+<i>🔗 View on Solscan: https://solscan.io/tx/${signature}</i>`,
         { parse_mode: "HTML" }
       );
     } catch (error: any) {
@@ -283,7 +279,7 @@ export const withdrawBuyerWalletsConversation = async (
     await sendMessage(
       ctx,
       `❌ Buyer wallets have insufficient total balance to withdraw.
-    
+
 <b>Total balance:</b> ${totalBalance.toFixed(6)} SOL
 <b>Minimum required:</b> 0.005 SOL`,
       { parse_mode: "HTML" }
@@ -304,21 +300,19 @@ export const withdrawBuyerWalletsConversation = async (
 
   await sendMessage(
     ctx,
-    [
-      "💸 <b>Withdraw from Buyer Wallets</b>",
-      "",
-      "<b>Wallets with withdrawable balance:</b>",
-      walletList,
-      "",
-      `<b>Total Available:</b> <b>${totalBalance.toFixed(6)} SOL</b>`,
-      "",
-      "<b>Choose withdrawal destination:</b>",
-    ].join("\n"),
+    `💸 <b>Withdraw from Buyer Wallets</b>
+
+<b>Wallets with withdrawable balance:</b>
+${walletList}
+
+<b>Total Available:</b> <b>${totalBalance.toFixed(6)} SOL</b>
+
+<b>Choose withdrawal destination:</b>`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
         .text("💳 To Funding Wallet", CallBackQueries.WITHDRAW_TO_FUNDING)
-        // .row()
+        .row()
         .text("🌐 To External Wallet", CallBackQueries.WITHDRAW_TO_EXTERNAL)
         .row()
         .text("❌ Cancel", CallBackQueries.CANCEL_WITHDRAWAL),
@@ -420,16 +414,15 @@ export const withdrawBuyerWalletsConversation = async (
     destinationChoice,
     `🔍 <b>Confirm Withdrawal from Buyer Wallets</b>
 
-<b>From:</b> ${walletBalances.length} Buyer Wallets
+<b>From:</b> ${walletBalances.filter((wb) => wb.balance > 0.001).length} Buyer Wallets
 <b>To:</b> ${destinationLabel}
-<b>Total Amount:</b> ${totalNetWithdrawAmount.toFixed(6)} SOL
+<b>Total Amount:</b> <b>${totalNetWithdrawAmount.toFixed(6)} SOL</b>
 
-Proceed with withdrawal?`,
+<i>Are you sure you want to proceed with this withdrawal?</i>`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
         .text("✅ Confirm Withdrawal", "confirm_buyer_withdrawal")
-        .row()
         .text("❌ Cancel", CallBackQueries.CANCEL_WITHDRAWAL),
     }
   );
@@ -505,20 +498,42 @@ Proceed with withdrawal?`,
       if (successfulWithdrawals > 0) {
         await sendMessage(
           confirmation,
-          `✅ <b>Withdrawal from Buyer Wallets Successful!</b>
+          `✅ <b>Buyer Wallets Withdrawal Complete!</b>
 
-<b>Successful Withdrawals:</b> ${successfulWithdrawals} out of ${walletBalances.length} wallets
-<b>Total Amount Withdrawn:</b> ${totalWithdrawn.toFixed(6)} SOL
-<b>Destination:</b> ${destinationLabel}`,
-          { parse_mode: "HTML" }
+📊 <b>Summary:</b>
+• <b>Successful:</b> ${successfulWithdrawals}/${walletBalances.length} wallets
+• <b>Total Withdrawn:</b> ${totalWithdrawn.toFixed(6)} SOL
+• <b>Destination:</b> ${destinationLabel}
+
+🎉 <i>Your funds have been successfully transferred!</i>`,
+          {
+            parse_mode: "HTML",
+            reply_markup: new InlineKeyboard()
+              .text("🔙 Back to Menu", "back_to_main")
+              .row()
+              .text("📊 View Wallets", "view_wallets"),
+          }
         );
       } else {
         await sendMessage(
           confirmation,
-          `❌ <b>Withdrawal from Buyer Wallets Failed</b>
+          `❌ <b>Withdrawal Failed</b>
 
-No funds could be withdrawn from any wallet.`,
-          { parse_mode: "HTML" }
+⚠️ <i>No funds could be withdrawn from any buyer wallet.</i>
+
+<b>Possible reasons:</b>
+• Insufficient balance in wallets
+• Network connectivity issues
+• Transaction fees too high
+
+💡 <i>Please check your wallet balances and try again.</i>`,
+          {
+            parse_mode: "HTML",
+            reply_markup: new InlineKeyboard()
+              .text("🔄 Try Again", "retry_withdrawal")
+              .row()
+              .text("🔙 Back to Menu", "back_to_main"),
+          }
         );
       }
 
@@ -556,7 +571,23 @@ export const withdrawFundingWalletConversation = async (
   if (!fundingWallet) {
     await sendMessage(
       ctx,
-      "❌ No funding wallet found. Please configure your funding wallet first."
+      `❌ <b>No Funding Wallet Found</b>
+
+🚫 <i>You need to configure your funding wallet before withdrawing.</i>
+
+💡 <b>How to setup:</b>
+• Go to Settings
+• Select "Configure Funding Wallet"
+• Import or generate a new wallet
+
+<i>Once configured, you can withdraw your funds easily!</i>`,
+      {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard()
+          .text("⚙️ Go to Settings", "settings_menu")
+          .row()
+          .text("🔙 Back to Menu", "back_to_main"),
+      }
     );
     return conversation.halt();
   }
@@ -566,10 +597,13 @@ export const withdrawFundingWalletConversation = async (
   if (fundingBalance < 0.001) {
     await sendMessage(
       ctx,
-      `❌ Funding wallet has insufficient balance to withdraw.
-    
-<b>Current balance:</b> ${fundingBalance.toFixed(6)} SOL
-<b>Minimum required:</b> 0.001 SOL`,
+      `❌ <b>Insufficient Balance</b>
+      
+<b>Funding Wallet:</b> <code>${fundingWallet.publicKey}</code>
+<b>Current Balance:</b> <b>${fundingBalance.toFixed(6)} SOL</b>
+<b>Minimum Required:</b> <b>0.001 SOL</b>
+
+<i>Please deposit more SOL to proceed with withdrawal.</i>`,
       { parse_mode: "HTML" }
     );
     return conversation.halt();
@@ -580,14 +614,13 @@ export const withdrawFundingWalletConversation = async (
     `💸 <b>Withdraw from Funding Wallet</b>
 
 <b>Funding Wallet:</b> <code>${fundingWallet.publicKey}</code>
-<b>Available Balance:</b> ${fundingBalance.toFixed(6)} SOL
+<b>Available Balance:</b> <b>${fundingBalance.toFixed(6)} SOL</b>
 
-Where would you like to withdraw the funds?`,
+<b>Choose withdrawal destination:</b>`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
         .text("🌐 To External Wallet", CallBackQueries.WITHDRAW_TO_EXTERNAL)
-
         .text("❌ Cancel", CallBackQueries.CANCEL_WITHDRAWAL),
     }
   );
@@ -665,22 +698,23 @@ Where would you like to withdraw the funds?`,
     );
     return conversation.halt();
   }
-
   // Confirm withdrawal
   await sendMessage(
     ctx,
     `🔍 <b>Confirm Withdrawal from Funding Wallet</b>
 
 <b>From:</b> Funding Wallet
-<b>To:</b> External Wallet (${destinationAddress.slice(0, 6)}...${destinationAddress.slice(-4)})
-<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
+<b>To:</b> ${destinationLabel}
+<b>Amount:</b> <b>${netWithdrawAmount.toFixed(6)} SOL</b>
 
-Proceed with withdrawal?`,
+<i>⚠️ This action cannot be undone. Please verify the details above.</i>
+
+💡 <i>Are you ready to proceed with this withdrawal?</i>`,
     {
       parse_mode: "HTML",
       reply_markup: new InlineKeyboard()
         .text("✅ Confirm Withdrawal", "confirm_funding_withdrawal")
-        // .row()
+        .row()
         .text("❌ Cancel", CallBackQueries.CANCEL_WITHDRAWAL),
     }
   );
@@ -728,19 +762,46 @@ Proceed with withdrawal?`,
 
       await sendMessage(
         confirmation,
-        `✅ <b>Withdrawal from Funding Wallet Successful!</b>
+        `✅ <b>Withdrawal Successful!</b>
 
-<b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
-<b>Destination:</b> External Wallet (${destinationAddress.slice(0, 6)}...${destinationAddress.slice(-4)})
-<b>Transaction:</b> <code>${signature}</code>
+💰 <b>Transaction Details:</b>
+• <b>Amount:</b> ${netWithdrawAmount.toFixed(6)} SOL
+• <b>Destination:</b> ${destinationLabel}
+• <b>Transaction ID:</b> <code>${signature}</code>
 
-<i>🔗 View on Solscan: https://solscan.io/tx/${signature}</i>`,
-        { parse_mode: "HTML" }
+🎉 <i>Your funds have been successfully transferred!</i>
+
+🔗 <a href="https://solscan.io/tx/${signature}">View on Solscan</a>`,
+        {
+          parse_mode: "HTML",
+          reply_markup: new InlineKeyboard()
+            .text("🔙 Back to Menu", "back_to_main")
+            .row()
+            .text("📊 View Wallets", "view_wallets")
+            .text("💸 New Withdrawal", "new_withdrawal"),
+        }
       );
     } catch (error: any) {
       await sendMessage(
         confirmation,
-        `❌ Withdrawal from funding wallet failed: ${error.message}`
+        `❌ <b>Withdrawal Failed</b>
+
+⚠️ <b>Error:</b> ${error.message}
+
+💡 <b>What you can do:</b>
+• Check your wallet balance
+• Verify network connectivity
+• Try again in a few moments
+
+<i>If the problem persists, please contact support.</i>`,
+        {
+          parse_mode: "HTML",
+          reply_markup: new InlineKeyboard()
+            .text("🔄 Try Again", "retry_funding_withdrawal")
+            .row()
+            .text("🔙 Back to Menu", "back_to_main")
+            .text("💬 Support", "contact_support"),
+        }
       );
     }
   }

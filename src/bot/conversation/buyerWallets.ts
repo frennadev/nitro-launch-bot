@@ -79,10 +79,16 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
     // Add pagination controls if needed
     if (totalPages > 1) {
       if (currentPage > 1) {
-        kb.text(`⬅️ Previous Page`, `${CallBackQueries.PREV_PAGE}_${currentPage - 1}`);
+        kb.text(
+          `⬅️ Previous Page`,
+          `${CallBackQueries.PREV_PAGE}_${currentPage - 1}`
+        );
       }
       if (currentPage < totalPages) {
-        kb.text(`Next Page ➡️`, `${CallBackQueries.NEXT_PAGE}_${currentPage + 1}`);
+        kb.text(
+          `Next Page ➡️`,
+          `${CallBackQueries.NEXT_PAGE}_${currentPage + 1}`
+        );
       }
       kb.row();
     }
@@ -117,7 +123,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
       if (data === CallBackQueries.GENERATE_BUYER_WALLET) {
         // Calculate how many wallets can still be generated
         const remainingSlots = MAX_WALLETS - wallets.length;
-        
+
         const cancelKeyboard = new InlineKeyboard().text(
           "❌ Cancel",
           CallBackQueries.CANCEL_BUYER_WALLET
@@ -125,7 +131,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
         await sendMessage(
           next,
-          `🔄 **Generate New Buyer Wallets**\n\nYou currently have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.\n\n<b>Maximum wallets you can generate:</b> ${remainingSlots}\n\nPlease enter the number of new wallets you want to generate (1-${remainingSlots}):`,
+          `🔄 <b>Generate New Buyer Wallets</b>\n\nYou currently have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.\n\n💡 You can generate up to <b>${remainingSlots}</b> more wallets.\n\nPlease enter the number of wallets to generate:`,
           {
             parse_mode: "HTML",
             reply_markup: cancelKeyboard,
@@ -169,23 +175,41 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         }
 
         // Create success message
-        let successMessage = `✅ Successfully generated <b>${quantity}</b> new buyer wallet${quantity > 1 ? 's' : ''}!\n\n`;
-        
+        let successMessage = `✅ Successfully generated <b>${quantity}</b> new buyer wallet${quantity > 1 ? "s" : ""}!\n\n`;
         if (quantity === 1) {
           // Single wallet - show full details
           const wallet = generatedWallets[0];
-          successMessage += `<b>Address:</b> <code>${wallet.publicKey}</code>\n\n<b>Private Key:</b>\n<code>${wallet.privateKey}</code>\n\n<i>⚠️ Save this private key securely and delete this message!</i>`;
+          const addressDisplay = `${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-8)}`;
+
+          successMessage += [
+            `🔐 <b>Wallet Details:</b>`,
+            `<b>Address:</b> <code>${addressDisplay}</code>`,
+            `<b>Full Address:</b> <code>${wallet.publicKey}</code>`,
+            ``,
+            `🔑 <b>Private Key:</b>`,
+            `<tg-spoiler>${wallet.privateKey}</tg-spoiler>`,
+            ``,
+            `⚠️ <i>Save this private key securely and delete this message!</i>`,
+          ].join("\n");
         } else {
           // Multiple wallets - show summary and list
-          successMessage += `<b>Generated Wallets:</b>\n`;
+          successMessage += [`📋 <b>Generated Wallets:</b>`, ``].join("\n");
+
           generatedWallets.forEach((wallet, index) => {
-            const short = `${wallet.publicKey.slice(0, 6)}…${wallet.publicKey.slice(-4)}`;
-            successMessage += `${index + 1}. <code>${short}</code>\n`;
+            const shortAddress = `${wallet.publicKey.slice(0, 6)}...${wallet.publicKey.slice(-4)}`;
+            successMessage += `${index + 1}. <code>${shortAddress}</code>\n`;
           });
-          successMessage += `\n<i>⚠️ Private keys have been generated but not shown for security. Use the export function to get individual private keys.</i>`;
+
+          successMessage += [
+            ``,
+            `🔒 <i>Private keys generated but hidden for security.</i>`,
+            `💡 <i>Use the export function to retrieve individual private keys.</i>`,
+          ].join("\n");
         }
 
-        await sendMessage(quantityInput, successMessage, { parse_mode: "HTML" });
+        await sendMessage(quantityInput, successMessage, {
+          parse_mode: "HTML",
+        });
         return conversation.halt();
       }
 
@@ -228,11 +252,21 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
           const keypair = secretKeyToKeypair(privateKey);
           const newWallet = await addBuyerWallet(user.id, privateKey);
 
-          await sendMessage(
-            privateKeyInput,
-            `✅ Buyer wallet imported successfully!\n\n<b>Address:</b> <code>${newWallet.publicKey}</code>`,
-            { parse_mode: "HTML" }
-          );
+          const shortAddress = `${newWallet.publicKey.slice(0, 8)}...${newWallet.publicKey.slice(-8)}`;
+
+          const successMessage = [
+            `✅ <b>Wallet Imported Successfully!</b>`,
+            ``,
+            `🔐 <b>Wallet Details:</b>`,
+            `<b>Address:</b> <code>${shortAddress}</code>`,
+            `<b>Full Address:</b> <code>${newWallet.publicKey}</code>`,
+            ``,
+            `💡 <i>Your wallet has been added to your buyer wallets list.</i>`,
+          ].join("\n");
+
+          await sendMessage(privateKeyInput, successMessage, {
+            parse_mode: "HTML",
+          });
         } catch (error: any) {
           await sendMessage(
             privateKeyInput,
@@ -244,7 +278,10 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
       }
 
       // Handle pagination
-      if (data.startsWith(CallBackQueries.PREV_PAGE) || data.startsWith(CallBackQueries.NEXT_PAGE)) {
+      if (
+        data.startsWith(CallBackQueries.PREV_PAGE) ||
+        data.startsWith(CallBackQueries.NEXT_PAGE)
+      ) {
         // For now, just continue the loop to refresh the page
         // In a full implementation, you'd track the page number
         continue;
@@ -258,24 +295,34 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
       switch (action) {
         case CallBackQueries.EXPORT_BUYER_WALLET:
           try {
-            const privateKey = await getBuyerWalletPrivateKey(user.id, walletId);
+            const privateKey = await getBuyerWalletPrivateKey(
+              user.id,
+              walletId
+            );
             const wallet = wallets.find((w) => w.id === walletId);
             if (wallet) {
-              const msg = [
-                "*Buyer Wallet Private Key*",
-                `*Address:* \`${wallet.publicKey}\``,
-                "```",
-                privateKey,
-                "```",
-                "_Copy it now and delete the message as soon as you're done\\._",
+              const shortAddress = `${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-8)}`;
+
+              const exportMessage = [
+                `🔐 <b>Buyer Wallet Export</b>`,
+                ``,
+                `<b>Address:</b> <code>${shortAddress}</code>`,
+                `<b>Full Address:</b> <code>${wallet.publicKey}</code>`,
+                ``,
+                `🔑 <b>Private Key:</b>`,
+                `<span class="tg-spoiler">${privateKey}</span>`,
+                ``,
+                `⚠️ <i>Save this private key securely and delete this message!</i>`,
               ].join("\n");
-              const keyboard = new InlineKeyboard().text(
-                "🗑 Delete",
+
+              const deleteKeyboard = new InlineKeyboard().text(
+                "🗑️ Delete Message",
                 "del_message"
               );
-              await next.reply(msg, {
-                parse_mode: "MarkdownV2",
-                reply_markup: keyboard,
+
+              await sendMessage(next, exportMessage, {
+                parse_mode: "HTML",
+                reply_markup: deleteKeyboard,
               });
             }
           } catch (error: any) {
@@ -286,9 +333,12 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         case CallBackQueries.DELETE_BUYER_WALLET:
           try {
             await deleteBuyerWallet(user.id, walletId);
-            await next.reply(`🗑️ Buyer wallet has been removed from your list.`, {
-              parse_mode: "HTML",
-            });
+            await next.reply(
+              `🗑️ Buyer wallet has been removed from your list.`,
+              {
+                parse_mode: "HTML",
+              }
+            );
             // Continue the loop to show updated wallet list
             continue;
           } catch (error: any) {

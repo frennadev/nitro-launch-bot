@@ -39,21 +39,21 @@ export const referralsConversation = async (
     const referralLink = await generateReferralLink(user.id, botUsername);
 
     // Format the message
-    const message = `🔗 **Your Referral Program**
+    const message = `🔗 <b>Your Referral Program</b>
 
-**Your Referral Link:**
-\`${referralLink}\`
+<b>Your Referral Link:</b>
+<code>${referralLink}</code>
 
-**Statistics:**
-👥 **Total Referrals:** ${stats.referralCount}
-🆔 **Your Code:** \`${stats.affiliateCode || "Not Generated"}\`
+<b>📊 Statistics:</b>
+👥 <b>Total Referrals:</b> ${stats.referralCount}
+🆔 <b>Your Code:</b> <code>${stats.affiliateCode || "Not Generated"}</code>
 
-**How it works:**
+<b>🎯 How it works:</b>
 • Share your unique referral link with friends
 • When someone joins using your link, they become your referral
 • Track your progress and build your network
 
-**Coming Soon:**
+<b>🚀 Coming Soon:</b>
 💰 Earn rewards for successful referrals
 📊 Advanced analytics and insights`;
 
@@ -84,7 +84,6 @@ export const referralsConversation = async (
       // Restart the referrals conversation to refresh stats
       return await referralsConversation(conversation, next);
     }
-
   } catch (error: any) {
     console.error("Error in referrals conversation:", error);
     await sendMessage(

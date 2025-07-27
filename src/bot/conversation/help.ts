@@ -3,6 +3,7 @@ import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { CallBackQueries } from "../types";
 import { safeAnswerCallbackQuery } from "../utils";
+import { sendMessage } from "../../backend/sender";
 
 export default async function helpConversation(
   conversation: Conversation<Context>,
@@ -355,7 +356,7 @@ export default async function helpConversation(
   let currentSection = "main";
 
   // Send initial message
-  await ctx.reply(helpSections.main.content, {
+  await sendMessage(ctx, helpSections.main.content, {
     parse_mode: "Markdown",
     reply_markup: helpSections.main.keyboard,
   });

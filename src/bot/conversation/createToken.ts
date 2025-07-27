@@ -13,6 +13,7 @@ import { CallBackQueries } from "../types";
 import { env } from "../../config";
 import { sendLoadingMessage } from "../loading";
 import { sendErrorWithAutoDelete } from "../utils";
+import { sendMessage } from "../../backend/sender";
 
 const cancelKeyboard = new InlineKeyboard().text(
   "❌ Cancel",
@@ -38,7 +39,7 @@ const createTokenConversation = async (
     .row()
     .text("❌ Cancel", CallBackQueries.BACK);
 
-  await ctx.reply("❓ Choose your launch mode:", {
+  await sendMessage(ctx, "❓ Choose your launch mode:", {
     reply_markup: modeKeyboard,
   });
 
@@ -49,7 +50,7 @@ const createTokenConversation = async (
     if (!data || data === CallBackQueries.BACK) {
       if (data === CallBackQueries.BACK) {
         await modeUpd.answerCallbackQuery();
-        await ctx.reply("Token creation cancelled.");
+        await sendMessage(ctx, "Token creation cancelled.");
       }
       return conversation.halt();
     }
@@ -74,7 +75,8 @@ const createTokenConversation = async (
   const devWalletAddress = await getDefaultDevWallet(user.id);
   const fundingWalletAddress = await getOrCreateFundingWallet(user.id);
 
-  await ctx.reply(
+  await sendMessage(
+    ctx,
     "🚀 <b>Token Launch Setup Instructions</b>\n\n" +
       "📝 Please send your token details as <b>name, symbol, description</b>, separated by commas.\n" +
       "<i>Example: <code>TokenName,TKN,My great token</code></i>\n\n" +
@@ -92,7 +94,7 @@ const createTokenConversation = async (
     const upd = await conversation.wait();
     if (upd.callbackQuery?.data === CallBackQueries.BACK) {
       await upd.answerCallbackQuery();
-      await ctx.reply("Token creation cancelled.");
+      await sendMessage(ctx, "Token creation cancelled.");
       return conversation.halt();
     }
     if (upd.message?.text) {
@@ -111,7 +113,8 @@ const createTokenConversation = async (
         details = [];
       }
       if (details.length === 3) break;
-      await ctx.reply(
+      await sendMessage(
+        ctx,
         "Invalid format. Please send again as <b>name,symbol,description</b>.",
         {
           parse_mode: "HTML",
@@ -127,7 +130,8 @@ const createTokenConversation = async (
   let website: string = "";
 
   // Ask for all socials in a single message
-  await ctx.reply(
+  await sendMessage(
+    ctx,
     "🌐 (Optional) Send your token's socials as <b>Twitter/X, Telegram, Website</b> links, separated by commas. Type 'skip' to leave any field blank.\n" +
       "<i>Example: <code>https://twitter.com/example, https://t.me/examplegroup, https://example.com</code></i>\n\n" +
       "You can also type 'skip' to leave all blank.",
@@ -138,7 +142,7 @@ const createTokenConversation = async (
     const upd = await conversation.wait();
     if (upd.callbackQuery?.data === CallBackQueries.BACK) {
       await upd.answerCallbackQuery();
-      await ctx.reply("Token creation cancelled.");
+      await sendMessage(ctx, "Token creation cancelled.");
       return conversation.halt();
     }
     if (upd.message?.text) {
@@ -160,7 +164,8 @@ const createTokenConversation = async (
         !/^https?:\/\/(twitter\.com|x\.com)\/\S+/.test(tw) &&
         tw.toLowerCase() !== "skip"
       ) {
-        await ctx.reply(
+        await sendMessage(
+          ctx,
           "Invalid Twitter/X link format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
           { parse_mode: "HTML", reply_markup: cancelKeyboard }
         );
@@ -172,7 +177,8 @@ const createTokenConversation = async (
         !/^https?:\/\/t\.me\/\S+/.test(tg) &&
         tg.toLowerCase() !== "skip"
       ) {
-        await ctx.reply(
+        await sendMessage(
+          ctx,
           "Invalid Telegram link format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
           { parse_mode: "HTML", reply_markup: cancelKeyboard }
         );
@@ -184,7 +190,8 @@ const createTokenConversation = async (
         !/^https?:\/\/.+\..+/.test(web) &&
         web.toLowerCase() !== "skip"
       ) {
-        await ctx.reply(
+        await sendMessage(
+          ctx,
           "Invalid website URL format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
           { parse_mode: "HTML", reply_markup: cancelKeyboard }
         );
@@ -199,7 +206,7 @@ const createTokenConversation = async (
   }
 
   // === 4) Ask for image upload ===
-  await ctx.reply("Upload an image for your token (max 20 MB):", {
+  await sendMessage(ctx, "Upload an image for your token (max 20 MB):", {
     reply_markup: cancelKeyboard,
   });
 
@@ -208,7 +215,7 @@ const createTokenConversation = async (
     const upd = await conversation.wait();
     if (upd.callbackQuery?.data === CallBackQueries.BACK) {
       await upd.answerCallbackQuery();
-      await ctx.reply("Token creation cancelled.");
+      await sendMessage(ctx, "Token creation cancelled.");
       return conversation.halt();
     }
     if (upd.message?.photo) {
@@ -219,7 +226,7 @@ const createTokenConversation = async (
 
   const file = await fileCtx.getFile();
   if ((file.file_size ?? 0) > 20 * 1024 * 1024) {
-    await ctx.reply("Image too large. Please start over.");
+    await sendMessage(ctx, "Image too large. Please start over.");
     return conversation.halt();
   }
 
@@ -251,7 +258,7 @@ const createTokenConversation = async (
 
   if (mode === CallBackQueries.PUMPFUN) {
     await update(
-      `🎉 **Token created successfully!**\n\n✅ Your token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
+      `🎉 **Token Created Successfully!**\n\n✅ Your PumpFun token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
     );
 
     const launchKb = new InlineKeyboard().text(
@@ -261,30 +268,37 @@ const createTokenConversation = async (
 
     let socialsInfo = "";
     if (twitter) {
-      socialsInfo += `twitter: <code>${twitter}</code>\n`;
+      socialsInfo += `🐦 **Twitter:** <code>${twitter}</code>\n`;
     }
     if (telegram) {
-      socialsInfo += `telegram: <code>${telegram}</code>\n`;
+      socialsInfo += `💬 **Telegram:** <code>${telegram}</code>\n`;
     }
     if (website) {
-      socialsInfo += `<b>Website:</b> <code>${website}</code>\n`;
+      socialsInfo += `🌐 **Website:** <code>${website}</code>\n`;
     }
 
-    await ctx.reply(
-      `<b>Token created successfully!</b>
+    await sendMessage(
+      ctx,
+      `🎉 <b>Token Created Successfully!</b>
 
-  <b>Launch Mode:</b> <code>${mode}</code>
-  <b>Name:</b> <code>${token.name}</code>
-  <b>Symbol:</b> <code>${token.symbol}</code>
-  <b>Description:</b> ${token.description}
-  <b>Token Address:</b> <code>${token.tokenAddress}</code>
-  ${socialsInfo}`,
+🚀 <b>Platform:</b> <code>PumpFun</code>
+
+📊 <b>Token Details:</b>
+┌─────────────────────────
+│ <b>Name:</b> <code>${token.name}</code>
+│ <b>Symbol:</b> <code>${token.symbol}</code>
+│ <b>Description:</b> ${token.description}
+│ <b>Address:</b> <code>${token.tokenAddress}</code>
+└─────────────────────────
+
+${socialsInfo ? `🔗 <b>Social Links:</b>\n${socialsInfo}` : ""}
+
+✅ <b>Status:</b> Ready for launch on PumpFun! 🚀`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
   } else {
-    // Bonk tokens - metadata uploaded, ready for launch
     await update(
-      `🎉 **Bonk Token Created Successfully!**\n\n✅ Metadata uploaded and token address assigned!\n\n**Token Address:** \`${token.tokenAddress}\``
+      `🎉 **Token Created Successfully!**\n\n✅ Your LetsBonk token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
     );
 
     const launchKb = new InlineKeyboard().text(
@@ -292,20 +306,34 @@ const createTokenConversation = async (
       `${CallBackQueries.LAUNCH_TOKEN}_${token.tokenAddress}`
     );
 
-    await ctx.reply(
-      `<b>Bonk Token Created Successfully!</b>
+    let socialsInfo = "";
+    if (twitter) {
+      socialsInfo += `🐦 **Twitter:** <code>${twitter}</code>\n`;
+    }
+    if (telegram) {
+      socialsInfo += `💬 **Telegram:** <code>${telegram}</code>\n`;
+    }
+    if (website) {
+      socialsInfo += `🌐 **Website:** <code>${website}</code>\n`;
+    }
 
-<b>Launch Mode:</b> <code>${mode}</code>
-<b>Name:</b> <code>${token.tokenName}</code>
-<b>Symbol:</b> <code>${token.tokenSymbol}</code>
-<b>Description:</b> ${token.description}
-<b>Token Address:</b> <code>${token.tokenAddress}</code>
+    await sendMessage(
+      ctx,
+      `🎉 <b>Token Created Successfully!</b>
 
-<b>Status:</b> ✅ Metadata uploaded, ready for launch
-<b>Platform:</b> Raydium Launch Lab (LetsBonk.fun)
+🚀 <b>Platform:</b> <code>LetsBonk (Raydium Launch Lab)</code>
 
-<i>💡 Your token metadata has been uploaded. Click "Launch Token" to create the token on Raydium Launch Lab.</i>
-`,
+📊 <b>Token Details:</b>
+┌─────────────────────────
+│ <b>Name:</b> <code>${token.tokenName}</code>
+│ <b>Symbol:</b> <code>${token.tokenSymbol}</code>
+│ <b>Description:</b> ${token.description}
+│ <b>Address:</b> <code>${token.tokenAddress}</code>
+└─────────────────────────
+
+  ${socialsInfo ? `🔗 <b>Social Links:</b>\n${socialsInfo}` : ""}
+
+  ✅ <b>Status:</b> Ready for launch on LetsBonk! 🚀`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
   }

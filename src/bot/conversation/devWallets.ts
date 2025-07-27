@@ -21,15 +21,16 @@ const manageDevWalletsConversation = async (
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await sendMessage(ctx, "Unrecognized user ❌");
+    await sendMessage(ctx, "❌ Unrecognized user");
     return conversation.halt();
   }
 
   // Get all dev wallets for the user
   const wallets = await getAllDevWallets(user.id);
 
-  const header = `<b>Developer Wallet Management</b>
-You have <b>${wallets.length}/5</b> dev wallets.
+  const header = `<b>💼 Developer Wallet Management</b>
+
+You have <b>${wallets.length}/5</b> developer wallets configured.
 
 `;
 
@@ -41,7 +42,7 @@ You have <b>${wallets.length}/5</b> dev wallets.
     })
     .join("\n");
 
-  const messageText = header + lines + "\n\nSelect an action:";
+  const messageText = header + lines + "\n\n<b>Select an action:</b>";
 
   const kb = new InlineKeyboard();
 
@@ -92,13 +93,21 @@ You have <b>${wallets.length}/5</b> dev wallets.
 
     if (data === CallBackQueries.GENERATE_DEV_WALLET) {
       const newWallet = await generateNewDevWallet(user.id);
-      await next.reply(
-        `<b>✅ New Developer Wallet Generated!</b>\n\n` +
-          `<b>Address:</b>\n<code>${newWallet.publicKey}</code>\n\n` +
-          `<b>Private Key:</b>\n<code>${newWallet.privateKey}</code>\n\n` +
-          `<i>⚠️ Please save your private key securely. Never share it with anyone. Delete this message after saving!</i>`,
-        { parse_mode: "HTML" }
-      );
+      const message = `<b>✅ New Developer Wallet Generated Successfully!</b>
+
+<b>📍 Wallet Address:</b>
+<code>${newWallet.publicKey}</code>
+
+<b>🔐 Private Key:</b>
+<code>${newWallet.privateKey}</code>
+
+<b>⚠️ IMPORTANT SECURITY NOTICE:</b>
+• Save your private key in a secure location
+• Never share your private key with anyone
+• Delete this message after saving your keys
+• This is the only time you'll see your private key`;
+
+      await sendMessage(next, message, { parse_mode: "HTML" });
       return conversation.halt();
     }
 
@@ -110,8 +119,13 @@ You have <b>${wallets.length}/5</b> dev wallets.
 
       await sendMessage(
         next,
-        "Please send the private key of the wallet you want to import:",
+        `<b>📥 Import Developer Wallet</b>
+
+Please send the private key of the wallet you want to import:
+
+<i>💡 Tip: Make sure you're in a private chat and delete the message after sending</i>`,
         {
+          parse_mode: "HTML",
           reply_markup: cancelKeyboard,
         }
       );
@@ -123,7 +137,7 @@ You have <b>${wallets.length}/5</b> dev wallets.
         CallBackQueries.CANCEL_DEV_WALLET
       ) {
         await privateKeyInput.answerCallbackQuery();
-        await sendMessage(privateKeyInput, "Import cancelled.");
+        await sendMessage(privateKeyInput, "❌ Import cancelled");
         return conversation.halt();
       }
 
@@ -141,15 +155,25 @@ You have <b>${wallets.length}/5</b> dev wallets.
         const keypair = secretKeyToKeypair(privateKey);
         const newWallet = await addDevWallet(user.id, privateKey);
 
-        await sendMessage(
-          privateKeyInput,
-          `✅ Wallet imported successfully!\n\n<b>Address:</b> <code>${newWallet.publicKey}</code>`,
-          { parse_mode: "HTML" }
-        );
+        const successMessage = `<b>✅ Wallet Imported Successfully!</b>
+
+<b>📍 Wallet Address:</b>
+<code>${newWallet.publicKey}</code>
+
+<i>🛡️ Your wallet has been securely added to your developer wallets</i>`;
+
+        await sendMessage(privateKeyInput, successMessage, {
+          parse_mode: "HTML",
+        });
       } catch (error: any) {
         await sendMessage(
           privateKeyInput,
-          `❌ Import failed: ${error.message}`
+          `<b>❌ Import Failed</b>
+
+<b>Error:</b> ${error.message}
+
+<i>Please check your private key format and try again</i>`,
+          { parse_mode: "HTML" }
         );
       }
 
@@ -166,31 +190,70 @@ You have <b>${wallets.length}/5</b> dev wallets.
         try {
           const publicKey = await setDefaultDevWallet(user.id, walletId);
           const short = `${publicKey.slice(0, 6)}…${publicKey.slice(-4)}`;
-          await next.reply(
-            `⭐ <code>${short}</code> is now your default developer wallet.`,
+
+          await sendMessage(
+            next,
+            `<b>⭐ Default Wallet Updated</b>
+
+<code>${short}</code> is now your default developer wallet.
+
+<i>All new token deployments will use this wallet</i>`,
             { parse_mode: "HTML" }
           );
         } catch (error: any) {
-          await next.reply(`❌ Error: ${error.message}`);
+          await sendMessage(
+            next,
+            `<b>❌ Failed to Set Default Wallet</b>
+
+<b>Error:</b> ${error.message}`,
+            { parse_mode: "HTML" }
+          );
         }
         break;
 
       case CallBackQueries.DELETE_DEV:
         try {
           await deleteDevWallet(user.id, walletId);
-          await next.reply(`🗑️ Wallet has been removed from your list.`, {
-            parse_mode: "HTML",
-          });
+
+          await sendMessage(
+            next,
+            `<b>🗑️ Wallet Removed Successfully</b>
+
+The wallet has been removed from your developer wallets list.
+
+<i>You can always add it back later if needed</i>`,
+            { parse_mode: "HTML" }
+          );
         } catch (error: any) {
-          await next.reply(`❌ Error: ${error.message}`);
+          await sendMessage(
+            next,
+            `<b>❌ Failed to Delete Wallet</b>
+
+<b>Error:</b> ${error.message}`,
+            { parse_mode: "HTML" }
+          );
         }
         break;
 
       default:
-        await next.reply("⚠️ Unknown action.", { parse_mode: "HTML" });
+        await sendMessage(
+          next,
+          `<b>⚠️ Unknown Action</b>
+
+The requested action could not be processed.`,
+          { parse_mode: "HTML" }
+        );
     }
   } catch (error: any) {
-    await next.reply(`❌ An error occurred: ${error.message}`);
+    await sendMessage(
+      next,
+      `<b>❌ An Error Occurred</b>
+
+<b>Error:</b> ${error.message}
+
+<i>Please try again or contact support if the issue persists</i>`,
+      { parse_mode: "HTML" }
+    );
   }
 
   conversation.halt();
