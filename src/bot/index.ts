@@ -1256,7 +1256,6 @@ bot.callbackQuery(CallBackQueries.WITHDRAW_TO_EXTERNAL, async (ctx) => {
 });
 
 bot.command("referrals", async (ctx) => {
-  await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("referralsConversation");
 });
 
