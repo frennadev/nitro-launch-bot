@@ -91,8 +91,8 @@ export async function drainAllMixerWallets(
                  feeFundingWallet,
                ]);
 
-              // Wait for confirmation
-              const confirmationSuccess = await connectionManager.waitForConfirmation(signature);
+              // Wait for confirmation with faster timeout and fewer retries
+              const confirmationSuccess = await connectionManager.waitForConfirmation(signature, 2); // Only 2 retries
               if (confirmationSuccess) {
                 console.log(`   ✅ Drained successfully: ${signature.slice(0, 8)}...`);
                 results.successfulDrains++;
