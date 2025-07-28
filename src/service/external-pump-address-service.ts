@@ -42,12 +42,17 @@ export class ExternalPumpAddressService {
     try {
       await this.client.connect();
       this.isConnected = true;
-      logger.info("[ExternalPumpAddressService] Connected to external MongoDB database");
-      
+      logger.info(
+        "[ExternalPumpAddressService] Connected to external MongoDB database"
+      );
+
       // Create indexes for better performance
       await this.createIndexes();
     } catch (error: any) {
-      logger.error("[ExternalPumpAddressService] Failed to connect to external MongoDB:", error);
+      logger.error(
+        "[ExternalPumpAddressService] Failed to connect to external MongoDB:",
+        error
+      );
       throw error;
     }
   }
@@ -59,7 +64,9 @@ export class ExternalPumpAddressService {
     if (this.isConnected) {
       await this.client.close();
       this.isConnected = false;
-      logger.info("[ExternalPumpAddressService] Disconnected from external MongoDB database");
+      logger.info(
+        "[ExternalPumpAddressService] Disconnected from external MongoDB database"
+      );
     }
   }
 
@@ -75,7 +82,10 @@ export class ExternalPumpAddressService {
       logger.info("[ExternalPumpAddressService] Database indexes created");
     } catch (error: any) {
       // Indexes might already exist, don't throw error
-      logger.warn("[ExternalPumpAddressService] Index creation warning:", error.message);
+      logger.warn(
+        "[ExternalPumpAddressService] Index creation warning:",
+        error.message
+      );
     }
   }
 
@@ -83,22 +93,36 @@ export class ExternalPumpAddressService {
    * Get an unused pump address from the external database
    * NOTE: Once allocated, addresses are permanently marked as used and never released
    */
-  async getUnusedPumpAddress(userId: string, excludeAddresses: string[] = []): Promise<ExternalPumpAddress | null> {
+  async getUnusedPumpAddress(
+    userId: string,
+    excludeAddresses: string[] = []
+  ): Promise<ExternalPumpAddress | null> {
     if (!this.isConnected) {
       await this.connect();
     }
 
     try {
       // Build query to find addresses that have NEVER been allocated to any user
-      // Only get addresses that have no usedBy field or usedBy is null
-      const query: any = { 
-        $or: [
-          { usedBy: { $exists: false } },
-          { usedBy: null },
-          { usedBy: "" }
-        ]
+      // Ensure isUsed is explicitly false or doesn't exist, and usedBy is null/empty/doesn't exist
+      const query: Record<string, unknown> = {
+        $and: [
+          {
+            $or: [{ isUsed: { $exists: false } }, { isUsed: false }],
+          },
+          {
+            $or: [{ usedAt: { $exists: false } }, { usedAt: null }],
+          },
+          {
+            $or: [
+              { usedBy: { $exists: false } },
+              { usedBy: null },
+              { usedBy: "" },
+              { usedBy: undefined },
+            ],
+          },
+        ],
       };
-      
+
       if (excludeAddresses.length > 0) {
         query.publicKey = { $nin: excludeAddresses };
       }
@@ -111,24 +135,30 @@ export class ExternalPumpAddressService {
             isUsed: true,
             usedBy: userId,
             usedAt: new Date(),
-            permanentlyAllocated: true, // Mark as permanently allocated
           },
         },
         {
           sort: { createdAt: 1 }, // Use oldest first (FIFO)
-          returnDocument: 'after'
+          returnDocument: "after",
         }
       );
 
       if (result) {
-        logger.info(`[ExternalPumpAddressService] Permanently allocated pump address ${result.publicKey} to user ${userId}`);
+        logger.info(
+          `[ExternalPumpAddressService] Permanently allocated pump address ${result.publicKey} to user ${userId}`
+        );
         return result;
       } else {
-        logger.warn("[ExternalPumpAddressService] No unused pump addresses available");
+        logger.warn(
+          "[ExternalPumpAddressService] No unused pump addresses available"
+        );
         return null;
       }
-    } catch (error: any) {
-      logger.error("[ExternalPumpAddressService] Error getting unused pump address:", error);
+    } catch (error: unknown) {
+      logger.error(
+        "[ExternalPumpAddressService] Error getting unused pump address:",
+        error
+      );
       throw error;
     }
   }
@@ -138,7 +168,9 @@ export class ExternalPumpAddressService {
    * This method is kept for compatibility but does nothing
    */
   async releasePumpAddress(publicKey: string): Promise<boolean> {
-    logger.warn(`[ExternalPumpAddressService] Attempted to release pump address ${publicKey} - addresses are never released once allocated`);
+    logger.warn(
+      `[ExternalPumpAddressService] Attempted to release pump address ${publicKey} - addresses are never released once allocated`
+    );
     return false; // Never release addresses
   }
 
@@ -155,7 +187,10 @@ export class ExternalPumpAddressService {
       // Check if address has been allocated to any user (usedBy field exists and is not null/empty)
       return address ? !!(address.usedBy && address.usedBy !== "") : false;
     } catch (error: any) {
-      logger.error(`[ExternalPumpAddressService] Error checking pump address ${publicKey}:`, error);
+      logger.error(
+        `[ExternalPumpAddressService] Error checking pump address ${publicKey}:`,
+        error
+      );
       throw error;
     }
   }
@@ -182,7 +217,7 @@ export class ExternalPumpAddressService {
       }
 
       const address = await this.collection.findOne({ publicKey });
-      
+
       if (!address) {
         return { exists: false, isUsed: false };
       }
@@ -197,7 +232,10 @@ export class ExternalPumpAddressService {
         usedAt: address.usedAt,
       };
     } catch (error: any) {
-      logger.error(`[ExternalPumpAddressService] Error validating pump address ${publicKey}:`, error);
+      logger.error(
+        `[ExternalPumpAddressService] Error validating pump address ${publicKey}:`,
+        error
+      );
       throw error;
     }
   }
@@ -218,11 +256,11 @@ export class ExternalPumpAddressService {
     try {
       const [total, used] = await Promise.all([
         this.collection.countDocuments({}),
-        this.collection.countDocuments({ 
+        this.collection.countDocuments({
           $or: [
             { usedBy: { $exists: true, $ne: null } },
-            { usedBy: { $ne: "" } }
-          ]
+            { usedBy: { $ne: "" } },
+          ],
         }),
       ]);
 
@@ -236,7 +274,10 @@ export class ExternalPumpAddressService {
         usagePercentage: Math.round(usagePercentage * 100) / 100,
       };
     } catch (error: any) {
-      logger.error("[ExternalPumpAddressService] Error getting usage stats:", error);
+      logger.error(
+        "[ExternalPumpAddressService] Error getting usage stats:",
+        error
+      );
       throw error;
     }
   }
@@ -244,20 +285,23 @@ export class ExternalPumpAddressService {
   /**
    * Mark multiple addresses as used (bulk operation)
    */
-  async markAddressesAsUsed(publicKeys: string[], userId: string): Promise<number> {
+  async markAddressesAsUsed(
+    publicKeys: string[],
+    userId: string
+  ): Promise<number> {
     if (!this.isConnected) {
       await this.connect();
     }
 
     try {
       const result = await this.collection.updateMany(
-        { 
+        {
           publicKey: { $in: publicKeys },
           $or: [
             { usedBy: { $exists: false } },
             { usedBy: null },
-            { usedBy: "" }
-          ]
+            { usedBy: "" },
+          ],
         },
         {
           $set: {
@@ -269,10 +313,15 @@ export class ExternalPumpAddressService {
         }
       );
 
-      logger.info(`[ExternalPumpAddressService] Marked ${result.modifiedCount} addresses as permanently used for user ${userId}`);
+      logger.info(
+        `[ExternalPumpAddressService] Marked ${result.modifiedCount} addresses as permanently used for user ${userId}`
+      );
       return result.modifiedCount;
     } catch (error: any) {
-      logger.error("[ExternalPumpAddressService] Error marking addresses as used:", error);
+      logger.error(
+        "[ExternalPumpAddressService] Error marking addresses as used:",
+        error
+      );
       throw error;
     }
   }
@@ -293,7 +342,10 @@ export class ExternalPumpAddressService {
 
       return addresses;
     } catch (error: any) {
-      logger.error(`[ExternalPumpAddressService] Error getting user addresses for ${userId}:`, error);
+      logger.error(
+        `[ExternalPumpAddressService] Error getting user addresses for ${userId}:`,
+        error
+      );
       throw error;
     }
   }
@@ -308,7 +360,7 @@ let externalPumpAddressService: ExternalPumpAddressService | null = null;
 export function getExternalPumpAddressService(): ExternalPumpAddressService {
   if (!externalPumpAddressService) {
     // Use the same MongoDB URI as the main application
-    const mongoUri = "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/?retryWrites=true&w=majority&appName=Bundler";
+    const mongoUri = process.env.MONGO_URI!;
     externalPumpAddressService = new ExternalPumpAddressService(mongoUri);
   }
   return externalPumpAddressService;
@@ -320,14 +372,14 @@ export function getExternalPumpAddressService(): ExternalPumpAddressService {
 export async function initializeExternalPumpAddressService(): Promise<void> {
   const service = getExternalPumpAddressService();
   await service.connect();
-  
+
   // Log initial statistics
   const stats = await service.getUsageStats();
   logger.info("[ExternalPumpAddressService] Service initialized", {
     totalAddresses: stats.total,
     usedAddresses: stats.used,
     availableAddresses: stats.available,
-    usagePercentage: `${stats.usagePercentage}%`
+    usagePercentage: `${stats.usagePercentage}%`,
   });
 }
 
@@ -339,4 +391,4 @@ export async function cleanupExternalPumpAddressService(): Promise<void> {
     await externalPumpAddressService.disconnect();
     externalPumpAddressService = null;
   }
-} 
+}

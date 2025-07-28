@@ -7,12 +7,21 @@ import * as crypto from "crypto";
 import { env } from "../config";
 import { ENCRYPTION_ALGORITHM, ENCRYPTION_IV_LENGTH } from "./constants";
 import axios from "axios";
-import { BonkAddressModel, TokenModel, UsedBonkAddressModel, UserModel } from "./models";
+import {
+  BonkAddressModel,
+  TokenModel,
+  UsedBonkAddressModel,
+  UserModel,
+} from "./models";
 import { redisClient } from "../jobs/db";
 import { DexscreenerTokenResponse } from "./types";
 
 export function encryptPrivateKey(privateKey: string): string {
-  const SECRET_KEY = crypto.scryptSync(env.ENCRYPTION_SECRET, "salt", ENCRYPTION_IV_LENGTH * 2);
+  const SECRET_KEY = crypto.scryptSync(
+    env.ENCRYPTION_SECRET,
+    "salt",
+    ENCRYPTION_IV_LENGTH * 2
+  );
   try {
     const iv = crypto.randomBytes(ENCRYPTION_IV_LENGTH);
 
@@ -28,7 +37,11 @@ export function encryptPrivateKey(privateKey: string): string {
 }
 
 export function decryptPrivateKey(encryptedPrivateKey: string): string {
-  const SECRET_KEY = crypto.scryptSync(env.ENCRYPTION_SECRET, "salt", ENCRYPTION_IV_LENGTH * 2);
+  const SECRET_KEY = crypto.scryptSync(
+    env.ENCRYPTION_SECRET,
+    "salt",
+    ENCRYPTION_IV_LENGTH * 2
+  );
 
   try {
     const [ivHex, encryptedData] = encryptedPrivateKey.split(":");
@@ -37,7 +50,11 @@ export function decryptPrivateKey(encryptedPrivateKey: string): string {
       throw new Error("Invalid encrypted data format");
     }
     const iv = Buffer.from(ivHex, "hex");
-    const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, SECRET_KEY, iv);
+    const decipher = crypto.createDecipheriv(
+      ENCRYPTION_ALGORITHM,
+      SECRET_KEY,
+      iv
+    );
     let decrypted = decipher.update(encryptedData, "hex", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
@@ -71,7 +88,7 @@ export async function uploadFileToPinata(file: ArrayBuffer, fileName: string) {
       body: formData,
     });
     if (resp.status != 200) {
-      console.log(resp)
+      console.log(resp);
       throw Error(`Failed to upload File: ${await resp.text()}`);
     }
     const data = JSON.parse(await resp.text());
@@ -125,7 +142,9 @@ export async function editMessage(
       await ctxOrBot.editMessageText(text, opts);
     } else {
       if (chatId == null || messageId == null) {
-        throw new Error("chatId and messageId required when calling from bot instance");
+        throw new Error(
+          "chatId and messageId required when calling from bot instance"
+        );
       }
       await ctxOrBot.api.editMessageText(chatId, messageId, text, opts);
     }
@@ -134,7 +153,10 @@ export async function editMessage(
   }
 }
 
-export async function getTokenBalance(tokenAddress: string, walletAddress: string): Promise<number> {
+export async function getTokenBalance(
+  tokenAddress: string,
+  walletAddress: string
+): Promise<number> {
   try {
     console.log({ walletAddress });
 
@@ -146,11 +168,15 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
       mint = new PublicKey(tokenAddress);
       owner = new PublicKey(walletAddress);
     } catch (error) {
-      console.error(`[getTokenBalance] Invalid address format - token: ${tokenAddress}, wallet: ${walletAddress}`);
+      console.error(
+        `[getTokenBalance] Invalid address format - token: ${tokenAddress}, wallet: ${walletAddress}`
+      );
       return 0;
     }
 
-    console.log(`[getTokenBalance] Checking balance for token ${tokenAddress} in wallet ${walletAddress}`);
+    console.log(
+      `[getTokenBalance] Checking balance for token ${tokenAddress} in wallet ${walletAddress}`
+    );
 
     // Try to get token accounts with better error handling
     let resp;
@@ -166,10 +192,15 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
         );
         return 0;
       } else if (rpcError.message?.includes("Invalid param")) {
-        console.warn(`[getTokenBalance] Invalid parameters for token ${tokenAddress}`);
+        console.warn(
+          `[getTokenBalance] Invalid parameters for token ${tokenAddress}`
+        );
         return 0;
       } else {
-        console.error(`[getTokenBalance] RPC error for token ${tokenAddress}:`, rpcError);
+        console.error(
+          `[getTokenBalance] RPC error for token ${tokenAddress}:`,
+          rpcError
+        );
         // Try alternative approach for Token-2022 or other programs
         try {
           const { TOKEN_2022_PROGRAM_ID } = await import("@solana/spl-token");
@@ -177,23 +208,34 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
             mint,
             programId: TOKEN_2022_PROGRAM_ID,
           });
-          console.log(`[getTokenBalance] Successfully fetched using Token-2022 program`);
+          console.log(
+            `[getTokenBalance] Successfully fetched using Token-2022 program`
+          );
         } catch (token2022Error) {
-          console.error(`[getTokenBalance] Token-2022 attempt also failed:`, token2022Error);
+          console.error(
+            `[getTokenBalance] Token-2022 attempt also failed:`,
+            token2022Error
+          );
           return 0;
         }
       }
     }
 
     if (!resp || !resp.value) {
-      console.log(`[getTokenBalance] No response received for token ${tokenAddress}`);
+      console.log(
+        `[getTokenBalance] No response received for token ${tokenAddress}`
+      );
       return 0;
     }
 
-    console.log(`[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress}`);
+    console.log(
+      `[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress}`
+    );
 
     if (resp.value.length === 0) {
-      console.log(`[getTokenBalance] No token accounts found for token ${tokenAddress} in wallet ${walletAddress}`);
+      console.log(
+        `[getTokenBalance] No token accounts found for token ${tokenAddress} in wallet ${walletAddress}`
+      );
       return 0;
     }
 
@@ -207,12 +249,17 @@ export async function getTokenBalance(tokenAddress: string, walletAddress: strin
         );
         return sum + amt;
       } catch (parseError) {
-        console.warn(`[getTokenBalance] Error parsing account data:`, parseError);
+        console.warn(
+          `[getTokenBalance] Error parsing account data:`,
+          parseError
+        );
         return sum;
       }
     }, 0);
 
-    console.log(`[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens`);
+    console.log(
+      `[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens`
+    );
     return totalBalance;
   } catch (error) {
     console.error(
@@ -501,35 +548,49 @@ export interface BirdeyeExtensions {
 /**
  * Get token information from Birdeye API
  */
-export const getBirdeyeTokenInfo = async (tokenAddress: string): Promise<BirdeyeData | null> => {
+export const getBirdeyeTokenInfo = async (
+  tokenAddress: string
+): Promise<BirdeyeData | null> => {
   try {
-    const response = await axios.get("https://public-api.birdeye.so/defi/token_overview?address=" + tokenAddress, {
-      headers: {
-        accept: "application/json",
-        "x-chain": "solana",
-        "X-API-KEY": "e750e17792ae478983170f78486de13c",
-      },
-      timeout: 5000,
-    });
+    const response = await axios.get(
+      "https://public-api.birdeye.so/defi/token_overview?address=" +
+        tokenAddress,
+      {
+        headers: {
+          accept: "application/json",
+          "x-chain": "solana",
+          "X-API-KEY": "e750e17792ae478983170f78486de13c",
+        },
+        timeout: 5000,
+      }
+    );
 
     const data: BirdeyeResponse = response.data || {};
 
     if (!data.success || !data.data) {
-      console.log(`[getBirdeyeTokenInfo] Birdeye API returned unsuccessful response for ${tokenAddress}`);
+      console.log(
+        `[getBirdeyeTokenInfo] Birdeye API returned unsuccessful response for ${tokenAddress}`
+      );
       return null;
     }
 
-    console.log(`[getBirdeyeTokenInfo] Successfully fetched data for ${tokenAddress}:`, {
-      name: data.data.name,
-      symbol: data.data.symbol,
-      marketCap: data.data.marketCap,
-      price: data.data.price,
-      liquidity: data.data.liquidity,
-    });
+    console.log(
+      `[getBirdeyeTokenInfo] Successfully fetched data for ${tokenAddress}:`,
+      {
+        name: data.data.name,
+        symbol: data.data.symbol,
+        marketCap: data.data.marketCap,
+        price: data.data.price,
+        liquidity: data.data.liquidity,
+      }
+    );
 
     return data.data;
   } catch (error: any) {
-    console.error(`[getBirdeyeTokenInfo] Error fetching token info for ${tokenAddress}:`, error.message);
+    console.error(
+      `[getBirdeyeTokenInfo] Error fetching token info for ${tokenAddress}:`,
+      error.message
+    );
     return null;
   }
 };
@@ -545,7 +606,10 @@ export const getTokenInfo = async (tokenAddress: string) => {
         return JSON.parse(cached);
       }
     } catch (redisError) {
-      console.warn(`[getTokenInfo] Redis cache failed for ${tokenAddress}:`, redisError);
+      console.warn(
+        `[getTokenInfo] Redis cache failed for ${tokenAddress}:`,
+        redisError
+      );
       // Continue without cache
     }
 
@@ -572,7 +636,9 @@ export const getTokenInfo = async (tokenAddress: string) => {
           symbol: "SOL",
           decimals: 9,
         },
-        priceNative: birdeyeData.price ? (birdeyeData.price / 240).toString() : "0", // Rough SOL price estimate
+        priceNative: birdeyeData.price
+          ? (birdeyeData.price / 240).toString()
+          : "0", // Rough SOL price estimate
         priceUsd: birdeyeData.price ? birdeyeData.price.toString() : "0",
         marketCap: birdeyeData.marketCap || 0,
         liquidity: {
@@ -600,23 +666,38 @@ export const getTokenInfo = async (tokenAddress: string) => {
 
       // Try to cache the result
       try {
-        await redisClient.set(cacheKey, JSON.stringify(convertedData), "EX", 180);
+        await redisClient.set(
+          cacheKey,
+          JSON.stringify(convertedData),
+          "EX",
+          180
+        );
       } catch (redisError) {
-        console.warn(`[getTokenInfo] Redis cache set failed for ${tokenAddress}:`, redisError);
+        console.warn(
+          `[getTokenInfo] Redis cache set failed for ${tokenAddress}:`,
+          redisError
+        );
       }
 
-      console.log(`[getTokenInfo] Birdeye data successfully converted for ${tokenAddress}`);
+      console.log(
+        `[getTokenInfo] Birdeye data successfully converted for ${tokenAddress}`
+      );
       return convertedData;
     }
 
     // If Birdeye fails, try DexScreener as fallback
-    console.log(`[getTokenInfo] Birdeye failed, trying DexScreener fallback for ${tokenAddress}`);
-    const response = await axios.get(`https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`, {
-      timeout: 5000,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; NitroBot/1.0)",
-      },
-    });
+    console.log(
+      `[getTokenInfo] Birdeye failed, trying DexScreener fallback for ${tokenAddress}`
+    );
+    const response = await axios.get(
+      `https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`,
+      {
+        timeout: 5000,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; NitroBot/1.0)",
+        },
+      }
+    );
 
     const data = response.data || [];
     console.log(`[getTokenInfo] DexScreener response for ${tokenAddress}:`, {
@@ -627,16 +708,28 @@ export const getTokenInfo = async (tokenAddress: string) => {
 
     // If DexScreener returns empty data, try PumpFun fallback
     if (!data || data.length === 0 || !data[0]) {
-      console.log(`[getTokenInfo] DexScreener returned empty data, trying PumpFun fallback...`);
+      console.log(
+        `[getTokenInfo] DexScreener returned empty data, trying PumpFun fallback...`
+      );
       const pumpfunData = await getPumpFunTokenInfo(tokenAddress);
       if (pumpfunData) {
-        console.log(`[getTokenInfo] PumpFun fallback successful for ${tokenAddress}`);
+        console.log(
+          `[getTokenInfo] PumpFun fallback successful for ${tokenAddress}`
+        );
 
         // Try to cache the PumpFun result
         try {
-          await redisClient.set(cacheKey, JSON.stringify(pumpfunData), "EX", 60); // Shorter cache for PumpFun data
+          await redisClient.set(
+            cacheKey,
+            JSON.stringify(pumpfunData),
+            "EX",
+            60
+          ); // Shorter cache for PumpFun data
         } catch (redisError) {
-          console.warn(`[getTokenInfo] Redis cache set failed for PumpFun data:`, redisError);
+          console.warn(
+            `[getTokenInfo] Redis cache set failed for PumpFun data:`,
+            redisError
+          );
         }
 
         return pumpfunData;
@@ -647,7 +740,10 @@ export const getTokenInfo = async (tokenAddress: string) => {
     try {
       await redisClient.set(cacheKey, JSON.stringify(data[0]), "EX", 180);
     } catch (redisError) {
-      console.warn(`[getTokenInfo] Redis cache set failed for ${tokenAddress}:`, redisError);
+      console.warn(
+        `[getTokenInfo] Redis cache set failed for ${tokenAddress}:`,
+        redisError
+      );
     }
 
     return data[0];
@@ -660,15 +756,22 @@ export const getTokenInfo = async (tokenAddress: string) => {
     });
 
     // Try PumpFun fallback on complete API failure
-    console.log(`[getTokenInfo] All APIs failed, trying PumpFun fallback as last resort...`);
+    console.log(
+      `[getTokenInfo] All APIs failed, trying PumpFun fallback as last resort...`
+    );
     try {
       const pumpfunData = await getPumpFunTokenInfo(tokenAddress);
       if (pumpfunData) {
-        console.log(`[getTokenInfo] PumpFun fallback successful after API failure`);
+        console.log(
+          `[getTokenInfo] PumpFun fallback successful after API failure`
+        );
         return pumpfunData;
       }
     } catch (pumpfunError) {
-      console.warn(`[getTokenInfo] PumpFun fallback also failed:`, pumpfunError);
+      console.warn(
+        `[getTokenInfo] PumpFun fallback also failed:`,
+        pumpfunError
+      );
     }
 
     return null; // Return null instead of undefined for better error handling
@@ -681,23 +784,31 @@ export const getTokenInfo = async (tokenAddress: string) => {
 export const getPumpFunTokenInfo = async (tokenAddress: string) => {
   try {
     // Import PumpFun utilities dynamically to avoid circular imports
-    const { getBondingCurve, getBondingCurveData } = await import("../blockchain/pumpfun/utils");
+    const { getBondingCurve, getBondingCurveData } = await import(
+      "../blockchain/pumpfun/utils"
+    );
     const { PublicKey } = await import("@solana/web3.js");
     const { connection } = await import("../blockchain/common/connection");
     const { getMint } = await import("@solana/spl-token");
 
-    console.log(`[getPumpFunTokenInfo] Fetching bonding curve data for ${tokenAddress}`);
+    console.log(
+      `[getPumpFunTokenInfo] Fetching bonding curve data for ${tokenAddress}`
+    );
 
     const mintPk = new PublicKey(tokenAddress);
     const { bondingCurve } = getBondingCurve(mintPk);
     const bondingCurveData = await getBondingCurveData(bondingCurve);
 
     if (!bondingCurveData) {
-      console.log(`[getPumpFunTokenInfo] No bonding curve data found - not a PumpFun token`);
+      console.log(
+        `[getPumpFunTokenInfo] No bonding curve data found - not a PumpFun token`
+      );
       return null;
     }
 
-    console.log(`[getPumpFunTokenInfo] Bonding curve data found, calculating market metrics...`);
+    console.log(
+      `[getPumpFunTokenInfo] Bonding curve data found, calculating market metrics...`
+    );
 
     // Get token metadata
     let tokenName = "Unknown Token";
@@ -709,14 +820,21 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
       tokenDecimals = mintInfo.decimals;
       console.log(`[getPumpFunTokenInfo] Token decimals: ${tokenDecimals}`);
     } catch (error) {
-      console.warn(`[getPumpFunTokenInfo] Could not fetch mint info, using default decimals`);
+      console.warn(
+        `[getPumpFunTokenInfo] Could not fetch mint info, using default decimals`
+      );
     }
 
     // Calculate market metrics from bonding curve data
-    const virtualSolReserves = Number(bondingCurveData.virtualSolReserves) / 1e9; // Convert lamports to SOL
-    const virtualTokenReserves = Number(bondingCurveData.virtualTokenReserves) / Math.pow(10, tokenDecimals);
-    const realTokenReserves = Number(bondingCurveData.realTokenReserves) / Math.pow(10, tokenDecimals);
-    const tokenTotalSupply = Number(bondingCurveData.tokenTotalSupply) / Math.pow(10, tokenDecimals);
+    const virtualSolReserves =
+      Number(bondingCurveData.virtualSolReserves) / 1e9; // Convert lamports to SOL
+    const virtualTokenReserves =
+      Number(bondingCurveData.virtualTokenReserves) /
+      Math.pow(10, tokenDecimals);
+    const realTokenReserves =
+      Number(bondingCurveData.realTokenReserves) / Math.pow(10, tokenDecimals);
+    const tokenTotalSupply =
+      Number(bondingCurveData.tokenTotalSupply) / Math.pow(10, tokenDecimals);
 
     // Calculate price: SOL per token
     const priceInSol = virtualSolReserves / virtualTokenReserves;
@@ -733,7 +851,8 @@ export const getPumpFunTokenInfo = async (tokenAddress: string) => {
     const liquidityUsd = virtualSolReserves * currentSolPrice;
 
     // Calculate bonding curve progress (percentage of tokens sold)
-    const bondingCurveProgress = ((tokenTotalSupply - realTokenReserves) / tokenTotalSupply) * 100;
+    const bondingCurveProgress =
+      ((tokenTotalSupply - realTokenReserves) / tokenTotalSupply) * 100;
 
     console.log(`[getPumpFunTokenInfo] Calculated metrics:`, {
       priceUsd: priceUsd.toFixed(8),
@@ -827,7 +946,10 @@ export const calculateTokenHoldingsWorth = async (
       bondingCurveProgress: tokenInfo.bondingCurveProgress || 0,
     };
   } catch (error: any) {
-    console.error(`[calculateTokenHoldingsWorth] Error calculating holdings worth:`, error);
+    console.error(
+      `[calculateTokenHoldingsWorth] Error calculating holdings worth:`,
+      error
+    );
     return {
       worthInSol: 0,
       worthInUsd: 0,
@@ -856,7 +978,9 @@ export const parseTransactionAmounts = async (
   error?: string;
 }> => {
   try {
-    logger.info(`[parse-tx]: Parsing transaction ${signature} for wallet ${walletAddress.slice(0, 8)}`);
+    logger.info(
+      `[parse-tx]: Parsing transaction ${signature} for wallet ${walletAddress.slice(0, 8)}`
+    );
 
     // Get the parsed transaction from the blockchain
     const parsedTx = await connection.getParsedTransaction(signature, {
@@ -873,13 +997,17 @@ export const parseTransactionAmounts = async (
     }
 
     if (parsedTx.meta.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(parsedTx.meta.err)}`);
+      throw new Error(
+        `Transaction failed: ${JSON.stringify(parsedTx.meta.err)}`
+      );
     }
 
     // Find the wallet's account index in the transaction
     const walletPubkey = new PublicKey(walletAddress);
     const accountKeys = parsedTx.transaction.message.accountKeys;
-    const walletIndex = accountKeys.findIndex((key) => key.pubkey.equals(walletPubkey));
+    const walletIndex = accountKeys.findIndex((key) =>
+      key.pubkey.equals(walletPubkey)
+    );
 
     if (walletIndex === -1) {
       throw new Error("Wallet not found in transaction");
@@ -906,7 +1034,8 @@ export const parseTransactionAmounts = async (
     let tokenChange = "0";
     if (postTokenBalance && preTokenBalance) {
       tokenChange = (
-        BigInt(postTokenBalance.uiTokenAmount.amount) - BigInt(preTokenBalance.uiTokenAmount.amount)
+        BigInt(postTokenBalance.uiTokenAmount.amount) -
+        BigInt(preTokenBalance.uiTokenAmount.amount)
       ).toString();
     } else if (postTokenBalance && !preTokenBalance) {
       // New token account created
@@ -938,7 +1067,10 @@ export const parseTransactionAmounts = async (
 
     return result;
   } catch (error: any) {
-    logger.error(`[parse-tx]: Failed to parse transaction ${signature}:`, error);
+    logger.error(
+      `[parse-tx]: Failed to parse transaction ${signature}:`,
+      error
+    );
     return {
       success: false,
       error: error.message || "Unknown parsing error",
@@ -991,7 +1123,9 @@ export const recordTransactionWithActualAmounts = async (
 
   try {
     // Parse actual amounts from blockchain
-    const transactionTypeForParsing = transactionType.includes("sell") ? "sell" : "buy";
+    const transactionTypeForParsing = transactionType.includes("sell")
+      ? "sell"
+      : "buy";
     const actualAmounts = await parseTransactionAmounts(
       signature,
       walletPublicKey,
@@ -1004,9 +1138,14 @@ export const recordTransactionWithActualAmounts = async (
       const recordingData = {
         ...estimatedAmounts,
         // Override with actual amounts
-        amountSol: transactionTypeForParsing === "buy" ? actualAmounts.actualSolSpent : actualAmounts.actualSolReceived,
+        amountSol:
+          transactionTypeForParsing === "buy"
+            ? actualAmounts.actualSolSpent
+            : actualAmounts.actualSolReceived,
         amountTokens:
-          transactionTypeForParsing === "buy" ? actualAmounts.actualTokensReceived : actualAmounts.actualTokensSold,
+          transactionTypeForParsing === "buy"
+            ? actualAmounts.actualTokensReceived
+            : actualAmounts.actualTokensSold,
       };
 
       logger.info(
@@ -1024,7 +1163,9 @@ export const recordTransactionWithActualAmounts = async (
       );
     } else {
       // Fallback to estimated amounts if parsing failed
-      logger.warn(`[record-tx]: Failed to parse actual amounts, using estimates: ${actualAmounts.error}`);
+      logger.warn(
+        `[record-tx]: Failed to parse actual amounts, using estimates: ${actualAmounts.error}`
+      );
       return await recordTransaction(
         tokenAddress,
         walletPublicKey,
@@ -1037,7 +1178,10 @@ export const recordTransactionWithActualAmounts = async (
     }
   } catch (error: any) {
     // Fallback to estimated amounts on any error
-    logger.error(`[record-tx]: Error parsing transaction amounts, using estimates:`, error);
+    logger.error(
+      `[record-tx]: Error parsing transaction amounts, using estimates:`,
+      error
+    );
     return await recordTransaction(
       tokenAddress,
       walletPublicKey,
@@ -1050,7 +1194,9 @@ export const recordTransactionWithActualAmounts = async (
   }
 };
 
-export async function checkTokenRenouncedAndFrozen(tokenMintAddress: string): Promise<{
+export async function checkTokenRenouncedAndFrozen(
+  tokenMintAddress: string
+): Promise<{
   isRenounced: boolean;
   isFrozen: boolean;
   mintAuthority: string | null;
@@ -1131,40 +1277,52 @@ export async function archiveAddress(
  */
 export const getCurrentSolPrice = async (): Promise<number> => {
   try {
-    const response = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd', {
-      timeout: 5000,
-    });
-    
+    const response = await axios.get(
+      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+      {
+        timeout: 5000,
+      }
+    );
+
     const price = response.data?.solana?.usd;
     if (price && price > 0) {
       console.log(`[getCurrentSolPrice] Current SOL price: $${price}`);
       return price;
     }
-    
-    throw new Error('Invalid price data from CoinGecko');
+
+    throw new Error("Invalid price data from CoinGecko");
   } catch (error: any) {
-    console.warn(`[getCurrentSolPrice] Failed to fetch SOL price from CoinGecko: ${error.message}`);
-    
+    console.warn(
+      `[getCurrentSolPrice] Failed to fetch SOL price from CoinGecko: ${error.message}`
+    );
+
     // Fallback to Birdeye API
     try {
-      const birdeyeResponse = await axios.get('https://public-api.birdeye.so/defi/token_overview?address=So11111111111111111111111111111111111111112', {
-        headers: {
-          accept: "application/json",
-          "x-chain": "solana",
-          "X-API-KEY": "e750e17792ae478983170f78486de13c",
-        },
-        timeout: 5000,
-      });
-      
+      const birdeyeResponse = await axios.get(
+        "https://public-api.birdeye.so/defi/token_overview?address=So11111111111111111111111111111111111111112",
+        {
+          headers: {
+            accept: "application/json",
+            "x-chain": "solana",
+            "X-API-KEY": "e750e17792ae478983170f78486de13c",
+          },
+          timeout: 5000,
+        }
+      );
+
       const price = birdeyeResponse.data?.data?.price;
       if (price && price > 0) {
-        console.log(`[getCurrentSolPrice] Current SOL price (Birdeye fallback): $${price}`);
+        console.log(
+          `[getCurrentSolPrice] Current SOL price (Birdeye fallback): $${price}`
+        );
         return price;
       }
     } catch (birdeyeError: any) {
-      console.warn(`[getCurrentSolPrice] Birdeye fallback also failed: ${birdeyeError.message}`);
+      console.warn(
+        `[getCurrentSolPrice] Birdeye fallback also failed: ${birdeyeError.message}`
+      );
     }
-    
+
     // Final fallback to a reasonable estimate
     console.warn(`[getCurrentSolPrice] Using fallback SOL price: $182`);
     return 182; // Conservative fallback

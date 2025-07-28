@@ -288,7 +288,6 @@ export const sellDevWorker = new Worker<SellDevJob>(
 
       // Send detailed notification with enhanced formatting
       await sendNotification(
-        bot,
         data.userChatId,
         `🎉 **Dev Sell Completed Successfully\\!**\n\n` +
           `🎯 **Sale Details:**\n` +

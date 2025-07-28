@@ -252,7 +252,7 @@ const viewTokensConversation = async (
 
     // For sell/launch buttons, DON'T answer callback query and halt to let global handlers take over
     if (isSellButton || isLaunchButton) {
-      return conversation.halt();
+      await conversation.halt();
     }
 
     // For all other buttons, answer the callback query as normal

@@ -28,6 +28,7 @@ import { env } from "../../config";
 import { startLoadingState, sendLoadingMessage } from "../loading";
 import { safeAnswerCallbackQuery } from "../utils";
 import { logger } from "../../blockchain/common/logger";
+import { sendMessage } from "../../backend/sender";
 
 enum LaunchCallBackQueries {
   CANCEL = "CANCEL_LAUNCH",
@@ -43,18 +44,6 @@ const retryKeyboard = new InlineKeyboard()
   .text("🔄 Try Again", LaunchCallBackQueries.RETRY)
   .row()
   .text("❌ Cancel", LaunchCallBackQueries.CANCEL);
-
-async function sendMessage(ctx: Context, text: string, options: any = {}) {
-  await sendMessage(
-    ctx,
-    `<b>🌟 Nitro Bot</b>\n${text}\n<i>──────────────</i>`,
-    {
-      ...options,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }
-  );
-}
 
 async function waitForInputOrCancel(
   conversation: Conversation,
@@ -162,13 +151,29 @@ const launchTokenConversation = async (
 ) => {
   await safeAnswerCallbackQuery(ctx);
   // Show initial loading message
-  const loadingMessage = await sendMessage(
+  await sendMessage(
     ctx,
-    `🚀 **Token Launch**\n\n` +
-      `Token: \`${tokenAddress}\`\n\n` +
-      `⏳ Processing...\n\n` +
-      `💡 **Tip:** You can always use /menu or /start to return to the main menu.`,
-    { parse_mode: "Markdown" }
+    `<b>🚀 Token Launch Initiated</b>
+
+<b>📋 Token Details:</b>
+<code>${tokenAddress}</code>
+
+<b>⏳ Status:</b> <i>Initializing launch process...</i>
+
+<b>🔄 Next Steps:</b>
+• Validating user permissions
+• Checking token status
+• Verifying wallet balances
+• Configuring launch parameters
+
+<i>💡 You can use /menu or /start to return to the main menu at any time.</i>`,
+    {
+      parse_mode: "HTML",
+      reply_markup: new InlineKeyboard().text(
+        "❌ Cancel Launch",
+        LaunchCallBackQueries.CANCEL
+      ),
+    }
   );
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
@@ -794,6 +799,18 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
         await devBuyCtx.answerCallbackQuery();
         await sendMessage(ctx, "Launch cancelled.");
         return conversation.halt();
+      }
+
+      if (devBuyCtx.callbackQuery?.data?.startsWith("DEV_BUY_")) {
+        await devBuyCtx.answerCallbackQuery();
+        const amount = devBuyCtx.callbackQuery.data.replace("DEV_BUY_", "");
+        devBuy = parseFloat(amount);
+
+        await sendMessage(
+          ctx,
+          `✅ Developer buy amount set to <b>${devBuy} SOL</b>`,
+          { parse_mode: "HTML" }
+        );
       }
 
       if (devBuyCtx.message?.text) {

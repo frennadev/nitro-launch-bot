@@ -268,13 +268,13 @@ const createTokenConversation = async (
 
     let socialsInfo = "";
     if (twitter) {
-      socialsInfo += `🐦 **Twitter:** <code>${twitter}</code>\n`;
+      socialsInfo += `🐦 <b>Twitter:</b> <a href="${twitter}">Link</a>\n`;
     }
     if (telegram) {
-      socialsInfo += `💬 **Telegram:** <code>${telegram}</code>\n`;
+      socialsInfo += `💬 <b>Telegram:</b> <a href="${telegram}">Link</a>\n`;
     }
     if (website) {
-      socialsInfo += `🌐 **Website:** <code>${website}</code>\n`;
+      socialsInfo += `🌐 <b>Website:</b> <a href="${website}">Link</a>\n`;
     }
 
     await sendMessage(

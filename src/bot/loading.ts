@@ -1,6 +1,5 @@
 import bot from ".";
 import type { Context } from "grammy";
-import { sendMessage } from "../backend/sender";
 
 export interface LoadingState {
   chatId: number;
@@ -21,100 +20,83 @@ const processingFrames = ["⚡", "✨", "⚡", "✨"];
 const operationMessages = {
   token_launch: {
     initial:
-      "🚀 **Launching your token...**\n\n✨ *Initiating launch sequence with maximum privacy*",
+      "🚀 **Launching your token...**\n\n⏳ Preparing launch sequence...",
     phases: [
-      "🔍 Validating token parameters and metadata...",
-      "💰 Verifying wallet balances and permissions...",
-      "🏗️ Deploying smart contract on Pump.fun...",
-      "💎 Executing strategic dev buy transaction...",
-      "🛒 Distributing tokens to buyer wallets...",
-      "📊 Finalizing launch and updating records...",
+      "🔍 Validating token parameters...",
+      "💰 Checking wallet balances...",
+      "🏗️ Creating token on Pump.fun...",
+      "💎 Executing dev buy...",
+      "🛒 Distributing to buyer wallets...",
+      "📊 Finalizing launch...",
     ],
-    success:
-      "🎉 **Token launched successfully!** 🚀\n\n✨ *Your token is now live and trading*",
-    error:
-      "❌ **Token launch failed** 💔\n\n🔧 *Please check your parameters and try again*",
+    success: "🎉 **Token launched successfully!**",
+    error: "❌ **Token launch failed**",
   },
-
   prepare_launch: {
     initial:
-      "🛠️ **Preparing token launch...**\n\n🎯 *Setting up privacy-first launch infrastructure*",
+      "🛠️ **Preparing token launch...**\n\n⏳ Initializing preparation sequence...",
     phases: [
-      "🔍 Validating launch parameters and requirements...",
-      "💰 Processing platform fee and securing funds...",
-      "🔀 Initializing advanced mixer system...",
-      "🏦 Allocating secure intermediate wallets...",
-      "💸 Distributing funds through privacy layers...",
-      "⚡ Funding designated buyer wallets...",
-      "✅ Launch preparation completed successfully...",
+      "🔍 Validating launch parameters...",
+      "💰 Collecting platform fee...",
+      "🔀 Initializing mixer system...",
+      "🏦 Reserving intermediate wallets...",
+      "💸 Distributing funds through mixer...",
+      "⚡ Funding buyer wallets...",
+      "✅ Preparation complete...",
     ],
-    success:
-      "🎉 **Preparation completed!** ✨\n\n🚀 *Ready for secure token launch*",
-    error:
-      "❌ **Preparation failed** ⚠️\n\n🔄 *Reverting changes and securing funds*",
+    success: "🎉 **Preparation completed successfully\\!**",
+    error: "❌ **Preparation failed**",
   },
-
   mixer_operation: {
     initial:
-      "🔀 **Mixing funds for privacy...**\n\n🛡️ *Applying advanced obfuscation layers*",
+      "🔀 **Mixing funds for privacy...**\n\n⏳ Initializing secure mixing process...",
     phases: [
-      "🔐 Validating secure wallet pool integrity...",
-      "🏦 Reserving anonymous intermediate wallets...",
-      "💫 Generating randomized mixing routes...",
-      "⚡ Executing privacy hop 1 of 5...",
-      "⚡ Executing privacy hop 2 of 5...",
-      "⚡ Executing privacy hop 3 of 5...",
-      "⚡ Executing privacy hop 4 of 5...",
-      "⚡ Executing privacy hop 5 of 5...",
-      "💰 Finalizing secure fund distributions...",
-      "🔒 Cleaning up and releasing wallets...",
+      "🔐 Validating wallet pool...",
+      "🏦 Reserving intermediate wallets...",
+      "💫 Creating mixing routes...",
+      "⚡ Executing hop 1/5...",
+      "⚡ Executing hop 2/5...",
+      "⚡ Executing hop 3/5...",
+      "⚡ Executing hop 4/5...",
+      "⚡ Executing hop 5/5...",
+      "💰 Finalizing distributions...",
+      "🔒 Releasing intermediate wallets...",
     ],
-    success:
-      "🎉 **Funds mixed successfully!** 🛡️\n\n🔐 *Maximum privacy achieved*",
-    error:
-      "❌ **Mixing operation failed** 🚨\n\n🔄 *Funds safely returned to origin*",
+    success: "🎉 **Funds mixed successfully\\!**",
+    error: "❌ **Mixing operation failed**",
   },
-
   dev_sell: {
-    initial:
-      "💰 **Processing dev sell...**\n\n📈 *Executing strategic token liquidation*",
+    initial: "💰 **Processing dev sell...**\n\n⏳ Preparing transaction...",
     phases: [
-      "🔍 Validating sell parameters and timing...",
-      "💎 Calculating optimal token amounts...",
-      "📤 Broadcasting sell transaction to network...",
-      "✅ Confirming transaction and updating balance...",
+      "🔍 Validating sell parameters...",
+      "💎 Calculating token amounts...",
+      "📤 Executing sell transaction...",
+      "✅ Confirming transaction...",
     ],
-    success:
-      "🎉 **Dev sell completed!** 💰\n\n📊 *Funds successfully liquidated*",
-    error: "❌ **Dev sell failed** ⚠️\n\n🔄 *Transaction reverted safely*",
+    success: "🎉 **Dev sell completed successfully\\!**",
+    error: "❌ **Dev sell failed**",
   },
-
   wallet_sell: {
     initial:
-      "💸 **Processing wallet sells...**\n\n🎯 *Coordinating multi-wallet liquidation*",
+      "💸 **Processing wallet sells...**\n\n⏳ Preparing transactions...",
     phases: [
-      "🔍 Scanning wallet holdings and balances...",
-      "💎 Computing optimal sell amounts per wallet...",
-      "📤 Broadcasting coordinated sell transactions...",
-      "✅ Confirming all transactions and settlements...",
+      "🔍 Validating wallet holdings...",
+      "💎 Calculating sell amounts...",
+      "📤 Executing sell transactions...",
+      "✅ Confirming transactions...",
     ],
-    success:
-      "🎉 **Wallet sells completed!** 💸\n\n📈 *All positions successfully liquidated*",
-    error:
-      "❌ **Wallet sells failed** ⚠️\n\n🔄 *Partial sales may have occurred*",
+    success: "🎉 **Wallet sells completed successfully\\!**",
+    error: "❌ **Wallet sells failed**",
   },
-
   transaction: {
-    initial:
-      "📡 **Processing transaction...**\n\n🌐 *Broadcasting to Solana network*",
+    initial: "📡 **Processing transaction...**\n\n⏳ Preparing...",
     phases: [
-      "🔍 Validating transaction parameters...",
-      "📤 Broadcasting to network validators...",
-      "⏰ Awaiting network confirmation...",
+      "🔍 Validating transaction...",
+      "📤 Broadcasting to network...",
+      "⏰ Waiting for confirmation...",
     ],
-    success:
-      "✅ **Transaction confirmed!** 🎉\n\n🌐 *Successfully recorded on blockchain*",
-    error: "❌ **Transaction failed** 💔\n\n🔄 *Network rejected transaction*",
+    success: "✅ **Transaction confirmed\\!**",
+    error: "❌ **Transaction failed**",
   },
 };
 
@@ -132,9 +114,7 @@ export async function startLoadingState(
     : `${chatId}-${operation}`;
 
   const config = operationMessages[operation];
-  const message = await sendMessage(ctx, config.initial, {
-    parse_mode: "Markdown",
-  });
+  const message = await ctx.reply(config.initial, { parse_mode: "Markdown" });
 
   const loadingState: LoadingState = {
     chatId,
@@ -267,22 +247,14 @@ function startLoadingAnimation(loadingKey: string): void {
     const config =
       operationMessages[state.operation as keyof typeof operationMessages];
     const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-    // const frame =
-    //   loadingFrames[Math.floor(Date.now() / 800) % loadingFrames.length];
-
     const frame =
       loadingFrames[Math.floor(Date.now() / 800) % loadingFrames.length];
-    const operationName = state.operation.replace(/_/g, " ").toUpperCase();
 
-    let message = `<b>🚀 ${operationName}</b>\n\n`;
-    message += `${frame} <i>Preparing launch sequence...</i>\n\n`;
-    message += `⏱️ <b>Elapsed:</b> ${elapsed}s`;
+    // Only show mixing message for token launch operations
+    let message = `🚀 **${state.operation.replace("_", " ").toUpperCase()}**\n\n${frame} Preparing launch sequence...\n\n⏱️ Elapsed: ${elapsed}s`;
 
     if (state.operation === "token_launch") {
-      message += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      message += `💡 <i>Processing may take up to a minute depending on your buy amount</i>\n`;
-      message += `🔒 <i>We're mixing funds to ensure complete untraceability</i>\n`;
-      message += `🛡️ <i>Maximum privacy protection is being applied</i>`;
+      message += `\n\n💡 *May take up to a minute dependent on your buy amount, we're trying to mix the funds and ensure it is untraceable*`;
     }
 
     try {
@@ -321,9 +293,7 @@ export async function sendLoadingMessage(
   initialMessage: string,
   operation: string = "processing"
 ): Promise<{ messageId: number; update: (message: string) => Promise<void> }> {
-  const sent = await sendMessage(ctx, initialMessage, {
-    parse_mode: "Markdown",
-  });
+  const sent = await ctx.reply(initialMessage, { parse_mode: "Markdown" });
 
   const update = async (message: string) => {
     try {

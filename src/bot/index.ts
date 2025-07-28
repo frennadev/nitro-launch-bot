@@ -5,6 +5,7 @@ import {
   type BotError,
   GrammyError,
   HttpError,
+  InputFile,
 } from "grammy";
 import {
   Conversation,
@@ -65,7 +66,7 @@ import walletSellConversation from "./conversation/walletSell";
 import { TokenState } from "../backend/types";
 import walletConfigConversation from "./conversation/walletConfig";
 import mainMenuConversation from "./conversation/mainMenu";
-import { sendMessage } from "../backend/sender";
+import { lastMessageMap, sendMessage } from "../backend/sender";
 import manageDevWalletsConversation from "./conversation/devWallets";
 import manageBuyerWalletsConversation from "./conversation/buyerWallets";
 import {
@@ -82,6 +83,7 @@ import {
   decryptPrivateKey,
   checkTokenRenouncedAndFrozen,
   getSolBalance,
+  getCurrentSolPrice,
 } from "../backend/utils";
 import { getTransactionFinancialStats } from "../backend/functions-main";
 import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
@@ -101,7 +103,7 @@ import {
   markTokenAsPumpswap as markTokenAsPumpswapService,
   markTokenAsPumpFun,
 } from "../service/token-detection-service";
-import { TokenModel } from "../backend/models";
+import { TokenModel, TransactionRecordModel } from "../backend/models";
 import { handleSingleSell } from "../blockchain/common/singleSell";
 import { sellPercentageMessage } from "./conversation/sellPercent";
 import { sendErrorWithAutoDelete } from "./utils";
@@ -110,6 +112,8 @@ import { TokenInfoService } from "../service/token-info-service";
 import { airdropSolConversation } from "./conversation/airdropSol";
 import { predictMcConversation } from "./conversation/predictMc";
 import { fundTokenWalletsConversation } from "./conversation/fundTokenWallets";
+import mongoose from "mongoose";
+import { htmlToJpg } from "../utils/generatePnlCard";
 
 // Platform detection and caching for external tokens
 const platformCache = new Map<
@@ -635,38 +639,38 @@ bot.use(async (ctx, next) => {
 });
 
 // Middleware to patch reply/sendMessage and hook deletion
-bot.use(async (ctx, next) => {
-  const chatId = ctx.chat?.id;
-  const userMessageId = ctx.message?.message_id;
+// bot.use(async (ctx, next) => {
+//   const chatId = ctx.chat?.id;
+//   const userMessageId = ctx.message?.message_id;
 
-  if (!chatId || !userMessageId) return next();
+//   if (!chatId || !userMessageId) return next();
 
-  // Store original functions
-  const originalReply = ctx.reply.bind(ctx);
-  const originalSendMessage = ctx.api.sendMessage.bind(ctx.api);
+//   // Store original functions
+//   const originalReply = ctx.reply.bind(ctx);
+//   const originalSendMessage = ctx.api.sendMessage.bind(ctx.api);
 
-  let botResponded = false;
+//   let botResponded = false;
 
-  // Wrap ctx.reply
-  ctx.reply = async (...args) => {
-    botResponded = true;
-    return originalReply(...args);
-  };
+//   // Wrap ctx.reply
+//   ctx.reply = async (...args) => {
+//     botResponded = true;
+//     return originalReply(...args);
+//   };
 
-  // Wrap ctx.api.sendMessage
-  ctx.api.sendMessage = async (...args) => {
-    botResponded = true;
-    return originalSendMessage(...args);
-  };
+//   // Wrap ctx.api.sendMessage
+//   ctx.api.sendMessage = async (...args) => {
+//     botResponded = true;
+//     return originalSendMessage(...args);
+//   };
 
-  await next();
+//   await next();
 
-  if (botResponded) {
-    setTimeout(() => {
-      ctx.api.deleteMessage(chatId, userMessageId).catch(() => {});
-    }, 2500);
-  }
-});
+//   if (botResponded) {
+//     setTimeout(() => {
+//       ctx.api.deleteMessage(chatId, userMessageId).catch(() => {});
+//     }, 2500);
+//   }
+// });
 
 bot.use(createConversation(createTokenConversation));
 bot.use(createConversation(launchTokenConversation));
@@ -2234,6 +2238,32 @@ bot.callbackQuery(
 
     try {
       const buyerWallets = await getAllBuyerWallets(user.id);
+      const devWallet = await getDefaultDevWallet(String(user.id));
+      const devWalletAddress = devWallet;
+
+      // Get dev wallet token balance for this token
+      let devWalletTokenBalance = 0;
+      try {
+        devWalletTokenBalance = await getTokenBalance(
+          tokenAddress,
+          devWalletAddress
+        );
+      } catch (error) {
+        logger.warn(`Failed to get dev wallet token balance: ${error}`);
+      }
+
+      // Add dev wallet to buyer wallets if it has tokens
+      if (devWalletTokenBalance > 0) {
+        buyerWallets.push({
+          id: `dev-${user.id}`,
+          publicKey: devWalletAddress,
+          createdAt: new Date(),
+        });
+      }
+
+      logger.info(
+        `Buyer wallets: ${JSON.stringify(buyerWallets, null, 2)}, for user ${user.id}`
+      );
 
       const tokenInfo = await getTokenInfo(tokenAddress);
       if (!tokenInfo) {
@@ -2250,177 +2280,181 @@ bot.callbackQuery(
       }
       // Calculate total snipes (buys) made by user's buyer wallets for this token
       const { TransactionRecordModel } = await import("../backend/models");
-
-      // Get all buyer wallets for the user
-
-      // For each wallet, get initial (total buy amount), payout (total sell amount), and current worth
-      const walletStats = await Promise.all(
+      // console.log(buyerWallets);
+      const walletDetails = await Promise.all(
         buyerWallets.map(async (wallet) => {
-          // Initial: sum of all buy transactions for this wallet and token
-          const initialAgg = await TransactionRecordModel.aggregate([
-            {
-              $match: {
-                user: user.id,
-                tokenAddress,
-                walletAddress: wallet.publicKey,
-                transactionType: "snipe_buy",
-              },
-            },
-            {
-              $group: {
-                _id: null,
-                totalBuy: { $sum: "$amount" },
-              },
-            },
-          ]);
-          const initial = initialAgg[0]?.totalBuy || 0;
+          const transactions = await TransactionRecordModel.find({
+            tokenAddress,
+            walletPublicKey: wallet.publicKey,
+          });
 
-          // Payout: sum of all sell transactions for this wallet and token
-          const payoutAgg = await TransactionRecordModel.aggregate([
-            {
-              $match: {
-                user: user.id,
-                tokenAddress,
-                walletAddress: wallet.publicKey,
-                transactionType: "snipe_sell",
-              },
-            },
-            {
-              $group: {
-                _id: null,
-                totalSell: { $sum: "$amount" },
-              },
-            },
-          ]);
-          const payout = payoutAgg[0]?.totalSell || 0;
-
-          // Current worth: get current token balance and multiply by current price
-          let currentWorth = 0;
+          // Get current token balance for this wallet
+          let currentTokenBalance = 0;
           try {
-            const { getTokenBalance } = await import("../backend/utils");
-            const tokenBalance = await getTokenBalance(
+            currentTokenBalance = await getTokenBalance(
               tokenAddress,
               wallet.publicKey
             );
-            const price = tokenInfo.priceUsd || 0;
-            currentWorth = tokenBalance * price;
-          } catch (err) {
-            currentWorth = 0;
+          } catch (error) {
+            logger.warn(
+              `Failed to get token balance for wallet ${wallet.publicKey}:`,
+              error
+            );
           }
 
+          // Group transactions by type
+          const groupedTransactions = {
+            devBuys: transactions.filter(
+              (tx) => tx.transactionType === "dev_buy"
+            ),
+            devSells: transactions.filter(
+              (tx) => tx.transactionType === "dev_sell"
+            ),
+            snipeBuys: transactions.filter(
+              (tx) => tx.transactionType === "snipe_buy"
+            ),
+            snipeSells: transactions.filter(
+              (tx) => tx.transactionType === "wallet_sell"
+            ),
+          };
+
+          // Calculate totals for each category
+          const summary = {
+            devBuys: {
+              count: groupedTransactions.devBuys.length,
+              totalAmount: groupedTransactions.devBuys.reduce(
+                (sum, tx) => sum + (tx.amountSol || 0),
+                0
+              ),
+              totalValue: groupedTransactions.devBuys.reduce(
+                (sum, tx) => sum + (tx.amountSol || 0),
+                0
+              ),
+            },
+            devSells: {
+              count: groupedTransactions.devSells.length,
+              totalAmount: groupedTransactions.devSells.reduce(
+                (sum, tx) => sum + (tx.amountSol || 0),
+                0
+              ),
+              totalValue: groupedTransactions.devSells.reduce(
+                (sum, tx) => sum + (tx.amountSol || 0),
+                0
+              ),
+            },
+            snipeBuys: {
+              count: groupedTransactions.snipeBuys.length,
+              totalAmount: groupedTransactions.snipeBuys.reduce(
+                (sum, tx) => sum + (tx.amountSol || 0),
+                0
+              ),
+              totalValue: groupedTransactions.snipeBuys.reduce(
+                (sum, tx) => sum + (tx.amountSol || 0),
+                0
+              ),
+            },
+            snipeSells: {
+              count: groupedTransactions.snipeSells.length,
+              totalAmount: groupedTransactions.snipeSells.reduce(
+                (sum, tx) => sum + (tx.amountSol || 0),
+                0
+              ),
+              totalValue: groupedTransactions.snipeSells.reduce(
+                (sum, tx) => sum + (tx.amountSol || 0),
+                0
+              ),
+            },
+          };
+
           return {
-            wallet: wallet.publicKey,
-            initial,
-            payout,
-            currentWorth,
+            address: wallet.publicKey,
+            currentTokenBalance,
+            transactions: groupedTransactions,
+            summary,
+            totalTransactions: transactions.length,
           };
         })
       );
 
-      // Aggregate total initial, payout, and current worth across all buyer wallets
-      const totalInitial = walletStats.reduce((sum, w) => sum + w.initial, 0);
-      const totalPayout = walletStats.reduce((sum, w) => sum + w.payout, 0);
-      const totalCurrentWorth = walletStats.reduce(
-        (sum, w) => sum + w.currentWorth,
-        0
-      );
+      // Calculate total initial (all buy transactions) and payout (all sell transactions)
+      const initial = walletDetails.reduce((total, wallet) => {
+        return (
+          total +
+          wallet.summary.devBuys.totalAmount +
+          wallet.summary.snipeBuys.totalAmount
+        );
+      }, 0);
 
-      // Calculate stats for each wallet
-      const walletStatsDetails = [];
-      for (const wallet of buyerWallets) {
-        // Count snipes (buy transactions) for this wallet and token
-        const snipesCount = await TransactionRecordModel.countDocuments({
-          user: user.id,
-          tokenAddress,
-          walletAddress: wallet.publicKey,
-          transactionType: "snipe_buy",
-        });
+      const payout = walletDetails.reduce((total, wallet) => {
+        return (
+          total +
+          wallet.summary.devSells.totalAmount +
+          wallet.summary.snipeSells.totalAmount
+        );
+      }, 0);
 
-        // Initial: sum of all buy transactions for this wallet and token
-        const initialAgg = await TransactionRecordModel.aggregate([
-          {
-            $match: {
-              user: user.id,
-              tokenAddress,
-              walletAddress: wallet.publicKey,
-              transactionType: "snipe_buy",
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              totalBuy: { $sum: "$amount" },
-            },
-          },
-        ]);
-        const initial = initialAgg[0]?.totalBuy || 0;
+      // Calculate total supply (sum of all current token balances across wallets)
+      const totalSupply =
+        walletDetails.reduce((total, wallet) => {
+          return total + wallet.currentTokenBalance;
+        }, 0) / Math.pow(10, tokenInfo.baseToken.decimals);
 
-        // Payout: sum of all sell transactions for this wallet and token
-        const payoutAgg = await TransactionRecordModel.aggregate([
-          {
-            $match: {
-              user: user.id,
-              tokenAddress,
-              walletAddress: wallet.publicKey,
-              transactionType: "snipe_sell",
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              totalSell: { $sum: "$amount" },
-            },
-          },
-        ]);
-        const payout = payoutAgg[0]?.totalSell || 0;
+      // Calculate percentage of total token supply held
+      let supplyPercentage = 0;
+      let supplyPercentageText = "";
 
-        // Worth: current token balance * current price
-        let worth = 0;
-        try {
-          const { getTokenBalance } = await import("../backend/utils");
-          const tokenBalance = await getTokenBalance(
-            tokenAddress,
-            wallet.publicKey
-          );
-          const price = tokenInfo.priceUsd || 0;
-          worth = tokenBalance * price;
-        } catch (err) {
-          worth = 0;
-        }
+      if (tokenInfo.birdeye.totalSupply && totalSupply > 0) {
+        // Convert supply to number (it might be a string)
+        const totalTokenSupply =
+          typeof tokenInfo.birdeye.totalSupply === "string"
+            ? parseFloat(tokenInfo.birdeye.totalSupply)
+            : tokenInfo.birdeye.totalSupply;
 
-        walletStatsDetails.push({
-          wallet: wallet.publicKey,
-          snipesCount,
-          initial,
-          payout,
-          worth,
-        });
+        // Calculate percentage held
+        console.log(
+          `Total supply: ${totalSupply}, Total token supply: ${totalTokenSupply}`
+        );
+        supplyPercentage = (totalSupply / totalTokenSupply) * 100;
+        supplyPercentageText = `${supplyPercentage.toFixed(4)}%`;
+
+        logger.info(
+          `[TokenTrades] Supply calculation: ${totalSupply} / ${totalTokenSupply} = ${supplyPercentageText}`
+        );
       }
 
-      // Build wallet stats section for monitor page
-      let walletStatsSection = "";
-      if (walletStatsDetails.length > 0) {
-        walletStatsSection =
-          `<b>📊 Per-Wallet Stats</b>\n` +
-          `<code>Wallet           | Buys | Initial   | Payout    | Worth     </code>\n` +
-          `<code>────────────────|─────|──────────|──────────|───────────</code>\n` +
-          walletStatsDetails
-            .map((w) => {
-              const shortWallet =
-                w.wallet.length > 12
-                  ? `${w.wallet.slice(0, 6)}...${w.wallet.slice(-4)}`
-                  : w.wallet;
-              return `<code>${shortWallet.padEnd(16)}| ${String(w.snipesCount).padEnd(4)} | ${w.initial.toFixed(3).padEnd(8)} | ${w.payout.toFixed(3).padEnd(8)} | ${w.worth.toFixed(3).padEnd(9)}</code>`;
-            })
-            .join("\n");
+      // Calculate current worth of all tokens in SOL
+      const solPrice = await getCurrentSolPrice();
+      const currentPrice = tokenInfo.priceUsd || 0;
+      let totalCurrentWorthSol = 0;
+
+      if (currentPrice && solPrice) {
+        const priceInSol = currentPrice / solPrice;
+        totalCurrentWorthSol = totalSupply * priceInSol;
+
+        logger.info(
+          `[TokenTrades] Total tokens: ${totalSupply}, Price in SOL: ${priceInSol}, Worth: ${totalCurrentWorthSol} SOL`
+        );
       } else {
-        walletStatsSection = `<i>No buyer wallet stats found for this token.</i>`;
+        logger.warn(
+          `[TokenTrades] Unable to calculate worth - currentPrice: ${currentPrice}, solPrice: ${solPrice}`
+        );
       }
-      // You can use walletStatsDetails to display per-wallet stats in your message if needed.
-      // snipesCount is the total number of snipes (buy transactions) for this token by user's buyer wallets
+
+      // Dummy data for demonstration
+      const totalInitial = 10.5; // 10.5 SOL initial investment
+      const totalPayout = 3.2; // 3.2 SOL already sold
+      const totalCurrentWorth = 15.8; // Current worth of remaining tokens
+
+      // Create dummy wallet stats section
 
       // TODO fetch actual trade history
-      const worth = totalCurrentWorth.toFixed(3);
+      // Calculate PnL based on initial investment and current worth
+      const totalPnL = totalCurrentWorthSol + payout - initial;
+      const pnLPercentage =
+        initial > 0 ? ((totalPnL / initial) * 100).toFixed(2) : "0.00";
+      const pnLFormatted = `${totalPnL >= 0 ? "+" : ""}${totalPnL.toFixed(3)} SOL (${pnLPercentage}%)`;
+
+      // const worth = totalCurrentWorthSol.toFixed(3);
       // Calculate PnL (Profit and Loss) percentage
       let pnl = "-";
       if (totalInitial > 0) {
@@ -2431,50 +2465,103 @@ bot.callbackQuery(
           ).toFixed(2) + "%";
       }
 
-      const age = "35:00";
-      const initial = totalInitial;
-      const payout = totalPayout;
       const marketCap = formatUSD(tokenInfo.marketCap);
       const price = tokenInfo.priceUsd;
       const botUsername = bot.botInfo.username;
       const referralLink = await generateReferralLink(user.id, botUsername);
 
+      // Calculate token age
+      let tokenAge = "Unknown";
+      try {
+        const { TransactionRecordModel } = await import("../backend/models");
+        const creationTransaction = await TransactionRecordModel.findOne({
+          tokenAddress: tokenAddress,
+          transactionType: "token_creation",
+        });
+        console.log(`Creation transaction: ${creationTransaction}`);
+
+        if (creationTransaction) {
+          const createdAt = creationTransaction.createdAt;
+          const now = new Date();
+          const diffMs = now.getTime() - createdAt.getTime();
+
+          // Convert to human readable format
+          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+          const diffMinutes = Math.floor(
+            (diffMs % (1000 * 60 * 60)) / (1000 * 60)
+          );
+
+          if (diffHours > 0) {
+            tokenAge = `${diffHours}h ${diffMinutes}m`;
+          } else {
+            tokenAge = `${diffMinutes}m`;
+          }
+
+          logger.info(
+            `[TokenAge] Token ${tokenAddress} age calculated: ${tokenAge}`
+          );
+        } else {
+          // Fallback: check token's blockchain creation time if available
+          if (tokenInfo.createdAt) {
+            const createdAt = new Date(tokenInfo.createdAt);
+            const now = new Date();
+            const diffMs = now.getTime() - createdAt.getTime();
+
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffMinutes = Math.floor(
+              (diffMs % (1000 * 60 * 60)) / (1000 * 60)
+            );
+
+            if (diffHours > 0) {
+              tokenAge = `${diffHours}h ${diffMinutes}m`;
+            } else {
+              tokenAge = `${diffMinutes}m`;
+            }
+          }
+        }
+      } catch (error) {
+        logger.warn(`Error calculating token age for ${tokenAddress}:`, error);
+        tokenAge = "Unknown";
+      }
+
       const message = await sendMessage(
         ctx,
         `
-🌟 <b>${tokenInfo.baseToken.symbol}</b> • ⏰ ${age} • 🎯 <a href="${referralLink}">Referral</a>
+🎯 <b>${tokenInfo.baseToken.symbol}</b> 🔗 <a href="${referralLink}">📢 Share & Earn</a> • ⏰ <code>${tokenAge}</code>
 
-💰 <b>Main Position</b> • 📈 <b>${pnl}</b>
-┌─ Initial: <b>${initial.toFixed(3)} SOL</b>
-├─ Payout: <b>${payout.toFixed(3)} SOL</b>
-├─ Tokens: <b>2.3%</b>
-└─ Worth: <b>${worth} SOL</b>
+📊 <b>Position Overview</b>
+┌─ 💰 Initial Investment: <code>${initial.toFixed(3)} SOL</code>
+├─ 💸 Total Sold: <code>${payout.toFixed(3)} SOL</code>
+├─ 🪙 Token Holdings: <code>${supplyPercentageText}</code>
+├─ 💎 Current Worth: <code>${totalCurrentWorthSol.toFixed(3)} SOL</code>
+└─ 📈 Total P&L: <b>${pnLFormatted}</b>
 
-💎 <b>Market Data</b>
-├─ Price: <b>$${price}</b>
-└─ Market Cap: <b>${marketCap}</b>
+💹 <b>Market Information</b>
+├─ 💵 Current Price: <code>$${Number(price).toFixed(5)}</code>
+└─ 🏦 Market Cap: <code>${marketCap}</code>
 
-<blockquote expandable>${walletStatsSection}</blockquote>
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔄 <i>Auto-updates disabled • Click refresh to resume</i>
-⚠️ <i>Limit orders are not impacted</i>
-<i>Updated: ${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}</i>
-`,
+🕐 Last Update: <code>${new Date().toLocaleTimeString("en-US", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })}</code>
+💡 <i>Click refresh to resume live monitoring</i>
+        `,
         {
           parse_mode: "HTML",
           reply_markup: new InlineKeyboard()
             .text("🔄 Refresh", `remonitor_data_${tokenAddress}`)
             .url("📊 Chart", `https://dexscreener.com/solana/${tokenAddress}`)
+            .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
             .row()
             .text("💸 25%", `sell_ca_25_${tokenAddress}`)
             .text("💸 50%", `sell_ca_50_${tokenAddress}`)
             .text("💸 75%", `sell_ca_75_${tokenAddress}`)
             .text("💸 100%", `sell_ca_100_${tokenAddress}`)
             .row()
-            .row()
+            .text("🔄 Generate PNL", `generate_pnl_${tokenAddress}`)
             .url("🔗 Contract", `https://solscan.io/token/${tokenAddress}`)
-            .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
             .text("🏠 Menu", CallBackQueries.BACK),
         }
       );
@@ -2491,12 +2578,6 @@ bot.callbackQuery(
 );
 
 bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
-  await safeAnswerCallbackQuery(ctx, "🔄 Refreshing monitor data...");
-  const tokenAddress = ctx.match![1];
-  logger.info(
-    `[RefreshMonitorData] Refreshing data for token: ${tokenAddress}`
-  );
-
   // Get user ID from context
   const userId = ctx?.chat!.id.toString();
   const user = await getUser(userId);
@@ -2504,8 +2585,300 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
     await sendMessage(ctx, "Unrecognized user ❌");
     return;
   }
+  await safeAnswerCallbackQuery(ctx, "🔄 Refreshing monitor data...");
+
+  let tokenAddress: string;
+  const data = ctx.callbackQuery.data;
+
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+  } else {
+    // Handle legacy uncompressed format
+    tokenAddress = ctx.match![1];
+  }
+
+  if (!tokenAddress) {
+    await sendMessage(ctx, "❌ Invalid token address.");
+    return;
+  }
+
+  logger.info(
+    `[RefreshMonitorData] Refreshing data for token: ${tokenAddress}`
+  );
 
   try {
+    const buyerWallets = await getAllBuyerWallets(user.id);
+    const devWallet = await getDefaultDevWallet(String(user.id));
+    const devWalletAddress = devWallet;
+
+    // Get dev wallet token balance for this token
+    let devWalletTokenBalance = 0;
+    try {
+      devWalletTokenBalance = await getTokenBalance(
+        tokenAddress,
+        devWalletAddress
+      );
+    } catch (error) {
+      logger.warn(`Failed to get dev wallet token balance: ${error}`);
+    }
+
+    // Add dev wallet to buyer wallets if it has tokens
+    if (devWalletTokenBalance > 0) {
+      buyerWallets.push({
+        id: `dev-${user.id}`,
+        publicKey: devWalletAddress,
+        createdAt: new Date(),
+      });
+    }
+
+    logger.info(
+      `Buyer wallets: ${JSON.stringify(buyerWallets, null, 2)}, for user ${user.id}`
+    );
+
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    if (!tokenInfo) {
+      await sendMessage(ctx, "❌ Token not found.");
+      return;
+    }
+
+    if (buyerWallets.length === 0) {
+      await sendMessage(
+        ctx,
+        "❌ No buyer wallets found. Please add a buyer wallet first."
+      );
+      return;
+    }
+
+    // Calculate total snipes (buys) made by user's buyer wallets for this token
+    const { TransactionRecordModel } = await import("../backend/models");
+    const walletDetails = await Promise.all(
+      buyerWallets.map(async (wallet) => {
+        const transactions = await TransactionRecordModel.find({
+          tokenAddress,
+          walletPublicKey: wallet.publicKey,
+        });
+
+        // Get current token balance for this wallet
+        let currentTokenBalance = 0;
+        try {
+          currentTokenBalance = await getTokenBalance(
+            tokenAddress,
+            wallet.publicKey
+          );
+        } catch (error) {
+          logger.warn(
+            `Failed to get token balance for wallet ${wallet.publicKey}:`,
+            error
+          );
+        }
+
+        // Group transactions by type
+        const groupedTransactions = {
+          devBuys: transactions.filter(
+            (tx) => tx.transactionType === "dev_buy"
+          ),
+          devSells: transactions.filter(
+            (tx) => tx.transactionType === "dev_sell"
+          ),
+          snipeBuys: transactions.filter(
+            (tx) => tx.transactionType === "snipe_buy"
+          ),
+          snipeSells: transactions.filter(
+            (tx) => tx.transactionType === "wallet_sell"
+          ),
+        };
+
+        // Calculate totals for each category
+        const summary = {
+          devBuys: {
+            count: groupedTransactions.devBuys.length,
+            totalAmount: groupedTransactions.devBuys.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+            totalValue: groupedTransactions.devBuys.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+          },
+          devSells: {
+            count: groupedTransactions.devSells.length,
+            totalAmount: groupedTransactions.devSells.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+            totalValue: groupedTransactions.devSells.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+          },
+          snipeBuys: {
+            count: groupedTransactions.snipeBuys.length,
+            totalAmount: groupedTransactions.snipeBuys.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+            totalValue: groupedTransactions.snipeBuys.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+          },
+          snipeSells: {
+            count: groupedTransactions.snipeSells.length,
+            totalAmount: groupedTransactions.snipeSells.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+            totalValue: groupedTransactions.snipeSells.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+          },
+        };
+
+        return {
+          address: wallet.publicKey,
+          currentTokenBalance,
+          transactions: groupedTransactions,
+          summary,
+          totalTransactions: transactions.length,
+        };
+      })
+    );
+
+    // Calculate total initial (all buy transactions) and payout (all sell transactions)
+    const initial = walletDetails.reduce((total, wallet) => {
+      return (
+        total +
+        wallet.summary.devBuys.totalAmount +
+        wallet.summary.snipeBuys.totalAmount
+      );
+    }, 0);
+
+    const payout = walletDetails.reduce((total, wallet) => {
+      return (
+        total +
+        wallet.summary.devSells.totalAmount +
+        wallet.summary.snipeSells.totalAmount
+      );
+    }, 0);
+
+    // Calculate total supply (sum of all current token balances across wallets)
+    const totalSupply =
+      walletDetails.reduce((total, wallet) => {
+        return total + wallet.currentTokenBalance;
+      }, 0) / Math.pow(10, tokenInfo.baseToken.decimals);
+
+    // Calculate percentage of total token supply held
+    let supplyPercentage = 0;
+    let supplyPercentageText = "";
+
+    if (tokenInfo.birdeye.totalSupply && totalSupply > 0) {
+      // Convert supply to number (it might be a string)
+      const totalTokenSupply =
+        typeof tokenInfo.birdeye.totalSupply === "string"
+          ? parseFloat(tokenInfo.birdeye.totalSupply)
+          : tokenInfo.birdeye.totalSupply;
+
+      // Calculate percentage held
+      console.log(
+        `Total supply: ${totalSupply}, Total token supply: ${totalTokenSupply}`
+      );
+      supplyPercentage = (totalSupply / totalTokenSupply) * 100;
+      supplyPercentageText = `${supplyPercentage.toFixed(4)}%`;
+
+      logger.info(
+        `[TokenTrades] Supply calculation: ${totalSupply} / ${totalTokenSupply} = ${supplyPercentageText}`
+      );
+    }
+
+    // Calculate current worth of all tokens in SOL
+    const solPrice = await getCurrentSolPrice();
+    const currentPrice = tokenInfo.priceUsd || 0;
+    let totalCurrentWorthSol = 0;
+
+    if (currentPrice && solPrice) {
+      const priceInSol = currentPrice / solPrice;
+      totalCurrentWorthSol = totalSupply * priceInSol;
+
+      logger.info(
+        `[TokenTrades] Total tokens: ${totalSupply}, Price in SOL: ${priceInSol}, Worth: ${totalCurrentWorthSol} SOL`
+      );
+    } else {
+      logger.warn(
+        `[TokenTrades] Unable to calculate worth - currentPrice: ${currentPrice}, solPrice: ${solPrice}`
+      );
+    }
+
+    // Calculate PnL based on initial investment and current worth
+    const totalPnL = totalCurrentWorthSol + payout - initial;
+    const pnLPercentage =
+      initial > 0 ? ((totalPnL / initial) * 100).toFixed(2) : "0.00";
+    const pnLFormatted = `${totalPnL >= 0 ? "+" : ""}${totalPnL.toFixed(3)} SOL (${pnLPercentage}%)`;
+
+    const marketCap = formatUSD(tokenInfo.marketCap);
+    const price = tokenInfo.priceUsd;
+    const botUsername = bot.botInfo.username;
+    const referralLink = await generateReferralLink(user.id, botUsername);
+
+    // Calculate token age
+    let tokenAge = "Unknown";
+    try {
+      const { TransactionRecordModel } = await import("../backend/models");
+      const creationTransaction = await TransactionRecordModel.findOne({
+        tokenAddress: tokenAddress,
+        transactionType: "token_creation",
+      });
+
+      if (creationTransaction) {
+        const createdAt = creationTransaction.createdAt;
+        const now = new Date();
+        const diffMs = now.getTime() - createdAt.getTime();
+
+        // Convert to human readable format
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMinutes = Math.floor(
+          (diffMs % (1000 * 60 * 60)) / (1000 * 60)
+        );
+
+        if (diffHours > 0) {
+          tokenAge = `${diffHours}h ${diffMinutes}m`;
+        } else {
+          tokenAge = `${diffMinutes}m`;
+        }
+
+        logger.info(
+          `[TokenAge] Token ${tokenAddress} age calculated: ${tokenAge}`
+        );
+      } else {
+        // Fallback: check token's blockchain creation time if available
+        if (tokenInfo.createdAt) {
+          const createdAt = new Date(tokenInfo.createdAt);
+          const now = new Date();
+          const diffMs = now.getTime() - createdAt.getTime();
+
+          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+          const diffMinutes = Math.floor(
+            (diffMs % (1000 * 60 * 60)) / (1000 * 60)
+          );
+
+          if (diffHours > 0) {
+            tokenAge = `${diffHours}h ${diffMinutes}m`;
+          } else {
+            tokenAge = `${diffMinutes}m`;
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn(`Error calculating token age for ${tokenAddress}:`, error);
+      tokenAge = "Unknown";
+    }
+
     // Get the existing message to update
     const messageId = ctx.callbackQuery?.message?.message_id;
     if (!messageId) {
@@ -2513,60 +2886,45 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
       return;
     }
 
-    // Get fresh token info
-    const tokenInfo = await getTokenInfo(tokenAddress);
-    if (!tokenInfo) {
-      await sendMessage(ctx, "❌ Token not found or invalid address.");
-      return;
-    }
+    const updatedMessage = `
+🎯 <b>${tokenInfo.baseToken.symbol}</b> 🔗 <a href="${referralLink}">📢 Share & Earn</a> • ⏰ <code>${tokenAge}</code>
 
-    // Generate updated monitor message
-    const refreshTime = new Date().toLocaleTimeString("en-US", {
+📊 <b>Position Overview</b>
+┌─ 💰 Initial Investment: <code>${initial.toFixed(3)} SOL</code>
+├─ 💸 Total Sold: <code>${payout.toFixed(3)} SOL</code>
+├─ 🪙 Token Holdings: <code>${supplyPercentageText}</code>
+├─ 💎 Current Worth: <code>${totalCurrentWorthSol.toFixed(3)} SOL</code>
+└─ 📈 Total P&L: <b>${pnLFormatted}</b>
+
+💹 <b>Market Information</b>
+├─ 💵 Current Price: <code>$${Number(price).toFixed(5)}</code>
+└─ 🏦 Market Cap: <code>${marketCap}</code>
+
+🕐 Last Update: <code>${new Date().toLocaleTimeString("en-US", {
       hour12: false,
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
-    });
-
-    // Extract token name and symbol from the correct structure
-    const tokenName =
-      tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
-    const tokenSymbol =
-      tokenInfo.baseToken?.symbol || tokenInfo.symbol || "Unknown";
-
-    const monitorMessage = [
-      `📊 **Token Monitor**`,
-      ``,
-      `**Token:** ${tokenName} (${tokenSymbol})`,
-      `**Address:** \`${tokenAddress}\``,
-      `**Status:** Monitoring active`,
-      `**Mode:** scan`,
-      `**Last Updated:** ${refreshTime}`,
-      ``,
-      `**Market Data:**`,
-      `• Price: $${tokenInfo.priceUsd || "N/A"}`,
-      `• Market Cap: $${tokenInfo.marketCap ? tokenInfo.marketCap.toLocaleString() : "N/A"}`,
-      `• Volume (24h): $${tokenInfo.volume24h ? tokenInfo.volume24h.toLocaleString() : "N/A"}`,
-      `• Liquidity: $${tokenInfo.liquidity ? (typeof tokenInfo.liquidity === "object" ? tokenInfo.liquidity.usd?.toLocaleString() : tokenInfo.liquidity.toLocaleString()) : "N/A"}`,
-      ``,
-      `💡 **Tip:** Use /menu or /start to return to the main menu.`,
-    ].join("\n");
-
-    // Create keyboard with refresh and other options
-    const keyboard = new InlineKeyboard()
-      .text("🔄 Refresh", `remonitor_data_${tokenAddress}`)
-      .row()
-      .text(
-        "💸 Fund Token Wallets",
-        compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress)
-      )
-      .row()
-      .text("🔙 Back to Tokens", CallBackQueries.VIEW_TOKENS);
+    })}</code>
+💡 <i>Click refresh to resume live monitoring</i>
+    `;
 
     // Update the existing message instead of creating a new one
-    await ctx.api.editMessageText(ctx.chat!.id, messageId, monitorMessage, {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
+    await ctx.api.editMessageText(ctx.chat!.id, messageId, updatedMessage, {
+      parse_mode: "HTML",
+      reply_markup: new InlineKeyboard()
+        .text("🔄 Refresh", `remonitor_data_${tokenAddress}`)
+        .url("📊 Chart", `https://dexscreener.com/solana/${tokenAddress}`)
+        .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
+        .row()
+        .text("💸 25%", `sell_ca_25_${tokenAddress}`)
+        .text("💸 50%", `sell_ca_50_${tokenAddress}`)
+        .text("💸 75%", `sell_ca_75_${tokenAddress}`)
+        .text("💸 100%", `sell_ca_100_${tokenAddress}`)
+        .row()
+        .text("🔄 Generate PNL", `generate_pnl_${tokenAddress}`)
+        .url("🔗 Contract", `https://solscan.io/token/${tokenAddress}`)
+        .text("🏠 Menu", CallBackQueries.BACK),
     });
 
     logger.info(
@@ -2578,6 +2936,267 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
       ctx,
       "❌ Error refreshing monitor data. Please try again later."
     );
+  }
+});
+
+bot.callbackQuery(/^generate_pnl_(.+)$/, async (ctx) => {
+  const tradeId = ctx.match[1];
+  logger.info(`[GeneratePNL] Generating PNL card for trade ${tradeId}`);
+
+  try {
+    await ctx.answerCallbackQuery("Generating PNL card...");
+  } catch (error) {
+    logger.warn(`[GeneratePNL] Failed to answer callback query: ${error}`);
+    // Continue with the process even if callback answer fails
+  }
+
+  try {
+    const userId = ctx.chat?.id.toString();
+    if (!userId) {
+      await ctx.reply("❌ User ID not found.");
+      return;
+    }
+
+    const user = await getUser(userId);
+    if (!user) {
+      await ctx.reply("❌ User not found.");
+      return;
+    }
+
+    // Get trade record by ID
+    const trade = await TokenModel.findOne({ tokenAddress: tradeId });
+    console.log(`Trade record: ${trade}`);
+
+    if (!trade) {
+      await ctx.reply("❌ Token record not found.");
+      return;
+    }
+    if (trade.user.toString() !== user.id) {
+      await ctx.reply("❌ Not authorized to view this trade.");
+      return;
+    }
+
+    const tokenAddress = trade.tokenAddress;
+
+    const buyerWallets = await getAllBuyerWallets(user.id);
+    const devWallet = await getDefaultDevWallet(String(user.id));
+    const devWalletAddress = devWallet;
+
+    // Get dev wallet token balance for this token
+    let devWalletTokenBalance = 0;
+    try {
+      devWalletTokenBalance = await getTokenBalance(
+        tokenAddress,
+        devWalletAddress
+      );
+    } catch (error) {
+      logger.warn(`Failed to get dev wallet token balance: ${error}`);
+    }
+
+    // Add dev wallet to buyer wallets if it has tokens
+    if (devWalletTokenBalance > 0) {
+      buyerWallets.push({
+        id: `dev-${user.id}`,
+        publicKey: devWalletAddress,
+        createdAt: new Date(),
+      });
+    }
+
+    const walletDetails = await Promise.all(
+      buyerWallets.map(async (wallet) => {
+        const transactions = await TransactionRecordModel.find({
+          tokenAddress,
+          walletPublicKey: wallet.publicKey,
+        });
+
+        // Get current token balance for this wallet
+        let currentTokenBalance = 0;
+        try {
+          currentTokenBalance = await getTokenBalance(
+            tokenAddress,
+            wallet.publicKey
+          );
+        } catch (error) {
+          logger.warn(
+            `Failed to get token balance for wallet ${wallet.publicKey}:`,
+            error
+          );
+        }
+
+        // Group transactions by type
+        const groupedTransactions = {
+          devBuys: transactions.filter(
+            (tx) => tx.transactionType === "dev_buy"
+          ),
+          devSells: transactions.filter(
+            (tx) => tx.transactionType === "dev_sell"
+          ),
+          snipeBuys: transactions.filter(
+            (tx) => tx.transactionType === "snipe_buy"
+          ),
+          snipeSells: transactions.filter(
+            (tx) => tx.transactionType === "wallet_sell"
+          ),
+        };
+
+        // Calculate totals for each category
+        const summary = {
+          devBuys: {
+            count: groupedTransactions.devBuys.length,
+            totalAmount: groupedTransactions.devBuys.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+            totalValue: groupedTransactions.devBuys.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+          },
+          devSells: {
+            count: groupedTransactions.devSells.length,
+            totalAmount: groupedTransactions.devSells.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+            totalValue: groupedTransactions.devSells.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+          },
+          snipeBuys: {
+            count: groupedTransactions.snipeBuys.length,
+            totalAmount: groupedTransactions.snipeBuys.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+            totalValue: groupedTransactions.snipeBuys.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+          },
+          snipeSells: {
+            count: groupedTransactions.snipeSells.length,
+            totalAmount: groupedTransactions.snipeSells.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+            totalValue: groupedTransactions.snipeSells.reduce(
+              (sum, tx) => sum + (tx.amountSol || 0),
+              0
+            ),
+          },
+        };
+
+        return {
+          address: wallet.publicKey,
+          currentTokenBalance,
+          transactions: groupedTransactions,
+          summary,
+          totalTransactions: transactions.length,
+        };
+      })
+    );
+
+    // Calculate total initial (all buy transactions) and payout (all sell transactions)
+    const initial = walletDetails.reduce((total, wallet) => {
+      return (
+        total +
+        wallet.summary.devBuys.totalAmount +
+        wallet.summary.snipeBuys.totalAmount
+      );
+    }, 0);
+
+    const payout = walletDetails.reduce((total, wallet) => {
+      return (
+        total +
+        wallet.summary.devSells.totalAmount +
+        wallet.summary.snipeSells.totalAmount
+      );
+    }, 0);
+
+    const tokenInfo = await getTokenInfo(tokenAddress);
+    if (!tokenInfo) {
+      await ctx.reply("❌ Token information not available.");
+      return;
+    }
+
+    const totalSupply =
+      walletDetails.reduce((total, wallet) => {
+        return total + wallet.currentTokenBalance;
+      }, 0) / Math.pow(10, tokenInfo.baseToken.decimals);
+
+    // Calculate current worth of all tokens in SOL
+    const solPrice = await getCurrentSolPrice();
+    const currentPrice = tokenInfo.priceUsd || 0;
+    let totalCurrentWorthSol = 0;
+
+    if (currentPrice && solPrice) {
+      const priceInSol = currentPrice / solPrice;
+      totalCurrentWorthSol = totalSupply * priceInSol;
+
+      logger.info(
+        `[TokenTrades] Total tokens: ${totalSupply}, Price in SOL: ${priceInSol}, Worth: ${totalCurrentWorthSol} SOL`
+      );
+    } else {
+      logger.warn(
+        `[TokenTrades] Unable to calculate worth - currentPrice: ${currentPrice}, solPrice: ${solPrice}`
+      );
+    }
+
+    const totalPnL = totalCurrentWorthSol + payout - initial;
+    const pnLPercentage =
+      initial > 0 ? ((totalPnL / initial) * 100).toFixed(2) : "0.00";
+    const pnLFormatted = `${totalPnL >= 0 ? "+" : ""}${totalPnL.toFixed(3)} SOL (${pnLPercentage}%)`;
+
+    // const pnl = `${newPnl.toFixed(2)} %`;
+    const tokenSymbol = tokenInfo?.baseToken.symbol || "Unknown";
+    const marketCap = formatUSD(tokenInfo.marketCap || 0);
+    const price = +0;
+
+    // const pnlPercent = totalInvested > 0 ? (pnlSol / totalInvested) * 100 : 0;
+
+    // Prepare data for PNL card generation
+    const pnlCardData = {
+      tokenSymbol,
+      tokenName: tokenSymbol, // Use symbol as name for now
+      positionType: "LONG" as const,
+      pnlValue: totalCurrentWorthSol,
+      roi: Math.abs(Number(pnLPercentage)),
+      entryPrice: 0,
+      currentPrice: +price,
+      positionSize: `${initial.toFixed(3)} SOL`,
+      marketCap,
+      openedTime: "",
+      username: user.userName || "Unknown",
+      isProfit: totalCurrentWorthSol >= initial,
+    };
+
+    // Generate PNL card image buffer
+    const pnlCardBuffer = await htmlToJpg(pnlCardData);
+
+    const pnlKeyboard = new InlineKeyboard()
+      .text("🔄 Refresh PNL", `generate_pnl_${tokenAddress}`)
+      .text(
+        "💸 Sell Token",
+        `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}_0`
+      );
+
+    const message = await ctx.replyWithPhoto(new InputFile(pnlCardBuffer), {
+      caption: `📊 PNL Card for ${tokenSymbol}`,
+      reply_markup: pnlKeyboard,
+    });
+
+    lastMessageMap.set(String(userId), {
+      chatId: userId,
+      messageId: message.message_id,
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    logger.error(
+      `[GeneratePNL] Error generating PNL card for trade ${tradeId}:`,
+      error
+    );
+    await ctx.reply("❌ Error generating PNL card. Please try again later.");
   }
 });
 
@@ -2753,59 +3372,59 @@ Use the buttons below to interact with this token
       });
     }
 
-    if (allWallets.length > 0) {
-      const balancePromises = allWallets.map(async (wallet) => {
-        try {
-          const [solBalanceResult, tokenBalanceResult] =
-            await Promise.allSettled([
-              getSolBalance(wallet.publicKey),
-              checkSellAmountWithoutDecimals(token.address, wallet.publicKey),
-            ]);
+    //     if (allWallets.length > 0) {
+    //       const balancePromises = allWallets.map(async (wallet) => {
+    //         try {
+    //           const [solBalanceResult, tokenBalanceResult] =
+    //             await Promise.allSettled([
+    //               getSolBalance(wallet.publicKey),
+    //               checkSellAmountWithoutDecimals(token.address, wallet.publicKey),
+    //             ]);
 
-          const solBalance =
-            solBalanceResult.status === "fulfilled"
-              ? solBalanceResult.value
-              : 0;
-          const tokenBalance =
-            tokenBalanceResult.status === "fulfilled"
-              ? tokenBalanceResult.value
-              : 0;
+    //           const solBalance =
+    //             solBalanceResult.status === "fulfilled"
+    //               ? solBalanceResult.value
+    //               : 0;
+    //           const tokenBalance =
+    //             tokenBalanceResult.status === "fulfilled"
+    //               ? tokenBalanceResult.value
+    //               : 0;
 
-          const truncatedName =
-            wallet.name.length > 8
-              ? `${wallet.name.substring(0, 7)}...`
-              : wallet.name.padEnd(8);
+    //           const truncatedName =
+    //             wallet.name.length > 8
+    //               ? `${wallet.name.substring(0, 7)}...`
+    //               : wallet.name.padEnd(8);
 
-          const tokenAmount =
-            tokenBalance > 0
-              ? `${formatUSD(tokenBalance).replace("$", "")}`
-              : "0";
+    //           const tokenAmount =
+    //             tokenBalance > 0
+    //               ? `${formatUSD(tokenBalance).replace("$", "")}`
+    //               : "0";
 
-          return `<code>${truncatedName}| ${tokenAmount.padEnd(12)}| ${solBalance.toFixed(3)}</code>`;
-        } catch (error) {
-          const truncatedName =
-            wallet.name.length > 8
-              ? `${wallet.name.substring(0, 7)}...`
-              : wallet.name.padEnd(8);
-          return `<code>${truncatedName}| 0 (0%)      | 0</code>`;
-        }
-      });
+    //           return `<code>${truncatedName}| ${tokenAmount.padEnd(12)}| ${solBalance.toFixed(3)}</code>`;
+    //         } catch (error) {
+    //           const truncatedName =
+    //             wallet.name.length > 8
+    //               ? `${wallet.name.substring(0, 7)}...`
+    //               : wallet.name.padEnd(8);
+    //           return `<code>${truncatedName}| 0 (0%)      | 0</code>`;
+    //         }
+    //       });
 
-      const balanceLines = await Promise.all(balancePromises);
+    //       const balanceLines = await Promise.all(balancePromises);
 
-      walletsBalanceSection = `
-<blockquote expandable><b>💰 Balances - Tap to expand</b>
-<code>Wallet   | ${token.symbol.padEnd(8)} | SOL</code>
-<code>─────────|${Array(token.symbol.length + 3)
-        .fill("─")
-        .join("")}|──────</code>
-${balanceLines.join("\n")}
-</blockquote>`;
-    } else {
-      walletsBalanceSection = `<pre class="tg-spoiler"><b>💰 Balances</b>
-  <code>No wallets found</code>
-  </pre>`;
-    }
+    //       walletsBalanceSection = `
+    // <blockquote expandable><b>💰 Balances - Tap to expand</b>
+    // <code>Wallet   | ${token.symbol.padEnd(8)} | SOL</code>
+    // <code>─────────|${Array(token.symbol.length + 3)
+    //         .fill("─")
+    //         .join("")}|──────</code>
+    // ${balanceLines.join("\n")}
+    // </blockquote>`;
+    //     } else {
+    //       walletsBalanceSection = `<pre class="tg-spoiler"><b>💰 Balances</b>
+    //   <code>No wallets found</code>
+    //   </pre>`;
+    //     }
   } catch (error) {
     console.warn("Could not fetch wallet balances:", error);
     walletsBalanceSection = `<pre class="tg-spoiler"><b>💰 Balances</b>
@@ -2825,9 +3444,30 @@ ${balanceLines.join("\n")}
   );
   let supplyPercentageSection = "";
   if (supplyData && supplyData.totalBalance > 0) {
+    // Get dev wallet balance to include in holdings
+    let devWalletBalance = 0;
+    let devWalletText = "";
+
+    try {
+      const devWalletAddress = await getDefaultDevWallet(String(user.id));
+      devWalletBalance = await getTokenBalance(token.address, devWalletAddress);
+
+      if (devWalletBalance > 0) {
+        const formattedDevBalance = (
+          devWalletBalance / Math.pow(10, token.decimals || 6)
+        ).toLocaleString(undefined, {
+          maximumFractionDigits: 2,
+        });
+        devWalletText = `\n└─ <b>Dev Wallet:</b> ${formattedDevBalance} tokens`;
+      }
+    } catch (error) {
+      logger.warn(`Error checking dev wallet balance for holdings: ${error}`);
+    }
+
     supplyPercentageSection = `
-📊 Your Supply Ownership: ${supplyData.supplyPercentageFormatted} of total supply
-💰 Total Holdings: ${supplyData.totalBalanceFormatted} tokens across ${supplyData.walletsWithBalance} wallet(s)`;
+├─ <b>Ownership:</b> ${supplyData.supplyPercentageFormatted} of total supply
+├─ <b>Total Tokens:</b> ${supplyData.totalBalanceFormatted}
+├─ <b>Wallets:</b> ${supplyData.walletsWithBalance} wallet(s) with balance${devWalletText}`;
   }
 
   return `
@@ -2841,7 +3481,8 @@ ${balanceLines.join("\n")}
 ├─ 🏦 Market Cap: <code>${marketCapText}</code>
 ├─ 📈 Volume (24h): <code>${volumeText}</code>
 └─ 💧 Liquidity: <code>${liquidityText}</code>
-${supplyPercentageSection ? `\n📊 <b>Holdings</b>\n├─ <b>Ownership:</b> ${supplyData.supplyPercentageFormatted} of total supply\n└─ <b>Total:</b> ${supplyData.totalBalanceFormatted} tokens across ${supplyData.walletsWithBalance} wallet(s)` : ""}${walletsBalanceSection}
+${supplyPercentageSection ? `\n📊 <b>Holdings</b>${supplyPercentageSection}` : ""}${walletsBalanceSection}
+
 🔗 <b>External Links</b>
 ${linksHtml}
 
