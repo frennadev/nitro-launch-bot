@@ -277,8 +277,7 @@ const createTokenConversation = async (
       socialsInfo += `🌐 <b>Website:</b> <a href="${website}">Link</a>\n`;
     }
 
-    await sendMessage(
-      ctx,
+    await ctx.reply(
       `🎉 <b>Token Created Successfully!</b>
 
 🚀 <b>Platform:</b> <code>PumpFun</code>
@@ -317,8 +316,7 @@ ${socialsInfo ? `🔗 <b>Social Links:</b>\n${socialsInfo}` : ""}
       socialsInfo += `🌐 <b>Website:</b> <a href="${website}">Link</a>\n`;
     }
 
-    await sendMessage(
-      ctx,
+    await ctx.reply(
       `🎉 <b>Token Created Successfully!</b>
 
 🚀 <b>Platform:</b> <code>LetsBonk (Raydium Launch Lab)</code>
