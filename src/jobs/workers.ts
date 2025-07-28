@@ -288,16 +288,17 @@ export const sellDevWorker = new Worker<SellDevJob>(
 
       // Send detailed notification with enhanced formatting
       await sendNotification(
+        bot,
         data.userChatId,
-        `🎉 **Dev Sell Completed Successfully\\!**\n\n` +
-          `🎯 **Sale Details:**\n` +
-          `   • **Percentage:** ${data.sellPercent}%\n` +
-          `   • **Tokens Sold:** ${tokensSoldFormatted.replace(/\./g, "\.")} tokens\n` +
-          `   • **SOL Received:** ${sellSummary.solReceived.toFixed(6).replace(/\./g, "\.")} SOL\n\n` +
-          `📊 **Overall Performance:**\n` +
-          `   • **Total P&L:** ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "\\+" : "\\-"}${Math.abs(sellSummary.netProfitLoss).toFixed(6).replace(/\./g, "\.")} SOL\n` +
-          `   • **Return:** ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "\\+" : "\\-"}${Math.abs(sellSummary.profitLossPercentage).toFixed(1).replace(/\./g, "\.")}%\n\n` +
-          `🔗 **[View Transaction](https://solscan\\.io/tx/${result.signature})**`
+        `🎉 <b>Dev Sell Completed Successfully!</b>\n\n` +
+          `🎯 <b>Sale Details:</b>\n` +
+          `   • <b>Percentage:</b> ${data.sellPercent}%\n` +
+          `   • <b>Tokens Sold:</b> ${tokensSoldFormatted} tokens\n` +
+          `   • <b>SOL Received:</b> ${sellSummary.solReceived.toFixed(6)} SOL\n\n` +
+          `📊 <b>Overall Performance:</b>\n` +
+          `   • <b>Total P&L:</b> ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "+" : "-"}${Math.abs(sellSummary.netProfitLoss).toFixed(6)} SOL\n` +
+          `   • <b>Return:</b> ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "+" : ""}${Math.abs(sellSummary.profitLossPercentage).toFixed(1)}%\n\n` +
+          `🔗 <b><a href="https://solscan.io/tx/${result.signature}">View Transaction</a></b>`
       );
     } catch (error: any) {
       logger.error(

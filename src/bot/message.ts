@@ -4,6 +4,12 @@ import { escape, compressCallbackData, createSafeCallbackData } from "./utils";
 import { getTokenInfo, calculateTokenHoldingsWorth } from "../backend/utils";
 import { getAccurateSpendingStats } from "../backend/functions-main";
 import { InlineKeyboard } from "grammy";
+import { Api } from "grammy";
+
+// Define BotInterface for type compatibility
+interface BotInterface {
+  api: Api;
+}
 
 // Add a new callback for refresh functionality
 export enum LaunchMessageCallbacks {
@@ -460,6 +466,10 @@ export const sendLaunchFailureNotification = async (
   });
 };
 
-export const sendNotification = async (chatId: number, message: string) => {
-  await bot.api.sendMessage(chatId, message, { parse_mode: "MarkdownV2" });
+export const sendNotification = async (
+  bot: BotInterface,
+  chatId: number,
+  message: string
+) => {
+  await bot.api.sendMessage(chatId, message, { parse_mode: "HTML" });
 };
