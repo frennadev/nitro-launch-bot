@@ -238,6 +238,7 @@ const launchTokenConversation = async (
     await conversation.halt();
     return;
   }
+  let totalBalance = 0;
 
   // Store the selected launch mode
   let launchMode: "normal" | "prefunded";
@@ -263,7 +264,6 @@ const launchTokenConversation = async (
 
     // Get balances for all buyer wallets
     let walletList = "";
-    let totalBalance = 0;
 
     for (let i = 0; i < buyerWallets.length; i++) {
       const wallet = buyerWallets[i];
@@ -618,9 +618,10 @@ Your token launch has been successfully resubmitted using your previous paramete
       buyerWallets.length
     );
 
-    await sendMessage(
-      ctx,
-      `💰 <b>Enter Buy Amount</b>
+    buyAmountLoop: while (true) {
+      await sendMessage(
+        ctx,
+        `💰 <b>Enter Buy Amount</b>
 
 📊 <b>Wallet Configuration:</b>
 • <b>Current Wallets:</b> ${buyerWallets.length}/40
@@ -630,13 +631,12 @@ Your token launch has been successfully resubmitted using your previous paramete
 💡 <b>Please enter a value between 0.1 and ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</b>
 
 <i>💭 This is the total SOL amount that will be used to purchase tokens across all your buyer wallets.</i>`,
-      {
-        parse_mode: "HTML",
-        reply_markup: cancelKeyboard,
-      }
-    );
+        {
+          parse_mode: "HTML",
+          reply_markup: cancelKeyboard,
+        }
+      );
 
-    buyAmountLoop: while (true) {
       if (launchMode === "prefunded") {
         break;
       }
@@ -919,6 +919,10 @@ Please enter a smaller buy amount:`,
           }
         }
       }
+    }
+
+    if (buyAmount == 0) {
+      buyAmount = totalBalance.toFixed(4);
     }
 
     // -------- GET DEV BUY AMOUNT --------
