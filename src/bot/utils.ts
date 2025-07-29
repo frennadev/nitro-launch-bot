@@ -276,7 +276,7 @@ export function validateCallbackData(data: string): boolean {
 // Clean and validate token address
 export function cleanTokenAddress(tokenAddress: string): string {
   // Remove any "wallets_" prefix that might have been accidentally added
-  if (tokenAddress.startsWith("wallets_")) {
+  if (typeof tokenAddress === "string" && tokenAddress.startsWith("wallets_")) {
     const cleaned = tokenAddress.substring(8); // Remove "wallets_" prefix
     console.warn(
       `[cleanTokenAddress] Removed 'wallets_' prefix from token address: ${cleaned}`
