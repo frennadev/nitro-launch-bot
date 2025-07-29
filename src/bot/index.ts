@@ -530,28 +530,28 @@ bot.use(
 // Message cleaner to delete user messages after 1 minute
 const messageCleanupQueue = new Map<string, Set<number>>();
 
-bot.use(async (ctx, next) => {
-  if (ctx.message?.text) {
-    setImmediate(() =>
-      logger.info(
-        `[DebugMiddleware] ALL text message received: "${ctx.message?.text}" from user ${ctx.chat?.id}`
-      )
-    );
-    const detectedAddresses = TokenInfoService.detectTokenAddresses(
-      ctx.message.text
-    );
-    if (ctx.message.text.startsWith("/") || detectedAddresses.length > 0) {
-      logger.info(ctx.conversation.active());
-      if (ctx.conversation.active()) {
-        logger.info(
-          `[DebugMiddleware] Exiting all conversations for user ${ctx.chat?.id}`
-        );
-        await ctx.conversation.exitAll();
-      }
-    }
-  }
-  return next();
-});
+// bot.use(async (ctx, next) => {
+//   if (ctx.message?.text) {
+//     setImmediate(() =>
+//       logger.info(
+//         `[DebugMiddleware] ALL text message received: "${ctx.message?.text}" from user ${ctx.chat?.id}`
+//       )
+//     );
+//     const detectedAddresses = TokenInfoService.detectTokenAddresses(
+//       ctx.message.text
+//     );
+//     if (ctx.message.text.startsWith("/") || detectedAddresses.length > 0) {
+//       logger.info(ctx.conversation.active());
+//       if (ctx.conversation.active()) {
+//         logger.info(
+//           `[DebugMiddleware] Exiting all conversations for user ${ctx.chat?.id}`
+//         );
+//         await ctx.conversation.exitAll();
+//       }
+//     }
+//   }
+//   return next();
+// });
 
 bot.use(async (ctx, next) => {
   // Store user messages for cleanup
@@ -592,51 +592,51 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
-bot.use(async (ctx, next) => {
-  if (ctx.message && ctx.message.text) {
-    logger.info(
-      `[DebugMiddleware] Received text message: "${ctx.message.text}" from user ${ctx.chat?.id}`
-    );
-    const detectedAddresses = TokenInfoService.detectTokenAddresses(
-      ctx.message.text
-    );
+// bot.use(async (ctx, next) => {
+//   if (ctx.message && ctx.message.text) {
+//     logger.info(
+//       `[DebugMiddleware] Received text message: "${ctx.message.text}" from user ${ctx.chat?.id}`
+//     );
+//     const detectedAddresses = TokenInfoService.detectTokenAddresses(
+//       ctx.message.text
+//     );
 
-    logger.info(
-      `[DebugMiddleware] Solana address match: ${
-        detectedAddresses.length > 0 ? detectedAddresses[0] : "None"
-      }`
-    );
-    if (
-      detectedAddresses.length > 0
-      // (ctx.message.text.startsWith("/") && !ctx.callbackQuery)
-    ) {
-      logger.info(
-        `[MessageHandler] Detected Solana address, exiting conversations: "${ctx.message.text}"`
-      );
+//     logger.info(
+//       `[DebugMiddleware] Solana address match: ${
+//         detectedAddresses.length > 0 ? detectedAddresses[0] : "None"
+//       }`
+//     );
+//     if (
+//       detectedAddresses.length > 0
+//       // (ctx.message.text.startsWith("/") && !ctx.callbackQuery)
+//     ) {
+//       logger.info(
+//         `[MessageHandler] Detected Solana address, exiting conversations: "${ctx.message.text}"`
+//       );
 
-      const conv = ctx.conversation.active();
+//       const conv = ctx.conversation.active();
 
-      const conversationName = conv;
+//       const conversationName = conv;
 
-      if (conv) {
-        for (const key of Object.keys(conv)) {
-          await ctx.conversation.exit(key);
-          logger.info(
-            `[MessageHandler] Exiting conversation key: ${key} for user ${ctx.chat?.id}`
-          );
-        }
+//       if (conv) {
+//         for (const key of Object.keys(conv)) {
+//           await ctx.conversation.exit(key);
+//           logger.info(
+//             `[MessageHandler] Exiting conversation key: ${key} for user ${ctx.chat?.id}`
+//           );
+//         }
 
-        // After exiting conversations, continue to intended text handlers
-        logger.info(
-          `[MessageHandler] Conversations exited, processing text message: "${ctx.message?.text}"`
-        );
-        return next();
-      }
-    }
-  }
+//         // After exiting conversations, continue to intended text handlers
+//         logger.info(
+//           `[MessageHandler] Conversations exited, processing text message: "${ctx.message?.text}"`
+//         );
+//         return next();
+//       }
+//     }
+//   }
 
-  return next();
-});
+//   return next();
+// });
 
 // Middleware to patch reply/sendMessage and hook deletion
 // bot.use(async (ctx, next) => {

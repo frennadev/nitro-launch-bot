@@ -18,7 +18,7 @@ export const handleViewTokenTrades = async (
   try {
     const user = await getUser(userId);
     if (!user) {
-      return await ctx.reply("❌ User not found. Please try again later.");
+      return await sendMessage(ctx,"❌ User not found. Please try again later.");
     }
 
     // Get token info
@@ -89,7 +89,7 @@ export const handleViewMonitorPage = async (
 ) => {
   const userId = ctx.chat?.id.toString();
   if (!userId) {
-    await ctx.reply("❌ User ID not found.");
+    await sendMessage(ctx,"❌ User ID not found.");
     return;
   }
 
@@ -106,7 +106,7 @@ export const handleViewMonitorPage = async (
   const index = indexRaw ? parseInt(indexRaw) : undefined;
 
   if (!tokenAddress) {
-    await ctx.reply("❌ Invalid token address.");
+    await sendMessage(ctx,"❌ Invalid token address.");
     return;
   }
 
@@ -124,6 +124,6 @@ export const handleViewMonitorPage = async (
       return; // Silently ignore expired callbacks
     }
 
-    await ctx.reply("❌ Error fetching trade data. Please try again later.");
+    await sendMessage(ctx,"❌ Error fetching trade data. Please try again later.");
   }
 };
