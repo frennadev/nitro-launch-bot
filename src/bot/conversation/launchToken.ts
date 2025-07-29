@@ -922,7 +922,7 @@ Please enter a smaller buy amount:`,
     }
 
     if (buyAmount == 0) {
-      buyAmount = totalBalance.toFixed(4);
+      buyAmount = Number(totalBalance.toFixed(4));
     }
 
     // -------- GET DEV BUY AMOUNT --------
@@ -984,6 +984,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
           `✅ Developer buy amount set to <b>${devBuy} SOL</b>`,
           { parse_mode: "HTML" }
         );
+        break;
       }
 
       if (devBuyCtx.message?.text) {
