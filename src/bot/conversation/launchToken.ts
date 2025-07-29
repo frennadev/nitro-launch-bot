@@ -150,31 +150,7 @@ const launchTokenConversation = async (
   tokenAddress: string
 ) => {
   await safeAnswerCallbackQuery(ctx);
-  // Show initial loading message
-  await sendMessage(
-    ctx,
-    `<b>🚀 Token Launch Initiated</b>
 
-<b>📋 Token Details:</b>
-<code>${tokenAddress}</code>
-
-<b>⏳ Status:</b> <i>Initializing launch process...</i>
-
-<b>🔄 Next Steps:</b>
-• Validating user permissions
-• Checking token status
-• Verifying wallet balances
-• Configuring launch parameters
-
-<i>💡 You can use /menu or /start to return to the main menu at any time.</i>`,
-    {
-      parse_mode: "HTML",
-      reply_markup: new InlineKeyboard().text(
-        "❌ Cancel Launch",
-        LaunchCallBackQueries.CANCEL
-      ),
-    }
-  );
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
@@ -188,6 +164,195 @@ const launchTokenConversation = async (
   const isRetry = existingRetryData !== null;
 
   console.log("Launch Token - Retry check:", { isRetry, existingRetryData });
+  // Show initial loading message
+  //   await ctx.reply(
+  //     `<b>🚀 Token Launch Initiated</b>
+
+  // <b>📋 Token Details:</b>
+  // <code>${tokenAddress}</code>
+
+  // <b>⏳ Status:</b> <i>Initializing launch process...</i>
+
+  // <b>🔄 Next Steps:</b>
+  // • Select launch mode
+  // • Validate user permissions
+  // • Check token status
+  // • Verify wallet balances
+  // • Configure launch parameters
+
+  // <i>💡 You can use /menu or /start to return to the main menu at any time.</i>`,
+  //     {
+  //       parse_mode: "HTML",
+  //       reply_markup: new InlineKeyboard().text(
+  //         "❌ Cancel Launch",
+  //         LaunchCallBackQueries.CANCEL
+  //       ),
+  //     }
+  //   );
+
+  // Prompt for launch mode selection
+  const launchModeKeyboard = new InlineKeyboard()
+    .text("🎯 Normal Launch", "NORMAL_LAUNCH")
+    .row()
+    .text("💰 Prefunded Launch", "PREFUNDED_LAUNCH")
+    .row()
+    .text("❌ Cancel", LaunchCallBackQueries.CANCEL);
+
+  await sendMessage(
+    ctx,
+    `<b>🚀 Token Launch Initiated</b>
+
+<b>📋 Token Details:</b>
+<code>${tokenAddress}</code>
+
+<b>⏳ Status:</b> <i>Initializing launch process...</i>
+
+<b>🚀 Choose Your Launch Mode</b>
+
+<b>🎯 Normal Launch:</b>
+• Standard launch process
+• Funds distributed during launch
+• Real-time wallet management
+
+<b>💰 Prefunded Launch:</b>
+• Pre-allocated funding to wallets
+• Faster execution speed
+• Optimized for high-volume launches
+
+<b>🔄 Next Steps:</b>
+• Select launch mode
+• Validate user permissions
+• Check token status
+• Verify wallet balances
+• Configure launch parameters
+
+<i>💡 You can use /menu or /start to return to the main menu at any time.</i>`,
+    { parse_mode: "HTML", reply_markup: launchModeKeyboard }
+  );
+
+  const launchModeChoice = await conversation.waitFor("callback_query:data");
+  await safeAnswerCallbackQuery(launchModeChoice);
+
+  if (launchModeChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+    await sendMessage(ctx, "Launch cancelled.");
+    await conversation.halt();
+    return;
+  }
+
+  // Store the selected launch mode
+  let launchMode: "normal" | "prefunded";
+  if (launchModeChoice.callbackQuery?.data === "NORMAL_LAUNCH") {
+    launchMode = "normal";
+    await sendMessage(
+      ctx,
+      "✅ Normal Launch mode selected. Proceeding with standard launch process..."
+    );
+  } else if (launchModeChoice.callbackQuery?.data === "PREFUNDED_LAUNCH") {
+    launchMode = "prefunded";
+
+    // Get all buyer wallets and their balances
+    const buyerWallets = await getAllBuyerWallets(user.id);
+    if (buyerWallets.length === 0) {
+      await sendMessage(
+        ctx,
+        "❌ No buyer wallets found. Please add buyer wallets in Wallet Config first."
+      );
+      await conversation.halt();
+      return;
+    }
+
+    // Get balances for all buyer wallets
+    let walletList = "";
+    let totalBalance = 0;
+
+    for (let i = 0; i < buyerWallets.length; i++) {
+      const wallet = buyerWallets[i];
+      const balance = await getWalletBalance(wallet.publicKey);
+      totalBalance += balance;
+
+      // Truncate wallet address to first 8 and last 4 characters
+      const truncatedAddress = `${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-4)}`;
+
+      walletList += `${i + 1}. <code>${truncatedAddress}</code> - <code>${balance.toFixed(4)} SOL</code>\n`;
+    }
+
+    await sendMessage(
+      ctx,
+      `✅ <b>Prefunded Launch Mode Selected</b>
+
+<b>💳 Your Buyer Wallets:</b>
+
+${walletList}
+<b>📊 Summary:</b>
+• <b>Total Wallets:</b> <code>${buyerWallets.length}</code>
+• <b>Combined Balance:</b> <code>${totalBalance.toFixed(4)} SOL</code>
+
+<b>⚠️ Important Instructions:</b>
+• Fund the wallets you wish to use for this launch
+• Each wallet will purchase tokens with its available balance
+• Ensure wallets have sufficient SOL for your desired buy amounts
+• Leave some SOL in each wallet for transaction fees (~0.005 SOL per wallet)
+
+<b>🚀 Next:</b> Once you've funded your desired wallets, we'll proceed with the launch configuration.
+
+<b>📋 Full wallet addresses:</b>
+${buyerWallets.map((wallet, i) => `${i + 1}. <code>${wallet.publicKey}</code>`).join("\n")}
+
+<i>💡 Tap any wallet address above to copy it for funding.</i>`,
+      {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard()
+          .text("▶️ Continue", "CONTINUE_PREFUNDED")
+          .row()
+          .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
+      }
+    );
+
+    const continueChoice = await conversation.waitFor("callback_query:data");
+    await safeAnswerCallbackQuery(continueChoice);
+
+    if (continueChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+      await sendMessage(ctx, "Launch cancelled.");
+      await conversation.halt();
+      return;
+    }
+
+    if (continueChoice.callbackQuery?.data === "CONTINUE_PREFUNDED") {
+      await sendMessage(
+        ctx,
+        "✅ Proceeding with prefunded launch configuration..."
+      );
+    }
+  } else {
+    await sendMessage(ctx, "❌ Invalid launch mode selected.");
+    await conversation.halt();
+    return;
+  }
+  //   await sendMessage(
+  //     ctx,
+  //     `<b>🚀 Token Launch Initiated</b>
+  // ${launchMode === "normal" ? "🎯 Normal Launch mode selected." : "💰 Prefunded Launch mode selected."}
+
+  // <b>📋 Token Details:</b>
+  // <code>${tokenAddress}</code>
+
+  // <b>⏳ Status:</b> <i>Initializing launch process...</i>
+
+  // <b>🔄 Next Steps:</b>
+  // • Validating user permissions
+  // • Checking token status
+  // • Verifying wallet balances
+  // • Configuring launch parameters
+
+  // <i>💡 You can use /menu or /start to return to the main menu at any time.</i>`,
+  //     {
+  //       parse_mode: "HTML",
+  //       reply_markup: new InlineKeyboard().text(
+  //         "❌ Cancel Launch",
+  //         LaunchCallBackQueries.CANCEL
+  //       ),
+  //     }
+  //   );
 
   // -------- VALIDATE TOKEN ----------
   let token = await getUserToken(user.id, tokenAddress);
@@ -472,6 +637,10 @@ Your token launch has been successfully resubmitted using your previous paramete
     );
 
     buyAmountLoop: while (true) {
+      if (launchMode === "prefunded") {
+        break;
+      }
+
       const buyAmountCtx = await conversation.waitFor([
         "message:text",
         "callback_query:data",
@@ -916,7 +1085,13 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
 
     // Use backend function to handle mixing and launch
     const { launchBonkToken } = await import("../../backend/functions");
-    result = await launchBonkToken(user.id, tokenAddress, buyAmount, devBuy);
+    result = await launchBonkToken(
+      user.id,
+      tokenAddress,
+      buyAmount,
+      devBuy,
+      launchMode
+    );
 
     if (result.success) {
       await checksLoading.update(
@@ -958,7 +1133,8 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
         .privateKey,
       buyerKeys,
       devBuy,
-      buyAmount
+      buyAmount,
+      launchMode
     );
 
     if (!result.success) {

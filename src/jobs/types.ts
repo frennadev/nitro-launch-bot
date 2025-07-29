@@ -13,6 +13,7 @@ export type LaunchTokenJob = {
   buyerWallets: string[];
   buyDistribution: number[];
   launchStage: number;
+  mode: "normal" | "prefunded";
 };
 
 export type PrepareTokenLaunchJob = {
@@ -28,6 +29,7 @@ export type PrepareTokenLaunchJob = {
   buyAmount: number;
   devBuy: number;
   buyerWallets: string[];
+  mode: "normal" | "prefunded";
 };
 
 export type ExecuteTokenLaunchJob = {
@@ -43,6 +45,7 @@ export type ExecuteTokenLaunchJob = {
   devBuy: number;
   buyerWallets: string[];
   launchStage: number;
+  mode: "normal" | "prefunded";
 };
 
 export type SellDevJob = {

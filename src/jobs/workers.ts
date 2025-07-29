@@ -45,6 +45,8 @@ import {
   updateMixerStatus,
   startMixerHeartbeat,
 } from "../bot/loading";
+import { Keypair } from "@solana/web3.js";
+import { connection } from "../service/config";
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
@@ -598,20 +600,23 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
 
       // Update loading state - Phase 1: Collecting platform fee
       await updateLoadingState(loadingKey, 1);
-
-      // Update loading state - Phase 2: Initializing mixer
-      await updateLoadingState(loadingKey, 2);
-
-      // Start heartbeat for long mixing operations (with safety wrapper)
       let heartbeatInterval: NodeJS.Timeout | null = null;
-      try {
-        heartbeatInterval = startMixerHeartbeat(loadingKey, 15);
-      } catch (heartbeatError) {
-        // If heartbeat fails to start, log but continue with operation
-        logger.warn(
-          "Failed to start mixer heartbeat, continuing without it:",
-          heartbeatError
-        );
+
+      if (data.mode === "normal") {
+        // Update loading state - Phase 2: Initializing mixer
+        await updateLoadingState(loadingKey, 2);
+
+        // Start heartbeat for long mixing operations (with safety wrapper)
+
+        try {
+          heartbeatInterval = startMixerHeartbeat(loadingKey, 15);
+        } catch (heartbeatError) {
+          // If heartbeat fails to start, log but continue with operation
+          logger.warn(
+            "Failed to start mixer heartbeat, continuing without it:",
+            heartbeatError
+          );
+        }
       }
 
       try {
@@ -624,7 +629,8 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
           data.tokenSymbol,
           data.buyAmount,
           data.devBuy,
-          loadingKey // Pass loading key for progress tracking
+          loadingKey, // Pass loading key for progress tracking
+          data.mode
         );
       } finally {
         // Safely clear heartbeat interval
@@ -651,7 +657,8 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       const executeResult = await enqueueExecuteTokenLaunch(
         data.userId,
         data.userChatId,
-        data.tokenAddress
+        data.tokenAddress,
+        data.mode
       );
 
       if (!executeResult.success) {
@@ -718,10 +725,27 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
 
       // Generate buy distribution for sequential buying
       const { generateBuyDistribution } = await import("../backend/functions");
-      const buyDistribution = generateBuyDistribution(
-        data.buyAmount,
-        data.buyerWallets.length
-      );
+      // Get SOL balance of each buyer wallet
+      const bs58 = await import("bs58");
+
+      const buyDistribution =
+        data.mode === "normal"
+          ? generateBuyDistribution(data.buyAmount, data.buyerWallets.length)
+          : await Promise.all(
+              data.buyerWallets.map(async (walletPrivateKey: string) => {
+                try {
+                  const wallet = Keypair.fromSecretKey(
+                    bs58.default.decode(walletPrivateKey)
+                  );
+                  const balance = await connection.getBalance(wallet.publicKey);
+                  const balanceInSol = balance / 1e9; // Convert lamports to SOL
+                  return Math.max(0, balanceInSol - 0.05); // Leave 0.05 SOL room for fees
+                } catch (error) {
+                  logger.warn(`Failed to get balance for wallet: ${error}`);
+                  return 0.05; // Fallback to minimum amount
+                }
+              })
+            );
 
       await executeTokenLaunch(
         data.tokenPrivateKey,
@@ -734,7 +758,8 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
         data.tokenMetadataUri,
         data.buyAmount,
         data.devBuy,
-        data.launchStage
+        data.launchStage,
+        data.mode
       );
 
       // Update loading state - Phase 3: Finalizing

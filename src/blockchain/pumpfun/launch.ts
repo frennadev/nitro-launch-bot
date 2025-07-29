@@ -134,6 +134,7 @@ export const prepareTokenLaunch = async (
   buyAmount: number,
   devBuy: number,
   loadingKey?: string
+  mode: "normal" | "prefunded"
 ) => {
   const start = performance.now();
 
@@ -237,7 +238,7 @@ export const prepareTokenLaunch = async (
 
   // Use fast mixer for optimal speed with dedicated endpoint
   // Fallback chain: Fast Mixer → Progress Mixer → Standard Mixer
-  if (loadingKey) {
+  if (loadingKey && mode === "normal") {
     try {
       await initializeFastMixer(
         funderPrivateKey,
@@ -321,7 +322,8 @@ export const executeTokenLaunch = async (
   metadataUri: string,
   buyAmount: number,
   devBuy: number,
-  launchStage: number
+  launchStage: number,
+  mode: "normal" | "prefunded"
 ) => {
   const start = performance.now();
 
@@ -366,59 +368,70 @@ export const executeTokenLaunch = async (
     tokenAddress,
   }).lean();
 
-  let buyKeypairs: any[];
+  let buyKeypairs: any[] = [];
   let optimalWalletCount: number;
 
-  if (
-    tokenDoc?.launchData?.buyWalletsOrder &&
-    (tokenDoc.launchData as any).optimalWalletCount
-  ) {
-    // Use the exact wallets and count from preparation phase
-    optimalWalletCount = (tokenDoc.launchData as any).optimalWalletCount;
-    const storedWalletKeys = tokenDoc.launchData.buyWalletsOrder.slice(
-      0,
-      optimalWalletCount
-    );
-    buyKeypairs = storedWalletKeys.map((w: string) => secretKeyToKeypair(w));
+  if (mode === "normal") {
+    if (
+        tokenDoc?.launchData?.buyWalletsOrder &&
+        (tokenDoc.launchData as any).optimalWalletCount
+      ) {
+        // Use the exact wallets and count from preparation phase
+        optimalWalletCount = (tokenDoc.launchData as any).optimalWalletCount;
+        const storedWalletKeys = tokenDoc.launchData.buyWalletsOrder.slice(
+          0,
+          optimalWalletCount
+        );
+        buyKeypairs = storedWalletKeys.map((w: string) => secretKeyToKeypair(w));
+
+        logger.info(
+          `[${logIdentifier}]: Using stored wallet order from preparation phase (${optimalWalletCount} wallets)`
+        );
+
+        // Validate that the stored wallets match the funded addresses
+        if ((tokenDoc.launchData as any).fundedWalletAddresses) {
+          const expectedAddresses = (tokenDoc.launchData as any)
+            .fundedWalletAddresses;
+          const actualAddresses = buyKeypairs.map((kp) => kp.publicKey.toBase58());
+          const mismatch = expectedAddresses.some(
+            (addr: string, i: number) => addr !== actualAddresses[i]
+          );
+
+          if (mismatch) {
+            logger.error(`[${logIdentifier}]: WALLET MISMATCH DETECTED!`, {
+              expectedFunded: expectedAddresses,
+              actualExecution: actualAddresses,
+            });
+            throw new Error(
+              "Wallet mismatch between preparation and execution phases"
+            );
+          } else {
+            logger.info(
+              `[${logIdentifier}]: Wallet addresses validated - execution will use the same wallets that were funded`
+            );
+          }
+        }
+      } else {
+        // Fallback to original logic if stored data is missing
+        logger.warn(
+          `[${logIdentifier}]: No stored wallet order found, falling back to original selection logic`
+        );
+        optimalWalletCount = calculateOptimalWalletCount(
+          buyAmount,
+          allBuyKeypairs.length
+        );
+        buyKeypairs = allBuyKeypairs.slice(0, optimalWalletCount);
+      }
+  } else {
+    // For prefunded mode, use all available buy wallets
+    optimalWalletCount = allBuyKeypairs.length;
+    buyKeypairs = allBuyKeypairs;
 
     logger.info(
-      `[${logIdentifier}]: Using stored wallet order from preparation phase (${optimalWalletCount} wallets)`
+      `[${logIdentifier}]: Prefunded mode - using all ${optimalWalletCount} available buy wallets`
     );
-
-    // Validate that the stored wallets match the funded addresses
-    if ((tokenDoc.launchData as any).fundedWalletAddresses) {
-      const expectedAddresses = (tokenDoc.launchData as any)
-        .fundedWalletAddresses;
-      const actualAddresses = buyKeypairs.map((kp) => kp.publicKey.toBase58());
-      const mismatch = expectedAddresses.some(
-        (addr: string, i: number) => addr !== actualAddresses[i]
-      );
-
-      if (mismatch) {
-        logger.error(`[${logIdentifier}]: WALLET MISMATCH DETECTED!`, {
-          expectedFunded: expectedAddresses,
-          actualExecution: actualAddresses,
-        });
-        throw new Error(
-          "Wallet mismatch between preparation and execution phases"
-        );
-      } else {
-        logger.info(
-          `[${logIdentifier}]: Wallet addresses validated - execution will use the same wallets that were funded`
-        );
-      }
-    }
-  } else {
-    // Fallback to original logic if stored data is missing
-    logger.warn(
-      `[${logIdentifier}]: No stored wallet order found, falling back to original selection logic`
-    );
-    optimalWalletCount = calculateOptimalWalletCount(
-      buyAmount,
-      allBuyKeypairs.length
-    );
-    buyKeypairs = allBuyKeypairs.slice(0, optimalWalletCount);
   }
+
 
   const funderKeypair = funderWallet ? secretKeyToKeypair(funderWallet) : null;
   const devKeypair = secretKeyToKeypair(devWallet);

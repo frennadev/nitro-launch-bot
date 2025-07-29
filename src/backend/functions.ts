@@ -1805,7 +1805,8 @@ export const enqueuePrepareTokenLaunch = async (
   devWallet: string,
   buyWallets: string[],
   devBuy: number,
-  buyAmount: number
+  buyAmount: number,
+  mode: "normal" | "prefunded"
 ) => {
   const session = await mongoose.startSession();
 
@@ -1923,6 +1924,7 @@ export const enqueuePrepareTokenLaunch = async (
           devBuy,
           devWallet: decryptPrivateKey(devWallet),
           funderWallet: funderWallet,
+          mode,
         }
       );
     });
@@ -1941,7 +1943,8 @@ export const enqueuePrepareTokenLaunch = async (
 export const enqueueExecuteTokenLaunch = async (
   userId: string,
   chatId: number,
-  tokenAddress: string
+  tokenAddress: string,
+  mode: "normal" | "prefunded"
 ) => {
   const session = await mongoose.startSession();
   try {
@@ -1990,7 +1993,8 @@ export const enqueueExecuteTokenLaunch = async (
           ).privateKey
         ),
         devBuy: updatedToken.launchData!.devBuy,
-        launchStage: updatedToken.launchData!.launchStage || 3, // Start from LAUNCH stage
+        launchStage: updatedToken.launchData!.launchStage || 3,
+        mode, // Start from LAUNCH stage
       };
       await executeLaunchQueue.add(
         `execute-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,
@@ -4115,7 +4119,8 @@ export const launchBonkToken = async (
   userId: string,
   tokenAddress: string,
   buyAmount: number = 0,
-  devBuy: number = 0
+  devBuy: number = 0,
+  mode: "normal" | "prefunded"
 ): Promise<{
   success: boolean;
   signature?: string;
@@ -4293,20 +4298,22 @@ export const launchBonkToken = async (
       `[${logId}]: Starting wallet mixing - ${totalAmountToMix} SOL to ${destinationAddresses.length} wallets (not all ${buyWallets.length} wallets)`
     );
 
-    try {
-      await initializeFastMixer(
-        fundingWallet.privateKey,
-        fundingWallet.privateKey,
-        totalAmountToMix,
-        destinationAddresses
-      );
-      logger.info(`[${logId}]: Wallet mixing completed successfully`);
-    } catch (mixerError: any) {
-      logger.error(`[${logId}]: Wallet mixing failed: ${mixerError.message}`);
-      return {
-        success: false,
-        error: `Wallet mixing failed: ${mixerError.message}`,
-      };
+    if (mode === "normal") {
+      try {
+        await initializeFastMixer(
+          fundingWallet.privateKey,
+          fundingWallet.privateKey,
+          totalAmountToMix,
+          destinationAddresses
+        );
+        logger.info(`[${logId}]: Wallet mixing completed successfully`);
+      } catch (mixerError: any) {
+        logger.error(`[${logId}]: Wallet mixing failed: ${mixerError.message}`);
+        return {
+          success: false,
+          error: `Wallet mixing failed: ${mixerError.message}`,
+        };
+      }
     }
 
     // PHASE 2: EXECUTION (Token creation + Buys)
