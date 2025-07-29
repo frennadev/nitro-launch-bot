@@ -637,9 +637,9 @@ Your token launch has been successfully resubmitted using your previous paramete
         }
       );
 
-      if (launchMode === "prefunded") {
-        break;
-      }
+      // if (launchMode === "prefunded") {
+      //   break;
+      // }
 
       const buyAmountCtx = await conversation.waitFor([
         "message:text",
