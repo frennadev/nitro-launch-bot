@@ -1020,7 +1020,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
   const requiredFundingAmount = buyAmount + devBuy + walletFees + 0.1; // Reduced buffer since fees are now calculated accurately
 
   // Check funding wallet balance against total requirement
-  if (fundingBalance < requiredFundingAmount) {
+  if (launchMode == "normal" && fundingBalance < requiredFundingAmount) {
     const launchKb = new InlineKeyboard().text(
       "🚀 Launch Token",
       `${CallBackQueries.LAUNCH_TOKEN}_${tokenAddress}`
