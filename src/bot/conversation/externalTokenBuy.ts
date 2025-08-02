@@ -349,8 +349,86 @@ export const buyExternalTokenConversation = async (
             "",
             "<i>Please try again or contact support if the issue persists.</i>",
           ].join("\n"),
-          { parse_mode: "HTML" }
+          {
+            parse_mode: "HTML",
+            reply_markup: new InlineKeyboard()
+              .text("🔄 Retry Purchase", "retry_external_buy")
+              .row()
+              .text("❌ Cancel", CallBackQueries.CANCEL_EXTERNAL_BUY),
+          }
         );
+
+        // Handle retry or cancel
+        const retryResponse = await conversation.waitFor("callback_query:data");
+        await retryResponse.answerCallbackQuery();
+
+        if (retryResponse.callbackQuery?.data === "retry_external_buy") {
+          await sendMessage(
+            retryResponse,
+            [
+              "🔄 <b>Retrying Purchase</b>",
+              "",
+              "⏳ Attempting to purchase the token again...",
+              "",
+              "<i>Please wait while we process your transaction</i>",
+            ].join("\n"),
+            { parse_mode: "HTML" }
+          );
+
+          const retryResult = await executeExternalBuy(
+            tokenAddress,
+            keypair,
+            buyAmount,
+            3,
+            0.002,
+            retryResponse
+          );
+
+          if (retryResult.success) {
+            const platformText =
+              retryResult.platform === "pumpswap"
+                ? "⚡ Pumpswap"
+                : "🚀 PumpFun";
+            await sendMessage(
+              retryResponse,
+              [
+                "✅ <b>Purchase Successful!</b>",
+                "",
+                "🎉 Your external token purchase has been completed successfully.",
+                "",
+                "💵 <b>Amount Spent:</b> <code>" +
+                  buyAmount.toFixed(6) +
+                  " SOL</code>",
+                "🔗 <b>Platform:</b> <code>" + platformText + "</code>",
+                "",
+                "📍 <b>Token Address:</b>",
+                `<code>${tokenAddress}</code>`,
+                "",
+                "📝 <b>Transaction Signature:</b>",
+                `<code>${retryResult.signature}</code>`,
+                "",
+                "💡 <i>Your tokens should appear in your wallet shortly.</i>",
+              ].join("\n"),
+              { parse_mode: "HTML" }
+            );
+          } else {
+            await sendMessage(
+              retryResponse,
+              [
+                "❌ <b>Retry Failed</b>",
+                "",
+                "The purchase attempt failed again.",
+                "",
+                "🔍 <b>Error Details:</b>",
+                `<code>${retryResult.error || "Unknown error occurred"}</code>`,
+                "",
+                "<i>Please contact support for assistance.</i>",
+              ].join("\n"),
+              { parse_mode: "HTML" }
+            );
+          }
+        }
+        // If cancel is selected, the conversation will naturally halt
       }
     } catch (error: any) {
       await sendMessage(
@@ -358,15 +436,91 @@ export const buyExternalTokenConversation = async (
         [
           "❌ <b>Purchase Failed</b>",
           "",
-          "An unexpected error occurred during the purchase process.",
+          "Unfortunately, your external token purchase could not be completed.",
           "",
           "🔍 <b>Error Details:</b>",
-          `<code>${error.message}</code>`,
+          `<code>${result.error || "Unknown error occurred"}</code>`,
           "",
           "<i>Please try again or contact support if the issue persists.</i>",
         ].join("\n"),
-        { parse_mode: "HTML" }
+        {
+          parse_mode: "HTML",
+          reply_markup: new InlineKeyboard()
+            .text("🔄 Retry Purchase", "retry_external_buy")
+            .row()
+            .text("❌ Cancel", CallBackQueries.CANCEL_EXTERNAL_BUY),
+        }
       );
+
+      // Handle retry or cancel
+      const retryResponse = await conversation.waitFor("callback_query:data");
+      await retryResponse.answerCallbackQuery();
+
+      if (retryResponse.callbackQuery?.data === "retry_external_buy") {
+        await sendMessage(
+          retryResponse,
+          [
+            "🔄 <b>Retrying Purchase</b>",
+            "",
+            "⏳ Attempting to purchase the token again...",
+            "",
+            "<i>Please wait while we process your transaction</i>",
+          ].join("\n"),
+          { parse_mode: "HTML" }
+        );
+
+        const retryResult = await executeExternalBuy(
+          tokenAddress,
+          keypair,
+          buyAmount,
+          3,
+          0.002,
+          retryResponse
+        );
+
+        if (retryResult.success) {
+          const platformText =
+            retryResult.platform === "pumpswap" ? "⚡ Pumpswap" : "🚀 PumpFun";
+          await sendMessage(
+            retryResponse,
+            [
+              "✅ <b>Purchase Successful!</b>",
+              "",
+              "🎉 Your external token purchase has been completed successfully.",
+              "",
+              "💵 <b>Amount Spent:</b> <code>" +
+                buyAmount.toFixed(6) +
+                " SOL</code>",
+              "🔗 <b>Platform:</b> <code>" + platformText + "</code>",
+              "",
+              "📍 <b>Token Address:</b>",
+              `<code>${tokenAddress}</code>`,
+              "",
+              "📝 <b>Transaction Signature:</b>",
+              `<code>${retryResult.signature}</code>`,
+              "",
+              "💡 <i>Your tokens should appear in your wallet shortly.</i>",
+            ].join("\n"),
+            { parse_mode: "HTML" }
+          );
+        } else {
+          await sendMessage(
+            retryResponse,
+            [
+              "❌ <b>Retry Failed</b>",
+              "",
+              "The purchase attempt failed again.",
+              "",
+              "🔍 <b>Error Details:</b>",
+              `<code>${retryResult.error || "Unknown error occurred"}</code>`,
+              "",
+              "<i>Please contact support for assistance.</i>",
+            ].join("\n"),
+            { parse_mode: "HTML" }
+          );
+        }
+      }
+      // If cancel is selected, the conversation will naturally halt
     }
   }
 
