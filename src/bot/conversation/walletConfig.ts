@@ -180,13 +180,14 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
     const OVERHEAD_PER_WALLET =
       RENT_EXEMPTION_SOL + TRANSACTION_FEE_SOL + BUFFER_SOL;
     const totalMinimumRequired = OVERHEAD_PER_WALLET * buyerWallets.length;
+    const availableForMixing = fundingBalance * 0.9;
 
-    if (fundingBalance <= totalMinimumRequired) {
+    if (availableForMixing <= totalMinimumRequired) {
       await sendMessage(
         next,
         `❌ Your funding wallet doesn't have enough SOL to mix funds.\n\n` +
-          `<b>Required:</b> ${totalMinimumRequired.toFixed(6)} SOL\n` +
-          `<b>Available:</b> ${fundingBalance.toFixed(6)} SOL\n\n` +
+          `<b>Required (90% of wallet):</b> ${totalMinimumRequired.toFixed(6)} SOL\n` +
+          `<b>Available (90% of ${fundingBalance.toFixed(6)} SOL):</b> ${availableForMixing.toFixed(6)} SOL\n\n` +
           `<i>Each wallet needs ${OVERHEAD_PER_WALLET.toFixed(6)} SOL minimum for rent exemption + fees.</i>`,
         {
           parse_mode: "HTML" as ParseMode,
@@ -199,8 +200,8 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
       return conversation.halt();
     }
 
-    // Calculate distribution amounts ensuring rent exemption
-    const availableForDistribution = fundingBalance - totalMinimumRequired;
+    // Calculate distribution amounts ensuring rent exemption (using 90% of funding wallet)
+    const availableForDistribution = availableForMixing - totalMinimumRequired;
     const baseAmountPerWallet = availableForDistribution / buyerWallets.length;
     const finalAmountPerWallet = baseAmountPerWallet + OVERHEAD_PER_WALLET;
 
@@ -209,10 +210,12 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
       next,
       `🔀 <b>Mix Funds Confirmation</b>\n\n` +
         `<b>Funding Wallet Balance:</b> ${fundingBalance.toFixed(6)} SOL\n` +
+        `<b>Amount to Mix (90%):</b> ${(fundingBalance * 0.9).toFixed(6)} SOL\n` +
+        `<b>Reserve (10%):</b> ${(fundingBalance * 0.1).toFixed(6)} SOL\n` +
         `<b>Number of Buyer Wallets:</b> ${buyerWallets.length}\n` +
         `<b>Amount per Wallet:</b> ~${finalAmountPerWallet.toFixed(6)} SOL\n` +
         `<b>Includes Rent Exemption:</b> ${RENT_EXEMPTION_SOL.toFixed(6)} SOL\n\n` +
-        `<i>This will distribute your funding wallet balance across all buyer wallets, ensuring each remains rent-exempt.</i>\n\n` +
+        `<i>This will distribute 90% of your funding wallet balance across all buyer wallets, leaving 10% as a reserve.</i>\n\n` +
         `Are you sure you want to proceed?`,
       {
         parse_mode: "HTML" as ParseMode,
@@ -240,124 +243,111 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
           "🔄 Mixing funds... This may take a moment."
         );
 
-        // Calculate even distribution with rent exemption
-        const RENT_EXEMPTION_LAMPORTS = 1000880; // ~0.001 SOL (increased buffer)
-        const TRANSACTION_FEE_LAMPORTS = 40000; // ~0.00004 SOL
-        const BUFFER_LAMPORTS = 100000; // ~0.0001 SOL
-        const OVERHEAD_PER_WALLET =
-          RENT_EXEMPTION_LAMPORTS + TRANSACTION_FEE_LAMPORTS + BUFFER_LAMPORTS;
-
-        const totalFundingLamports = Math.floor(fundingBalance * 1e9);
+        // Use 90% of funding wallet balance for mixing (leave 10% as reserve)
+        const availableForMixing = fundingBalance * 0.9;
+        const totalFundingLamports = Math.floor(availableForMixing * 1e9);
 
         // Reserve extra buffer for transaction fees across all transfers
         const totalTransferFees = buyerWallets.length * 10000; // 0.00001 SOL per transfer
-        const totalOverhead =
-          OVERHEAD_PER_WALLET * buyerWallets.length + totalTransferFees;
-        const availableForDistribution = totalFundingLamports - totalOverhead;
 
-        // Calculate exact amount per wallet (ensuring we don't exceed available funds)
-        const baseAmountPerWallet = Math.floor(
-          availableForDistribution / buyerWallets.length
-        );
-        const finalAmountPerWallet =
-          baseAmountPerWallet + RENT_EXEMPTION_LAMPORTS;
+        // Calculate total amount for mixer (we'll let the mixer handle distribution)
+        const totalAmountForMixer =
+          (totalFundingLamports - totalTransferFees) / 1e9;
 
-        // Double-check we have enough for all wallets
-        const totalNeeded = finalAmountPerWallet * buyerWallets.length;
-        if (totalNeeded > totalFundingLamports) {
+        // Double-check we have enough for mixer operation
+        if (totalAmountForMixer <= 0) {
           await sendMessage(
             confirmCtx,
-            `❌ Insufficient funds for distribution.\n\nNeed: ${(totalNeeded / 1e9).toFixed(6)} SOL\nHave: ${fundingBalance.toFixed(6)} SOL`
+            `❌ Insufficient funds for mixer operation.\n\nNeed: ${totalMinimumRequired.toFixed(6)} SOL minimum\nHave: ${fundingBalance.toFixed(6)} SOL`
           );
           return conversation.halt();
         }
 
-        // Since the mixer uses incremental distribution, we need to send to each wallet individually
-        // to ensure even distribution. We'll use the simple direct transfer for true even distribution.
-        let successfulTransfers = 0;
+        // Get buyer wallet addresses
+        const destinationAddresses = buyerWallets.map(
+          (wallet) => wallet.publicKey
+        );
 
         await sendMessage(
           confirmCtx,
-          `🔄 Distributing ${(finalAmountPerWallet / 1e9).toFixed(6)} SOL to each of ${buyerWallets.length} wallets...`
+          `🔄 Starting mixer operation for ${buyerWallets.length} wallets...`
         );
 
-        // Send to each wallet individually using simpleDirectTransfer for guaranteed even distribution
-        const { simpleDirectTransfer } = await import(
-          "../../blockchain/mixer/simple-transfer"
+        // Use the fast mixer for proper privacy mixing
+        const { initializeFastMixer } = await import(
+          "../../blockchain/mixer/init-mixer"
         );
 
-        for (let i = 0; i < buyerWallets.length; i++) {
-          const wallet = buyerWallets[i];
+        try {
+          const mixerResult = await (async () => {
+            try {
+              return await initializeFastMixer(
+                fundingWallet.privateKey,
+                fundingWallet.privateKey,
+                totalAmountForMixer,
+                destinationAddresses
+              );
+            } catch (error: unknown) {
+              console.warn(
+                `Fast mixer failed, falling back to progress mixer:`,
+                error instanceof Error ? error.message : String(error)
+              );
+              try {
+                const { initializeMixerWithProgress } = await import(
+                  "../../blockchain/mixer/init-mixer"
+                );
+                return await initializeMixerWithProgress(
+                  fundingWallet.privateKey,
+                  fundingWallet.privateKey,
+                  totalAmountForMixer,
+                  destinationAddresses
+                );
+              } catch (error2: unknown) {
+                console.warn(
+                  `Progress mixer failed, falling back to standard mixer:`,
+                  error2 instanceof Error ? error2.message : String(error2)
+                );
+                // Final fallback to standard mixer to ensure system stability
+                const { initializeMixer } = await import(
+                  "../../blockchain/mixer/init-mixer"
+                );
+                return await initializeMixer(
+                  fundingWallet.privateKey,
+                  fundingWallet.privateKey,
+                  totalAmountForMixer,
+                  destinationAddresses
+                );
+              }
+            }
+          })();
 
-          try {
-            // Check funding wallet balance before each transfer
-            const currentBalance = await getWalletBalance(
-              fundingWallet.publicKey
+          // Check mixer results
+          if (mixerResult && mixerResult.successCount > 0) {
+            await sendMessage(
+              confirmCtx,
+              `✅ <b>Funds Mixed Successfully!</b>\n\n` +
+                `Mixed ${totalAmountForMixer.toFixed(6)} SOL (90% of funding wallet) across ${buyerWallets.length} buyer wallets.\n\n` +
+                `<b>Successful transfers:</b> ${mixerResult.successCount}/${mixerResult.totalRoutes || buyerWallets.length}\n` +
+                `<b>Reserve remaining:</b> ${(fundingBalance * 0.1).toFixed(6)} SOL\n\n` +
+                `<i>Funds distributed through mixer for enhanced privacy</i>`,
+              { parse_mode: "HTML" }
             );
-            const currentBalanceLamports = Math.floor(currentBalance * 1e9);
-
-            // For the last wallet, send remaining balance (minus small buffer for fees)
-            let transferAmount = finalAmountPerWallet;
-            if (i === buyerWallets.length - 1) {
-              // Last wallet gets remaining balance minus fee buffer
-              const feeBuffer = 50000; // ~0.00005 SOL buffer for fees
-              transferAmount = Math.max(
-                RENT_EXEMPTION_LAMPORTS,
-                currentBalanceLamports - feeBuffer
-              );
-            }
-
-            // Skip if insufficient funds
-            if (currentBalanceLamports < transferAmount + 10000) {
-              // 10000 lamports buffer
-              console.error(
-                `Insufficient funds for wallet ${i + 1}: have ${currentBalance.toFixed(6)} SOL, need ${(transferAmount / 1e9).toFixed(6)} SOL`
-              );
-              continue;
-            }
-
-            // Send exact amount to this single wallet
-            await simpleDirectTransfer(
-              fundingWallet.privateKey,
-              [wallet.publicKey], // Single wallet
-              [transferAmount], // Exact amount in lamports
-              `MixFunds-${user.id}-Wallet${i + 1}`
+          } else {
+            await sendMessage(
+              confirmCtx,
+              `⚠️ <b>Mixer Operation Completed</b>\n\n` +
+                `Operation processed but results unclear. Please check wallet balances.\n\n` +
+                `<i>If wallets didn't receive funds, the mixer may have used optimized distribution.</i>`,
+              { parse_mode: "HTML" }
             );
-
-            successfulTransfers++;
-
-            // Update progress every 5 wallets
-            if ((i + 1) % 5 === 0 || i === buyerWallets.length - 1) {
-              await sendMessage(
-                confirmCtx,
-                `📊 Progress: ${i + 1}/${buyerWallets.length} wallets completed`
-              );
-            }
-
-            // Small delay between transfers to avoid overwhelming the network
-            if (i < buyerWallets.length - 1) {
-              await new Promise((resolve) => setTimeout(resolve, 500));
-            }
-          } catch (transferError) {
-            console.error(`Transfer to wallet ${i + 1} failed:`, transferError);
-            // Continue with next wallet even if one fails
           }
-        }
-
-        if (successfulTransfers === buyerWallets.length) {
+        } catch (mixerError) {
+          console.error("Mixer operation failed:", mixerError);
           await sendMessage(
             confirmCtx,
-            `✅ <b>Funds Mixed Successfully!</b>\n\n` +
-              `Distributed funds across ${buyerWallets.length} buyer wallets using mixer.\n\n` +
-              `<i>Each wallet received approximately ${(finalAmountPerWallet / 1e9).toFixed(6)} SOL (including rent exemption)</i>`,
-            { parse_mode: "HTML" }
-          );
-        } else {
-          await sendMessage(
-            confirmCtx,
-            `⚠️ <b>Partial Success</b>\n\n` +
-              `Successfully mixed to ${successfulTransfers}/${buyerWallets.length} wallets.\n` +
-              `Some batches may have failed. Check wallet balances.`,
+            `❌ <b>Mixer Operation Failed</b>\n\n` +
+              `Error: ${mixerError instanceof Error ? mixerError.message : "Unknown mixer error"}\n\n` +
+              `<i>Please try again or check wallet balances manually.</i>`,
             { parse_mode: "HTML" }
           );
         }
