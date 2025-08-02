@@ -19,7 +19,8 @@ const MAX_WALLETS = 40; // Updated from 20 to 40
 
 const manageBuyerWalletsConversation = async (
   conversation: Conversation<Context>,
-  ctx: Context
+  ctx: Context,
+  initialPage: number = 1
 ): Promise<void> => {
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
@@ -27,6 +28,9 @@ const manageBuyerWalletsConversation = async (
     await sendMessage(ctx, "Unrecognized user ❌");
     return conversation.halt();
   }
+
+  // Track current page
+  let currentPage = initialPage;
 
   // Main conversation loop
   while (true) {
@@ -40,7 +44,11 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
     // Calculate pagination
     const totalPages = Math.ceil(wallets.length / WALLETS_PER_PAGE);
-    const currentPage = 1; // Default to first page, can be enhanced with page tracking
+    
+    // Ensure current page is within valid range
+    if (currentPage < 1) currentPage = 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (totalPages === 0) currentPage = 1;
 
     const startIndex = (currentPage - 1) * WALLETS_PER_PAGE;
     const endIndex = Math.min(startIndex + WALLETS_PER_PAGE, wallets.length);
@@ -200,20 +208,26 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
             successMessage += `${index + 1}. <code>${shortAddress}</code>\n`;
           });
 
-          successMessage += [
-            ``,
-            `🔒 <i>Private keys generated but hidden for security.</i>`,
-            `💡 <i>Use the export function to retrieve individual private keys.</i>`,
-          ].join("\n");
+          successMessage += `\n💡 <i>Use the Export button to get private keys for individual wallets.</i>`;
         }
 
-        await sendMessage(quantityInput, successMessage, {
+        await sendMessage(next, successMessage, {
           parse_mode: "HTML",
         });
+
         return conversation.halt();
       }
 
       if (data === CallBackQueries.IMPORT_BUYER_WALLET) {
+        // Check if user can add more wallets
+        if (wallets.length >= MAX_WALLETS) {
+          await sendMessage(
+            next,
+            `❌ You have reached the maximum limit of ${MAX_WALLETS} buyer wallets. Please delete some wallets before importing new ones.`
+          );
+          return conversation.halt();
+        }
+
         const cancelKeyboard = new InlineKeyboard().text(
           "❌ Cancel",
           CallBackQueries.CANCEL_BUYER_WALLET
@@ -221,8 +235,9 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
         await sendMessage(
           next,
-          "Please send the private key of the buyer wallet you want to import:",
+          `📥 <b>Import Buyer Wallet</b>\n\nPlease enter the private key of the wallet you want to import:`,
           {
+            parse_mode: "HTML",
             reply_markup: cancelKeyboard,
           }
         );
@@ -234,7 +249,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
           CallBackQueries.CANCEL_BUYER_WALLET
         ) {
           await privateKeyInput.answerCallbackQuery();
-          await sendMessage(privateKeyInput, "Import cancelled.");
+          await sendMessage(privateKeyInput, "Wallet import cancelled.");
           return conversation.halt();
         }
 
@@ -248,17 +263,14 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         }
 
         try {
-          // Validate private key
+          // Validate and convert private key
           const keypair = secretKeyToKeypair(privateKey);
-          const newWallet = await addBuyerWallet(user.id, privateKey);
-
-          const shortAddress = `${newWallet.publicKey.slice(0, 8)}...${newWallet.publicKey.slice(-8)}`;
+          const newWallet = await addBuyerWallet(user.id, keypair);
 
           const successMessage = [
             `✅ <b>Wallet Imported Successfully!</b>`,
             ``,
-            `🔐 <b>Wallet Details:</b>`,
-            `<b>Address:</b> <code>${shortAddress}</code>`,
+            `<b>Address:</b> <code>${newWallet.publicKey.slice(0, 8)}...${newWallet.publicKey.slice(-8)}</code>`,
             `<b>Full Address:</b> <code>${newWallet.publicKey}</code>`,
             ``,
             `💡 <i>Your wallet has been added to your buyer wallets list.</i>`,
@@ -278,13 +290,27 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
       }
 
       // Handle pagination
-      if (
-        data.startsWith(CallBackQueries.PREV_PAGE) ||
-        data.startsWith(CallBackQueries.NEXT_PAGE)
-      ) {
-        // For now, just continue the loop to refresh the page
-        // In a full implementation, you'd track the page number
-        continue;
+      if (data.startsWith(CallBackQueries.PREV_PAGE)) {
+        const pageMatch = data.match(new RegExp(`${CallBackQueries.PREV_PAGE}_(\\d+)`));
+        if (pageMatch) {
+          const newPage = parseInt(pageMatch[1]);
+          if (newPage >= 1) {
+            currentPage = newPage;
+            continue; // Continue the loop to show the new page
+          }
+        }
+      }
+
+      if (data.startsWith(CallBackQueries.NEXT_PAGE)) {
+        const pageMatch = data.match(new RegExp(`${CallBackQueries.NEXT_PAGE}_(\\d+)`));
+        if (pageMatch) {
+          const newPage = parseInt(pageMatch[1]);
+          const totalPages = Math.ceil(wallets.length / WALLETS_PER_PAGE);
+          if (newPage <= totalPages) {
+            currentPage = newPage;
+            continue; // Continue the loop to show the new page
+          }
+        }
       }
 
       // Handle export and delete actions
