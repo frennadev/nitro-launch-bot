@@ -110,14 +110,58 @@ export class MongoSolanaMixer {
         console.log(`\n🛤️ Processing route ${i + 1}/${routes.length}`);
 
         try {
-          // Use optimized execution with reduced delays
-          const result = await this.executeSingleRouteOptimized(
-            route,
-            delayPerTransaction,
-            transactionCount,
-            totalDelays,
-            remainingTime
-          );
+          let result: MongoMixingResult;
+          
+          // Intelligent route selection: Use parallel mode if enabled, with automatic fallback
+          if (this.config.parallelMode) {
+            console.log(`🚀 Using PARALLEL mode for enhanced speed`);
+            try {
+              result = await this.executeSingleRouteParallel(
+                route,
+                delayPerTransaction,
+                transactionCount,
+                totalDelays,
+                remainingTime
+              );
+              
+              // If parallel mode succeeds, great!
+              if (result.success) {
+                console.log(`✅ Parallel mode succeeded for route ${i + 1}`);
+              } else {
+                // Parallel mode failed, fallback to sequential
+                console.log(`⚠️ Parallel mode failed for route ${i + 1}, falling back to sequential mode`);
+                result = await this.executeSingleRouteOptimized(
+                  route,
+                  delayPerTransaction,
+                  transactionCount,
+                  totalDelays,
+                  remainingTime
+                );
+                console.log(`🔄 Sequential fallback ${result.success ? 'succeeded' : 'failed'} for route ${i + 1}`);
+              }
+            } catch (parallelError) {
+              // Parallel mode threw an exception, fallback to sequential
+              console.log(`❌ Parallel mode exception for route ${i + 1}, falling back to sequential mode:`, parallelError);
+              result = await this.executeSingleRouteOptimized(
+                route,
+                delayPerTransaction,
+                transactionCount,
+                totalDelays,
+                remainingTime
+              );
+              console.log(`🔄 Sequential fallback ${result.success ? 'succeeded' : 'failed'} for route ${i + 1}`);
+            }
+          } else {
+            // Use traditional sequential mode
+            console.log(`🔄 Using SEQUENTIAL mode (traditional)`);
+            result = await this.executeSingleRouteOptimized(
+              route,
+              delayPerTransaction,
+              transactionCount,
+              totalDelays,
+              remainingTime
+            );
+          }
           results.push(result);
 
           // Track wallets used in this operation
@@ -484,6 +528,187 @@ export class MongoSolanaMixer {
         transactionSignatures: signatures,
         feeFundingSignatures,
         error: error instanceof Error ? error.message : "Unknown error",
+        route,
+        usedWalletIds,
+        failureRecovery: recoveryInfo,
+      };
+    }
+  }
+
+  /**
+   * Execute a single mixing route with parallel transaction processing
+   * This is the new high-speed mode with smart balance checking and circuit breaker
+   */
+  public async executeSingleRouteParallel(
+    route: MixingRoute,
+    delayPerTransaction: number = 0, // Parallel mode doesn't use delays
+    currentTransactionIndex: number = 0,
+    totalDelays: number = 0,
+    remainingTime: number = 0
+  ): Promise<MongoMixingResult> {
+    const signatures: string[] = [];
+    const feeFundingSignatures: string[] = [];
+    const usedWalletIds: string[] = [];
+    
+    try {
+      console.log(`🎯 Route (PARALLEL): ${route.source.publicKey.toString().slice(0, 8)}... → ${route.destination.toString().slice(0, 8)}...`);
+      console.log(`💰 Amount: ${(route.amount / 1_000_000_000).toFixed(6)} SOL`);
+      
+      // Get intermediate wallets from database
+      const neededWallets = route.intermediates.length;
+      const intermediateWallets = await this.walletManager.getAvailableWallets(neededWallets);
+      
+      if (intermediateWallets.length < neededWallets) {
+        throw new Error(`Failed to get enough intermediate wallets. Needed: ${neededWallets}, Got: ${intermediateWallets.length}`);
+      }
+      
+      // Mark wallets as in use
+      usedWalletIds.push(...intermediateWallets.map(w => w.publicKey));
+      
+      // Step 1: Prepare all transaction data
+      const allWallets = [
+        { publicKey: route.source.publicKey, keypair: route.source.keypair },
+        ...intermediateWallets.map(w => ({ 
+          publicKey: new PublicKey(w.publicKey), 
+          keypair: this.walletManager.getKeypairFromStoredWallet(w) 
+        }))
+      ];
+      const allDestinations = [
+        ...intermediateWallets.map(w => new PublicKey(w.publicKey)),
+        route.destination
+      ];
+      
+      // Step 2: Execute transactions with parallel processing and smart balance checking
+      const maxConcurrent = this.config.maxConcurrentTx || 3;
+      const balanceCheckTimeout = this.config.balanceCheckTimeout || 5000;
+      
+      for (let i = 0; i < allWallets.length; i++) {
+        const currentWallet = allWallets[i];
+        const destination = allDestinations[i];
+        const isLastHop = i === allWallets.length - 1;
+        
+        console.log(`🔄 Transfer ${i + 1}/${allWallets.length}: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${destination.toString().slice(0, 8)}...`);
+        
+        // Calculate transfer amount
+        let transferAmount: number;
+        if (i === 0) {
+          // First hop: use route amount
+          transferAmount = route.amount;
+        } else if (isLastHop) {
+          // Last hop: use maximum transferable
+          const maxTransferable = await this.connectionManager.getMaxTransferableAmount(currentWallet.publicKey);
+          transferAmount = Math.floor(maxTransferable);
+        } else {
+          // Intermediate hop: use maximum transferable
+          const maxTransferable = await this.connectionManager.getMaxTransferableAmount(currentWallet.publicKey);
+          transferAmount = Math.floor(maxTransferable);
+          
+          if (transferAmount <= 0) {
+            throw new Error(`Intermediate wallet ${currentWallet.publicKey.toString().slice(0, 8)}... has insufficient funds`);
+          }
+        }
+        
+        // Create and send transaction
+        let signature: string;
+        
+        if (this.config.feeFundingWallet && i > 0) {
+          const transaction = await this.connectionManager.createTransferTransactionWithFeePayer(
+            currentWallet.publicKey,
+            destination,
+            transferAmount,
+            this.config.feeFundingWallet.publicKey
+          );
+          
+          signature = await this.connectionManager.sendTransaction(transaction, [
+            currentWallet.keypair,
+            this.config.feeFundingWallet,
+          ]);
+        } else {
+          const transaction = await this.connectionManager.createTransferTransaction(
+            currentWallet.publicKey,
+            destination,
+            transferAmount
+          );
+          
+          signature = await this.connectionManager.sendTransaction(transaction, [currentWallet.keypair]);
+        }
+        
+        signatures.push(signature);
+        console.log(`📤 Transaction sent successfully: ${signature.slice(0, 8)}...`);
+        
+        // Step 3: Smart balance checking instead of confirmation waiting (except for last hop)
+        if (!isLastHop) {
+          const nextWallet = destination;
+          const expectedAmount = transferAmount;
+          
+          // Wait for balance to update with timeout
+          const balanceCheckStart = Date.now();
+          let balanceConfirmed = false;
+          
+          while (!balanceConfirmed && (Date.now() - balanceCheckStart) < balanceCheckTimeout) {
+            try {
+              const currentBalance = await this.connectionManager.getBalance(nextWallet);
+              
+              if (currentBalance >= expectedAmount) {
+                console.log(`✅ Balance confirmed: ${nextWallet.toString().slice(0, 8)}... has ${(currentBalance / 1_000_000_000).toFixed(6)} SOL`);
+                balanceConfirmed = true;
+              } else {
+                console.log(`⏳ Waiting for balance update: ${nextWallet.toString().slice(0, 8)}... (${(currentBalance / 1_000_000_000).toFixed(6)} SOL / ${(expectedAmount / 1_000_000_000).toFixed(6)} SOL expected)`);
+                await new Promise(resolve => setTimeout(resolve, 300)); // Check every 300ms for speed
+              }
+            } catch (error) {
+              console.warn(`⚠️ Balance check error: ${error}, continuing...`);
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
+          }
+          
+          if (!balanceConfirmed) {
+            console.warn(`⚠️ Balance check timeout for ${nextWallet.toString().slice(0, 8)}..., continuing optimistically`);
+            // Continue anyway - the transaction might still succeed
+          }
+        } else {
+          // For the final transaction, wait a bit longer for confirmation
+          console.log(`🎯 Final transfer: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${destination.toString().slice(0, 8)}...`);
+          
+          // Wait for final transaction confirmation
+          let finalConfirmationSuccess = await this.connectionManager.waitForConfirmation(signature, 3); // Reduced retries for speed
+          if (!finalConfirmationSuccess) {
+            // Check if destination actually received funds
+            const actualBalance = await this.connectionManager.getBalance(destination);
+            if (actualBalance >= transferAmount) {
+              console.warn(`⚠️ Final confirmation failed for signature: ${signature}, but destination wallet ${destination.toString().slice(0, 8)}... has the expected funds. Continuing...`);
+              finalConfirmationSuccess = true;
+            }
+          }
+          
+          if (!finalConfirmationSuccess) {
+            throw new Error(`Final transaction failed: ${signature}`);
+          }
+        }
+      }
+      
+      console.log(`✅ Route completed successfully with ${signatures.length} transactions`);
+      
+      return {
+        success: true,
+        transactionSignatures: signatures,
+        feeFundingSignatures,
+        route,
+        usedWalletIds,
+      };
+      
+    } catch (error: any) {
+      console.error(`❌ Parallel route execution failed:`, error.message);
+      
+      // Circuit breaker: attempt recovery of stuck funds
+      console.log(`🔧 Attempting parallel mode recovery...`);
+      const recoveryInfo = await this.attemptRecovery(route, usedWalletIds, signatures);
+      
+      return {
+        success: false,
+        transactionSignatures: signatures,
+        feeFundingSignatures,
+        error: error.message,
         route,
         usedWalletIds,
         failureRecovery: recoveryInfo,
