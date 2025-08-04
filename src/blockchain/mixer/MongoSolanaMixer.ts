@@ -343,7 +343,7 @@ export class MongoSolanaMixer {
 
         // CRITICAL FIX: Wait for transaction confirmation before proceeding
         // This ensures the intermediate wallet has received funds before we try to transfer from it
-        let confirmationSuccess = await this.connectionManager.waitForConfirmation(signature);
+        let confirmationSuccess = await this.connectionManager.waitForConfirmation(signature, 8);
         if (!confirmationSuccess) {
           // Tolerant mode: check if the destination wallet actually received the funds
           const actualBalance = await this.connectionManager.getBalance(nextWallet.publicKey);
@@ -441,7 +441,7 @@ export class MongoSolanaMixer {
       signatures.push(finalSignature);
 
       // CRITICAL FIX: Wait for final transaction confirmation
-      let finalConfirmationSuccess = await this.connectionManager.waitForConfirmation(finalSignature);
+              let finalConfirmationSuccess = await this.connectionManager.waitForConfirmation(finalSignature, 8);
       if (!finalConfirmationSuccess) {
         // Tolerant mode: check if the destination wallet actually received the funds
         const actualBalance = await this.connectionManager.getBalance(route.destination);

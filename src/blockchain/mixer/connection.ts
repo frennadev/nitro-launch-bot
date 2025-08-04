@@ -335,9 +335,9 @@ export class SolanaConnectionManager {
           "confirmed" // Use "confirmed" instead of "processed" for better reliability
         );
         
-        // Add 200ms timeout
+        // Add 10 second timeout for better network resilience
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Confirmation timeout')), 200);
+          setTimeout(() => reject(new Error('Confirmation timeout')), 10000);
         });
         
         const confirmation = await Promise.race([confirmationPromise, timeoutPromise]) as any;
