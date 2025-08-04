@@ -235,7 +235,18 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
         await sendMessage(
           next,
-          `📥 <b>Import Buyer Wallet</b>\n\nPlease enter the private key of the wallet you want to import:`,
+          [
+            `📥 <b>Import Buyer Wallet</b>`,
+            ``,
+            `Please enter the private key of the wallet you want to import:`,
+            ``,
+            `💡 <b>Private key format:</b>`,
+            `• Base58 encoded string (87-88 characters)`,
+            `• Example: 5DxL2BEk9RWyd9va...`,
+            `• Copy from your wallet's export function`,
+            ``,
+            `⚠️ <b>Send as text message only</b>`
+          ].join("\n"),
           {
             parse_mode: "HTML",
             reply_markup: cancelKeyboard,
@@ -244,23 +255,55 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
         const privateKeyInput = await conversation.wait();
 
-        if (
-          privateKeyInput.callbackQuery?.data ===
-          CallBackQueries.CANCEL_BUYER_WALLET
-        ) {
+        // Handle callback queries first (like cancel button)
+        if (privateKeyInput.callbackQuery?.data === CallBackQueries.CANCEL_BUYER_WALLET) {
           await privateKeyInput.answerCallbackQuery();
           await sendMessage(privateKeyInput, "Wallet import cancelled.");
           return conversation.halt();
         }
 
-        const privateKey = privateKeyInput.message?.text?.trim();
+        // If it's a callback query but not cancel, ignore and wait for text message
+        if (privateKeyInput.callbackQuery && privateKeyInput.callbackQuery.data !== CallBackQueries.CANCEL_BUYER_WALLET) {
+          await privateKeyInput.answerCallbackQuery();
+          await sendMessage(
+            privateKeyInput,
+            "❌ Please send your private key as a text message, not by clicking buttons."
+          );
+          return conversation.halt();
+        }
+
+        // Check if it's actually a text message
+        if (!privateKeyInput.message?.text) {
+          await sendMessage(
+            privateKeyInput,
+            [
+              "❌ <b>Invalid message type</b>",
+              "",
+              "Please send your private key as a <b>text message</b>.",
+              "",
+              "💡 <b>Make sure to:</b>",
+              "• Type or paste the private key",
+              "• Send as text (not photo, file, or voice)",
+              "• Don't use any special formatting",
+              "",
+              "<i>Please try again.</i>"
+            ].join("\n"),
+            { parse_mode: "HTML" }
+          );
+          return conversation.halt();
+        }
+
+        const privateKey = privateKeyInput.message.text.trim();
         
         // Debug logging to help identify the issue
         console.log('🔍 Debug - Import wallet input received:');
-        console.log('  Message type:', privateKeyInput.message?.text ? 'text' : 'other');
-        console.log('  Raw text length:', privateKeyInput.message?.text?.length || 0);
-        console.log('  Trimmed length:', privateKey?.length || 0);
-        console.log('  Has callback query:', !!privateKeyInput.callbackQuery);
+        console.log('  Message type:', 'text');
+        console.log('  Raw text:', privateKeyInput.message.text);
+        console.log('  Raw text length:', privateKeyInput.message.text.length);
+        console.log('  Trimmed text:', privateKey);
+        console.log('  Trimmed length:', privateKey.length);
+        console.log('  privateKey type:', typeof privateKey);
+        console.log('  privateKey === "":', privateKey === "");
         
         // Enhanced validation with detailed error messages
         if (!privateKey || privateKey.length === 0) {
