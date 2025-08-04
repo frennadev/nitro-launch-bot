@@ -164,10 +164,10 @@ ${platformEmoji} <b>Platform:</b> ${platformName}
         totalNeeded,
         destinationAddresses,
         {
-          parallelMode: true,           // Enable high-speed parallel processing
-          maxConcurrentTx: 3,          // Allow 3 concurrent transactions
+          parallelMode: false,         // Use traditional mode for maximum reliability
+          maxConcurrentTx: 3,          // Keep concurrent options available
           balanceCheckTimeout: 5000,   // 5 second timeout for balance checks
-          fastMode: true,              // Enable all speed optimizations
+          fastMode: false,             // Disable optimizations for stability
         }
       );
 

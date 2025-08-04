@@ -217,8 +217,8 @@ async function runMixer(
       maxRetries: 2, // Reduce from 3 for speed
       retryDelay: 2000, // Reduce from 5000ms
       
-      // NEW: Parallel processing configuration
-      parallelMode: options?.parallelMode || false,
+      // NEW: Parallel processing configuration (DISABLED FOR NOW - focus on traditional reliability)
+      parallelMode: false, // Force traditional mode for reliability testing
       maxConcurrentTx: options?.maxConcurrentTx || 3,
       balanceCheckTimeout: options?.balanceCheckTimeout || 5000,
       fastMode: options?.fastMode || false,

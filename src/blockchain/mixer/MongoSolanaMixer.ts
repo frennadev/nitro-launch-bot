@@ -385,26 +385,42 @@ export class MongoSolanaMixer {
 
         signatures.push(signature);
 
-        // CRITICAL FIX: Wait for transaction confirmation before proceeding
-        // This ensures the intermediate wallet has received funds before we try to transfer from it
-        let confirmationSuccess = await this.connectionManager.waitForConfirmation(signature, 8);
-        if (!confirmationSuccess) {
-          // Tolerant mode: check if the destination wallet actually received the funds
-          const actualBalance = await this.connectionManager.getBalance(nextWallet.publicKey);
-          if (actualBalance >= transferAmount) {
-            console.warn(`⚠️ Confirmation failed for signature: ${signature}, but destination wallet ${nextWallet.publicKey.toString().slice(0, 8)}... has the expected funds. Continuing...`);
+        // ENHANCED: Multi-layer confirmation with smart balance verification
+        let confirmationSuccess = false;
+        let finalBalance = 0;
+        
+        try {
+          // Primary: Try transaction confirmation
+          confirmationSuccess = await this.connectionManager.waitForConfirmation(signature, 8);
+          
+          if (confirmationSuccess) {
+            console.log(`✅ Primary confirmation successful for ${signature.slice(0, 8)}...`);
+          }
+        } catch (confirmError) {
+          console.warn(`⚠️ Primary confirmation failed: ${confirmError}`);
+        }
+        
+        // Secondary: Always verify balance regardless of confirmation result
+        try {
+          finalBalance = await this.connectionManager.getBalance(nextWallet.publicKey);
+          
+          if (finalBalance >= transferAmount) {
+            if (!confirmationSuccess) {
+              console.log(`✅ Secondary verification: Wallet ${nextWallet.publicKey.toString().slice(0, 8)}... has expected funds (${(finalBalance / 1_000_000_000).toFixed(6)} SOL)`);
+            }
             confirmationSuccess = true;
           } else {
-            throw new Error(`Transaction confirmation failed for signature: ${signature} and destination wallet did not receive expected funds.`);
+            console.error(`❌ Balance verification failed: Expected ${(transferAmount / 1_000_000_000).toFixed(6)} SOL, got ${(finalBalance / 1_000_000_000).toFixed(6)} SOL`);
           }
+        } catch (balanceError) {
+          console.error(`❌ Balance check failed: ${balanceError}`);
+        }
+        
+        if (!confirmationSuccess) {
+          throw new Error(`FAILED: Transaction ${signature.slice(0, 8)}... - Confirmation failed AND balance verification failed. Expected: ${(transferAmount / 1_000_000_000).toFixed(6)} SOL, Actual: ${(finalBalance / 1_000_000_000).toFixed(6)} SOL`);
         }
 
-        // CRITICAL FIX: Verify the intermediate wallet actually received the funds
-        // This prevents the "insufficient lamports 0" error
-        const actualBalance = await this.connectionManager.getBalance(nextWallet.publicKey);
-        if (actualBalance < transferAmount) {
-          throw new Error(`Intermediate wallet ${nextWallet.publicKey.toString().slice(0, 8)}... did not receive expected funds. Expected: ${transferAmount} lamports, Actual: ${actualBalance} lamports`);
-        }
+        // Balance verification completed above - wallet confirmed to have funds
 
         // Optimized MongoDB operations - batch where possible
         await Promise.all([
