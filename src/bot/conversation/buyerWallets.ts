@@ -235,18 +235,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
         await sendMessage(
           next,
-          [
-            `📥 <b>Import Buyer Wallet</b>`,
-            ``,
-            `Please enter the private key of the wallet you want to import:`,
-            ``,
-            `💡 <b>Private key format:</b>`,
-            `• Base58 encoded string (87-88 characters)`,
-            `• Example: 5DxL2BEk9RWyd9va...`,
-            `• Copy from your wallet's export function`,
-            ``,
-            `⚠️ <b>Send as text message only</b>`
-          ].join("\n"),
+          `📥 <b>Import Buyer Wallet</b>\n\nPlease enter the private key of the wallet you want to import:`,
           {
             parse_mode: "HTML",
             reply_markup: cancelKeyboard,
