@@ -18,27 +18,15 @@ import {
   SELL_DISCRIMINATOR,
   TOKEN_METADATA_PROGRAM,
 } from "./constants";
-import {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-  getAssociatedTokenAddressSync,
-  TOKEN_PROGRAM_ID,
-} from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { BuyCodec, CreateCodec, SellCodec } from "./codecs";
 
 // Maestro Bot constants
 const MAESTRO_BOT_PROGRAM = new PublicKey("5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB");
 const MAESTRO_FEE_ACCOUNT = new PublicKey("5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB");
 
-export const tokenCreateInstruction = (
-  mint: Keypair,
-  dev: Keypair,
-  name: string,
-  symbol: string,
-  uri: string,
-) => {
-  const { bondingCurve, associatedBondingCurve } = getBondingCurve(
-    mint.publicKey,
-  );
+export const tokenCreateInstruction = (mint: Keypair, dev: Keypair, name: string, symbol: string, uri: string) => {
+  const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint.publicKey);
   const metadata = getMetadataPDA(mint.publicKey);
   const keys: AccountMeta[] = [
     { pubkey: mint.publicKey, isWritable: true, isSigner: true },
@@ -75,11 +63,15 @@ export const buyInstruction = (
   tokenCreator: PublicKey,
   buyer: PublicKey,
   amount: bigint,
-  maxSolCost: bigint,
+  maxSolCost: bigint
 ) => {
   const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint);
   const buyerAta = getAssociatedTokenAddressSync(mint, buyer);
   const creatorVault = getCreatorVault(tokenCreator);
+
+  const global_volume_accumulator = globalVolumeAccumulator();
+  const user_volume_accumulator = userVolumeAccumulator(buyer);
+
   const keys: AccountMeta[] = [
     { pubkey: PUMPFUN_GLOBAL_SETTINGS, isSigner: false, isWritable: false },
     { pubkey: PUMPFUN_FEE_ACCOUNT, isSigner: false, isWritable: true },
@@ -93,6 +85,8 @@ export const buyInstruction = (
     { pubkey: creatorVault, isSigner: false, isWritable: true },
     { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false },
     { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false },
+    { pubkey: global_volume_accumulator, isWritable: true, isSigner: false },
+    { pubkey: user_volume_accumulator, isWritable: true, isSigner: false },
   ];
   const data = BuyCodec.encode({
     instruction: Buffer.from(BUY_DISCRIMINATOR).readBigUint64LE(),
@@ -111,7 +105,7 @@ export const marketOrderBuyInstruction = (
   tokenCreator: PublicKey,
   buyer: PublicKey,
   exactSolAmount: bigint,
-  maxTokenAmount?: bigint, // Optional parameter for calculated max tokens
+  maxTokenAmount?: bigint // Optional parameter for calculated max tokens
 ) => {
   const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint);
   const buyerAta = getAssociatedTokenAddressSync(mint, buyer);
@@ -130,11 +124,11 @@ export const marketOrderBuyInstruction = (
     { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false },
     { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false },
   ];
-  
+
   // Use provided maxTokenAmount or calculate a reasonable amount based on SOL
   // Instead of max uint64 which causes "NotEnoughTokensToBuy" errors
-  const tokenAmount = maxTokenAmount || (exactSolAmount * BigInt(1000000)); // Rough estimate: 1M tokens per SOL
-  
+  const tokenAmount = maxTokenAmount || exactSolAmount * BigInt(1000000); // Rough estimate: 1M tokens per SOL
+
   const data = BuyCodec.encode({
     instruction: Buffer.from(BUY_DISCRIMINATOR).readBigUint64LE(),
     amount: tokenAmount,
@@ -152,7 +146,7 @@ export const sellInstruction = (
   tokenCreator: PublicKey,
   seller: PublicKey,
   amount: bigint,
-  minSolOutput: bigint,
+  minSolOutput: bigint
 ) => {
   const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint);
   const sellerAta = getAssociatedTokenAddressSync(mint, seller);
@@ -190,14 +184,14 @@ export const maestroBuyInstructions = (
   buyer: PublicKey,
   amount: bigint,
   maxSolCost: bigint,
-  maestroFeeAmount: bigint = BigInt(1000000), // Default 0.001 SOL fee
+  maestroFeeAmount: bigint = BigInt(1000000) // Default 0.001 SOL fee
 ): TransactionInstruction[] => {
   const instructions: TransactionInstruction[] = [];
-  
+
   // 1. Create the main buy instruction (same as regular buy)
   const buyIx = buyInstruction(mint, tokenCreator, buyer, amount, maxSolCost);
   instructions.push(buyIx);
-  
+
   // 2. Add Maestro fee transfer to mimic their transaction structure
   const maestroFeeTransferIx = SystemProgram.transfer({
     fromPubkey: buyer,
@@ -205,7 +199,7 @@ export const maestroBuyInstructions = (
     lamports: maestroFeeAmount,
   });
   instructions.push(maestroFeeTransferIx);
-  
+
   return instructions;
 };
 
@@ -216,14 +210,14 @@ export const maestroMarketOrderBuyInstructions = (
   buyer: PublicKey,
   exactSolAmount: bigint,
   maxTokenAmount?: bigint,
-  maestroFeeAmount: bigint = BigInt(1000000), // Default 0.001 SOL fee
+  maestroFeeAmount: bigint = BigInt(1000000) // Default 0.001 SOL fee
 ): TransactionInstruction[] => {
   const instructions: TransactionInstruction[] = [];
-  
+
   // 1. Create the main market order buy instruction (same as regular market order buy)
   const marketBuyIx = marketOrderBuyInstruction(mint, tokenCreator, buyer, exactSolAmount, maxTokenAmount);
   instructions.push(marketBuyIx);
-  
+
   // 2. Add Maestro fee transfer to mimic their transaction structure
   const maestroFeeTransferIx = SystemProgram.transfer({
     fromPubkey: buyer,
@@ -231,6 +225,32 @@ export const maestroMarketOrderBuyInstructions = (
     lamports: maestroFeeAmount,
   });
   instructions.push(maestroFeeTransferIx);
-  
+
   return instructions;
+};
+
+export const userVolumeAccumulator = (user: PublicKey) => {
+  const [vault, _] = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from([
+        117, 115, 101, 114, 95, 118, 111, 108, 117, 109, 101, 95, 97, 99, 99, 117, 109, 117, 108, 97, 116, 111, 114,
+      ]),
+      user.toBuffer(),
+    ],
+    PUMPFUN_PROGRAM
+  );
+  return vault;
+};
+
+export const globalVolumeAccumulator = () => {
+  const [vault, _] = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from([
+        103, 108, 111, 98, 97, 108, 95, 118, 111, 108, 117, 109, 101, 95, 97, 99, 99, 117, 109, 117, 108, 97, 116, 111,
+        114,
+      ]),
+    ],
+    PUMPFUN_PROGRAM
+  );
+  return vault;
 };
