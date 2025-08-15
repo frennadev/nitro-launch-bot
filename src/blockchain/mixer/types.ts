@@ -19,6 +19,12 @@ export interface MixerConfig {
   fastMode?: boolean;
   /** Use batch operations where possible */
   useBatchOperations?: boolean;
+  /** Enable parallel transaction processing for speed (experimental) */
+  parallelMode?: boolean;
+  /** Maximum concurrent transactions in parallel mode */
+  maxConcurrentTx?: number;
+  /** Balance check timeout in parallel mode (ms) */
+  balanceCheckTimeout?: number;
 }
 
 export interface WalletInfo {

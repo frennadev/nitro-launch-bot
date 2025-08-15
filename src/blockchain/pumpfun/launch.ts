@@ -236,36 +236,70 @@ export const prepareTokenLaunch = async (
     `[${logIdentifier}]: Funding calculation - Buy: ${buyAmount} SOL, Fees: ${totalFeesNeeded} SOL (${feePerWallet} × ${destinationAddresses.length}), Total: ${totalAmountToMix} SOL`
   );
 
-  // Use fast mixer for optimal speed with dedicated endpoint
-  // Fallback chain: Fast Mixer → Progress Mixer → Standard Mixer
-  if (loadingKey && mode === "normal") {
-    try {
-      await initializeFastMixer(
-        funderPrivateKey,
-        funderPrivateKey,
-        totalAmountToMix,
-        destinationAddresses,
-        loadingKey
-      );
-    } catch (error: any) {
-      logger.warn(
-        `[${logIdentifier}]: Fast mixer failed, falling back to progress mixer:`,
-        error.message
-      );
+  // Handle funding based on launch mode
+  if (mode === "prefunded") {
+    // PREFUNDED MODE: Skip mixer entirely - wallets are already funded manually
+    logger.info(
+      `[${logIdentifier}]: Prefunded mode detected - skipping wallet funding (wallets already pre-funded)`
+    );
+  } else {
+    // NORMAL MODE: Use mixer to distribute funds
+    logger.info(
+      `[${logIdentifier}]: Normal mode detected - starting wallet funding via mixer`
+    );
+    
+    // Use fast mixer for optimal speed with dedicated endpoint
+    // Fallback chain: Fast Mixer → Progress Mixer → Standard Mixer
+    if (loadingKey) {
       try {
-        await initializeMixerWithProgress(
+        await initializeFastMixer(
           funderPrivateKey,
           funderPrivateKey,
           totalAmountToMix,
           destinationAddresses,
           loadingKey
         );
-      } catch (error2: any) {
+      } catch (error: any) {
         logger.warn(
-          `[${logIdentifier}]: Progress mixer failed, falling back to standard mixer:`,
-          error2.message
+          `[${logIdentifier}]: Fast mixer failed, falling back to progress mixer:`,
+          error.message
         );
-        // Final fallback to standard mixer to ensure system stability
+        try {
+          await initializeMixerWithProgress(
+            funderPrivateKey,
+            funderPrivateKey,
+            totalAmountToMix,
+            destinationAddresses,
+            loadingKey
+          );
+        } catch (error2: any) {
+          logger.warn(
+            `[${logIdentifier}]: Progress mixer failed, falling back to standard mixer:`,
+            error2.message
+          );
+          // Final fallback to standard mixer to ensure system stability
+          await initializeMixer(
+            funderPrivateKey,
+            funderPrivateKey,
+            totalAmountToMix,
+            destinationAddresses
+          );
+        }
+      }
+    } else {
+      // For non-tracked operations, use fast mixer directly
+      try {
+        await initializeFastMixer(
+          funderPrivateKey,
+          funderPrivateKey,
+          totalAmountToMix,
+          destinationAddresses
+        );
+      } catch (error: any) {
+        logger.warn(
+          `[${logIdentifier}]: Fast mixer failed, falling back to standard mixer:`,
+          error.message
+        );
         await initializeMixer(
           funderPrivateKey,
           funderPrivateKey,
@@ -273,27 +307,6 @@ export const prepareTokenLaunch = async (
           destinationAddresses
         );
       }
-    }
-  } else {
-    // For non-tracked operations, use fast mixer directly
-    try {
-      await initializeFastMixer(
-        funderPrivateKey,
-        funderPrivateKey,
-        totalAmountToMix,
-        destinationAddresses
-      );
-    } catch (error: any) {
-      logger.warn(
-        `[${logIdentifier}]: Fast mixer failed, falling back to standard mixer:`,
-        error.message
-      );
-      await initializeMixer(
-        funderPrivateKey,
-        funderPrivateKey,
-        totalAmountToMix,
-        destinationAddresses
-      );
     }
   }
 

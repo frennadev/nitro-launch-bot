@@ -135,11 +135,25 @@ async function runMixer(
   fundingPrivateKey: string,
   feeFundingPrivateKey: string,
   totalAmountSol: number,
-  destinationAddresses: string[]
+  destinationAddresses: string[],
+  options?: {
+    parallelMode?: boolean;
+    maxConcurrentTx?: number;
+    balanceCheckTimeout?: number;
+    fastMode?: boolean;
+  }
 ) {
   console.log("🚀 Starting Solana Mixer");
   console.log(`💰 Total amount to mix: ${totalAmountSol} SOL`);
   console.log(`📍 Mixing to ${destinationAddresses.length} destinations`);
+  
+  // Display mixer mode
+  if (options?.parallelMode) {
+    console.log(`⚡ Mode: PARALLEL (High-Speed) - ${options.maxConcurrentTx || 3} concurrent transactions`);
+    console.log(`🎯 Balance check timeout: ${options.balanceCheckTimeout || 5000}ms`);
+  } else {
+    console.log(`🔄 Mode: SEQUENTIAL (Traditional) - Safer confirmation-based processing`);
+  }
 
   try {
     // Validate total amount
@@ -185,8 +199,8 @@ async function runMixer(
     const config: MongoMixerConfig = {
       // Optimized mixer settings (500ms-2s total operation time)
       intermediateWalletCount: 5, // Use 5 intermediate wallets for strong privacy
-      minDelay: 500, // Reduce from 3000ms to 500ms
-      maxDelay: 2000, // Reduce from 7000ms to 2000ms
+      minDelay: options?.parallelMode ? 0 : 500, // No delays in parallel mode
+      maxDelay: options?.parallelMode ? 0 : 2000, // No delays in parallel mode
       useFreshWallets: false, // Use MongoDB wallet pool
       rpcEndpoint: SOLANA_RPC_ENDPOINT,
       priorityFee: 2000, // Increase from 1000 for faster processing
@@ -202,6 +216,12 @@ async function runMixer(
       // Optimized recovery settings
       maxRetries: 2, // Reduce from 3 for speed
       retryDelay: 2000, // Reduce from 5000ms
+      
+      // NEW: Parallel processing configuration (DISABLED FOR NOW - focus on traditional reliability)
+      parallelMode: false, // Force traditional mode for reliability testing
+      maxConcurrentTx: options?.maxConcurrentTx || 3,
+      balanceCheckTimeout: options?.balanceCheckTimeout || 5000,
+      fastMode: options?.fastMode || false,
     };
 
     const mixer = new MongoSolanaMixer(config);

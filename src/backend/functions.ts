@@ -644,8 +644,7 @@ export const createToken = async (
       logger.warn(
         `No pump addresses available for user ${userId}, falling back to random generation: ${error.message}`
       );
-      const [randomKey] = generateKeypairs(1);
-      tokenKey = randomKey;
+      throw error;
     }
 
     // Check if the allocated address is already launched/listed

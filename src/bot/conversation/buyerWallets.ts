@@ -244,20 +244,94 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
         const privateKeyInput = await conversation.wait();
 
-        if (
-          privateKeyInput.callbackQuery?.data ===
-          CallBackQueries.CANCEL_BUYER_WALLET
-        ) {
+        // Handle callback queries first (like cancel button)
+        if (privateKeyInput.callbackQuery?.data === CallBackQueries.CANCEL_BUYER_WALLET) {
           await privateKeyInput.answerCallbackQuery();
           await sendMessage(privateKeyInput, "Wallet import cancelled.");
           return conversation.halt();
         }
 
-        const privateKey = privateKeyInput.message?.text?.trim();
-        if (!privateKey) {
+        // If it's a callback query but not cancel, ignore and wait for text message
+        if (privateKeyInput.callbackQuery && privateKeyInput.callbackQuery.data !== CallBackQueries.CANCEL_BUYER_WALLET) {
+          await privateKeyInput.answerCallbackQuery();
           await sendMessage(
             privateKeyInput,
-            "❌ No private key provided. Import cancelled."
+            "❌ Please send your private key as a text message, not by clicking buttons."
+          );
+          return conversation.halt();
+        }
+
+        // Check if it's actually a text message
+        if (!privateKeyInput.message?.text) {
+          await sendMessage(
+            privateKeyInput,
+            [
+              "❌ <b>Invalid message type</b>",
+              "",
+              "Please send your private key as a <b>text message</b>.",
+              "",
+              "💡 <b>Make sure to:</b>",
+              "• Type or paste the private key",
+              "• Send as text (not photo, file, or voice)",
+              "• Don't use any special formatting",
+              "",
+              "<i>Please try again.</i>"
+            ].join("\n"),
+            { parse_mode: "HTML" }
+          );
+          return conversation.halt();
+        }
+
+        const privateKey = privateKeyInput.message.text.trim();
+        
+        // Debug logging to help identify the issue
+        console.log('🔍 Debug - Import wallet input received:');
+        console.log('  Message type:', 'text');
+        console.log('  Raw text:', privateKeyInput.message.text);
+        console.log('  Raw text length:', privateKeyInput.message.text.length);
+        console.log('  Trimmed text:', privateKey);
+        console.log('  Trimmed length:', privateKey.length);
+        console.log('  privateKey type:', typeof privateKey);
+        console.log('  privateKey === "":', privateKey === "");
+        
+        // Enhanced validation with detailed error messages
+        if (!privateKey || privateKey.length === 0) {
+          await sendMessage(
+            privateKeyInput,
+            [
+              "❌ <b>No private key provided</b>",
+              "",
+              "Please enter a valid private key.",
+              "",
+              "💡 <b>Private key should be:</b>",
+              "• Base58 encoded string",
+              "• Usually 87-88 characters long",
+              "• Example format: 5Hp7fTYnE2hd6d...(continues)",
+              "",
+              "<i>Import cancelled.</i>"
+            ].join("\n"),
+            { parse_mode: "HTML" }
+          );
+          return conversation.halt();
+        }
+
+        // Additional validation for common issues
+        if (privateKey.includes(" ") && privateKey.split(" ").length > 1) {
+          await sendMessage(
+            privateKeyInput,
+            [
+              "❌ <b>Invalid private key format</b>",
+              "",
+              "It looks like you entered a seed phrase instead of a private key.",
+              "",
+              "💡 <b>To get your private key:</b>",
+              "1. Open your wallet app (Phantom, Solflare, etc.)",
+              "2. Go to Settings → Export Private Key",
+              "3. Copy the private key (not the seed phrase)",
+              "",
+              "<i>Import cancelled.</i>"
+            ].join("\n"),
+            { parse_mode: "HTML" }
           );
           return conversation.halt();
         }
@@ -265,7 +339,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         try {
           // Validate and convert private key
           const keypair = secretKeyToKeypair(privateKey);
-          const newWallet = await addBuyerWallet(user.id, keypair);
+          const newWallet = await addBuyerWallet(user.id, privateKey);
 
           const successMessage = [
             `✅ <b>Wallet Imported Successfully!</b>`,
@@ -280,10 +354,51 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
             parse_mode: "HTML",
           });
         } catch (error: any) {
-          await sendMessage(
-            privateKeyInput,
-            `❌ Import failed: ${error.message}`
-          );
+          let errorMessage = "❌ <b>Import failed</b>\n\n";
+          
+          if (error.message.includes("Invalid secret key format")) {
+            errorMessage += [
+              "The private key format is invalid.",
+              "",
+              "💡 <b>Common issues:</b>",
+              "• Private key must be Base58 encoded",
+              "• Should be 87-88 characters long",
+              "• Don't include extra characters or spaces",
+              "• Make sure you copied the entire key",
+              "",
+              "💡 <b>How to get your private key:</b>",
+              "1. Open your wallet (Phantom, Solflare, etc.)",
+              "2. Go to Settings → Security → Export Private Key",
+              "3. Copy the full private key string",
+              "",
+              "<i>Please try again with a valid private key.</i>"
+            ].join("\n");
+          } else if (error.message.includes("Invalid secret key: key must be a non-empty string")) {
+            errorMessage += [
+              "No private key was received.",
+              "",
+              "💡 <b>Please make sure to:</b>",
+              "• Type or paste your private key",
+              "• Send it as a text message",
+              "• Don't send as a file or image",
+              "",
+              "<i>Please try the import process again.</i>"
+            ].join("\n");
+          } else {
+            errorMessage += [
+              `Error: ${error.message}`,
+              "",
+              "💡 <b>Need help?</b>",
+              "Make sure your private key is:",
+              "• A valid Solana private key",
+              "• Base58 encoded format",
+              "• Copied correctly without extra characters"
+            ].join("\n");
+          }
+          
+          await sendMessage(privateKeyInput, errorMessage, {
+            parse_mode: "HTML"
+          });
         }
 
         return conversation.halt();

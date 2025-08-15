@@ -21,8 +21,17 @@ export class SolanaConnectionManager {
   ) {
     // Disable connection pool for mixer operations to avoid parameter conflicts
     this.useConnectionPool = false;
-    this.connection = new Connection(rpcEndpoint, "confirmed");
+    
+    // Enhanced connection configuration for reliability
+    this.connection = new Connection(rpcEndpoint, {
+      commitment: "confirmed",
+      confirmTransactionInitialTimeout: 60000, // 60 seconds
+      disableRetryOnRateLimit: false, // Allow retries on rate limits
+    });
+    
     this.priorityFee = priorityFee;
+    
+    console.log(`🔗 Enhanced RPC connection initialized: ${rpcEndpoint.slice(0, 50)}...`);
   }
 
   /**
@@ -335,9 +344,16 @@ export class SolanaConnectionManager {
           "confirmed" // Use "confirmed" instead of "processed" for better reliability
         );
         
-        // Add 200ms timeout
+        // Adaptive timeout based on network conditions and retry attempt
+        const baseTimeout = 10000; // 10 seconds base
+        const adaptiveTimeout = baseTimeout + (attempt * 5000); // Increase 5s per retry
+        const maxTimeout = 30000; // Cap at 30 seconds
+        const finalTimeout = Math.min(adaptiveTimeout, maxTimeout);
+        
+        console.log(`⏱️  Using ${finalTimeout/1000}s timeout for attempt ${attempt}/${maxRetries}`);
+        
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Confirmation timeout')), 200);
+          setTimeout(() => reject(new Error('Confirmation timeout')), finalTimeout);
         });
         
         const confirmation = await Promise.race([confirmationPromise, timeoutPromise]) as any;
