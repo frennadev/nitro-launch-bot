@@ -1237,7 +1237,7 @@ export const updateTokenState = async (
 
 export const updateLaunchStage = async (
   tokenAddress: string,
-  stage: Number
+  stage: number
 ) => {
   await TokenModel.findOneAndUpdate(
     {

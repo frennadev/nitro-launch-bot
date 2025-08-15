@@ -3658,6 +3658,7 @@ bot.on("message:text", async (ctx) => {
               .text("🔄 Refresh", `refresh_ca_${text}`)
               .row()
               .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${text}`)
+              // .text("💰 Relaunch", CallBackQueries.RELAUNCH_TOKEN)
               .row()
               .text("🏠 Menu", CallBackQueries.BACK),
           });

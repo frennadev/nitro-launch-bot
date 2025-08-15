@@ -1,19 +1,14 @@
 import {
   ComputeBudgetProgram,
+  Keypair,
   LAMPORTS_PER_SOL,
-  SystemProgram,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
-  Connection,
-  PublicKey,
-  Keypair,
 } from "@solana/web3.js";
 import { connection } from "../common/connection";
 import {
-  chunkArray,
   formatMilliseconds,
-  randomizeDistribution,
   randomizedSleep,
   secretKeyToKeypair,
   sendAndConfirmTransactionWithRetry,
@@ -21,7 +16,6 @@ import {
 import {
   buyInstruction,
   tokenCreateInstruction,
-  marketOrderBuyInstruction,
   maestroBuyInstructions,
 } from "./instructions";
 import {
@@ -36,9 +30,8 @@ import {
   createAssociatedTokenAccountInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { PumpLaunchStage, type TransactionSetup } from "../common/types";
+import { PumpLaunchStage } from "../common/types";
 import {
-  updateBuyDistribution,
   updateLaunchStage,
   collectPlatformFee,
   recordTransaction,
@@ -54,11 +47,18 @@ import {
   initializeFastMixer,
 } from "../mixer/init-mixer";
 import bs58 from "bs58";
-import { getSolBalance, getTokenBalance } from "../../backend/utils";
+import { getSolBalance } from "../../backend/utils";
 import {
   BondingCurveTracker,
   globalLaunchManager,
 } from "./real-time-curve-tracker";
+
+// Extended launch data interface to include runtime fields
+interface ExtendedLaunchData {
+  optimalWalletCount?: number;
+  fundedWalletAddresses?: string[];
+  [key: string]: unknown;
+}
 
 /**
  * Calculate optimal wallet count for a given buy amount
@@ -141,7 +141,7 @@ export const prepareTokenLaunch = async (
   const mintKeypair = secretKeyToKeypair(mint);
   const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
   const funderKeypair = secretKeyToKeypair(funderWallet);
-  const devKeypair = secretKeyToKeypair(devWallet);
+  // Note: devKeypair available if needed for future use
   const logIdentifier = `prepare-${mintKeypair.publicKey.toBase58()}`;
 
   logger.info(`[${logIdentifier}]: Token Launch Preparation Data`, {
@@ -247,7 +247,7 @@ export const prepareTokenLaunch = async (
     logger.info(
       `[${logIdentifier}]: Normal mode detected - starting wallet funding via mixer`
     );
-    
+
     // Use fast mixer for optimal speed with dedicated endpoint
     // Fallback chain: Fast Mixer → Progress Mixer → Standard Mixer
     if (loadingKey) {
@@ -259,10 +259,10 @@ export const prepareTokenLaunch = async (
           destinationAddresses,
           loadingKey
         );
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.warn(
           `[${logIdentifier}]: Fast mixer failed, falling back to progress mixer:`,
-          error.message
+          error instanceof Error ? error.message : String(error)
         );
         try {
           await initializeMixerWithProgress(
@@ -272,10 +272,10 @@ export const prepareTokenLaunch = async (
             destinationAddresses,
             loadingKey
           );
-        } catch (error2: any) {
+        } catch (error2: unknown) {
           logger.warn(
             `[${logIdentifier}]: Progress mixer failed, falling back to standard mixer:`,
-            error2.message
+            error2 instanceof Error ? error2.message : String(error2)
           );
           // Final fallback to standard mixer to ensure system stability
           await initializeMixer(
@@ -295,10 +295,10 @@ export const prepareTokenLaunch = async (
           totalAmountToMix,
           destinationAddresses
         );
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.warn(
           `[${logIdentifier}]: Fast mixer failed, falling back to standard mixer:`,
-          error.message
+          error instanceof Error ? error.message : String(error)
         );
         await initializeMixer(
           funderPrivateKey,
@@ -354,9 +354,9 @@ export const executeTokenLaunch = async (
           `${keyName} has invalid length: ${decoded.length} bytes (expected 64)`
         );
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       throw new Error(
-        `${keyName} is not a valid base58 encoded secret key: ${error.message}`
+        `${keyName} is not a valid base58 encoded secret key: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   };
@@ -381,16 +381,17 @@ export const executeTokenLaunch = async (
     tokenAddress,
   }).lean();
 
-  let buyKeypairs: any[] = [];
+  let buyKeypairs: Keypair[] = [];
   let optimalWalletCount: number;
 
   if (mode === "normal") {
     if (
       tokenDoc?.launchData?.buyWalletsOrder &&
-      (tokenDoc.launchData as any).optimalWalletCount
+      (tokenDoc.launchData as ExtendedLaunchData).optimalWalletCount
     ) {
       // Use the exact wallets and count from preparation phase
-      optimalWalletCount = (tokenDoc.launchData as any).optimalWalletCount;
+      optimalWalletCount = (tokenDoc.launchData as ExtendedLaunchData)
+        .optimalWalletCount!;
       const storedWalletKeys = tokenDoc.launchData.buyWalletsOrder.slice(
         0,
         optimalWalletCount
@@ -402,9 +403,9 @@ export const executeTokenLaunch = async (
       );
 
       // Validate that the stored wallets match the funded addresses
-      if ((tokenDoc.launchData as any).fundedWalletAddresses) {
-        const expectedAddresses = (tokenDoc.launchData as any)
-          .fundedWalletAddresses;
+      if ((tokenDoc.launchData as ExtendedLaunchData).fundedWalletAddresses) {
+        const expectedAddresses = (tokenDoc.launchData as ExtendedLaunchData)
+          .fundedWalletAddresses!;
         const actualAddresses = buyKeypairs.map((kp) =>
           kp.publicKey.toBase58()
         );
@@ -476,7 +477,6 @@ export const executeTokenLaunch = async (
 
   // Track current stage for proper flow control
   let currentStage = launchStage;
-  let tokenCreated = false;
 
   // Check if token creation was already successful in previous attempts
   const tokenCreationAlreadySuccessful = await isTransactionAlreadySuccessful(
@@ -698,9 +698,9 @@ export const executeTokenLaunch = async (
               errorStr.includes('{"InstructionError":[0,{"Custom":0}]}') ||
               errorStr.includes("Custom:0");
           }
-        } catch (statusError: any) {
+        } catch (statusError: unknown) {
           logger.warn(
-            `[${logIdentifier}]: Could not get transaction status: ${statusError.message}`
+            `[${logIdentifier}]: Could not get transaction status: ${statusError instanceof Error ? statusError.message : String(statusError)}`
           );
         }
       }
@@ -728,7 +728,7 @@ export const executeTokenLaunch = async (
           PumpLaunchStage.SNIPE
         );
         currentStage = PumpLaunchStage.SNIPE;
-        tokenCreated = true; // Set to true to proceed with sniping
+        // Set to true to proceed with sniping
       } else {
         // Other error, fail the launch
         throw new Error("Token creation failed");
@@ -740,7 +740,6 @@ export const executeTokenLaunch = async (
         PumpLaunchStage.SNIPE
       );
       currentStage = PumpLaunchStage.SNIPE;
-      tokenCreated = true;
     }
 
     logger.info(
@@ -751,7 +750,6 @@ export const executeTokenLaunch = async (
       `[${logIdentifier}]: Token creation already successful in previous attempt, skipping to snipe stage`
     );
     currentStage = PumpLaunchStage.SNIPE;
-    tokenCreated = true;
   }
 
   // ------- SNIPING STAGE -------
@@ -800,7 +798,6 @@ export const executeTokenLaunch = async (
       const computeUnitPriceDecrement = Math.round(
         (maxComputeUnitPrice - baseComputeUnitPrice) / walletsToProcess.length
       );
-      let currentComputeUnitPrice = maxComputeUnitPrice;
 
       // Optimized parallel curve data fetching for maximum speed
       logger.info(
@@ -829,7 +826,7 @@ export const executeTokenLaunch = async (
                   return { data, commitment: "processed" };
                 }
               }
-            } catch (error) {
+            } catch {
               return null;
             }
             return null;
@@ -852,7 +849,7 @@ export const executeTokenLaunch = async (
                   return { data, commitment: "confirmed" };
                 }
               }
-            } catch (error) {
+            } catch {
               return null;
             }
             return null;
@@ -875,7 +872,7 @@ export const executeTokenLaunch = async (
                   return { data, commitment: "finalized" };
                 }
               }
-            } catch (error) {
+            } catch {
               return null;
             }
             return null;
@@ -899,9 +896,9 @@ export const executeTokenLaunch = async (
             `[${logIdentifier}]: Parallel curve data fetch completed in ${Math.round(fetchTime)}ms using ${successfulResult.value.commitment} commitment`
           );
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.warn(
-          `[${logIdentifier}]: Parallel curve data fetch failed: ${error.message}`
+          `[${logIdentifier}]: Parallel curve data fetch failed: ${error instanceof Error ? error.message : String(error)}`
         );
       }
 
@@ -937,9 +934,9 @@ export const executeTokenLaunch = async (
                 break;
               }
             }
-          } catch (error: any) {
+          } catch (error: unknown) {
             logger.warn(
-              `[${logIdentifier}]: Sequential fallback attempt ${retries + 1} failed: ${error.message}`
+              `[${logIdentifier}]: Sequential fallback attempt ${retries + 1} failed: ${error instanceof Error ? error.message : String(error)}`
             );
           }
 
@@ -976,17 +973,19 @@ export const executeTokenLaunch = async (
               `Bonding curve account exists but data is invalid. Account owner: ${accountInfo.owner.toBase58()}, Data length: ${accountInfo.data.length}`
             );
           }
-        } catch (debugError: any) {
+        } catch (debugError: unknown) {
           logger.error(
-            `[${logIdentifier}]: Bonding curve debug info: ${debugError.message}`
+            `[${logIdentifier}]: Bonding curve debug info: ${debugError instanceof Error ? debugError.message : String(debugError)}`
           );
-          throw new Error(`Unable to fetch curve data: ${debugError.message}`);
+          throw new Error(
+            `Unable to fetch curve data: ${debugError instanceof Error ? debugError.message : String(debugError)}`
+          );
         }
       }
 
-      let virtualTokenReserve = curveData.virtualTokenReserves;
-      let virtualSolReserve = curveData.virtualSolReserves;
-      let realTokenReserve = curveData.realTokenReserves;
+      const virtualTokenReserve = curveData.virtualTokenReserves;
+      const virtualSolReserve = curveData.virtualSolReserves;
+      const realTokenReserve = curveData.realTokenReserves;
 
       // NEW: Initialize real-time curve tracker (optional enhancement)
       let curveTracker: BondingCurveTracker | undefined;
@@ -996,9 +995,9 @@ export const executeTokenLaunch = async (
           bondingCurve
         );
         logger.info(`[${logIdentifier}]: Real-time curve tracking enabled`);
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.warn(
-          `[${logIdentifier}]: Could not initialize curve tracker, using fallback: ${error.message}`
+          `[${logIdentifier}]: Could not initialize curve tracker, using fallback: ${error instanceof Error ? error.message : String(error)}`
         );
         // Continue with existing logic - curve tracker is optional
       }
@@ -1020,20 +1019,20 @@ export const executeTokenLaunch = async (
 
       // Enhanced buy transaction with retry logic and optional real-time curve tracking
       const executeBuyWithRetry = async (
-        keypair: any,
+        keypair: Keypair,
         fixedBuyAmount: number | null, // This will be ignored in favor of dynamic calculation
         currentComputeUnitPrice: number,
-        blockHash: any,
+        blockHash: { blockhash: string; lastValidBlockHeight: number },
         maxRetries: number = 3,
         curveTracker?: BondingCurveTracker // Optional real-time curve tracker
       ) => {
-        let baseSlippage = 10; // Start with 10% slippage (fallback)
+        const baseSlippage = 10; // Start with 10% slippage (fallback)
         const maxSlippage = 50; // Maximum slippage cap (reduced from 90%)
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           try {
             // NEW: Enhanced slippage and quote calculation logic
-            let currentSlippage, tokenOut, swapAmountLamports;
+            let currentSlippage, tokenOut;
 
             // CRITICAL FIX: Get fresh balance data before each buy attempt
             logger.info(
@@ -1081,7 +1080,7 @@ export const executeTokenLaunch = async (
 
             // Use the full available amount for the swap
             const swapAmountSOL = availableForSpend;
-            swapAmountLamports = BigInt(
+            const swapAmountLamports = BigInt(
               Math.ceil(swapAmountSOL * LAMPORTS_PER_SOL)
             );
 
@@ -1145,9 +1144,9 @@ export const executeTokenLaunch = async (
                       `[${logIdentifier}]: Could not fetch fresh curve data, using cached values`
                     );
                   }
-                } catch (curveError: any) {
+                } catch (curveError: unknown) {
                   logger.warn(
-                    `[${logIdentifier}]: Error fetching fresh curve data: ${curveError.message}, using cached values`
+                    `[${logIdentifier}]: Error fetching fresh curve data: ${curveError instanceof Error ? curveError.message : String(curveError)}, using cached values`
                   );
                 }
               }
@@ -1303,9 +1302,9 @@ export const executeTokenLaunch = async (
               // Simultaneous execution retry delay (minimal)
               await randomizedSleep(25, 25);
             }
-          } catch (error: any) {
+          } catch (error: unknown) {
             logger.error(
-              `[${logIdentifier}]: Buy attempt ${attempt + 1} error for ${keypair.publicKey.toBase58()}: ${error.message}`
+              `[${logIdentifier}]: Buy attempt ${attempt + 1} error for ${keypair.publicKey.toBase58()}: ${error instanceof Error ? error.message : String(error)}`
             );
 
             // Record the failed attempt
@@ -1319,13 +1318,17 @@ export const executeTokenLaunch = async (
               {
                 slippageUsed: baseSlippage + attempt * 5,
                 amountSol: 0, // We don't know the amount for failed attempts
-                errorMessage: error.message,
+                errorMessage:
+                  error instanceof Error ? error.message : String(error),
                 retryAttempt: attempt,
               }
             );
 
             if (attempt === maxRetries) {
-              return { success: false, error: error.message };
+              return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+              };
             }
             await randomizedSleep(25, 25);
           }
@@ -1535,16 +1538,23 @@ export const executeTokenLaunch = async (
         );
 
         if (feeCollectionPromises.length > 0) {
+          interface FeeCollectionResult {
+            success: boolean;
+            signature?: string;
+            error?: string;
+            feeAmount: number;
+          }
+
           const feeResults = await Promise.all(feeCollectionPromises);
           const successfulFees = feeResults.filter(
-            (result: any) => result.success
+            (result: FeeCollectionResult) => result.success
           );
           const failedFees = feeResults.filter(
-            (result: any) => !result.success
+            (result: FeeCollectionResult) => !result.success
           );
 
           const totalFeesCollected = successfulFees.reduce(
-            (sum: number, result: any) => {
+            (sum: number, result: FeeCollectionResult) => {
               return sum + (result.feeAmount || 0);
             },
             0
@@ -1562,7 +1572,7 @@ export const executeTokenLaunch = async (
           if (failedFees.length > 0) {
             logger.warn(
               `[${logIdentifier}]: Some transaction fees failed to collect`,
-              failedFees.map((result: any, index: number) => ({
+              failedFees.map((result: FeeCollectionResult, index: number) => ({
                 index,
                 success: result.success,
                 error: result.error,
@@ -1573,7 +1583,7 @@ export const executeTokenLaunch = async (
         } else {
           logger.info(`[${logIdentifier}]: No transaction fees to collect`);
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.error(
           `[${logIdentifier}]: Error collecting transaction fees:`,
           error
