@@ -3660,7 +3660,7 @@ bot.on("message:text", async (ctx) => {
               .text("🔄 Refresh", `refresh_ca_${text}`)
               .row()
               .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${text}`)
-              // .text("💰 Relaunch", `${CallBackQueries.RELAUNCH_TOKEN}_${text}`)
+              .text("💰 Relaunch", `${CallBackQueries.RELAUNCH_TOKEN}_${text}`)
               .row()
               .text("🏠 Menu", CallBackQueries.BACK),
           });
@@ -3962,10 +3962,10 @@ bot.on("message:text", async (ctx) => {
                   .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
                   .text("🔄 Refresh", `refresh_ca_${text}`)
                   .row()
-                  // .text(
-                  //   "💰 Relaunch",
-                  //   `${CallBackQueries.RELAUNCH_TOKEN}_${text}`
-                  // )
+                  .text(
+                    "💰 Relaunch",
+                    `${CallBackQueries.RELAUNCH_TOKEN}_${text}`
+                  )
                   .text(
                     "🎁 Airdrop SOL",
                     `${CallBackQueries.AIRDROP_SOL}_${text}`
