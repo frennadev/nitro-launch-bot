@@ -264,6 +264,7 @@ const launchTokenConversation = async (
     let filteredBuyWallets = await Promise.all(
       buyerWallets.map(async (wallet) => {
         const walletBalance = await getWalletBalance(wallet.publicKey);
+
         return { ...wallet, balance: walletBalance };
       })
     );
