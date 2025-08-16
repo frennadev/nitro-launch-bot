@@ -653,16 +653,16 @@ Your token launch has been successfully resubmitted using your previous paramete
     devBuy = existingRetryData.devBuy;
     await sendMessage(
       ctx,
-      `🔄 **Retrying Token Launch**
+      `🔄 <b>Retrying Token Launch</b>
 
-**📊 Using Previous Parameters:**
-• **Buy Amount:** \`${buyAmount}\` SOL
-• **Dev Buy:** \`${devBuy}\` SOL
+<b>📊 Using Previous Parameters:</b>
+• <b>Buy Amount:</b> <code>${buyAmount}</code> SOL
+• <b>Dev Buy:</b> <code>${devBuy}</code> SOL
 
-⏳ **Status:** Proceeding with stored launch parameters
+⏳ <b>Status:</b> Proceeding with stored launch parameters
 
-💡 **Note:** These values were saved from your previous launch attempt.`,
-      { parse_mode: "Markdown" }
+💡 <b>Note:</b> These values were saved from your previous launch attempt.`,
+      { parse_mode: "HTML" }
     );
 
     // Clear retry data after use
@@ -1121,7 +1121,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
   // ------- CHECKS BEFORE LAUNCH ------
   const checksLoading = await sendLoadingMessage(
     ctx,
-    "🔍 **Performing pre-launch checks...**\n\n⏳ Validating parameters..."
+    "🔍 <b>Performing pre-launch checks...</b>\n\n⏳ Validating parameters..."
   );
 
   // Get buyer wallet private keys
@@ -1134,7 +1134,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
   const buyerKeys = buyerWalletDocs.map((w) => decryptPrivateKey(w.privateKey));
 
   await checksLoading.update(
-    "🔍 **Performing pre-launch checks...**\n\n💰 Checking wallet balances..."
+    "🔍 <b>Performing pre-launch checks...</b>\n\n💰 Checking wallet balances..."
   );
 
   let result: any;
@@ -1142,7 +1142,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
   if (isBonkToken) {
     // Bonk tokens: ensure mixing is performed before on-chain launch
     await checksLoading.update(
-      "🚀 **Launching Bonk token...**\n\n⏳ Mixing funds and creating token on Raydium Launch Lab..."
+      "🚀 <b>Launching Bonk token...</b>\n\n⏳ Mixing funds and creating token on Raydium Launch Lab..."
     );
 
     // Use backend function to handle mixing and launch
@@ -1157,7 +1157,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
 
     if (result.success) {
       await checksLoading.update(
-        "🎉 **Bonk token launched successfully!**\n\n✅ Your token is now live on Raydium Launch Lab.\n\n📱 Sending detailed success notification..."
+        "🎉 <b>Bonk token launched successfully!</b>\n\n✅ Your token is now live on Raydium Launch Lab.\n\n📱 Sending detailed success notification..."
       );
 
       // Send Bonk-specific success notification
@@ -1171,7 +1171,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
       );
     } else {
       await checksLoading.update(
-        "❌ **Bonk token launch failed**\n\nAn error occurred during launch. Please try again."
+        "❌ <b>Bonk token launch failed</b>\n\nAn error occurred during launch. Please try again."
       );
 
       await sendMessage(
@@ -1183,7 +1183,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
   } else {
     // PumpFun tokens use the complex staging process
     await checksLoading.update(
-      "🚀 **Submitting PumpFun token launch...**\n\n⏳ Queuing for staged launch process..."
+      "🚀 <b>Submitting PumpFun token launch...</b>\n\n⏳ Queuing for staged launch process..."
     );
 
     result = await enqueuePrepareTokenLaunch(
@@ -1201,7 +1201,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
 
     if (!result.success) {
       await checksLoading.update(
-        "❌ **Failed to submit launch**\n\nAn error occurred while submitting launch details for execution. Please try again."
+        "❌ <b>Failed to submit launch</b>\n\nAn error occurred while submitting launch details for execution. Please try again."
       );
       await sendMessage(
         ctx,
@@ -1209,7 +1209,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
       );
     } else {
       await checksLoading.update(
-        "🎉 **Launch submitted successfully!**\n\n⏳ Your token launch is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the launch is completed."
+        "🎉 <b>Launch submitted successfully!</b>\n\n⏳ Your token launch is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the launch is completed."
       );
 
       // Start the loading state for the actual launch process

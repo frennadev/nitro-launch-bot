@@ -293,7 +293,6 @@ const relaunchTokenConversation = async (
     }
     await ctx.reply(
       `🎉 <b>Token Created Successfully!</b>
-
 🚀 <b>Platform:</b> <code>PumpFun</code>
 
 📊 <b>Token Details:</b>
@@ -330,7 +329,6 @@ ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
 
     await ctx.reply(
       `🎉 <b>Token Created Successfully!</b>
-
 🚀 <b>Platform:</b> <code>PumpFun</code>
 
 📊 <b>Token Details:</b>

@@ -57,15 +57,15 @@ const createTokenConversation = async (
     await modeUpd.answerCallbackQuery();
     if (data === CallBackQueries.PUMPFUN) {
       mode = CallBackQueries.PUMPFUN;
-      await modeUpd.reply("✅ Launch mode set to *PumpFun*.", {
-        parse_mode: "Markdown",
+      await modeUpd.reply("✅ Launch mode set to <b>PumpFun</b>.", {
+        parse_mode: "HTML",
       });
       break;
     }
     if (data === CallBackQueries.LETSBONK) {
       mode = CallBackQueries.LETSBONK;
-      await modeUpd.reply("✅ Launch mode set to *LetsBonk*.", {
-        parse_mode: "Markdown",
+      await modeUpd.reply("✅ Launch mode set to <b>LetsBonk</b>.", {
+        parse_mode: "HTML",
       });
       break;
     }
@@ -238,7 +238,7 @@ const createTokenConversation = async (
   // === 5) Create token based on mode and show result ===
   const { update } = await sendLoadingMessage(
     ctx,
-    "🔄 **Creating your token...**\n\n⏳ Processing image and metadata..."
+    "🔄 <b>Creating your token...</b>\n\n⏳ Processing image and metadata..."
   );
 
   let token: any;
@@ -258,7 +258,7 @@ const createTokenConversation = async (
 
   if (mode === CallBackQueries.PUMPFUN) {
     await update(
-      `🎉 **Token Created Successfully!**\n\n✅ Your PumpFun token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
+      `🎉 <b>Token Created Successfully!</b>\n\n✅ Your PumpFun token is ready to launch!\n\n<b>Token Address:</b> <code>${token.tokenAddress}</code>`
     );
 
     const launchKb = new InlineKeyboard().text(
@@ -279,7 +279,6 @@ const createTokenConversation = async (
 
     await ctx.reply(
       `🎉 <b>Token Created Successfully!</b>
-
 🚀 <b>Platform:</b> <code>PumpFun</code>
 
 📊 <b>Token Details:</b>
@@ -293,9 +292,11 @@ ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
 ✅ <b>Status:</b> Ready for launch on PumpFun! 🚀`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
+
+    conversation.halt();
   } else {
     await update(
-      `🎉 **Token Created Successfully!**\n\n✅ Your LetsBonk token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
+      `🎉 <b>Token Created Successfully!</b>\n\n✅ Your LetsBonk token is ready to launch!\n\n<b>Token Address:</b> <code>${token.tokenAddress}</code>`
     );
 
     const launchKb = new InlineKeyboard().text(
@@ -316,8 +317,7 @@ ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
 
     await ctx.reply(
       `🎉 <b>Token Created Successfully!</b>
-
-🚀 <b>Platform:</b> <code>PumpFun</code>
+🚀 <b>Platform:</b> <code>LetsBonk</code>
 
 📊 <b>Token Details:</b>
 💎 <b>Name:</b> <code>${token.name}</code>
@@ -327,7 +327,7 @@ ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
 
 ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
 
-✅ <b>Status:</b> Ready for launch on PumpFun! 🚀`,
+✅ <b>Status:</b> Ready for launch on LetsBonk! 🚀`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
 

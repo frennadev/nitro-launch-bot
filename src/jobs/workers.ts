@@ -78,7 +78,8 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         data.tokenMetadataUri,
         data.buyAmount,
         data.devBuy,
-        data.launchStage
+        data.launchStage,
+        "normal"
       );
 
       // Update loading state - Phase 5: Finalizing
@@ -102,8 +103,20 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         `<b>Token:</b> ${data.tokenName} ($${data.tokenSymbol})\n<b>Address:</b> <code>${data.tokenAddress}</code>`
       );
 
+      console.log("[DEBUG] About to call sendLaunchSuccessNotification with:", {
+        userChatId: data.userChatId,
+        tokenAddress: data.tokenAddress,
+        tokenName: data.tokenName,
+        tokenSymbol: data.tokenSymbol,
+        types: {
+          userChatId: typeof data.userChatId,
+          tokenAddress: typeof data.tokenAddress,
+          tokenName: typeof data.tokenName,
+          tokenSymbol: typeof data.tokenSymbol,
+        },
+      });
+
       await sendLaunchSuccessNotification(
-        bot,
         data.userChatId,
         data.tokenAddress,
         data.tokenName,
@@ -787,8 +800,20 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
           `🚀 <b>Your token is now live and ready for trading!</b>`
       );
 
+      console.log("[DEBUG] About to call sendLaunchSuccessNotification with:", {
+        userChatId: data.userChatId,
+        tokenAddress: data.tokenAddress,
+        tokenName: data.tokenName,
+        tokenSymbol: data.tokenSymbol,
+        types: {
+          userChatId: typeof data.userChatId,
+          tokenAddress: typeof data.tokenAddress,
+          tokenName: typeof data.tokenName,
+          tokenSymbol: typeof data.tokenSymbol,
+        },
+      });
+
       await sendLaunchSuccessNotification(
-        bot,
         data.userChatId,
         data.tokenAddress,
         data.tokenName,
@@ -841,7 +866,6 @@ launchTokenWorker.on("failed", async (job) => {
 
   const token = job!.data;
   await sendLaunchFailureNotification(
-    bot,
     job!.data.userChatId,
     token.tokenAddress,
     token.tokenName,
@@ -942,7 +966,6 @@ executeLaunchWorker.on("failed", async (job) => {
 
   const token = job!.data;
   await sendLaunchFailureNotification(
-    bot,
     job!.data.userChatId,
     token.tokenAddress,
     token.tokenName,

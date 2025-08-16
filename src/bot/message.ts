@@ -23,6 +23,19 @@ export const sendLaunchSuccessNotification = async (
   tokenName: string,
   symbol: string
 ) => {
+  console.log("[DEBUG] sendLaunchSuccessNotification called with:", {
+    chatId,
+    tokenAddress,
+    tokenName,
+    symbol,
+    types: {
+      chatId: typeof chatId,
+      tokenAddress: typeof tokenAddress,
+      tokenName: typeof tokenName,
+      symbol: typeof symbol,
+    },
+  });
+
   const messageData = await buildLaunchSuccessMessage(
     tokenAddress,
     tokenName,
@@ -136,6 +149,17 @@ const buildLaunchSuccessMessage = async (
   tokenName: string,
   symbol: string
 ) => {
+  console.log("[DEBUG] buildLaunchSuccessMessage called with:", {
+    tokenAddress,
+    tokenName,
+    symbol,
+    types: {
+      tokenAddress: typeof tokenAddress,
+      tokenName: typeof tokenName,
+      symbol: typeof symbol,
+    },
+  });
+
   // Get accurate financial statistics
   const financialStats = await getAccurateSpendingStats(tokenAddress);
 

@@ -224,6 +224,22 @@ export function compressCallbackData(
   action: string,
   tokenAddress: string
 ): string {
+  // Debug logging and type validation
+  if (typeof tokenAddress !== "string") {
+    console.error(
+      `[compressCallbackData] ERROR: tokenAddress is not a string!`,
+      {
+        action,
+        tokenAddress,
+        type: typeof tokenAddress,
+        stack: new Error().stack,
+      }
+    );
+    throw new Error(
+      `tokenAddress must be a string, received ${typeof tokenAddress}: ${tokenAddress}`
+    );
+  }
+
   // Clean the token address first
   const cleanedTokenAddress = cleanTokenAddress(tokenAddress);
 
@@ -291,6 +307,22 @@ export function createSafeCallbackData(
   action: string,
   tokenAddress: string
 ): string {
+  // Debug logging and type validation
+  if (typeof tokenAddress !== "string") {
+    console.error(
+      `[createSafeCallbackData] ERROR: tokenAddress is not a string!`,
+      {
+        action,
+        tokenAddress,
+        type: typeof tokenAddress,
+        stack: new Error().stack,
+      }
+    );
+    throw new Error(
+      `tokenAddress must be a string, received ${typeof tokenAddress}: ${tokenAddress}`
+    );
+  }
+
   // Clean the token address first
   const cleanedTokenAddress = cleanTokenAddress(tokenAddress);
   const compressed = compressCallbackData(action, cleanedTokenAddress);
