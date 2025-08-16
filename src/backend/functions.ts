@@ -374,17 +374,17 @@ export const getAvailablePumpAddress = async (
   try {
     // First try to get an address from the external database
     logger.info(
-      `[getAvailablePumpAddress] Attempting to get pump address from external database for user ${userId}`
+      `[getAvailablePumpAddress] Attempting to get pump address from database`
     );
 
     const externalAddress = await externalService.getUnusedPumpAddress(
-      userId,
+      userId, // Pass the actual userId instead of empty string
       excludeAddresses
     );
 
     if (externalAddress) {
       logger.info(
-        `[getAvailablePumpAddress] Successfully allocated external pump address ${externalAddress.publicKey} to user ${userId}`
+        `[getAvailablePumpAddress] Successfully got pump address ${externalAddress.publicKey}`
       );
 
       // Also mark it as used in our local database for consistency
@@ -403,13 +403,14 @@ export const getAvailablePumpAddress = async (
       };
     } else {
       logger.warn(
-        `[getAvailablePumpAddress] No external pump addresses available, falling back to local database`
+        `[getAvailablePumpAddress] No pump addresses available in external database, falling back to local database`
       );
     }
   } catch (error: any) {
     logger.error(
       `[getAvailablePumpAddress] Error accessing external database: ${error.message}, falling back to local database`
     );
+    logger.error(`[getAvailablePumpAddress] Full error:`, error);
   }
 
   // Fallback to local database if external service fails or has no addresses
@@ -418,9 +419,26 @@ export const getAvailablePumpAddress = async (
   try {
     return await session.withTransaction(async () => {
       // Build query to find addresses that have NEVER been allocated to any user
-      // Use the same logic as external database
+      // Use the same logic as external database - check ALL FOUR fields
       const query: any = {
-        $or: [{ usedBy: { $exists: false } }, { usedBy: null }, { usedBy: "" }],
+        $and: [
+          {
+            $or: [{ isUsed: { $exists: false } }, { isUsed: false }],
+          },
+          {
+            $or: [{ usedAt: { $exists: false } }, { usedAt: null }],
+          },
+          {
+            $or: [
+              { usedBy: { $exists: false } },
+              { usedBy: null },
+              { usedBy: "" },
+            ],
+          },
+          {
+            $or: [{ updatedAt: { $exists: false } }, { updatedAt: null }],
+          },
+        ],
       };
 
       if (excludeAddresses.length > 0) {
@@ -640,11 +658,11 @@ export const createToken = async (
         `[createToken] Got pump address: ${tokenKey.publicKey} (attempt ${attempts})`
       );
     } catch (error: any) {
-      // Fallback to random generation if no pump addresses available
-      logger.warn(
-        `No pump addresses available for user ${userId}, falling back to random generation: ${error.message}`
+      // No fallback to random generation - pump addresses are required
+      logger.error(`No pump addresses available in database: ${error.message}`);
+      throw new Error(
+        "No pump addresses available in database. Cannot proceed without a valid pump address."
       );
-      throw error;
     }
 
     // Check if the allocated address is already launched/listed
@@ -675,30 +693,10 @@ export const createToken = async (
 
     if (attempts >= maxAttempts) {
       // If we've tried multiple times and all addresses seem to be launched,
-      // this might be a false positive. Try one more time with a random address
-      logger.warn(
-        `[createToken] All pump addresses appear to be launched - this might be a false positive. Trying with random address.`
+      // this indicates a system issue - we should not fall back to random generation
+      throw new Error(
+        `Failed to find an unused pump address after ${maxAttempts} attempts. All pump addresses appear to be already active on trading platforms. This may indicate that more pump addresses need to be generated in the database, or there is a system issue with token detection.`
       );
-
-      const [randomKey] = generateKeypairs(1);
-      tokenKey = randomKey;
-
-      // Clear cache and check the random address
-      clearLaunchStatusCache(tokenKey.publicKey);
-      const finalIsLaunched = await isTokenAlreadyLaunched(tokenKey.publicKey);
-      const finalIsListed = await isTokenAlreadyListed(tokenKey.publicKey);
-
-      if (!finalIsLaunched && !finalIsListed) {
-        logger.info(
-          `[createToken] Random address ${tokenKey.publicKey} is available - proceeding with token creation`
-        );
-        isPumpAddress = false; // Mark as random address
-        break;
-      } else {
-        throw new Error(
-          `Failed to find a non-launched address after ${maxAttempts} attempts. All addresses appear to be already active on trading platforms. This may indicate a system issue with token detection.`
-        );
-      }
     }
 
     // Small delay before retry

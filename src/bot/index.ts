@@ -114,6 +114,7 @@ import { predictMcConversation } from "./conversation/predictMc";
 import { fundTokenWalletsConversation } from "./conversation/fundTokenWallets";
 import mongoose from "mongoose";
 import { htmlToJpg } from "../utils/generatePnlCard";
+import relaunchTokenConversation from "./conversation/relaunchTokenConversation";
 
 // Platform detection and caching for external tokens
 const platformCache = new Map<
@@ -691,6 +692,7 @@ bot.use(createConversation(referralsConversation));
 bot.use(createConversation(ctoConversation));
 bot.use(createConversation(ctoMonitorConversation));
 bot.use(createConversation(buyCustonConversation));
+bot.use(createConversation(relaunchTokenConversation));
 bot.use(createConversation(sellIndividualToken));
 bot.use(createConversation(sellPercentageMessage));
 bot.use(createConversation(helpConversation));
@@ -3658,7 +3660,7 @@ bot.on("message:text", async (ctx) => {
               .text("🔄 Refresh", `refresh_ca_${text}`)
               .row()
               .text("🎁 Airdrop SOL", `${CallBackQueries.AIRDROP_SOL}_${text}`)
-              // .text("💰 Relaunch", CallBackQueries.RELAUNCH_TOKEN)
+              .text("💰 Relaunch", `${CallBackQueries.RELAUNCH_TOKEN}_${text}`)
               .row()
               .text("🏠 Menu", CallBackQueries.BACK),
           });
@@ -3961,6 +3963,10 @@ bot.on("message:text", async (ctx) => {
                   .text("🔄 Refresh", `refresh_ca_${text}`)
                   .row()
                   .text(
+                    "💰 Relaunch",
+                    `${CallBackQueries.RELAUNCH_TOKEN}_${text}`
+                  )
+                  .text(
                     "🎁 Airdrop SOL",
                     `${CallBackQueries.AIRDROP_SOL}_${text}`
                   )
@@ -4191,6 +4197,61 @@ bot.command("help", async (ctx) => {
     { parse_mode: "Markdown" }
   );
 });
+
+bot.callbackQuery(/^relaunch_token_(.+)$/, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🚀 Loading relaunch options...");
+  const tokenAddress = ctx.match![1];
+
+  try {
+    logger.info(
+      `[Relaunch] Relaunch button clicked for token: ${tokenAddress}`
+    );
+
+    // Validate the token address
+    try {
+      new PublicKey(tokenAddress);
+    } catch (error) {
+      await sendMessage(
+        ctx,
+        "❌ Invalid token address. Please send a valid token address to relaunch."
+      );
+      return;
+    }
+
+    // Check if user exists
+    const user = await getUser(ctx.chat!.id.toString());
+    if (!user) {
+      await sendMessage(
+        ctx,
+        "❌ User not found. Please use /start to register."
+      );
+      return;
+    }
+
+    // Clear any existing conversation state
+    await clearConversationState(ctx);
+
+    // Wait a moment for cleanup
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Start the relaunch token conversation with the existing token address
+    await ctx.conversation.enter("relaunchTokenConversation", {
+      mode: "relaunch",
+      tokenAddress: tokenAddress,
+    });
+
+    logger.info(
+      `[Relaunch] Successfully started relaunch conversation for token: ${tokenAddress}`
+    );
+  } catch (error: any) {
+    logger.error(`[Relaunch] Error handling relaunch token callback:`, error);
+    await sendMessage(
+      ctx,
+      "❌ Error starting relaunch process. Please try again or contact support."
+    );
+  }
+});
+
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
 

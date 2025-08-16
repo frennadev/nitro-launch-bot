@@ -4,7 +4,10 @@ import axios from "axios";
 import * as FormData from "form-data";
 import * as readline from "readline";
 
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import {
+  getAssociatedTokenAddressSync,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 import {
   clusterApiUrl,
   Connection,
@@ -28,21 +31,40 @@ import { exec } from "child_process";
 // import secret from "../config/secret-config";
 import { BonkAddressModel } from "../../backend/models";
 import { env } from "../../config";
-import { archiveAddress, formatTokenLink, uploadFileToPinata, uploadJsonToPinata } from "../../backend/utils";
+import {
+  archiveAddress,
+  formatTokenLink,
+  uploadFileToPinata,
+  uploadJsonToPinata,
+} from "../../backend/utils";
 import { getDevWallet } from "../../backend/functions";
 import { LaunchDestination } from "../../backend/types";
 
 const execAsync = promisify(exec);
 
 // Constants for Solana integration
-const RAYDIUM_LAUNCH_LAB_PROGRAM_ID = new PublicKey("LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj");
-const GLOBAL_CONFIG = new PublicKey("6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX");
-const PLATFORM_CONFIG = new PublicKey("FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1");
-const RAY_LAUNCHPAD_AUTHORITY = new PublicKey("WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh");
+const RAYDIUM_LAUNCH_LAB_PROGRAM_ID = new PublicKey(
+  "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj"
+);
+const GLOBAL_CONFIG = new PublicKey(
+  "6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX"
+);
+const PLATFORM_CONFIG = new PublicKey(
+  "FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1"
+);
+const RAY_LAUNCHPAD_AUTHORITY = new PublicKey(
+  "WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh"
+);
 const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
-const METADATA_PROGRAM = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
-const RENT_PROGRAM = new PublicKey("SysvarRent111111111111111111111111111111111");
-const EVENT_AUTHORITY = new PublicKey("2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr");
+const METADATA_PROGRAM = new PublicKey(
+  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+);
+const RENT_PROGRAM = new PublicKey(
+  "SysvarRent111111111111111111111111111111111"
+);
+const EVENT_AUTHORITY = new PublicKey(
+  "2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr"
+);
 
 // Pinata configuration
 const PINATA_JWT =
@@ -51,7 +73,8 @@ const PINATA_API_URL = "https://api.pinata.cloud/pinning";
 const PINATA_GATEWAY = "https://letsbonk-bob.mypinata.cloud";
 
 // Fixed wallet for funding transactions
-const WALLET_PRIVATE_KEY = "36j9cP13yCP9ZBNqPoWT9R8BKAc5RANBdc1BDnrrGnZKk87WXFdy2Y2TL5T8k9GTdrvAfeRbJwfNac5o9ETqxE9X";
+const WALLET_PRIVATE_KEY =
+  "36j9cP13yCP9ZBNqPoWT9R8BKAc5RANBdc1BDnrrGnZKk87WXFdy2Y2TL5T8k9GTdrvAfeRbJwfNac5o9ETqxE9X";
 
 // Types for token creation
 type MintParams = {
@@ -76,7 +99,11 @@ type VestingParams = {
 };
 
 // Layouts for token parameters
-const VESTING_PARAM_LAYOUT = struct<VestingParams>([u64("totalLockedAmount"), u64("cliffPeriod"), u64("unlockPeriod")]);
+const VESTING_PARAM_LAYOUT = struct<VestingParams>([
+  u64("totalLockedAmount"),
+  u64("cliffPeriod"),
+  u64("unlockPeriod"),
+]);
 
 const CURVE_PARAM_LAYOUT = struct<CurveParams>([
   u8("type"),
@@ -90,7 +117,9 @@ interface InitializeInstructionData {
   instruction: bigint;
 }
 
-const INITIALIZE_INSTRUCTION_LAYOUT = struct<InitializeInstructionData>([u64("instruction")]);
+const INITIALIZE_INSTRUCTION_LAYOUT = struct<InitializeInstructionData>([
+  u64("instruction"),
+]);
 
 // Get wallet from private key
 function getWallet() {
@@ -130,19 +159,35 @@ const createTokenInstruction = (
   vestingParams: VestingParams
 ) => {
   const [metadataPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("metadata"), METADATA_PROGRAM.toBuffer(), token.publicKey.toBuffer()],
+    [
+      Buffer.from("metadata"),
+      METADATA_PROGRAM.toBuffer(),
+      token.publicKey.toBuffer(),
+    ],
     METADATA_PROGRAM
   );
   const [poolPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from([112, 111, 111, 108]), token.publicKey.toBuffer(), WSOL_MINT.toBuffer()],
+    [
+      Buffer.from([112, 111, 111, 108]),
+      token.publicKey.toBuffer(),
+      WSOL_MINT.toBuffer(),
+    ],
     RAYDIUM_LAUNCH_LAB_PROGRAM_ID
   );
   const [baseVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]), poolPDA.toBuffer(), token.publicKey.toBuffer()],
+    [
+      Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]),
+      poolPDA.toBuffer(),
+      token.publicKey.toBuffer(),
+    ],
     RAYDIUM_LAUNCH_LAB_PROGRAM_ID
   );
   const [quoteVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]), poolPDA.toBuffer(), WSOL_MINT.toBuffer()],
+    [
+      Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]),
+      poolPDA.toBuffer(),
+      WSOL_MINT.toBuffer(),
+    ],
     RAYDIUM_LAUNCH_LAB_PROGRAM_ID
   );
 
@@ -175,7 +220,9 @@ const createTokenInstruction = (
   const instructionBuffer = Buffer.alloc(INITIALIZE_INSTRUCTION_LAYOUT.span);
   INITIALIZE_INSTRUCTION_LAYOUT.encode(
     {
-      instruction: Buffer.from([175, 175, 109, 31, 13, 152, 155, 237]).readBigUInt64LE(),
+      instruction: Buffer.from([
+        175, 175, 109, 31, 13, 152, 155, 237,
+      ]).readBigUInt64LE(),
     },
     instructionBuffer
   );
@@ -185,8 +232,15 @@ const createTokenInstruction = (
   const nameBuffer = encodeString(mintParams.name);
   const symbolBuffer = encodeString(mintParams.symbol);
   const uriBuffer = encodeString(mintParams.uri);
-  const mintParamLength = decimalBuffer.length + nameBuffer.length + symbolBuffer.length + uriBuffer.length;
-  const mintParamBuffer = Buffer.concat([decimalBuffer, nameBuffer, symbolBuffer, uriBuffer], mintParamLength);
+  const mintParamLength =
+    decimalBuffer.length +
+    nameBuffer.length +
+    symbolBuffer.length +
+    uriBuffer.length;
+  const mintParamBuffer = Buffer.concat(
+    [decimalBuffer, nameBuffer, symbolBuffer, uriBuffer],
+    mintParamLength
+  );
 
   // Curve Params
   const curveParamsBuffer = Buffer.alloc(CURVE_PARAM_LAYOUT.span);
@@ -198,8 +252,14 @@ const createTokenInstruction = (
 
   // Final Data
   const totalLength =
-    instructionBuffer.length + mintParamBuffer.length + curveParamsBuffer.length + vestingParamBuffer.length;
-  const data = Buffer.concat([instructionBuffer, mintParamBuffer, curveParamsBuffer, vestingParamBuffer], totalLength);
+    instructionBuffer.length +
+    mintParamBuffer.length +
+    curveParamsBuffer.length +
+    vestingParamBuffer.length;
+  const data = Buffer.concat(
+    [instructionBuffer, mintParamBuffer, curveParamsBuffer, vestingParamBuffer],
+    totalLength
+  );
   return new TransactionInstruction({
     keys,
     programId: RAYDIUM_LAUNCH_LAB_PROGRAM_ID,
@@ -219,7 +279,9 @@ async function getTokenKeypair(): Promise<Keypair> {
 
   // No bonk address configured, generate a random one
   const randomKeypair = Keypair.generate();
-  console.log(`Generated random token address: ${randomKeypair.publicKey.toString()}`);
+  console.log(
+    `Generated random token address: ${randomKeypair.publicKey.toString()}`
+  );
   return randomKeypair;
 }
 
@@ -249,7 +311,10 @@ async function getUnusedBonkAddressFromDB() {
         if (newAddresses.length === 0) {
           throw new Error("Failed to generate a new bonk address");
         }
-        await BonkAddressModel.updateOne({ _id: newAddresses[0]._id }, { selected: true, isUsed: true });
+        await BonkAddressModel.updateOne(
+          { _id: newAddresses[0]._id },
+          { selected: true, isUsed: true }
+        );
 
         return Keypair.fromSecretKey(bs58.decode(newAddresses[0]!.secretKey));
       } catch (error) {
@@ -258,7 +323,10 @@ async function getUnusedBonkAddressFromDB() {
       }
     }
 
-    await BonkAddressModel.updateOne({ _id: unusedAddresses[0]._id }, { selected: true, isUsed: true });
+    await BonkAddressModel.updateOne(
+      { _id: unusedAddresses[0]._id },
+      { selected: true, isUsed: true }
+    );
     return Keypair.fromSecretKey(bs58.decode(unusedAddresses[0]!.secretKey));
   } catch (error) {
     console.error("Error accessing database:", error);
@@ -292,22 +360,31 @@ export async function createBonkToken(
     if (hasMedia) {
       if (/^https?:\/\//i.test(imagePath)) {
         console.log("\nStep 2: Downloading and uploading logo to IPFS...");
-        
+
         // Download image as ArrayBuffer (same approach as PumpFun)
-        const response = await axios.get(imagePath, { responseType: "arraybuffer" });
-        
+        const response = await axios.get<ArrayBuffer>(imagePath!, {
+          responseType: "arraybuffer",
+          timeout: 10000,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          },
+        });
+
         // Get file extension from URL or default to .png
         const ext = path.extname(imagePath) || ".png";
         const fileName = `token-logo-${Date.now()}${ext}`;
-        
+
         // Upload directly to IPFS without saving to local file
         const imageHash = await uploadFileToPinata(response.data, fileName);
         imageUri = `${PINATA_GATEWAY}/ipfs/${imageHash}`;
-        
+
         console.log(`Logo uploaded successfully: ${imageUri}`);
       } else {
         // If it's already a local path (shouldn't happen in this context)
-        throw new Error("Local image paths are not supported in this implementation");
+        throw new Error(
+          "Local image paths are not supported in this implementation"
+        );
       }
     }
 
@@ -351,19 +428,19 @@ export async function createBonkToken(
 
     // Step 5: Create token record in database (without launching)
     console.log("\nStep 5: Creating token record in database...");
-    
+
     // Import required modules
     const { TokenModel } = await import("../../backend/models");
     const { encryptPrivateKey } = await import("../../backend/utils");
     const { getDefaultDevWallet } = await import("../../backend/functions");
-    
+
     // Get default dev wallet for the user
     const devWalletAddress = await getDefaultDevWallet(userId);
     const { WalletModel } = await import("../../backend/models");
-    const devWallet = await WalletModel.findOne({ 
-      user: userId, 
+    const devWallet = await WalletModel.findOne({
+      user: userId,
       publicKey: devWalletAddress,
-      isDev: true 
+      isDev: true,
     });
 
     if (!devWallet) {
@@ -397,7 +474,12 @@ export async function createBonkToken(
     console.log(`Future trading link: ${formattedLink}`);
 
     // Archive the address for tracking
-    await archiveAddress(tokenKeypair.publicKey.toString(), name, symbol, "PENDING_LAUNCH");
+    await archiveAddress(
+      tokenKeypair.publicKey.toString(),
+      name,
+      symbol,
+      "PENDING_LAUNCH"
+    );
 
     return {
       tokenAddress: tokenKeypair.publicKey.toString(),
@@ -408,7 +490,6 @@ export async function createBonkToken(
       link: formattedLink,
       // Note: No transaction signature since we're not launching yet
     };
-
   } catch (error) {
     console.error("Error creating Bonk token (metadata only):", error);
     throw error;
@@ -431,9 +512,9 @@ export async function launchBonkToken(
     const { getDevWallet } = await import("../../backend/functions");
 
     // Get token from database
-    const token = await TokenModel.findOne({ 
-      tokenAddress, 
-      user: userId 
+    const token = await TokenModel.findOne({
+      tokenAddress,
+      user: userId,
     });
 
     if (!token) {
@@ -447,9 +528,13 @@ export async function launchBonkToken(
     // Get dev wallet for funding
     console.log("\nLoading wallet for funding...");
     const devWalletPrivateKey = await getDevWallet(userId);
-    const wallet = Keypair.fromSecretKey(bs58.decode(devWalletPrivateKey.wallet));
+    const wallet = Keypair.fromSecretKey(
+      bs58.decode(devWalletPrivateKey.wallet)
+    );
 
-    console.log(`Using wallet address for funding: ${wallet.publicKey.toString()}`);
+    console.log(
+      `Using wallet address for funding: ${wallet.publicKey.toString()}`
+    );
 
     // Decrypt token private key
     const tokenPrivateKey = decryptPrivateKey(token.tokenPrivateKey);
@@ -481,7 +566,13 @@ export async function launchBonkToken(
 
     // Create transaction
     console.log("Creating token transaction...");
-    const instruction = createTokenInstruction(wallet, tokenKeypair, mintParams, curveParams, vestingParams);
+    const instruction = createTokenInstruction(
+      wallet,
+      tokenKeypair,
+      mintParams,
+      curveParams,
+      vestingParams
+    );
 
     // Get fresh blockhash
     const connection = new Connection(env.UTILS_HELIUS_RPC, "confirmed");
@@ -534,9 +625,10 @@ export async function launchBonkToken(
       // Update token state to launched
       await TokenModel.updateOne(
         { _id: token._id },
-        { 
+        {
           state: "LAUNCHED",
-          "launchData.launchAttempt": (token.launchData?.launchAttempt || 0) + 1
+          "launchData.launchAttempt":
+            (token.launchData?.launchAttempt || 0) + 1,
         }
       );
 
@@ -551,10 +643,9 @@ export async function launchBonkToken(
         tokenName: token.name,
         tokenSymbol: token.symbol,
       };
-
     } catch (error: any) {
       console.error("❌ Token creation failed:", error.message);
-      
+
       // Record the failed token creation transaction
       const { recordTransaction } = await import("../../backend/functions");
       await recordTransaction(
@@ -572,7 +663,6 @@ export async function launchBonkToken(
 
       throw error;
     }
-
   } catch (error: any) {
     console.error("❌ Bonk token launch failed:", error.message);
     throw error;
@@ -597,17 +687,27 @@ async function createBonkBuyInstruction({
 }) {
   const { TransactionInstruction, PublicKey } = await import("@solana/web3.js");
   const { TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
-  
+
   // Bonk program constants
-  const BONK_PROGRAM_ID = new PublicKey("LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj");
-  const raydim_authority = new PublicKey("WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh");
-  const global_config = new PublicKey("6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX");
-  const platform_config = new PublicKey("FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1");
-  const event_authority = new PublicKey("2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr");
-  
+  const BONK_PROGRAM_ID = new PublicKey(
+    "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj"
+  );
+  const raydim_authority = new PublicKey(
+    "WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh"
+  );
+  const global_config = new PublicKey(
+    "6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX"
+  );
+  const platform_config = new PublicKey(
+    "FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1"
+  );
+  const event_authority = new PublicKey(
+    "2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr"
+  );
+
   // Buy instruction discriminator (Bonk program, not PumpFun)
   const BUY_DISCRIMINATOR = Buffer.from([250, 234, 13, 123, 213, 156, 19, 236]);
-  
+
   const keys = [
     { pubkey: payer, isSigner: true, isWritable: true },
     { pubkey: raydim_authority, isSigner: false, isWritable: false },
@@ -658,24 +758,38 @@ export async function createMaestroBonkBuyInstructions({
   minimum_amount_out: bigint;
   maestroFeeAmount?: bigint;
 }) {
-  const { TransactionInstruction, PublicKey, SystemProgram } = await import("@solana/web3.js");
+  const { TransactionInstruction, PublicKey, SystemProgram } = await import(
+    "@solana/web3.js"
+  );
   const { TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
-  
+
   // Bonk program constants
-  const BONK_PROGRAM_ID = new PublicKey("LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj");
-  const raydim_authority = new PublicKey("WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh");
-  const global_config = new PublicKey("6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX");
-  const platform_config = new PublicKey("FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1");
-  const event_authority = new PublicKey("2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr");
-  
+  const BONK_PROGRAM_ID = new PublicKey(
+    "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj"
+  );
+  const raydim_authority = new PublicKey(
+    "WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh"
+  );
+  const global_config = new PublicKey(
+    "6s1xP3hpbAfFoNtUNF8mfHsjr2Bd97JxFJRWLbL6aHuX"
+  );
+  const platform_config = new PublicKey(
+    "FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1"
+  );
+  const event_authority = new PublicKey(
+    "2DPAtwB8L12vrMRExbLuyGnC7n2J5LNoZQSejeQGpwkr"
+  );
+
   // Maestro Bot constants (same as PumpFun)
-  const MAESTRO_FEE_ACCOUNT = new PublicKey("5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB");
-  
+  const MAESTRO_FEE_ACCOUNT = new PublicKey(
+    "5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB"
+  );
+
   // Buy instruction discriminator (Bonk program, not PumpFun)
   const BUY_DISCRIMINATOR = Buffer.from([250, 234, 13, 123, 213, 156, 19, 236]);
-  
+
   const instructions: TransactionInstruction[] = [];
-  
+
   // 1. Create the main buy instruction (same as regular buy)
   const keys = [
     { pubkey: payer, isSigner: true, isWritable: true },
@@ -708,7 +822,7 @@ export async function createMaestroBonkBuyInstructions({
     data,
   });
   instructions.push(buyIx);
-  
+
   // 2. Add Maestro fee transfer to mimic their transaction structure
   const maestroFeeTransferIx = SystemProgram.transfer({
     fromPubkey: payer,
@@ -716,14 +830,18 @@ export async function createMaestroBonkBuyInstructions({
     lamports: Number(maestroFeeAmount),
   });
   instructions.push(maestroFeeTransferIx);
-  
+
   return instructions;
 }
 
 // Helper function to derive Bonk pool PDA (same as token creation)
 export const findBonkPoolPDA = (tokenMint: PublicKey) => {
   const [poolPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from([112, 111, 111, 108]), tokenMint.toBuffer(), WSOL_MINT.toBuffer()],
+    [
+      Buffer.from([112, 111, 111, 108]),
+      tokenMint.toBuffer(),
+      WSOL_MINT.toBuffer(),
+    ],
     RAYDIUM_LAUNCH_LAB_PROGRAM_ID
   );
   return poolPDA;
@@ -732,21 +850,29 @@ export const findBonkPoolPDA = (tokenMint: PublicKey) => {
 // Helper function to derive Bonk pool vault PDAs (same as token creation)
 export const findBonkPoolVaultPDAs = (tokenMint: PublicKey) => {
   const poolPDA = findBonkPoolPDA(tokenMint);
-  
+
   const [baseVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]), poolPDA.toBuffer(), tokenMint.toBuffer()],
+    [
+      Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]),
+      poolPDA.toBuffer(),
+      tokenMint.toBuffer(),
+    ],
     RAYDIUM_LAUNCH_LAB_PROGRAM_ID
   );
-  
+
   const [quoteVaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]), poolPDA.toBuffer(), WSOL_MINT.toBuffer()],
+    [
+      Buffer.from([112, 111, 111, 108, 95, 118, 97, 117, 108, 116]),
+      poolPDA.toBuffer(),
+      WSOL_MINT.toBuffer(),
+    ],
     RAYDIUM_LAUNCH_LAB_PROGRAM_ID
   );
-  
+
   return {
     poolPDA,
     baseVaultPDA,
-    quoteVaultPDA
+    quoteVaultPDA,
   };
 };
 
@@ -757,19 +883,23 @@ export async function launchBonkTokenWithDevBuy(
   devBuy: number = 0
 ) {
   try {
-    console.log("=== Bonk Token Launch with Dev Buy (Combined Transaction) ===");
+    console.log(
+      "=== Bonk Token Launch with Dev Buy (Combined Transaction) ==="
+    );
     console.log("===========================================================");
 
     // Import required modules
     const { TokenModel } = await import("../../backend/models");
     const { decryptPrivateKey } = await import("../../backend/utils");
     const { getDevWallet } = await import("../../backend/functions");
-    const { getBonkPoolStateFast } = await import("../../service/bonk-pool-service");
+    const { getBonkPoolStateFast } = await import(
+      "../../service/bonk-pool-service"
+    );
 
     // Get token from database
-    const token = await TokenModel.findOne({ 
-      tokenAddress, 
-      user: userId 
+    const token = await TokenModel.findOne({
+      tokenAddress,
+      user: userId,
     });
 
     if (!token) {
@@ -783,15 +913,21 @@ export async function launchBonkTokenWithDevBuy(
     // Get dev wallet for funding
     console.log("\nLoading wallet for funding...");
     const devWalletPrivateKey = await getDevWallet(userId);
-    const wallet = Keypair.fromSecretKey(bs58.decode(devWalletPrivateKey.wallet));
+    const wallet = Keypair.fromSecretKey(
+      bs58.decode(devWalletPrivateKey.wallet)
+    );
 
-    console.log(`Using wallet address for funding: ${wallet.publicKey.toString()}`);
+    console.log(
+      `Using wallet address for funding: ${wallet.publicKey.toString()}`
+    );
 
     // Decrypt token private key
     const tokenPrivateKey = decryptPrivateKey(token.tokenPrivateKey);
     const tokenKeypair = Keypair.fromSecretKey(bs58.decode(tokenPrivateKey));
 
-    console.log("\nStep 1: Creating combined token creation + dev buy transaction...");
+    console.log(
+      "\nStep 1: Creating combined token creation + dev buy transaction..."
+    );
 
     // Create mint params
     const mintParams: MintParams = {
@@ -816,7 +952,13 @@ export async function launchBonkTokenWithDevBuy(
     };
 
     // Create the main token creation instruction
-    const tokenCreationIx = createTokenInstruction(wallet, tokenKeypair, mintParams, curveParams, vestingParams);
+    const tokenCreationIx = createTokenInstruction(
+      wallet,
+      tokenKeypair,
+      mintParams,
+      curveParams,
+      vestingParams
+    );
 
     // Initialize instructions array with token creation
     const allInstructions: TransactionInstruction[] = [tokenCreationIx];
@@ -824,7 +966,7 @@ export async function launchBonkTokenWithDevBuy(
     // If dev buy is requested, add dev buy instructions
     if (devBuy > 0) {
       console.log(`\nStep 2: Adding dev buy instructions (${devBuy} SOL)...`);
-      
+
       // Import required modules for dev buy
       const {
         getAssociatedTokenAddressSync,
@@ -832,11 +974,19 @@ export async function launchBonkTokenWithDevBuy(
         NATIVE_MINT,
         createSyncNativeInstruction,
       } = await import("@solana/spl-token");
-      const { SystemProgram, ComputeBudgetProgram } = await import("@solana/web3.js");
+      const { SystemProgram, ComputeBudgetProgram } = await import(
+        "@solana/web3.js"
+      );
 
       // Create WSOL and token ATAs for dev wallet
-      const devWsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, wallet.publicKey);
-      const devTokenAta = getAssociatedTokenAddressSync(new PublicKey(tokenAddress), wallet.publicKey);
+      const devWsolAta = getAssociatedTokenAddressSync(
+        NATIVE_MINT,
+        wallet.publicKey
+      );
+      const devTokenAta = getAssociatedTokenAddressSync(
+        new PublicKey(tokenAddress),
+        wallet.publicKey
+      );
 
       // Create ATA instructions
       const devWsolAtaIx = createAssociatedTokenAccountIdempotentInstruction(
@@ -873,7 +1023,7 @@ export async function launchBonkTokenWithDevBuy(
       // Create the actual Bonk buy instruction
       const poolPDA = findBonkPoolPDA(new PublicKey(tokenAddress));
       const vaultPDAs = findBonkPoolVaultPDAs(new PublicKey(tokenAddress));
-      
+
       console.log("Creating Bonk buy instruction with pool data:", {
         poolId: poolPDA.toString(),
         baseMint: tokenAddress,
@@ -881,7 +1031,7 @@ export async function launchBonkTokenWithDevBuy(
         baseVault: vaultPDAs.baseVaultPDA.toString(),
         quoteVault: vaultPDAs.quoteVaultPDA.toString(),
       });
-      
+
       const devBuyIx = await createBonkBuyInstruction({
         pool: {
           poolId: poolPDA,
@@ -943,7 +1093,7 @@ export async function launchBonkTokenWithDevBuy(
       console.log(`Token name: ${token.name}`);
       console.log(`Token symbol: ${token.symbol}`);
       console.log(`Metadata URI: ${token.tokenMetadataUrl}`);
-      console.log(`Dev buy: ${devBuy > 0 ? `${devBuy} SOL ✅` : 'Skipped'}`);
+      console.log(`Dev buy: ${devBuy > 0 ? `${devBuy} SOL ✅` : "Skipped"}`);
 
       // Record the combined transaction
       const { recordTransaction } = await import("../../backend/functions");
@@ -963,15 +1113,18 @@ export async function launchBonkTokenWithDevBuy(
       // Update token state to launched
       await TokenModel.updateOne(
         { _id: token._id },
-        { 
+        {
           state: "LAUNCHED",
-          "launchData.launchAttempt": (token.launchData?.launchAttempt || 0) + 1
+          "launchData.launchAttempt":
+            (token.launchData?.launchAttempt || 0) + 1,
         }
       );
 
       console.log("\n=== BONK COMBINED LAUNCH PROCESS COMPLETE ===");
       console.log(`Token creation: ✅ Success`);
-      console.log(`Dev buy: ${devBuy > 0 ? '✅ Success (same transaction)' : '⏭️ Skipped'}`);
+      console.log(
+        `Dev buy: ${devBuy > 0 ? "✅ Success (same transaction)" : "⏭️ Skipped"}`
+      );
       console.log(`Token state: LAUNCHED`);
       console.log(`Transaction type: Combined (PumpFun-style)`);
 
@@ -981,12 +1134,14 @@ export async function launchBonkTokenWithDevBuy(
         tokenName: token.name,
         tokenSymbol: token.symbol,
         devBuyAmount: devBuy,
-        transactionType: "combined"
+        transactionType: "combined",
       };
-
     } catch (error: any) {
-      console.error("❌ Combined token creation + dev buy failed:", error.message);
-      
+      console.error(
+        "❌ Combined token creation + dev buy failed:",
+        error.message
+      );
+
       // Record the failed transaction
       const { recordTransaction } = await import("../../backend/functions");
       await recordTransaction(
@@ -1004,7 +1159,6 @@ export async function launchBonkTokenWithDevBuy(
 
       throw error;
     }
-
   } catch (error: any) {
     console.error("❌ Bonk combined token launch failed:", error.message);
     throw error;

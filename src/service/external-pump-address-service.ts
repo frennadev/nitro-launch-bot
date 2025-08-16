@@ -26,6 +26,11 @@ export class ExternalPumpAddressService {
   private isConnected: boolean = false;
 
   constructor(mongoUri: string) {
+    if (!mongoUri || typeof mongoUri !== "string") {
+      throw new Error(
+        "Invalid MongoDB URI provided to ExternalPumpAddressService"
+      );
+    }
     this.client = new MongoClient(mongoUri);
     this.db = this.client.db(); // Use default database from URI
     this.collection = this.db.collection("pump_addresses");
@@ -102,22 +107,125 @@ export class ExternalPumpAddressService {
     }
 
     try {
-      // Build query to find addresses that have NEVER been allocated to any user
-      // Ensure isUsed is explicitly false or doesn't exist, and usedBy is null/empty/doesn't exist
+      // First, let's get some debugging info about the database
+      const totalCount = await this.collection.countDocuments({});
+      const usedCount = await this.collection.countDocuments({ isUsed: true });
+      const unusedCount = await this.collection.countDocuments({
+        $and: [
+          {
+            $or: [{ isUsed: { $exists: false } }, { isUsed: false }],
+          },
+          {
+            $or: [
+              { usedAt: { $exists: false } },
+              { usedAt: { $eq: null as any } },
+            ],
+          },
+          {
+            $or: [
+              { usedBy: { $exists: false } },
+              { usedBy: { $eq: null as any } },
+              { usedBy: "" },
+            ],
+          },
+          {
+            $or: [
+              { updatedAt: { $exists: false } },
+              { updatedAt: { $eq: null as any } },
+            ],
+          },
+        ],
+      });
+
+      logger.info(
+        `[ExternalPumpAddressService] Database stats: Total=${totalCount}, Used=${usedCount}, Unused=${unusedCount}`
+      );
+
+      // Get a few sample used records to understand data structure
+      const sampleUsedRecords = await this.collection
+        .find({ isUsed: true })
+        .limit(3)
+        .toArray();
+      logger.info(
+        `[ExternalPumpAddressService] Sample used records:`,
+        sampleUsedRecords.map((r) => ({
+          publicKey: r.publicKey?.slice(0, 8) + "...",
+          isUsed: r.isUsed,
+          usedBy: r.usedBy,
+          usedAt: r.usedAt,
+          updatedAt: r.updatedAt,
+        }))
+      );
+
+      // Get a few sample unused records to verify our query
+      const sampleUnusedRecords = await this.collection
+        .find({
+          $and: [
+            {
+              $or: [{ isUsed: { $exists: false } }, { isUsed: false }],
+            },
+            {
+              $or: [
+                { usedAt: { $exists: false } },
+                { usedAt: { $eq: null as any } },
+              ],
+            },
+            {
+              $or: [
+                { usedBy: { $exists: false } },
+                { usedBy: { $eq: null as any } },
+                { usedBy: "" },
+              ],
+            },
+            {
+              $or: [
+                { updatedAt: { $exists: false } },
+                { updatedAt: { $eq: null as any } },
+              ],
+            },
+          ],
+        })
+        .limit(3)
+        .toArray();
+      logger.info(
+        `[ExternalPumpAddressService] Sample unused records:`,
+        sampleUnusedRecords.map((r) => ({
+          publicKey: r.publicKey?.slice(0, 8) + "...",
+          isUsed: r.isUsed,
+          usedBy: r.usedBy,
+          usedAt: r.usedAt,
+          updatedAt: r.updatedAt,
+        }))
+      );
+
+      // Build query to find addresses that have NEVER been used
+      // Ensure ALL FOUR fields indicate the address is unused:
+      // 1. isUsed must be false or not exist
+      // 2. usedAt must be null or not exist
+      // 3. usedBy must be null/empty or not exist
+      // 4. updatedAt must be null or not exist
       const query: Record<string, unknown> = {
         $and: [
           {
             $or: [{ isUsed: { $exists: false } }, { isUsed: false }],
           },
           {
-            $or: [{ usedAt: { $exists: false } }, { usedAt: null }],
+            $or: [
+              { usedAt: { $exists: false } },
+              { usedAt: { $eq: null as any } },
+            ],
           },
           {
             $or: [
               { usedBy: { $exists: false } },
-              { usedBy: null },
+              { usedBy: { $eq: null as any } },
               { usedBy: "" },
-              { usedBy: undefined },
+            ],
+          },
+          {
+            $or: [
+              { updatedAt: { $exists: false } },
+              { updatedAt: { $eq: null as any } },
             ],
           },
         ],
@@ -127,13 +235,23 @@ export class ExternalPumpAddressService {
         query.publicKey = { $nin: excludeAddresses };
       }
 
+      logger.info(
+        `[ExternalPumpAddressService] Query: ${JSON.stringify(query)}`
+      );
+
+      // Check how many documents match our query before updating
+      const matchingCount = await this.collection.countDocuments(query);
+      logger.info(
+        `[ExternalPumpAddressService] Documents matching query: ${matchingCount}`
+      );
+
       // Find and mark an address as permanently used in a single atomic operation
       const result = await this.collection.findOneAndUpdate(
         query,
         {
           $set: {
             isUsed: true,
-            usedBy: userId,
+            usedBy: userId || "system", // Track for analytics but not user-specific
             usedAt: new Date(),
           },
         },
@@ -145,7 +263,7 @@ export class ExternalPumpAddressService {
 
       if (result) {
         logger.info(
-          `[ExternalPumpAddressService] Permanently allocated pump address ${result.publicKey} to user ${userId}`
+          `[ExternalPumpAddressService] Allocated pump address ${result.publicKey}`
         );
         return result;
       } else {
@@ -360,7 +478,10 @@ let externalPumpAddressService: ExternalPumpAddressService | null = null;
 export function getExternalPumpAddressService(): ExternalPumpAddressService {
   if (!externalPumpAddressService) {
     // Use the same MongoDB URI as the main application
-    const mongoUri = process.env.MONGO_URI!;
+    const mongoUri = process.env.MONGODB_URI;
+    if (!mongoUri) {
+      throw new Error("MONGO_URI environment variable is not set");
+    }
     externalPumpAddressService = new ExternalPumpAddressService(mongoUri);
   }
   return externalPumpAddressService;
