@@ -279,17 +279,17 @@ const createTokenConversation = async (
 
     await ctx.reply(
       `🎉 <b>Token Created Successfully!</b>
+
 🚀 <b>Platform:</b> <code>PumpFun</code>
 
 📊 <b>Token Details:</b>
-┌─────────────────────────
-│ <b>Name:</b> <code>${token.name}</code>
-│ <b>Symbol:</b> <code>${token.symbol}</code>
-│ <b>Description:</b> ${token.description}
-│ <b>CA:</b> <code>${token.tokenAddress}</code>
-└─────────────────────────
+💎 <b>Name:</b> <code>${token.name}</code>
+🏷️ <b>Symbol:</b> <code>${token.symbol}</code>
+📝 <b>Description:</b> ${token.description}
+🔗 <b>Contract Address:</b> <code>${token.tokenAddress}</code>
 
-${socialsInfo ? `🔗 <b>Social Links:</b>\n${socialsInfo}` : ""}
+${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
+
 ✅ <b>Status:</b> Ready for launch on PumpFun! 🚀`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
@@ -316,23 +316,23 @@ ${socialsInfo ? `🔗 <b>Social Links:</b>\n${socialsInfo}` : ""}
 
     await ctx.reply(
       `🎉 <b>Token Created Successfully!</b>
-🚀 <b>Platform:</b> <code>LetsBonk (Raydium Launch Lab)</code>
+
+🚀 <b>Platform:</b> <code>PumpFun</code>
 
 📊 <b>Token Details:</b>
-┌─────────────────────────
-│ <b>Name:</b> <code>${token.tokenName}</code>
-│ <b>Symbol:</b> <code>${token.tokenSymbol}</code>
-│ <b>Description:</b> ${token.description}
-│ <b>CA:</b> <code>${token.tokenAddress}</code>
-└─────────────────────────
+💎 <b>Name:</b> <code>${token.name}</code>
+🏷️ <b>Symbol:</b> <code>${token.symbol}</code>
+📝 <b>Description:</b> ${token.description}
+🔗 <b>Contract Address:</b> <code>${token.tokenAddress}</code>
 
-  ${socialsInfo ? `🔗 <b>Social Links:</b>\n${socialsInfo}` : ""}
-  ✅ <b>Status:</b> Ready for launch on LetsBonk! 🚀`,
+${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
+
+✅ <b>Status:</b> Ready for launch on PumpFun! 🚀`,
       { parse_mode: "HTML", reply_markup: launchKb }
     );
-  }
 
-  conversation.halt();
+    conversation.halt();
+  }
 };
 
 export default createTokenConversation;

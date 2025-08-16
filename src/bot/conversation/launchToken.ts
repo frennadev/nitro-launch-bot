@@ -261,13 +261,22 @@ const launchTokenConversation = async (
       await conversation.halt();
       return;
     }
+    let filteredBuyWallets = await Promise.all(
+      buyerWallets.map(async (wallet) => {
+        const walletBalance = await getWalletBalance(wallet.publicKey);
+        return { ...wallet, balance: walletBalance };
+      })
+    );
+    filteredBuyWallets = filteredBuyWallets.filter(
+      (wallet) => wallet.balance > 0.1
+    );
 
     // Get balances for all buyer wallets
     let walletList = "";
 
-    for (let i = 0; i < buyerWallets.length; i++) {
-      const wallet = buyerWallets[i];
-      const balance = await getWalletBalance(wallet.publicKey);
+    for (let i = 0; i < filteredBuyWallets.length; i++) {
+      const wallet = filteredBuyWallets[i];
+      const balance = wallet.balance;
       totalBalance += balance;
 
       // Truncate wallet address to first 8 and last 4 characters
@@ -284,7 +293,7 @@ const launchTokenConversation = async (
 
 ${walletList}
 <b>📊 Summary:</b>
-• <b>Total Wallets:</b> <code>${buyerWallets.length}</code>
+• <b>Total Wallets:</b> <code>${filteredBuyWallets.length}</code>
 • <b>Combined Balance:</b> <code>${totalBalance.toFixed(4)} SOL</code>
 
 <b>⚠️ Important Instructions:</b>
@@ -296,7 +305,7 @@ ${walletList}
 <b>🚀 Next:</b> Once you've funded your desired wallets, we'll proceed with the launch configuration.
 
 <b>📋 Full wallet addresses:</b>
-${buyerWallets.map((wallet, i) => `${i + 1}. <code>${wallet.publicKey}</code>`).join("\n")}
+${filteredBuyWallets.map((wallet, i) => `${i + 1}. <code>${wallet.publicKey}</code>`).join("\n")}
 
 <i>💡 Tap any wallet address above to copy it for funding.</i>`,
       {
@@ -521,6 +530,7 @@ Your token launch has been successfully resubmitted using your previous paramete
 
   // -------- GET BUYER WALLETS ----------
   const buyerWallets = await getAllBuyerWallets(user.id);
+
   if (buyerWallets.length === 0) {
     await sendMessage(
       ctx,
@@ -529,6 +539,15 @@ Your token launch has been successfully resubmitted using your previous paramete
     await conversation.halt();
     return;
   }
+  let filteredBuyWallets = await Promise.all(
+    buyerWallets.map(async (wallet) => {
+      const walletBalance = await getWalletBalance(wallet.publicKey);
+      return { ...wallet, balance: walletBalance };
+    })
+  );
+  filteredBuyWallets = filteredBuyWallets.filter(
+    (wallet) => wallet.balance > 0.1
+  );
 
   // Check if this is a Bonk token - if so, we'll collect input but use direct launch
   const isBonkToken =
@@ -579,7 +598,7 @@ Your token launch has been successfully resubmitted using your previous paramete
 <code>${fundingBalance.toFixed(4)} SOL</code>
 
 👥 <b>Buyer Wallets:</b>
-<code>${buyerWallets.length} wallet${buyerWallets.length !== 1 ? "s" : ""} configured</code>
+<code>${filteredBuyWallets.length} wallet${filteredBuyWallets.length !== 1 ? "s" : ""} configured</code>
 
 ✅ <b>Status:</b> All wallets ready for launch`,
     { parse_mode: "HTML" }
@@ -615,85 +634,86 @@ Your token launch has been successfully resubmitted using your previous paramete
       await import("../../backend/functions-main");
     const maxBuyAmount = calculateMaxBuyAmount();
     const maxBuyAmountWithCurrentWallets = calculateMaxBuyAmountWithWallets(
-      buyerWallets.length
+      filteredBuyWallets.length
     );
 
-    buyAmountLoop: while (true) {
-      await sendMessage(
-        ctx,
-        `💰 <b>Enter Buy Amount</b>
+    if (launchMode == "normal") {
+      buyAmountLoop: while (true) {
+        await sendMessage(
+          ctx,
+          `💰 <b>Enter Buy Amount</b>
 
 📊 <b>Wallet Configuration:</b>
-• <b>Current Wallets:</b> ${buyerWallets.length}/40
+• <b>Current Funded Wallets:</b> ${filteredBuyWallets.length}/40
 • <b>Your Maximum:</b> ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL
 • <b>System Maximum:</b> ${maxBuyAmount.toFixed(1)} SOL (with 40 wallets)
 
 💡 <b>Please enter a value between 0.1 and ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</b>
 
 <i>💭 This is the total SOL amount that will be used to purchase tokens across all your buyer wallets.</i>`,
-        {
-          parse_mode: "HTML",
-          reply_markup: cancelKeyboard,
+          {
+            parse_mode: "HTML",
+            reply_markup: cancelKeyboard,
+          }
+        );
+
+        // if (launch === "prefunded") {
+        //   break;
+        // }
+
+        const buyAmountCtx = await conversation.waitFor([
+          "message:text",
+          "callback_query:data",
+        ]);
+
+        if (buyAmountCtx.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+          await buyAmountCtx.answerCallbackQuery();
+          await sendMessage(ctx, "Launch cancelled.");
+          return conversation.halt();
         }
-      );
 
-      // if (launchMode === "prefunded") {
-      //   break;
-      // }
-
-      const buyAmountCtx = await conversation.waitFor([
-        "message:text",
-        "callback_query:data",
-      ]);
-
-      if (buyAmountCtx.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
-        await buyAmountCtx.answerCallbackQuery();
-        await sendMessage(ctx, "Launch cancelled.");
-        return conversation.halt();
-      }
-
-      if (buyAmountCtx.message?.text) {
-        const parsed = parseFloat(buyAmountCtx.message.text);
-        if (isNaN(parsed) || parsed <= 0) {
-          await sendMessage(
-            ctx,
-            "❌ Invalid amount. Please enter a positive number:"
-          );
-          continue;
-        } else if (parsed > maxBuyAmountWithCurrentWallets) {
-          await sendMessage(
-            ctx,
-            `❌ <b>Buy Amount Exceeds Limit</b>
+        if (buyAmountCtx.message?.text) {
+          const parsed = parseFloat(buyAmountCtx.message.text);
+          if (isNaN(parsed) || parsed <= 0) {
+            await sendMessage(
+              ctx,
+              "❌ Invalid amount. Please enter a positive number:"
+            );
+            continue;
+          } else if (parsed > maxBuyAmountWithCurrentWallets) {
+            await sendMessage(
+              ctx,
+              `❌ <b>Buy Amount Exceeds Limit</b>
 
 <b>💰 Amount Details:</b>
 • <b>Requested:</b> <code>${parsed} SOL</code>
 • <b>Your Maximum:</b> <code>${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</code>
-• <b>Current Wallets:</b> <code>${buyerWallets.length} wallet${buyerWallets.length !== 1 ? "s" : ""}</code>
+• <b>Current Funded Wallets:</b> <code>${filteredBuyWallets.length} wallet${filteredBuyWallets.length !== 1 ? "s" : ""}</code>
 
 <b>📋 Valid Range:</b>
 <code>0.1 - ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</code>
 
 <i>💡 Please enter an amount within the valid range to continue.</i>`,
-            { parse_mode: "HTML" }
-          );
-          continue;
-        } else {
-          buyAmount = parsed;
+              { parse_mode: "HTML" }
+            );
+            continue;
+          } else {
+            buyAmount = parsed;
 
-          // -------- CHECK WALLET REQUIREMENTS --------
-          const { calculateRequiredWallets, allocateWalletsFromPool } =
-            await import("../../backend/functions-main");
+            // -------- CHECK WALLET REQUIREMENTS --------
+            const { calculateRequiredWallets, allocateWalletsFromPool } =
+              await import("../../backend/functions-main");
 
-          try {
-            const requiredWallets = calculateRequiredWallets(buyAmount);
-            const currentWalletCount = buyerWallets.length;
+            try {
+              const requiredWallets = calculateRequiredWallets(buyAmount);
+              const currentWalletCount = buyerWallets.length;
 
-            if (currentWalletCount < requiredWallets) {
-              const walletsNeeded = requiredWallets - currentWalletCount;
+              if (currentWalletCount < requiredWallets) {
+                const walletsNeeded = requiredWallets - currentWalletCount;
 
-              await sendMessage(
-                ctx,
-                `🔍 <b>Wallet Configuration Check</b>
+                await sendMessage(
+                  ctx,
+                  `🔍 <b>Wallet Configuration Check</b>
 
 <b>📊 Launch Parameters:</b>
 • <b>Buy Amount:</b> <code>${buyAmount} SOL</code>
@@ -706,43 +726,43 @@ Your token launch has been successfully resubmitted using your previous paramete
 To proceed with this buy amount, you need ${walletsNeeded} additional wallet${walletsNeeded > 1 ? "s" : ""}. Select an option below:
 
 <i>💡 Generated wallets are permanently added to your account for future use.</i>`,
-                {
-                  parse_mode: "HTML",
-                  reply_markup: new InlineKeyboard()
-                    .text(
-                      `📥 Import ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}`,
-                      "import_missing_wallets"
-                    )
-                    .row()
-                    .text(
-                      `🔧 Generate ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}`,
-                      "generate_missing_wallets"
-                    )
-                    .row()
-                    .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
+                  {
+                    parse_mode: "HTML",
+                    reply_markup: new InlineKeyboard()
+                      .text(
+                        `📥 Import ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}`,
+                        "import_missing_wallets"
+                      )
+                      .row()
+                      .text(
+                        `🔧 Generate ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}`,
+                        "generate_missing_wallets"
+                      )
+                      .row()
+                      .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
+                  }
+                );
+
+                const walletChoice = await conversation.waitFor(
+                  "callback_query:data"
+                );
+                await walletChoice.answerCallbackQuery();
+
+                if (
+                  walletChoice.callbackQuery?.data ===
+                  LaunchCallBackQueries.CANCEL
+                ) {
+                  await sendMessage(walletChoice, "Launch cancelled.");
+                  return conversation.halt();
                 }
-              );
 
-              const walletChoice = await conversation.waitFor(
-                "callback_query:data"
-              );
-              await walletChoice.answerCallbackQuery();
-
-              if (
-                walletChoice.callbackQuery?.data ===
-                LaunchCallBackQueries.CANCEL
-              ) {
-                await sendMessage(walletChoice, "Launch cancelled.");
-                return conversation.halt();
-              }
-
-              if (
-                walletChoice.callbackQuery?.data === "import_missing_wallets"
-              ) {
-                // Import wallets flow
-                await sendMessage(
-                  walletChoice,
-                  `📥 <b>Import Missing Wallets</b>
+                if (
+                  walletChoice.callbackQuery?.data === "import_missing_wallets"
+                ) {
+                  // Import wallets flow
+                  await sendMessage(
+                    walletChoice,
+                    `📥 <b>Import Missing Wallets</b>
 
 <b>📊 Import Progress:</b> Wallet 1/${walletsNeeded}
 
@@ -754,98 +774,99 @@ To proceed with this buy amount, you need ${walletsNeeded} additional wallet${wa
 • Private keys are encrypted and stored securely
 
 <i>💡 Make sure your private key is valid and has some SOL for transactions.</i>`,
-                  {
-                    parse_mode: "HTML",
-                    reply_markup: new InlineKeyboard().text(
-                      "❌ Cancel Import",
-                      LaunchCallBackQueries.CANCEL
-                    ),
-                  }
-                );
+                    {
+                      parse_mode: "HTML",
+                      reply_markup: new InlineKeyboard().text(
+                        "❌ Cancel Import",
+                        LaunchCallBackQueries.CANCEL
+                      ),
+                    }
+                  );
 
-                for (let i = 0; i < walletsNeeded; i++) {
-                  if (i > 0) {
-                    await sendMessage(
-                      walletChoice,
-                      `📥 Please send the private key of wallet ${i + 1}/${walletsNeeded}:`,
-                      {
-                        reply_markup: new InlineKeyboard().text(
-                          "❌ Cancel",
-                          LaunchCallBackQueries.CANCEL
-                        ),
-                      }
-                    );
-                  }
-
-                  const privateKeyInput = await conversation.wait();
-
-                  if (
-                    privateKeyInput.callbackQuery?.data ===
-                    LaunchCallBackQueries.CANCEL
-                  ) {
-                    await privateKeyInput.answerCallbackQuery();
-                    await sendMessage(privateKeyInput, "Import cancelled.");
-                    return conversation.halt();
-                  }
-
-                  const privateKey = privateKeyInput.message?.text?.trim();
-                  if (!privateKey) {
-                    await sendMessage(
-                      privateKeyInput,
-                      "❌ No private key provided. Import cancelled."
-                    );
-                    return conversation.halt();
-                  }
-
-                  try {
-                    const { addBuyerWallet } = await import(
-                      "../../backend/functions-main"
-                    );
-                    await addBuyerWallet(user.id, privateKey);
-                    await sendMessage(
-                      privateKeyInput,
-                      `✅ Wallet ${i + 1}/${walletsNeeded} imported successfully!`,
-                      {
-                        parse_mode: "HTML",
-                      }
-                    );
-                  } catch (error: any) {
-                    await sendMessage(
-                      privateKeyInput,
-                      `❌ Failed to import wallet ${i + 1}: ${error.message}\n\nPlease try again with a valid private key:`,
-                      { parse_mode: "HTML" }
-                    );
-                    i--; // Retry this wallet
-                  }
-                }
-
-                await sendMessage(
-                  walletChoice,
-                  `🎉 <b>All ${walletsNeeded} wallets imported successfully!</b>\n\nProceeding with token launch...`,
-                  { parse_mode: "HTML" }
-                );
-              } else if (
-                walletChoice.callbackQuery?.data === "generate_missing_wallets"
-              ) {
-                // Generate wallets flow
-                await sendMessage(
-                  walletChoice,
-                  `🔧 <b>Generating ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}...</b>
-
-⏳ Allocating wallets from pool...`,
-                  { parse_mode: "HTML" }
-                );
-
-                try {
-                  let retryCount = 0;
-                  const maxRetries = 3;
-
-                  while (retryCount < maxRetries) {
-                    try {
-                      await allocateWalletsFromPool(user.id, walletsNeeded);
+                  for (let i = 0; i < walletsNeeded; i++) {
+                    if (i > 0) {
                       await sendMessage(
                         walletChoice,
-                        `<b>🎉 Wallet Generation Complete</b>
+                        `📥 Please send the private key of wallet ${i + 1}/${walletsNeeded}:`,
+                        {
+                          reply_markup: new InlineKeyboard().text(
+                            "❌ Cancel",
+                            LaunchCallBackQueries.CANCEL
+                          ),
+                        }
+                      );
+                    }
+
+                    const privateKeyInput = await conversation.wait();
+
+                    if (
+                      privateKeyInput.callbackQuery?.data ===
+                      LaunchCallBackQueries.CANCEL
+                    ) {
+                      await privateKeyInput.answerCallbackQuery();
+                      await sendMessage(privateKeyInput, "Import cancelled.");
+                      return conversation.halt();
+                    }
+
+                    const privateKey = privateKeyInput.message?.text?.trim();
+                    if (!privateKey) {
+                      await sendMessage(
+                        privateKeyInput,
+                        "❌ No private key provided. Import cancelled."
+                      );
+                      return conversation.halt();
+                    }
+
+                    try {
+                      const { addBuyerWallet } = await import(
+                        "../../backend/functions-main"
+                      );
+                      await addBuyerWallet(user.id, privateKey);
+                      await sendMessage(
+                        privateKeyInput,
+                        `✅ Wallet ${i + 1}/${walletsNeeded} imported successfully!`,
+                        {
+                          parse_mode: "HTML",
+                        }
+                      );
+                    } catch (error: any) {
+                      await sendMessage(
+                        privateKeyInput,
+                        `❌ Failed to import wallet ${i + 1}: ${error.message}\n\nPlease try again with a valid private key:`,
+                        { parse_mode: "HTML" }
+                      );
+                      i--; // Retry this wallet
+                    }
+                  }
+
+                  await sendMessage(
+                    walletChoice,
+                    `🎉 <b>All ${walletsNeeded} wallets imported successfully!</b>\n\nProceeding with token launch...`,
+                    { parse_mode: "HTML" }
+                  );
+                } else if (
+                  walletChoice.callbackQuery?.data ===
+                  "generate_missing_wallets"
+                ) {
+                  // Generate wallets flow
+                  await sendMessage(
+                    walletChoice,
+                    `🔧 <b>Generating ${walletsNeeded} Wallet${walletsNeeded > 1 ? "s" : ""}...</b>
+
+⏳ Allocating wallets from pool...`,
+                    { parse_mode: "HTML" }
+                  );
+
+                  try {
+                    let retryCount = 0;
+                    const maxRetries = 3;
+
+                    while (retryCount < maxRetries) {
+                      try {
+                        await allocateWalletsFromPool(user.id, walletsNeeded);
+                        await sendMessage(
+                          walletChoice,
+                          `<b>🎉 Wallet Generation Complete</b>
 
 <b>✅ Successfully Generated:</b>
 <code>${walletsNeeded} wallet${walletsNeeded > 1 ? "s" : ""}</code>
@@ -857,65 +878,66 @@ To proceed with this buy amount, you need ${walletsNeeded} additional wallet${wa
 
 <b>🚀 Next Step:</b>
 <i>Proceeding with token launch configuration...</i>`,
-                        { parse_mode: "HTML" }
-                      );
-                      break;
-                    } catch (error: any) {
-                      retryCount++;
-                      if (retryCount < maxRetries) {
-                        await sendMessage(
-                          walletChoice,
-                          `⚠️ Generation attempt ${retryCount} failed: ${error.message}\n\n🔄 Retrying... (${retryCount}/${maxRetries})`,
                           { parse_mode: "HTML" }
                         );
-                        await new Promise((resolve) =>
-                          setTimeout(resolve, 1000)
-                        ); // Wait 1 second before retry
-                      } else {
-                        throw error;
+                        break;
+                      } catch (error: any) {
+                        retryCount++;
+                        if (retryCount < maxRetries) {
+                          await sendMessage(
+                            walletChoice,
+                            `⚠️ Generation attempt ${retryCount} failed: ${error.message}\n\n🔄 Retrying... (${retryCount}/${maxRetries})`,
+                            { parse_mode: "HTML" }
+                          );
+                          await new Promise((resolve) =>
+                            setTimeout(resolve, 1000)
+                          ); // Wait 1 second before retry
+                        } else {
+                          throw error;
+                        }
                       }
                     }
-                  }
-                } catch (error: any) {
-                  await sendMessage(
-                    walletChoice,
-                    `❌ <b>Failed to generate wallets after 3 attempts</b>
+                  } catch (error: any) {
+                    await sendMessage(
+                      walletChoice,
+                      `❌ <b>Failed to generate wallets after 3 attempts</b>
 
 Error: ${error.message}
 
 Please try importing wallets manually or try again later.`,
-                    { parse_mode: "HTML" }
-                  );
-                  return conversation.halt();
+                      { parse_mode: "HTML" }
+                    );
+                    return conversation.halt();
+                  }
                 }
+
+                // Refresh buyer wallets list after import/generation
+                const updatedBuyerWallets = await getAllBuyerWallets(user.id);
+                // Update the buyerWallets variable for the rest of the flow
+                Object.assign(buyerWallets, updatedBuyerWallets);
+                buyerWallets.length = updatedBuyerWallets.length;
+                updatedBuyerWallets.forEach((wallet, index) => {
+                  buyerWallets[index] = wallet;
+                });
               }
 
-              // Refresh buyer wallets list after import/generation
-              const updatedBuyerWallets = await getAllBuyerWallets(user.id);
-              // Update the buyerWallets variable for the rest of the flow
-              Object.assign(buyerWallets, updatedBuyerWallets);
-              buyerWallets.length = updatedBuyerWallets.length;
-              updatedBuyerWallets.forEach((wallet, index) => {
-                buyerWallets[index] = wallet;
-              });
-            }
-
-            break buyAmountLoop; // Exit the buy amount input loop
-          } catch (error: any) {
-            if (error.message.includes("exceeds maximum")) {
-              await sendMessage(
-                ctx,
-                `❌ <b>Buy Amount Too Large</b>
+              break buyAmountLoop; // Exit the buy amount input loop
+            } catch (error: any) {
+              if (error.message.includes("exceeds maximum")) {
+                await sendMessage(
+                  ctx,
+                  `❌ <b>Buy Amount Too Large</b>
 
 ${error.message}
 
 Please enter a smaller buy amount:`,
-                { parse_mode: "HTML" }
-              );
-              // Continue the loop to ask for buy amount again
-              continue buyAmountLoop;
+                  { parse_mode: "HTML" }
+                );
+                // Continue the loop to ask for buy amount again
+                continue buyAmountLoop;
+              }
+              throw error;
             }
-            throw error;
           }
         }
       }
@@ -941,9 +963,6 @@ Please enter a smaller buy amount:`,
 <b>🎯 Developer Buy Amount:</b>
 Enter the SOL amount for the developer to purchase (or 0 to skip)
 
-<b>💡 Recommendation:</b>
-<code>${(buyAmount * 0.15).toFixed(3)} SOL</code> (15% of total buy amount)
-
 <b>📋 Valid Range:</b>
 <code>0 - ${buyAmount} SOL</code>
 
@@ -951,13 +970,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
       {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard()
-          .text(
-            `💎 Use Recommended (${(buyAmount * 0.15).toFixed(3)} SOL)`,
-            `DEV_BUY_${(buyAmount * 0.15).toFixed(3)}`
-          )
-          .row()
           .text("⏭️ Skip (0 SOL)", "DEV_BUY_0")
-          .row()
           .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
       }
     );
@@ -972,19 +985,6 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
         await devBuyCtx.answerCallbackQuery();
         await sendMessage(ctx, "Launch cancelled.");
         return conversation.halt();
-      }
-
-      if (devBuyCtx.callbackQuery?.data?.startsWith("DEV_BUY_")) {
-        await devBuyCtx.answerCallbackQuery();
-        const amount = devBuyCtx.callbackQuery.data.replace("DEV_BUY_", "");
-        devBuy = parseFloat(amount);
-
-        await sendMessage(
-          ctx,
-          `✅ Developer buy amount set to <b>${devBuy} SOL</b>`,
-          { parse_mode: "HTML" }
-        );
-        break;
       }
 
       if (devBuyCtx.message?.text) {
@@ -1016,7 +1016,7 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
 
   // -------- CALCULATE TOTAL COSTS --------
   // Calculate funding requirement: buy amount + dev buy + wallet fees + buffer
-  const walletFees = buyerWallets.length * 0.005; // 0.005 SOL per wallet for transaction fees
+  const walletFees = filteredBuyWallets.length * 0.005; // 0.005 SOL per wallet for transaction fees
   const requiredFundingAmount = buyAmount + devBuy + walletFees + 0.1; // Reduced buffer since fees are now calculated accurately
 
   // Check funding wallet balance against total requirement
