@@ -1,7 +1,12 @@
 import { type Conversation } from "@grammyjs/conversations";
 import { type Context } from "grammy";
 import { InlineKeyboard } from "grammy";
-import { getUser, fundTokenWallets, getAllBuyerWallets, getWalletBalance } from "../../backend/functions";
+import {
+  getUser,
+  fundTokenWallets,
+  getAllBuyerWallets,
+  getWalletBalance,
+} from "../../backend/functions";
 import { getTokenBalance } from "../../backend/utils";
 import { sendMessage } from "../../backend/sender";
 import { CallBackQueries } from "../types";
@@ -13,8 +18,10 @@ export const fundTokenWalletsConversation = async (
   ctx: Context,
   tokenAddress: string
 ): Promise<void> => {
-  logger.info(`[fundTokenWalletsConversation] Conversation entered for token: ${tokenAddress}`);
-  
+  logger.info(
+    `[fundTokenWalletsConversation] Conversation entered for token: ${tokenAddress}`
+  );
+
   try {
     await ctx.answerCallbackQuery();
   } catch (error: any) {
@@ -45,21 +52,26 @@ export const fundTokenWalletsConversation = async (
     // Get buyer wallets
     const buyerWallets = await getAllBuyerWallets(user.id);
     if (buyerWallets.length === 0) {
-          try {
-      await bot.api.editMessageText(
-        ctx.chat!.id,
-        loadingMessage.message_id,
-        "❌ **No buyer wallets found**\n\nPlease add buyer wallets first before funding token wallets.",
-        { parse_mode: "Markdown" }
-      );
-    } catch (error: any) {
-      if (error.description?.includes("message is not modified")) {
-        logger.debug("[fundTokenWallets] Message content unchanged, skipping edit");
-      } else {
-        logger.error("[fundTokenWallets] Failed to edit message:", error);
-        await sendMessage(ctx, "❌ **No buyer wallets found**\n\nPlease add buyer wallets first before funding token wallets.");
+      try {
+        await bot.api.editMessageText(
+          ctx.chat!.id,
+          loadingMessage.message_id,
+          "❌ **No buyer wallets found**\n\nPlease add buyer wallets first before funding token wallets.",
+          { parse_mode: "Markdown" }
+        );
+      } catch (error: any) {
+        if (error.description?.includes("message is not modified")) {
+          logger.debug(
+            "[fundTokenWallets] Message content unchanged, skipping edit"
+          );
+        } else {
+          logger.error("[fundTokenWallets] Failed to edit message:", error);
+          await sendMessage(
+            ctx,
+            "❌ **No buyer wallets found**\n\nPlease add buyer wallets first before funding token wallets."
+          );
+        }
       }
-    }
       return conversation.halt();
     }
 
@@ -72,9 +84,12 @@ export const fundTokenWalletsConversation = async (
 
     for (const wallet of buyerWallets) {
       try {
-        const tokenBalance = await getTokenBalance(tokenAddress, wallet.publicKey);
+        const tokenBalance = await getTokenBalance(
+          tokenAddress,
+          wallet.publicKey
+        );
         const solBalance = await getWalletBalance(wallet.publicKey);
-        
+
         if (tokenBalance > 0) {
           walletHoldings.push({
             address: wallet.publicKey,
@@ -91,21 +106,26 @@ export const fundTokenWalletsConversation = async (
     }
 
     if (walletHoldings.length === 0) {
-          try {
-      await bot.api.editMessageText(
-        ctx.chat!.id,
-        loadingMessage.message_id,
-        "❌ **No wallets hold this token**\n\nNone of your buyer wallets currently hold this token.",
-        { parse_mode: "Markdown" }
-      );
-    } catch (error: any) {
-      if (error.description?.includes("message is not modified")) {
-        logger.debug("[fundTokenWallets] Message content unchanged, skipping edit");
-      } else {
-        logger.error("[fundTokenWallets] Failed to edit message:", error);
-        await sendMessage(ctx, "❌ **No wallets hold this token**\n\nNone of your buyer wallets currently hold this token.");
+      try {
+        await bot.api.editMessageText(
+          ctx.chat!.id,
+          loadingMessage.message_id,
+          "❌ **No wallets hold this token**\n\nNone of your buyer wallets currently hold this token.",
+          { parse_mode: "Markdown" }
+        );
+      } catch (error: any) {
+        if (error.description?.includes("message is not modified")) {
+          logger.debug(
+            "[fundTokenWallets] Message content unchanged, skipping edit"
+          );
+        } else {
+          logger.error("[fundTokenWallets] Failed to edit message:", error);
+          await sendMessage(
+            ctx,
+            "❌ **No wallets hold this token**\n\nNone of your buyer wallets currently hold this token."
+          );
+        }
       }
-    }
       return conversation.halt();
     }
 
@@ -113,8 +133,14 @@ export const fundTokenWalletsConversation = async (
     walletHoldings.sort((a, b) => b.tokenBalance - a.tokenBalance);
 
     // Calculate total token balance and SOL balance
-    const totalTokenBalance = walletHoldings.reduce((sum, w) => sum + w.tokenBalance, 0);
-    const totalSolBalance = walletHoldings.reduce((sum, w) => sum + w.solBalance, 0);
+    const totalTokenBalance = walletHoldings.reduce(
+      (sum, w) => sum + w.tokenBalance,
+      0
+    );
+    const totalSolBalance = walletHoldings.reduce(
+      (sum, w) => sum + w.solBalance,
+      0
+    );
 
     // Show wallet summary
     const summaryText = [
@@ -126,9 +152,12 @@ export const fundTokenWalletsConversation = async (
       `**Total SOL balance:** ${totalSolBalance.toFixed(6)} SOL`,
       ``,
       `**Top 5 wallets by token balance:**`,
-      ...walletHoldings.slice(0, 5).map((w, i) => 
-        `${i + 1}. \`${w.address.slice(0, 6)}...${w.address.slice(-4)}\` - ${(w.tokenBalance / 1e6).toFixed(2)} tokens (${w.solBalance.toFixed(6)} SOL)`
-      ),
+      ...walletHoldings
+        .slice(0, 5)
+        .map(
+          (w, i) =>
+            `${i + 1}. \`${w.address.slice(0, 6)}...${w.address.slice(-4)}\` - ${(w.tokenBalance / 1e6).toFixed(2)} tokens (${w.solBalance.toFixed(6)} SOL)`
+        ),
       ``,
       `Choose how you want to fund these wallets:`,
     ].join("\n");
@@ -154,7 +183,9 @@ export const fundTokenWalletsConversation = async (
     } catch (error: any) {
       // Ignore "message is not modified" errors
       if (error.description?.includes("message is not modified")) {
-        logger.debug("[fundTokenWallets] Message content unchanged, skipping edit");
+        logger.debug(
+          "[fundTokenWallets] Message content unchanged, skipping edit"
+        );
       } else {
         logger.error("[fundTokenWallets] Failed to edit message:", error);
         // Fallback: send a new message
@@ -175,16 +206,28 @@ export const fundTokenWalletsConversation = async (
     }
 
     if (data?.startsWith("fund_all_wallets_")) {
-      await handleFundingSelection(ctx, conversation, tokenAddress, user.id, true);
+      await handleFundingSelection(
+        ctx,
+        conversation,
+        tokenAddress,
+        user.id,
+        true
+      );
     } else if (data?.startsWith("fund_top_wallets_")) {
       const parts = data.split("_");
       const walletCount = parseInt(parts[parts.length - 1]);
-      await handleFundingSelection(ctx, conversation, tokenAddress, user.id, false, walletCount);
+      await handleFundingSelection(
+        ctx,
+        conversation,
+        tokenAddress,
+        user.id,
+        false,
+        walletCount
+      );
     }
-
   } catch (error: any) {
     logger.error("[fundTokenWallets] Error:", error);
-    
+
     // Don't re-throw the error, just handle it gracefully
     try {
       await bot.api.editMessageText(
@@ -195,13 +238,21 @@ export const fundTokenWalletsConversation = async (
       );
     } catch (editError: any) {
       if (editError.description?.includes("message is not modified")) {
-        logger.debug("[fundTokenWallets] Message content unchanged, skipping edit");
+        logger.debug(
+          "[fundTokenWallets] Message content unchanged, skipping edit"
+        );
       } else {
-        logger.error("[fundTokenWallets] Failed to edit error message:", editError);
-        await sendMessage(ctx, `❌ **Error occurred**\n\n${error.message || "Unknown error"}`);
+        logger.error(
+          "[fundTokenWallets] Failed to edit error message:",
+          editError
+        );
+        await sendMessage(
+          ctx,
+          `❌ **Error occurred**\n\n${error.message || "Unknown error"}`
+        );
       }
     }
-    
+
     // End the conversation gracefully instead of letting it crash
     return conversation.halt();
   }
@@ -215,7 +266,7 @@ const handleFundingSelection = async (
   fundAllWallets: boolean,
   topWalletCount?: number
 ) => {
-  const selectionText = fundAllWallets 
+  const selectionText = fundAllWallets
     ? "all wallets that hold this token"
     : `top ${topWalletCount} wallets with most tokens`;
 
@@ -238,7 +289,10 @@ const handleFundingSelection = async (
 
   const amount = parseFloat(amountText);
   if (isNaN(amount) || amount <= 0) {
-    await sendMessage(ctx, "❌ Invalid amount. Please enter a positive number.");
+    await sendMessage(
+      ctx,
+      "❌ Invalid amount. Please enter a positive number."
+    );
     return conversation.halt();
   }
 
@@ -249,14 +303,14 @@ const handleFundingSelection = async (
 
   // Show confirmation
   const confirmationText = [
-    `💰 **Confirm Funding**`,
+    `💰 <b>Confirm Funding</b>`,
     ``,
-    `**Token:** \`${tokenAddress}\``,
-    `**Total amount:** ${amount} SOL`,
-    `**Target:** ${fundAllWallets ? "All wallets" : `Top ${topWalletCount} wallets`}`,
-    `**Method:** Mixer (for privacy)`,
+    `<b>Token:</b> <code>${tokenAddress}</code>`,
+    `<b>Total amount:</b> ${amount} SOL`,
+    `<b>Target:</b> ${fundAllWallets ? "All wallets" : `Top ${topWalletCount} wallets`}`,
+    `<b>Method:</b> Mixer (for privacy)`,
     ``,
-    `⚠️ **This will:**`,
+    `⚠️ <b>This will:</b>`,
     `• Use your funding wallet`,
     `• Distribute SOL through mixer`,
     `• Send random amounts to each wallet`,
@@ -266,7 +320,10 @@ const handleFundingSelection = async (
   ].join("\n");
 
   const confirmKeyboard = new InlineKeyboard()
-    .text("✅ Confirm", `confirm_fund_${tokenAddress}_${amount}_${fundAllWallets ? "all" : topWalletCount}`)
+    .text(
+      "✅ Confirm",
+      `confirm_fund_${tokenAddress}_${amount}_${fundAllWallets ? "all" : topWalletCount}`
+    )
     .text("❌ Cancel", CallBackQueries.CANCEL_FUND_TOKEN);
 
   try {
@@ -275,15 +332,20 @@ const handleFundingSelection = async (
       message.message_id,
       confirmationText,
       {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         reply_markup: confirmKeyboard,
       }
     );
   } catch (error: any) {
     if (error.description?.includes("message is not modified")) {
-      logger.debug("[fundTokenWallets] Message content unchanged, skipping edit");
+      logger.debug(
+        "[fundTokenWallets] Message content unchanged, skipping edit"
+      );
     } else {
-      logger.error("[fundTokenWallets] Failed to edit confirmation message:", error);
+      logger.error(
+        "[fundTokenWallets] Failed to edit confirmation message:",
+        error
+      );
       await sendMessage(ctx, confirmationText, {
         parse_mode: "Markdown",
         reply_markup: confirmKeyboard,
@@ -301,7 +363,16 @@ const handleFundingSelection = async (
   }
 
   if (confirmData?.startsWith("confirm_fund_")) {
-    await executeFunding(ctx, tokenAddress, userId, amount, fundAllWallets, topWalletCount, ctx.chat!.id, message.message_id);
+    await executeFunding(
+      ctx,
+      tokenAddress,
+      userId,
+      amount,
+      fundAllWallets,
+      topWalletCount,
+      ctx.chat!.id,
+      message.message_id
+    );
   }
 };
 
@@ -319,11 +390,11 @@ const executeFunding = async (
     await bot.api.editMessageText(
       chatId,
       messageId,
-      `🔀 **Funding in Progress**\n\n` +
+      `🔀 <b>Funding in Progress</b>\n\n` +
         `💰 Distributing ${amount} SOL...\n` +
         `⏳ Using mixer for privacy...\n` +
         `🔄 Please wait...`,
-      { parse_mode: "Markdown" }
+      { parse_mode: "HTML" }
     );
   } catch (error: any) {
     if (error.description?.includes("message is not modified")) {
@@ -365,9 +436,14 @@ const executeFunding = async (
         });
       } catch (error: any) {
         if (error.description?.includes("message is not modified")) {
-          logger.debug("[executeFunding] Message content unchanged, skipping edit");
+          logger.debug(
+            "[executeFunding] Message content unchanged, skipping edit"
+          );
         } else {
-          logger.error("[executeFunding] Failed to edit success message:", error);
+          logger.error(
+            "[executeFunding] Failed to edit success message:",
+            error
+          );
           await sendMessage(ctx, successText, { parse_mode: "Markdown" });
         }
       }
@@ -389,7 +465,9 @@ const executeFunding = async (
         });
       } catch (error: any) {
         if (error.description?.includes("message is not modified")) {
-          logger.debug("[executeFunding] Message content unchanged, skipping edit");
+          logger.debug(
+            "[executeFunding] Message content unchanged, skipping edit"
+          );
         } else {
           logger.error("[executeFunding] Failed to edit error message:", error);
           await sendMessage(ctx, errorText, { parse_mode: "Markdown" });
@@ -407,11 +485,19 @@ const executeFunding = async (
       );
     } catch (editError: any) {
       if (editError.description?.includes("message is not modified")) {
-        logger.debug("[executeFunding] Message content unchanged, skipping edit");
+        logger.debug(
+          "[executeFunding] Message content unchanged, skipping edit"
+        );
       } else {
-        logger.error("[executeFunding] Failed to edit error message:", editError);
-        await sendMessage(ctx, `❌ **Funding Error**\n\n${error.message || "Unknown error occurred"}`);
+        logger.error(
+          "[executeFunding] Failed to edit error message:",
+          editError
+        );
+        await sendMessage(
+          ctx,
+          `❌ **Funding Error**\n\n${error.message || "Unknown error occurred"}`
+        );
       }
     }
   }
-}; 
+};

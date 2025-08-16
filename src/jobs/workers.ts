@@ -99,7 +99,7 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
       await completeLoadingState(
         loadingKey,
         undefined,
-        `**Token:** ${data.tokenName} ($${data.tokenSymbol})\n**Address:** \`${data.tokenAddress}\``
+        `<b>Token:</b> ${data.tokenName} ($${data.tokenSymbol})\n<b>Address:</b> <code>${data.tokenAddress}</code>`
       );
 
       await sendLaunchSuccessNotification(
@@ -277,15 +277,15 @@ export const sellDevWorker = new Worker<SellDevJob>(
       await completeLoadingState(
         loadingKey,
         undefined,
-        `**💸 Dev Sell Complete**\n\n` +
-          `🎯 **Sell Details:**\n` +
-          `   • **Percentage:** ${data.sellPercent}%\n` +
-          `   • **Tokens Sold:** ${tokensSoldFormatted} tokens\n` +
-          `   • **SOL Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n\n` +
-          `📊 **Overall Performance:**\n` +
-          `   • **Total P&L:** ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "+" : ""}${sellSummary.netProfitLoss.toFixed(6)} SOL\n` +
-          `   • **Return:** ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "+" : ""}${sellSummary.profitLossPercentage.toFixed(1)}%\n\n` +
-          `🔗 **[View Transaction](https://solscan.io/tx/${result.signature})**`
+        `<b>💸 Dev Sell Complete</b>\n\n` +
+          `🎯 <b>Sell Details:</b>\n` +
+          `   • <b>Percentage:</b> ${data.sellPercent}%\n` +
+          `   • <b>Tokens Sold:</b> ${tokensSoldFormatted} tokens\n` +
+          `   • <b>SOL Received:</b> ${sellSummary.solReceived.toFixed(6)} SOL\n\n` +
+          `📊 <b>Overall Performance:</b>\n` +
+          `   • <b>Total P&L:</b> ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "+" : ""}${sellSummary.netProfitLoss.toFixed(6)} SOL\n` +
+          `   • <b>Return:</b> ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "+" : ""}${sellSummary.profitLossPercentage.toFixed(1)}%\n\n` +
+          `🔗 <b><a href="https://solscan.io/tx/${result.signature}">View Transaction</a></b>`
       );
 
       // Send detailed notification with enhanced formatting
@@ -514,15 +514,15 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
       await completeLoadingState(
         loadingKey,
         undefined,
-        `**💸 Wallet Sells Complete**\n\n` +
-          `✅ **Success Rate:** ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets (${sellSummary.successRate}%)\n` +
-          `💰 **SOL Received:** ${sellSummary.solReceived.toFixed(6)} SOL\n` +
-          `🪙 **Tokens Sold:** ${tokensSoldFormatted} tokens (${data.sellPercent}%)\n\n` +
-          `📊 **Overall Performance:**\n` +
-          `   • **Total P&L:** ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "+" : ""}${sellSummary.netProfitLoss.toFixed(6)} SOL\n` +
-          `   • **Return:** ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "+" : ""}${sellSummary.profitLossPercentage.toFixed(1)}%\n\n` +
+        `<b>💸 Wallet Sells Complete</b>\n\n` +
+          `✅ <b>Success Rate:</b> ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets (${sellSummary.successRate}%)\n` +
+          `💰 <b>SOL Received:</b> ${sellSummary.solReceived.toFixed(6)} SOL\n` +
+          `🪙 <b>Tokens Sold:</b> ${tokensSoldFormatted} tokens (${data.sellPercent}%)\n\n` +
+          `📊 <b>Overall Performance:</b>\n` +
+          `   • <b>Total P&L:</b> ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "+" : ""}${sellSummary.netProfitLoss.toFixed(6)} SOL\n` +
+          `   • <b>Return:</b> ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "+" : ""}${sellSummary.profitLossPercentage.toFixed(1)}%\n\n` +
           `${sellSummary.failedWallets > 0 ? `⚠️ ${sellSummary.failedWallets} wallet(s) failed to sell\n\n` : ""}` +
-          `🎯 **All wallet sells completed successfully!**`
+          `🎯 <b>All wallet sells completed successfully!</b>`
       );
 
       // Update the initial notification with accurate data
@@ -551,7 +551,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         );
         // Always send a new message as well
         await bot.api.sendMessage(data.userChatId, finalMessage, {
-          parse_mode: "MarkdownV2",
+          parse_mode: "HTML",
         });
       } catch (error) {
         logger.warn(
@@ -647,10 +647,10 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       await completeLoadingState(
         loadingKey,
         undefined,
-        `🎉 **Preparation Complete!**\n\n` +
-          `🪙 **Token:** ${data.tokenName} ($${data.tokenSymbol})\n` +
-          `✅ **Status:** Ready for launch\n` +
-          `🚀 **Next:** Execution phase starting...`
+        `🎉 <b>Preparation Complete!</b>\n\n` +
+          `🪙 <b>Token:</b> ${data.tokenName} ($${data.tokenSymbol})\n` +
+          `✅ <b>Status:</b> Ready for launch\n` +
+          `🚀 <b>Next:</b> Execution phase starting...`
       );
 
       // Automatically enqueue the execution phase
@@ -670,13 +670,13 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       await sendNotification(
         bot,
         data.userChatId,
-        `🎉 **Preparation Phase Complete\\!** 🎉\n\n` +
-          `✨ **What's Been Done:**\n` +
+        `🎉 <b>Preparation Phase Complete!</b> 🎉\n\n` +
+          `✨ <b>What's Been Done:</b>\n` +
           `   • 🔄 Wallets funded via mixer\n` +
           `   • ⚡ All systems ready\n\n` +
-          `🚀 **Next Phase:** Token Launch Execution\n` +
-          `⏳ **Status:** Starting launch sequence\\.\\.\\.\n\n` +
-          `🎯 **Your token is about to go live\\!**`
+          `🚀 <b>Next Phase:</b> Token Launch Execution\n` +
+          `⏳ <b>Status:</b> Starting launch sequence...\n\n` +
+          `🎯 <b>Your token is about to go live!</b>`
       );
     } catch (error: any) {
       logger.error(
@@ -780,11 +780,11 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
       await completeLoadingState(
         loadingKey,
         undefined,
-        `🎉 **Launch Complete!**\n\n` +
-          `🪙 **Token:** ${data.tokenName} ($${data.tokenSymbol})\n` +
-          `📍 **Address:** \`${data.tokenAddress}\`\n` +
-          `✅ **Status:** Successfully launched\n\n` +
-          `🚀 **Your token is now live and ready for trading!**`
+        `🎉 <b>Launch Complete!</b>\n\n` +
+          `🪙 <b>Token:</b> ${data.tokenName} ($${data.tokenSymbol})\n` +
+          `📍 <b>Address:</b> <code>${data.tokenAddress}</code>\n` +
+          `✅ <b>Status:</b> Successfully launched\n\n` +
+          `🚀 <b>Your token is now live and ready for trading!</b>`
       );
 
       await sendLaunchSuccessNotification(
@@ -866,7 +866,7 @@ sellDevWorker.on("failed", async (job) => {
   await sendNotification(
     bot,
     job!.data.userChatId,
-    "❌ Dev Wallet Sell Failed\. Please try again 🔄"
+    "❌ Dev Wallet Sell Failed. Please try again 🔄"
   );
 });
 sellDevWorker.on("closed", () => {
@@ -887,7 +887,7 @@ sellWalletWorker.on("failed", async (job) => {
   await sendNotification(
     bot,
     job!.data.userChatId,
-    "❌ Wallet Sells Failed\. Please try again 🔄"
+    "❌ Wallet Sells Failed. Please try again 🔄"
   );
 });
 sellWalletWorker.on("closed", async () => {
@@ -914,7 +914,7 @@ prepareLaunchWorker.on("failed", async (job) => {
   await sendNotification(
     bot,
     job!.data.userChatId,
-    `❌ **Token preparation failed**\n\nToken: ${token.tokenName} \\($${token.tokenSymbol}\\)\n\n🔄 You can try again from your tokens list\\.`
+    `❌ <b>Token preparation failed</b>\n\nToken: ${token.tokenName} ($${token.tokenSymbol})\n\n🔄 You can try again from your tokens list.`
   );
 });
 prepareLaunchWorker.on("closed", () => {

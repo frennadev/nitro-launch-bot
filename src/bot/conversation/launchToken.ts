@@ -49,7 +49,7 @@ async function waitForInputOrCancel(
   conversation: Conversation,
   ctx: Context,
   prompt: string,
-  parseMode: string = "HTML"
+  parseMode: "HTML" | "Markdown" | "MarkdownV2" = "HTML"
 ) {
   await sendMessage(ctx, prompt, {
     parse_mode: parseMode,
@@ -61,7 +61,11 @@ async function waitForInputOrCancel(
     "callback_query:data",
   ]);
   if (input.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
-    await sendMessage(ctx, "Process cancelled. Returning to the beginning.");
+    await sendMessage(
+      ctx,
+      "<b>❌ Process Cancelled</b>\n\n<i>Returning to the beginning.</i>",
+      { parse_mode: "HTML" }
+    );
     await conversation.halt();
     return null;
   }
@@ -154,7 +158,11 @@ const launchTokenConversation = async (
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await sendMessage(ctx, "❌ Unrecognized user");
+    await sendMessage(
+      ctx,
+      "<b>❌ Unrecognized User</b>\n\n<i>Please contact support for assistance.</i>",
+      { parse_mode: "HTML" }
+    );
     await conversation.halt();
     return;
   }
@@ -234,7 +242,9 @@ const launchTokenConversation = async (
   await safeAnswerCallbackQuery(launchModeChoice);
 
   if (launchModeChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
-    await sendMessage(ctx, "Launch cancelled.");
+    await sendMessage(ctx, "<b>❌ Launch Cancelled</b>", {
+      parse_mode: "HTML",
+    });
     await conversation.halt();
     return;
   }
@@ -246,7 +256,8 @@ const launchTokenConversation = async (
     launchMode = "normal";
     await sendMessage(
       ctx,
-      "✅ Normal Launch mode selected. Proceeding with standard launch process..."
+      "<b>✅ Normal Launch Mode Selected</b>\n\n<i>Proceeding with standard launch process...</i>",
+      { parse_mode: "HTML" }
     );
   } else if (launchModeChoice.callbackQuery?.data === "PREFUNDED_LAUNCH") {
     launchMode = "prefunded";
@@ -256,7 +267,8 @@ const launchTokenConversation = async (
     if (buyerWallets.length === 0) {
       await sendMessage(
         ctx,
-        "❌ No buyer wallets found. Please add buyer wallets in Wallet Config first."
+        "<b>❌ No Buyer Wallets Found</b>\n\n<i>Please add buyer wallets in Wallet Config first.</i>",
+        { parse_mode: "HTML" }
       );
       await conversation.halt();
       return;
@@ -322,7 +334,9 @@ ${filteredBuyWallets.map((wallet, i) => `${i + 1}. <code>${wallet.publicKey}</co
     await safeAnswerCallbackQuery(continueChoice);
 
     if (continueChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
-      await sendMessage(ctx, "Launch cancelled.");
+      await sendMessage(ctx, "<b>❌ Launch Cancelled</b>", {
+        parse_mode: "HTML",
+      });
       await conversation.halt();
       return;
     }
@@ -330,11 +344,16 @@ ${filteredBuyWallets.map((wallet, i) => `${i + 1}. <code>${wallet.publicKey}</co
     if (continueChoice.callbackQuery?.data === "CONTINUE_PREFUNDED") {
       await sendMessage(
         ctx,
-        "✅ Proceeding with prefunded launch configuration..."
+        "<b>✅ Prefunded Launch Configuration</b>\n\n<i>Proceeding with prefunded launch configuration...</i>",
+        { parse_mode: "HTML" }
       );
     }
   } else {
-    await sendMessage(ctx, "❌ Invalid launch mode selected.");
+    await sendMessage(
+      ctx,
+      "<b>❌ Invalid Launch Mode</b>\n\n<i>Please select a valid launch mode.</i>",
+      { parse_mode: "HTML" }
+    );
     await conversation.halt();
     return;
   }
@@ -367,17 +386,29 @@ ${filteredBuyWallets.map((wallet, i) => `${i + 1}. <code>${wallet.publicKey}</co
   // -------- VALIDATE TOKEN ----------
   let token = await getUserToken(user.id, tokenAddress);
   if (!token) {
-    await sendMessage(ctx, "❌ Token not found");
+    await sendMessage(
+      ctx,
+      "<b>❌ Token Not Found</b>\n\n<i>Please verify the token address.</i>",
+      { parse_mode: "HTML" }
+    );
     await conversation.halt();
     return;
   }
   if (token.state === TokenState.LAUNCHING) {
-    await sendMessage(ctx, "🔄 Token is currently launching");
+    await sendMessage(
+      ctx,
+      "<b>🔄 Token Currently Launching</b>\n\n<i>Please wait for the current launch to complete.</i>",
+      { parse_mode: "HTML" }
+    );
     await conversation.halt();
     return;
   }
   if (token.state === TokenState.LAUNCHED) {
-    await sendMessage(ctx, "🚀 Token is already launched");
+    await sendMessage(
+      ctx,
+      "<b>🚀 Token Already Launched</b>\n\n<i>This token has already been successfully launched.</i>",
+      { parse_mode: "HTML" }
+    );
     await conversation.halt();
     return;
   }
@@ -476,7 +507,9 @@ Your token has a previous launch attempt that was not completed.
     await safeAnswerCallbackQuery(retryChoice);
 
     if (retryChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
-      await sendMessage(ctx, "Launch cancelled.");
+      await sendMessage(ctx, "<b>❌ Launch Cancelled</b>", {
+        parse_mode: "HTML",
+      });
       await conversation.halt();
       return;
     }
@@ -515,7 +548,11 @@ Your token launch has been successfully resubmitted using your previous paramete
     }
 
     // If "NEW_VALUES" selected, continue with the normal flow to get new input
-    await sendMessage(ctx, "✅ You can now enter new launch amounts.");
+    await sendMessage(
+      ctx,
+      "<b>✅ Ready for New Values</b>\n\n<i>You can now enter new launch amounts.</i>",
+      { parse_mode: "HTML" }
+    );
   }
 
   // -------- GET FUNDING WALLET ----------
@@ -523,7 +560,8 @@ Your token launch has been successfully resubmitted using your previous paramete
   if (!fundingWallet) {
     await sendMessage(
       ctx,
-      "❌ No funding wallet found. Please configure your funding wallet in Wallet Config first."
+      "<b>❌ No Funding Wallet Found</b>\n\n<i>Please configure your funding wallet in Wallet Config first.</i>",
+      { parse_mode: "HTML" }
     );
     await conversation.halt();
     return;
@@ -535,7 +573,8 @@ Your token launch has been successfully resubmitted using your previous paramete
   if (buyerWallets.length === 0) {
     await sendMessage(
       ctx,
-      "❌ No buyer wallets found. Please add buyer wallets in Wallet Config first."
+      "<b>❌ No Buyer Wallets Found</b>\n\n<i>Please add buyer wallets in Wallet Config first.</i>",
+      { parse_mode: "HTML" }
     );
     await conversation.halt();
     return;
@@ -669,7 +708,9 @@ Your token launch has been successfully resubmitted using your previous paramete
 
         if (buyAmountCtx.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
           await buyAmountCtx.answerCallbackQuery();
-          await sendMessage(ctx, "Launch cancelled.");
+          await sendMessage(ctx, "<b>❌ Launch Cancelled</b>", {
+            parse_mode: "HTML",
+          });
           return conversation.halt();
         }
 
@@ -753,7 +794,11 @@ To proceed with this buy amount, you need ${walletsNeeded} additional wallet${wa
                   walletChoice.callbackQuery?.data ===
                   LaunchCallBackQueries.CANCEL
                 ) {
-                  await sendMessage(walletChoice, "Launch cancelled.");
+                  await sendMessage(
+                    walletChoice,
+                    "<b>❌ Launch Cancelled</b>",
+                    { parse_mode: "HTML" }
+                  );
                   return conversation.halt();
                 }
 
@@ -788,8 +833,13 @@ To proceed with this buy amount, you need ${walletsNeeded} additional wallet${wa
                     if (i > 0) {
                       await sendMessage(
                         walletChoice,
-                        `📥 Please send the private key of wallet ${i + 1}/${walletsNeeded}:`,
+                        `<b>📥 Wallet Import</b>
+
+Please send the private key of wallet <b>${i + 1}/${walletsNeeded}</b>:
+
+<i>💡 Make sure your private key is valid and the wallet has some SOL for transactions.</i>`,
                         {
+                          parse_mode: "HTML",
                           reply_markup: new InlineKeyboard().text(
                             "❌ Cancel",
                             LaunchCallBackQueries.CANCEL
@@ -805,7 +855,11 @@ To proceed with this buy amount, you need ${walletsNeeded} additional wallet${wa
                       LaunchCallBackQueries.CANCEL
                     ) {
                       await privateKeyInput.answerCallbackQuery();
-                      await sendMessage(privateKeyInput, "Import cancelled.");
+                      await sendMessage(
+                        privateKeyInput,
+                        "<b>❌ Import Cancelled</b>",
+                        { parse_mode: "HTML" }
+                      );
                       return conversation.halt();
                     }
 
@@ -984,7 +1038,9 @@ Enter the SOL amount for the developer to purchase (or 0 to skip)
 
       if (devBuyCtx.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
         await devBuyCtx.answerCallbackQuery();
-        await sendMessage(ctx, "Launch cancelled.");
+        await sendMessage(ctx, "<b>❌ Launch Cancelled</b>", {
+          parse_mode: "HTML",
+        });
         return conversation.halt();
       }
 

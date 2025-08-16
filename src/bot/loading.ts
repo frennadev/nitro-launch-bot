@@ -20,7 +20,7 @@ const processingFrames = ["⚡", "✨", "⚡", "✨"];
 const operationMessages = {
   token_launch: {
     initial:
-      "🚀 **Launching your token...**\n\n⏳ Preparing launch sequence...",
+      "🚀 <b>Launching your token...</b>\n\n⏳ Preparing launch sequence...",
     phases: [
       "🔍 Validating token parameters...",
       "💰 Checking wallet balances...",
@@ -29,12 +29,12 @@ const operationMessages = {
       "🛒 Distributing to buyer wallets...",
       "📊 Finalizing launch...",
     ],
-    success: "🎉 **Token launched successfully!**",
-    error: "❌ **Token launch failed**",
+    success: "🎉 <b>Token launched successfully!</b>",
+    error: "❌ <b>Token launch failed</b>",
   },
   prepare_launch: {
     initial:
-      "🛠️ **Preparing token launch...**\n\n⏳ Initializing preparation sequence...",
+      "🛠️ <b>Preparing token launch...</b>\n\n⏳ Initializing preparation sequence...",
     phases: [
       "🔍 Validating launch parameters...",
       "💰 Collecting platform fee...",
@@ -44,12 +44,12 @@ const operationMessages = {
       "⚡ Funding buyer wallets...",
       "✅ Preparation complete...",
     ],
-    success: "🎉 **Preparation completed successfully\\!**",
-    error: "❌ **Preparation failed**",
+    success: "🎉 <b>Preparation completed successfully!</b>",
+    error: "❌ <b>Preparation failed</b>",
   },
   mixer_operation: {
     initial:
-      "🔀 **Mixing funds for privacy...**\n\n⏳ Initializing secure mixing process...",
+      "🔀 <b>Mixing funds for privacy...</b>\n\n⏳ Initializing secure mixing process...",
     phases: [
       "🔐 Validating wallet pool...",
       "🏦 Reserving intermediate wallets...",
@@ -62,41 +62,41 @@ const operationMessages = {
       "💰 Finalizing distributions...",
       "🔒 Releasing intermediate wallets...",
     ],
-    success: "🎉 **Funds mixed successfully\\!**",
-    error: "❌ **Mixing operation failed**",
+    success: "🎉 <b>Funds mixed successfully!</b>",
+    error: "❌ <b>Mixing operation failed</b>",
   },
   dev_sell: {
-    initial: "💰 **Processing dev sell...**\n\n⏳ Preparing transaction...",
+    initial: "💰 <b>Processing dev sell...</b>\n\n⏳ Preparing transaction...",
     phases: [
       "🔍 Validating sell parameters...",
       "💎 Calculating token amounts...",
       "📤 Executing sell transaction...",
       "✅ Confirming transaction...",
     ],
-    success: "🎉 **Dev sell completed successfully\\!**",
-    error: "❌ **Dev sell failed**",
+    success: "🎉 <b>Dev sell completed successfully!</b>",
+    error: "❌ <b>Dev sell failed</b>",
   },
   wallet_sell: {
     initial:
-      "💸 **Processing wallet sells...**\n\n⏳ Preparing transactions...",
+      "💸 <b>Processing wallet sells...</b>\n\n⏳ Preparing transactions...",
     phases: [
       "🔍 Validating wallet holdings...",
       "💎 Calculating sell amounts...",
       "📤 Executing sell transactions...",
       "✅ Confirming transactions...",
     ],
-    success: "🎉 **Wallet sells completed successfully\\!**",
-    error: "❌ **Wallet sells failed**",
+    success: "🎉 <b>Wallet sells completed successfully!</b>",
+    error: "❌ <b>Wallet sells failed</b>",
   },
   transaction: {
-    initial: "📡 **Processing transaction...**\n\n⏳ Preparing...",
+    initial: "📡 <b>Processing transaction...</b>\n\n⏳ Preparing...",
     phases: [
       "🔍 Validating transaction...",
       "📤 Broadcasting to network...",
       "⏰ Waiting for confirmation...",
     ],
-    success: "✅ **Transaction confirmed\\!**",
-    error: "❌ **Transaction failed**",
+    success: "✅ <b>Transaction confirmed!</b>",
+    error: "❌ <b>Transaction failed</b>",
   },
 };
 
@@ -114,7 +114,7 @@ export async function startLoadingState(
     : `${chatId}-${operation}`;
 
   const config = operationMessages[operation];
-  const message = await ctx.reply(config.initial, { parse_mode: "Markdown" });
+  const message = await ctx.reply(config.initial, { parse_mode: "HTML" });
 
   const loadingState: LoadingState = {
     chatId,
@@ -155,7 +155,7 @@ export async function updateLoadingState(
 
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
     });
   } catch (error) {
     // Message might be too old to edit, ignore
@@ -186,12 +186,12 @@ export async function completeLoadingState(
 
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
     });
   } catch (error) {
     // If editing fails, send a new message
     await bot.api.sendMessage(state.chatId, message, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
     });
   }
 
@@ -221,12 +221,12 @@ export async function failLoadingState(
 
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
     });
   } catch (error) {
     // If editing fails, send a new message
     await bot.api.sendMessage(state.chatId, message, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
     });
   }
 
@@ -259,7 +259,7 @@ function startLoadingAnimation(loadingKey: string): void {
 
     try {
       await bot.api.editMessageText(state.chatId, state.messageId, message, {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
       });
     } catch (error) {
       // Stop animation if we can't edit the message
@@ -293,12 +293,12 @@ export async function sendLoadingMessage(
   initialMessage: string,
   operation: string = "processing"
 ): Promise<{ messageId: number; update: (message: string) => Promise<void> }> {
-  const sent = await ctx.reply(initialMessage, { parse_mode: "Markdown" });
+  const sent = await ctx.reply(initialMessage, { parse_mode: "HTML" });
 
   const update = async (message: string) => {
     try {
       await bot.api.editMessageText(ctx.chat!.id, sent.message_id, message, {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
       });
     } catch (error) {
       console.warn("Failed to update loading message:", error);
@@ -360,12 +360,12 @@ export async function updateMixerProgress(
   const frame =
     processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
 
-  let message = `🔀 **MIXER OPERATION**\n\n${frame} ${phaseMessage}\n\n${progressBar}`;
+  let message = `🔀 <b>MIXER OPERATION</b>\n\n${frame} ${phaseMessage}\n\n${progressBar}`;
 
   // Add route progress for mixer operations
   if (routeIndex !== undefined && totalRoutes !== undefined) {
     const routeProgress = generateProgressBar(routeIndex, totalRoutes);
-    message += `\n\n📊 **Route Progress:**\n${routeProgress}`;
+    message += `\n\n📊 <b>Route Progress:</b>\n${routeProgress}`;
   }
 
   message += `\n\n⏱️ Elapsed: ${elapsed}s`;
@@ -382,7 +382,7 @@ export async function updateMixerProgress(
 
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
     });
   } catch (error) {
     console.warn("Failed to update mixer progress:", error);
@@ -405,7 +405,7 @@ export async function updateMixerStatus(
   const frame =
     processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
 
-  let message = `🔀 **MIXER OPERATION**\n\n${frame} ${statusMessage}`;
+  let message = `🔀 <b>MIXER OPERATION</b>\n\n${frame} ${statusMessage}`;
 
   if (details) {
     message += `\n\n📋 ${details}`;
@@ -422,7 +422,7 @@ export async function updateMixerStatus(
 
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
     });
   } catch (error) {
     console.warn("Failed to update mixer status:", error);
