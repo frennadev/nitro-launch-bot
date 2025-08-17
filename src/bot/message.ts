@@ -108,18 +108,16 @@ export const sendBonkLaunchSuccessNotification = async (
       const simplifiedMessage = [
         `🎉 <b>Bonk Token Launched Successfully!</b>`,
         ``,
-        `🪙 <b>Token Details</b>`,
-        `┌─────────────────────────────────`,
-        `│ <b>Name:</b> ${tokenName}`,
-        `│ <b>Symbol:</b> <code>${symbol}</code>`,
-        `│ <b>Address:</b> <code>${tokenAddress}</code>`,
-        `└─────────────────────────────────`,
+        `🪙 <b>${tokenName}</b> (${symbol})`,
+        `📍 <code>${tokenAddress}</code>`,
         ``,
         `🚀 <b>Platform:</b> Raydium Launch Lab`,
         `✅ <b>Status:</b> <i>Live & Trading</i>`,
         ``,
         `💡 <i>Use the buttons below to manage your token</i>`,
-      ].join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
 
       const keyboard = new InlineKeyboard()
         .text("📊 View Tokens", "view_tokens")
@@ -179,47 +177,34 @@ const buildLaunchSuccessMessage = async (
   const formatPercentage = (percentage: number) => `${percentage.toFixed(1)}%`;
 
   const msg = [
-    `🎉 <b>Token Launched Successfully!</b>`,
+    `🎉 <b>Token Launch Complete!</b>`,
     ``,
-    `🪙 <b>Token Details</b>`,
-    `┌─────────────────────────────────`,
-    `│ <b>Name:</b> ${tokenName}`,
-    `│ <b>Symbol:</b> <code>${symbol}</code>`,
-    `│ <b>Address:</b> <code>${tokenAddress}</code>`,
-    `└─────────────────────────────────`,
+    `🪙 <b>${tokenName}</b> (${symbol})`,
+    `📍 <code>${tokenAddress}</code>`,
     ``,
-    `💰 <b>Financial Overview</b>`,
-    `┌─────────────────────────────────`,
-    `│ 💸 <b>Total Spent:</b> ${formatSOL(financialStats.totalSpent)}`,
-    `│ 👨‍💻 <b>Dev Allocation:</b> ${formatSOL(financialStats.totalDevSpent)}`,
-    `│ ⚡ <b>Snipe Buys:</b> ${formatSOL(financialStats.totalSnipeSpent)}`,
-    `│ 👥 <b>Unique Buyers:</b> ${financialStats.successfulBuyWallets}`,
-    `└─────────────────────────────────`,
+    `💰 <b>Financial Summary</b>`,
+    `💸 Total Spent: ${formatSOL(financialStats.totalSpent)}`,
+    `👨‍💻 Dev Allocation: ${formatSOL(financialStats.totalDevSpent)}`,
+    `⚡ Snipe Buys: ${formatSOL(financialStats.totalSnipeSpent)}`,
+    `👥 Unique Buyers: ${financialStats.successfulBuyWallets}`,
     ``,
     `📊 <b>Market Data</b>`,
-    `┌─────────────────────────────────`,
-    `│ 💎 <b>Market Cap:</b> ${formatUSD(correctedMarketCap)}`,
+    `💎 Market Cap: ${formatUSD(correctedMarketCap)}`,
     tokenWorth.bondingCurveProgress > 0
-      ? `│ 📈 <b>Bonding Curve:</b> ${formatPercentage(tokenWorth.bondingCurveProgress)}`
+      ? `📈 Bonding Progress: ${formatPercentage(tokenWorth.bondingCurveProgress)}`
       : "",
-    `└─────────────────────────────────`,
+    `✅ Status: <i>Live & Trading</i>`,
     ``,
     tokenWorth.worthInUsd > 0 || tokenWorth.worthInSol > 0
-      ? `💎 <b>Your Holdings</b>`
-      : "",
-    tokenWorth.worthInUsd > 0 || tokenWorth.worthInSol > 0
-      ? `┌─────────────────────────────────`
+      ? `🎯 <b>Your Holdings</b>`
       : "",
     tokenWorth.worthInUsd > 0
-      ? `│ 💵 <b>Current Value:</b> ${formatUSD(tokenWorth.worthInUsd)}`
+      ? `💵 USD Value: ${formatUSD(tokenWorth.worthInUsd)}`
       : "",
     tokenWorth.worthInSol > 0
-      ? `│ ◎ <b>Worth in SOL:</b> ${formatSOL(tokenWorth.worthInSol)}`
+      ? `◎ SOL Value: ${formatSOL(tokenWorth.worthInSol)}`
       : "",
-    tokenWorth.worthInUsd > 0 || tokenWorth.worthInSol > 0
-      ? `└─────────────────────────────────`
-      : "",
-    ``,
+    tokenWorth.worthInUsd > 0 || tokenWorth.worthInSol > 0 ? `` : "",
     `🎛️ <b>Choose an action below:</b>`,
   ]
     .filter(Boolean)
@@ -263,7 +248,9 @@ const buildLaunchSuccessMessage = async (
     .text(
       "🎁 Airdrop SOL",
       createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress)
-    );
+    )
+    .row()
+    .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`);
 
   return { text: msg, keyboard };
 };
@@ -293,31 +280,22 @@ const buildBonkLaunchSuccessMessage = async (
   const msg = [
     `🎉 <b>Bonk Token Launched Successfully!</b>`,
     ``,
-    `🪙 <b>Token Details</b>`,
-    `┌─────────────────────────────────`,
-    `│ <b>Name:</b> ${tokenName}`,
-    `│ <b>Symbol:</b> <code>${symbol}</code>`,
-    `│ <b>Address:</b> <code>${tokenAddress}</code>`,
-    `└─────────────────────────────────`,
+    `🪙 <b>${tokenName}</b> (${symbol})`,
+    `📍 <code>${tokenAddress}</code>`,
     ``,
-    `💰 <b>Financial Overview</b>`,
-    `┌─────────────────────────────────`,
-    `│ 💸 <b>Total Spent:</b> ${formatSOL(financialStats.totalSpent)}`,
-    `│ 👨‍💻 <b>Dev Allocation:</b> ${formatSOL(financialStats.totalDevSpent)}`,
-    `│ ⚡ <b>Snipe Buys:</b> ${formatSOL(financialStats.totalSnipeSpent)}`,
-    `│ 👥 <b>Unique Buyers:</b> ${financialStats.successfulBuyWallets}`,
-    `└─────────────────────────────────`,
+    `💰 <b>Financial Summary</b>`,
+    `💸 Total Spent: ${formatSOL(financialStats.totalSpent)}`,
+    `👨‍💻 Dev Allocation: ${formatSOL(financialStats.totalDevSpent)}`,
+    `⚡ Snipe Buys: ${formatSOL(financialStats.totalSnipeSpent)}`,
+    `👥 Unique Buyers: ${financialStats.successfulBuyWallets}`,
     ``,
     `📊 <b>Market Data</b>`,
-    `┌─────────────────────────────────`,
-    `│ 💎 <b>Market Cap:</b> ${formatUSD(estimatedMarketCap)}`,
-    `│ 🚀 <b>Platform:</b> Raydium Launch Lab`,
-    `└─────────────────────────────────`,
+    `💎 Market Cap: ${formatUSD(estimatedMarketCap)}`,
+    `🚀 Platform: Raydium Launch Lab`,
+    `✅ Status: <i>Live & Trading</i>`,
     ``,
-    `💎 <b>Your Holdings</b>`,
-    `┌─────────────────────────────────`,
-    `│ ◎ <b>Worth in SOL:</b> ${formatSOL(estimatedHoldingsSOL)}`,
-    `└─────────────────────────────────`,
+    `🎯 <b>Your Holdings</b>`,
+    `◎ SOL Value: ${formatSOL(estimatedHoldingsSOL)}`,
     ``,
     `🎛️ <b>Choose an action below:</b>`,
   ]
@@ -362,7 +340,9 @@ const buildBonkLaunchSuccessMessage = async (
     .text(
       "🎁 Airdrop SOL",
       createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress)
-    );
+    )
+    .row()
+    .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`);
 
   return { text: msg, keyboard };
 };
@@ -464,16 +444,14 @@ export const sendLaunchFailureNotification = async (
   const msg = [
     `❌ <b>Token Launch Failed</b>`,
     ``,
-    `🪙 <b>Token Details</b>`,
-    `┌─────────────────────────────────`,
-    `│ <b>Name:</b> ${tokenName}`,
-    `│ <b>Symbol:</b> <code>${symbol}</code>`,
-    `│ <b>Address:</b> <code>${tokenAddress}</code>`,
-    `└─────────────────────────────────`,
+    `🪙 <b>${tokenName}</b> (${symbol})`,
+    `📍 <code>${tokenAddress}</code>`,
     ``,
     `💡 <i>Something went wrong during the launch process.</i>`,
     `🔄 <i>You can retry using the buttons below:</i>`,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const keyboard = new InlineKeyboard()
     .text(
