@@ -157,11 +157,15 @@ const viewTokensConversation = async (
         )
         .row()
         .text(
+          "📊 Monitor",
+          compressCallbackData(CallBackQueries.VIEW_TOKEN_TRADES, tokenAddress)
+        )
+        .text(
           "🎁 Airdrop",
           compressCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress)
         )
-        .text("👑 CTO", compressCallbackData(CallBackQueries.CTO, tokenAddress))
         .row()
+        .text("👑 CTO", compressCallbackData(CallBackQueries.CTO, tokenAddress))
         .text(
           "💸 Fund Wallets",
           compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress)
