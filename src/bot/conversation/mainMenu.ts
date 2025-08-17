@@ -11,7 +11,7 @@ import {
 import { CallBackQueries } from "../types";
 import { InlineKeyboard } from "grammy";
 import { safeAnswerCallbackQuery, sendErrorWithAutoDelete } from "../utils";
-import { sendMessage } from "../../backend/sender";
+import { sendFirstMessage } from "../../backend/sender";
 
 export default async function mainMenuConversation(
   conversation: Conversation<Context>,
@@ -102,7 +102,7 @@ Get started below:`;
     .row()
     .text("🆘 Help", CallBackQueries.HELP);
 
-  await sendMessage(ctx, welcomeMsg, {
+  await sendFirstMessage(ctx, welcomeMsg, {
     reply_markup: keyboard,
   });
 }

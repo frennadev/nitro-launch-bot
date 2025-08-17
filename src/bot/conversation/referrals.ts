@@ -4,7 +4,7 @@ import {
   getUserReferralStats,
   generateReferralLink,
 } from "../../backend/functions-main";
-import { sendMessage } from "../../backend/sender";
+import { sendMessage, sendFirstMessage } from "../../backend/sender";
 import { InlineKeyboard } from "grammy";
 import { CallBackQueries } from "../types";
 
@@ -28,7 +28,7 @@ export const referralsConversation = async (
       return conversation.halt();
     }
 
-    await sendMessage(ctx, "🔄 Loading your referral information...");
+    await sendFirstMessage(ctx, "🔄 Loading your referral information...");
 
     // Get user's referral stats
     const stats = await getUserReferralStats(user.id);

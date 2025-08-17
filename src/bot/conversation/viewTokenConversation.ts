@@ -4,7 +4,7 @@ import { InlineKeyboard } from "grammy";
 import { getUser, deleteToken } from "../../backend/functions";
 import { TokenModel } from "../../backend/models";
 import { CallBackQueries } from "../types";
-import { sendMessage } from "../../backend/sender";
+import { sendMessage, sendFirstMessage } from "../../backend/sender";
 import { TokenState } from "../../backend/types";
 import { getTokenInfo } from "../../backend/utils";
 import { getAccurateSpendingStats } from "../../backend/functions-main";
@@ -41,7 +41,7 @@ const viewTokensConversation = async (
 
   // If no tokens found, provide more helpful information
   if (tokens.length === 0) {
-    await sendMessage(
+    await sendFirstMessage(
       ctx,
       `🚀 <b>No Tokens Found</b>\n\n` +
         `💡 <i>Ready to launch your first token?</i>\n\n` +
@@ -54,7 +54,7 @@ const viewTokensConversation = async (
 
   let currentIndex = 0;
 
-  const showToken = async (index: number) => {
+  const showToken = async (index: number, isFirst: boolean = false) => {
     const token = tokens[index];
     const { name, symbol, description, tokenAddress, state, launchData } =
       token;
@@ -222,7 +222,8 @@ const viewTokensConversation = async (
 
     keyboard.row().text("🔙 Back", CallBackQueries.BACK);
 
-    sendMessage(ctx, lines, {
+    const messageSender = isFirst ? sendFirstMessage : sendMessage;
+    messageSender(ctx, lines, {
       parse_mode: "HTML",
       reply_markup: keyboard,
     });
@@ -256,7 +257,7 @@ const viewTokensConversation = async (
     });
   };
 
-  await showToken(currentIndex);
+  await showToken(currentIndex, true);
 
   while (true) {
     const response = await conversation.waitFor("callback_query:data");

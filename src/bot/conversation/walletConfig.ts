@@ -10,7 +10,7 @@ import {
 } from "../../backend/functions-main";
 import { CallBackQueries } from "../types";
 import type { ParseMode } from "grammy/types";
-import { sendMessage } from "../../backend/sender";
+import { sendMessage, sendFirstMessage } from "../../backend/sender";
 import { safeAnswerCallbackQuery } from "../utils";
 
 const walletConfigConversation = async (
@@ -70,7 +70,7 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
 <i>💡 Keep your funding wallet topped up for launches</i>
 `;
 
-  await sendMessage(ctx, menuMessage, {
+  await sendFirstMessage(ctx, menuMessage, {
     parse_mode: "HTML" as ParseMode,
     reply_markup: keyboard,
   });

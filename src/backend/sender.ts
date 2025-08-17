@@ -113,3 +113,25 @@ export const sendNotification = async (
     reply_markup: keyboard || { remove_keyboard: true },
   });
 };
+
+export async function sendFirstMessage(
+  ctx: Context,
+  text: string,
+  opts: EditOptions = {}
+) {
+  const chatId = ctx.chat?.id;
+
+  // Use ctx.reply for the first message in a conversation/command
+  const msgResult = await ctx.reply(text, opts);
+
+  // Set this as the last message for future edits
+  if (chatId != null && msgResult && typeof msgResult !== "boolean") {
+    lastMessageMap.set(String(chatId), {
+      chatId,
+      messageId: msgResult.message_id,
+      timestamp: Date.now(),
+    });
+  }
+
+  return msgResult;
+}

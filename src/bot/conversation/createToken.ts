@@ -13,7 +13,7 @@ import { CallBackQueries } from "../types";
 import { env } from "../../config";
 import { sendLoadingMessage } from "../loading";
 import { sendErrorWithAutoDelete } from "../utils";
-import { sendMessage } from "../../backend/sender";
+import { sendMessage, sendFirstMessage } from "../../backend/sender";
 
 const cancelKeyboard = new InlineKeyboard().text(
   "❌ Cancel",
@@ -42,7 +42,7 @@ const createTokenConversation = async (
     .row()
     .text("❌ Cancel", CallBackQueries.BACK);
 
-  await sendMessage(ctx, "❓ Choose your launch mode:", {
+  await sendFirstMessage(ctx, "❓ Choose your launch mode:", {
     reply_markup: modeKeyboard,
   });
 
