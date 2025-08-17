@@ -92,7 +92,7 @@ const devSellConversation = async (
 
     if (!result.success) {
       await submitLoading.update(
-        "❌ **Failed to submit dev sell**\n\nAn error occurred while submitting dev sell details for execution. Please try again."
+        "❌ <b>Failed to submit dev sell</b>\n\nAn error occurred while submitting dev sell details for execution. Please try again."
       );
       await sendMessage(
         ctx,
@@ -100,7 +100,7 @@ const devSellConversation = async (
       );
     } else {
       await submitLoading.update(
-        "🎉 **Dev sell submitted successfully!**\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed."
+        "🎉 <b>Dev sell submitted successfully!</b>\n\n⏳ Your dev sell is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sell is completed."
       );
 
       // Start the loading state for the actual dev sell process
@@ -108,7 +108,7 @@ const devSellConversation = async (
     }
   } catch (error: any) {
     await submitLoading.update(
-      "❌ **Failed to decrypt dev wallet**\n\nThere was an issue accessing your dev wallet data. Please try again."
+      "❌ <b>Failed to decrypt dev wallet</b>\n\nThere was an issue accessing your dev wallet data. Please try again."
     );
     await sendErrorWithAutoDelete(
       ctx,
