@@ -685,8 +685,8 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
         data.userChatId,
         `🎉 <b>Preparation Phase Complete!</b> 🎉\n\n` +
           `✨ <b>What's Been Done:</b>\n` +
-          `   • 🔄 Wallets funded via mixer\n` +
-          `   • ⚡ All systems ready\n\n` +
+          `• 🔄 Wallets funded via mixer\n` +
+          `• ⚡ All systems ready\n\n` +
           `🚀 <b>Next Phase:</b> Token Launch Execution\n` +
           `⏳ <b>Status:</b> Starting launch sequence...\n\n` +
           `🎯 <b>Your token is about to go live!</b>`

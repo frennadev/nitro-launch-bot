@@ -227,13 +227,6 @@ const launchTokenConversation = async (
 • Faster execution speed
 • Optimized for high-volume launches
 
-<b>🔄 Next Steps:</b>
-• Select launch mode
-• Validate user permissions
-• Check token status
-• Verify wallet balances
-• Configure launch parameters
-
 <i>💡 You can use /menu or /start to return to the main menu at any time.</i>`,
     { parse_mode: "HTML", reply_markup: launchModeKeyboard }
   );

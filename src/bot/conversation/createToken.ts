@@ -265,16 +265,19 @@ const createTokenConversation = async (
       "🚀 Launch Token",
       `${CallBackQueries.LAUNCH_TOKEN}_${token.tokenAddress}`
     );
-
     let socialsInfo = "";
+    const socialLinks = [];
     if (twitter) {
-      socialsInfo += `🐦 <b>Twitter:</b> <a href="${twitter}">Link</a>\n`;
+      socialLinks.push(`🐦 <a href="${twitter}">Twitter</a>`);
     }
     if (telegram) {
-      socialsInfo += `💬 <b>Telegram:</b> <a href="${telegram}">Link</a>\n`;
+      socialLinks.push(`💬 <a href="${telegram}">Telegram</a>`);
     }
     if (website) {
-      socialsInfo += `🌐 <b>Website:</b> <a href="${website}">Link</a>\n`;
+      socialLinks.push(`🌐 <a href="${website}">Website</a>`);
+    }
+    if (socialLinks.length > 0) {
+      socialsInfo = socialLinks.join(" | ") + "\n";
     }
 
     await ctx.reply(
@@ -305,14 +308,18 @@ ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
     );
 
     let socialsInfo = "";
+    const socialLinks = [];
     if (twitter) {
-      socialsInfo += `🐦 <b>Twitter:</b> <a href="${twitter}">Link</a>\n`;
+      socialLinks.push(`🐦 <a href="${twitter}">Twitter</a>`);
     }
     if (telegram) {
-      socialsInfo += `💬 <b>Telegram:</b> <a href="${telegram}">Link</a>\n`;
+      socialLinks.push(`💬 <a href="${telegram}">Telegram</a>`);
     }
     if (website) {
-      socialsInfo += `🌐 <b>Website:</b> <a href="${website}">Link</a>\n`;
+      socialLinks.push(`🌐 <a href="${website}">Website</a>`);
+    }
+    if (socialLinks.length > 0) {
+      socialsInfo = socialLinks.join(" | ") + "\n";
     }
 
     await ctx.reply(
