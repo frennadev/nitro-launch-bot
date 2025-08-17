@@ -214,7 +214,6 @@ const launchTokenConversation = async (
 <code>${tokenAddress}</code>
 
 <b>⏳ Status:</b> <i>Initializing launch process...</i>
-
 <b>🚀 Choose Your Launch Mode</b>
 
 <b>🎯 Normal Launch:</b>
@@ -1002,19 +1001,12 @@ Please enter a smaller buy amount:`,
     );
     await sendMessage(
       ctx,
-      `💎 <b>Developer Buy Configuration</b>
+      `💎 <b>Developer Buy Amount</b>
 
-<b>📊 Launch Summary:</b>
-• <b>Total Buy Amount:</b> <code>${buyAmount} SOL</code>
-• <b>Expected Market Cap:</b> <code>$${expectedMarketCap}</code>
+<b>📊 Total Buy:</b> <code>${buyAmount} SOL</code> • <b>Est. Market Cap:</b> <code>$${expectedMarketCap}</code>
+<b>🎯 Enter dev buy amount:</b> <code>0 - ${buyAmount} SOL</code>
 
-<b>🎯 Developer Buy Amount:</b>
-Enter the SOL amount for the developer to purchase (or 0 to skip)
-
-<b>📋 Valid Range:</b>
-<code>0 - ${buyAmount} SOL</code>
-
-<i>💭 Developer buys help establish initial liquidity and show confidence in the project.</i>`,
+<i>💭 Dev buys show confidence & establish liquidity</i>`,
       {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard()
