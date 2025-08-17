@@ -2285,8 +2285,11 @@ bot.callbackQuery(
   new RegExp(`^(vtt_|${CallBackQueries.VIEW_TOKEN_TRADES}_)`),
   async (ctx) => {
     // Debug: Log when monitor button is clicked
-    console.log("Monitor button clicked! Callback data:", ctx.callbackQuery.data);
-    
+    console.log(
+      "Monitor button clicked! Callback data:",
+      ctx.callbackQuery.data
+    );
+
     // Get user ID from context
     const userId = ctx?.chat!.id.toString();
     const user = await getUser(userId);

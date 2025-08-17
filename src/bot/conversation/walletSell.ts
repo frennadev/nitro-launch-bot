@@ -102,7 +102,7 @@ const walletSellConversation = async (
 
     if (!result.success) {
       await submitLoading.update(
-        "❌ **Failed to submit wallet sells**\n\nAn error occurred while submitting wallet sell details for execution. Please try again."
+        "❌ <b>Failed to submit wallet sells</b>\n\nAn error occurred while submitting wallet sell details for execution. Please try again."
       );
       await sendMessage(
         ctx,
@@ -110,7 +110,7 @@ const walletSellConversation = async (
       );
     } else {
       await submitLoading.update(
-        "🎉 **Wallet sells submitted successfully!**\n\n⏳ Your wallet sells are now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sells are completed."
+        "🎉 <b>Wallet sells submitted successfully!</b>\n\n⏳ Your wallet sells are now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the sells are completed."
       );
 
       // Start the loading state for the actual wallet sell process
@@ -118,7 +118,7 @@ const walletSellConversation = async (
     }
   } catch (error: any) {
     await submitLoading.update(
-      "❌ **Failed to decrypt wallet keys**\n\nThere was an issue accessing your wallet data. Please try again."
+      "❌ <b>Failed to decrypt wallet keys</b>\n\nThere was an issue accessing your wallet data. Please try again."
     );
     await sendErrorWithAutoDelete(
       ctx,
