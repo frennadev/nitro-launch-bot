@@ -1148,7 +1148,6 @@ Please enter a smaller buy amount:`,
       // Send Bonk-specific success notification
       const { sendBonkLaunchSuccessNotification } = await import("../message");
       await sendBonkLaunchSuccessNotification(
-        ctx,
         ctx.chat!.id,
         tokenAddress,
         result.tokenName,
