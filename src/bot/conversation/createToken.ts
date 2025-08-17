@@ -288,9 +288,9 @@ const createTokenConversation = async (
 🚀 <b>Platform:</b> <code>PumpFun</code>
 
 📊 <b>Token Details:</b>
-💎 <b>Name:</b> <code>${token.name}</code>
-🏷️ <b>Symbol:</b> <code>${token.symbol}</code>
-📝 <b>Description:</b> ${token.description}
+💎 <b>Name:</b> <code>${name}</code>
+🏷️ <b>Symbol:</b> <code>${symbol}</code>
+📝 <b>Description:</b> ${description}
 🔗 <b>Contract Address:</b> <code>${token.tokenAddress}</code>
 
 ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
@@ -330,9 +330,9 @@ ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
 🚀 <b>Platform:</b> <code>LetsBonk</code>
 
 📊 <b>Token Details:</b>
-💎 <b>Name:</b> <code>${token.name}</code>
-🏷️ <b>Symbol:</b> <code>${token.symbol}</code>
-📝 <b>Description:</b> ${token.description}
+💎 <b>Name:</b> <code>${name}</code>
+🏷️ <b>Symbol:</b> <code>${symbol}</code>
+📝 <b>Description:</b> ${description}
 🔗 <b>Contract Address:</b> <code>${token.tokenAddress}</code>
 
 ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
