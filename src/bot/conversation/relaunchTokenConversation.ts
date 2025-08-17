@@ -273,7 +273,7 @@ const relaunchTokenConversation = async (
 
   if (mode === CallBackQueries.PUMPFUN) {
     await update(
-      `🎉 **Token Created Successfully!**\n\n✅ Your PumpFun token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
+      `🎉 <b>Token Created Successfully!</b>\n\n✅ Your PumpFun token is ready to launch!\n\n<b>Token Address:</b> <code>${token.tokenAddress}</code>`
     );
 
     const launchKb = new InlineKeyboard().text(
@@ -312,7 +312,7 @@ ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
     );
   } else {
     await update(
-      `🎉 **Token Created Successfully!**\n\n✅ Your LetsBonk token is ready to launch!\n\n**Token Address:** \`${token.tokenAddress}\``
+      `🎉 <b>Token Created Successfully!</b>\n\n✅ Your LetsBonk token is ready to launch!\n\n<b>Token Address:</b> <code>${token.tokenAddress}</code>`
     );
 
     const launchKb = new InlineKeyboard().text(
