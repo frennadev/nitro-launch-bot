@@ -17,6 +17,7 @@ const walletConfigConversation = async (
   conversation: Conversation<Context>,
   ctx: Context
 ): Promise<void> => {
+  // Only answer callback query if there is one (e.g., from button clicks, not commands)
   if (ctx.callbackQuery) {
     await safeAnswerCallbackQuery(ctx);
   }

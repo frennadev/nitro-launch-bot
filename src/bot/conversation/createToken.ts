@@ -24,7 +24,10 @@ const createTokenConversation = async (
   conversation: Conversation,
   ctx: Context
 ) => {
-  await ctx.answerCallbackQuery();
+  // Only answer callback query if there is one (e.g., from button clicks, not commands)
+  if (ctx.callbackQuery) {
+    await ctx.answerCallbackQuery();
+  }
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
     await sendErrorWithAutoDelete(ctx, "Unrecognized user ❌");

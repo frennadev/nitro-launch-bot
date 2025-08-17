@@ -153,7 +153,10 @@ const launchTokenConversation = async (
   ctx: Context,
   tokenAddress: string
 ) => {
-  await safeAnswerCallbackQuery(ctx);
+  // Only answer callback query if there is one (e.g., from button clicks, not commands)
+  if (ctx.callbackQuery) {
+    await safeAnswerCallbackQuery(ctx);
+  }
 
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
