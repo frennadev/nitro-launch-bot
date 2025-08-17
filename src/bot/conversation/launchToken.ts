@@ -669,7 +669,7 @@ Your token launch has been successfully resubmitted using your previous paramete
       await import("../../backend/functions-main");
     const maxBuyAmount = calculateMaxBuyAmount();
     const maxBuyAmountWithCurrentWallets = calculateMaxBuyAmountWithWallets(
-      filteredBuyWallets.length
+      buyerWallets.length
     );
 
     if (launchMode == "normal") {
