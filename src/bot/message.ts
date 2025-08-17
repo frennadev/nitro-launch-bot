@@ -250,7 +250,10 @@ const buildLaunchSuccessMessage = async (
       createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress)
     )
     .row()
-    .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`);
+    .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`)
+    .row()
+    .url("📊 DexScreener", `https://dexscreener.com/solana/${tokenAddress}`)
+    .url("🔍 Solscan", `https://solscan.io/token/${tokenAddress}`);
 
   return { text: msg, keyboard };
 };
@@ -342,7 +345,10 @@ const buildBonkLaunchSuccessMessage = async (
       createSafeCallbackData(CallBackQueries.AIRDROP_SOL, tokenAddress)
     )
     .row()
-    .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`);
+    .text("📊 Monitor", `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`)
+    .row()
+    .url("📊 DexScreener", `https://dexscreener.com/solana/${tokenAddress}`)
+    .url("🔍 Solscan", `https://solscan.io/token/${tokenAddress}`);
 
   return { text: msg, keyboard };
 };
