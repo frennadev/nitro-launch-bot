@@ -523,21 +523,6 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         maximumFractionDigits: 2,
       });
 
-      // Complete loading state with detailed information
-      await completeLoadingState(
-        loadingKey,
-        undefined,
-        `<b>💸 Wallet Sells Complete</b>\n\n` +
-          `✅ <b>Success Rate:</b> ${sellSummary.successfulWallets}/${sellSummary.totalWallets} wallets (${sellSummary.successRate}%)\n` +
-          `💰 <b>SOL Received:</b> ${sellSummary.solReceived.toFixed(6)} SOL\n` +
-          `🪙 <b>Tokens Sold:</b> ${tokensSoldFormatted} tokens (${data.sellPercent}%)\n\n` +
-          `📊 <b>Overall Performance:</b>\n` +
-          `   • <b>Total P&L:</b> ${sellSummary.isProfit ? "🟢" : "🔴"} ${sellSummary.netProfitLoss >= 0 ? "+" : ""}${sellSummary.netProfitLoss.toFixed(6)} SOL\n` +
-          `   • <b>Return:</b> ${sellSummary.profitLossPercentage >= 0 ? "📈" : "📉"} ${sellSummary.profitLossPercentage >= 0 ? "+" : ""}${sellSummary.profitLossPercentage.toFixed(1)}%\n\n` +
-          `${sellSummary.failedWallets > 0 ? `⚠️ ${sellSummary.failedWallets} wallet(s) failed to sell\n\n` : ""}` +
-          `🎯 <b>All wallet sells completed successfully!</b>`
-      );
-
       // Update the initial notification with accurate data
       const finalMessage =
         `🎉 <b>Wallet Sells Completed Successfully!</b>\n\n` +
@@ -562,10 +547,6 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         logger.info(
           `[${logIdentifier}] Updated notification with accurate transaction data`
         );
-        // Always send a new message as well
-        await bot.api.sendMessage(data.userChatId, finalMessage, {
-          parse_mode: "HTML",
-        });
       } catch (error) {
         logger.warn(
           `[${logIdentifier}] Failed to edit notification, sending new message:`,
@@ -574,6 +555,9 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         // Fallback: send new message if editing fails
         await sendNotification(bot, data.userChatId, finalMessage);
       }
+
+      // Complete the loading state without additional message
+      await completeLoadingState(loadingKey, undefined, "");
     } catch (error: any) {
       logger.error(
         "[jobs-sell-wallet]: Error Occurred while selling wallet supply",
