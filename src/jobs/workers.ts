@@ -890,7 +890,7 @@ sellDevWorker.on("failed", async (job) => {
   await sendNotification(
     bot,
     job!.data.userChatId,
-    "❌ Dev Wallet Sell Failed. Please try again 🔄"
+    "❌ <b>Dev Wallet Sell Failed</b>\n\n🔄 <i>Please try again from your tokens list.</i>"
   );
 });
 sellDevWorker.on("closed", () => {
@@ -911,7 +911,7 @@ sellWalletWorker.on("failed", async (job) => {
   await sendNotification(
     bot,
     job!.data.userChatId,
-    "❌ Wallet Sells Failed. Please try again 🔄"
+    "❌ <b>Wallet Sells Failed</b>\n\n🔄 <i>Please try again from your tokens list.</i>"
   );
 });
 sellWalletWorker.on("closed", async () => {

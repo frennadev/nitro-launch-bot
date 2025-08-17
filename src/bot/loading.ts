@@ -151,7 +151,7 @@ export async function updateLoadingState(
   const frame =
     processingFrames[Math.floor(Date.now() / 500) % processingFrames.length];
 
-  const message = `🚀 **${state.operation.replace("_", " ").toUpperCase()}**\n\n${frame} ${phaseMessage}\n\n${progressBar}\n\n⏱️ Elapsed: ${elapsed}s`;
+  const message = `🚀 <b>${state.operation.replace("_", " ").toUpperCase()}</b>\n\n${frame} ${phaseMessage}\n\n${progressBar}\n\n⏱️ Elapsed: ${elapsed}s`;
 
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
@@ -215,7 +215,7 @@ export async function failLoadingState(
 
   let message = customFailMessage || config.error;
   if (errorMessage) {
-    message += `\n\n📝 **Details:** ${errorMessage}`;
+    message += `\n\n📝 <b>Details:</b> ${errorMessage}`;
   }
   message += `\n\n⏱️ Failed after ${elapsed}s`;
 
