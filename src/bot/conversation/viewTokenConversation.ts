@@ -139,6 +139,15 @@ const viewTokensConversation = async (
 
     const keyboard = new InlineKeyboard();
 
+    // Debug: Log token state and other relevant info
+    console.log(`Token ${index + 1}:`, {
+      tokenAddress,
+      state,
+      isLaunched: state === TokenState.LAUNCHED,
+      tokenStateValue: TokenState.LAUNCHED,
+      stateComparison: state === TokenState.LAUNCHED,
+    });
+
     if (state === TokenState.LAUNCHED) {
       keyboard
         .text(
@@ -175,7 +184,10 @@ const viewTokensConversation = async (
         );
 
       // Debug: Log the callback data being generated for monitor button
-      const monitorCallbackData = compressCallbackData(CallBackQueries.VIEW_TOKEN_TRADES, tokenAddress);
+      const monitorCallbackData = compressCallbackData(
+        CallBackQueries.VIEW_TOKEN_TRADES,
+        tokenAddress
+      );
       console.log(
         "Generated monitor callback data:",
         monitorCallbackData,
