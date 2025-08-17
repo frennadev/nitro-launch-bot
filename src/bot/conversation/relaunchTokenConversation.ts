@@ -89,15 +89,15 @@ const relaunchTokenConversation = async (
     await modeUpd.answerCallbackQuery();
     if (data === CallBackQueries.PUMPFUN) {
       mode = CallBackQueries.PUMPFUN;
-      await modeUpd.reply("✅ Launch mode set to *PumpFun*.", {
-        parse_mode: "Markdown",
+      await modeUpd.reply("✅ Launch mode set to <b>PumpFun</b>.", {
+        parse_mode: "HTML",
       });
       break;
     }
     if (data === CallBackQueries.LETSBONK) {
       mode = CallBackQueries.LETSBONK;
-      await modeUpd.reply("✅ Launch mode set to *LetsBonk*.", {
-        parse_mode: "Markdown",
+      await modeUpd.reply("✅ Launch mode set to <b>LetsBonk</b>.", {
+        parse_mode: "HTML",
       });
       break;
     }
@@ -253,7 +253,7 @@ const relaunchTokenConversation = async (
   // === 5) Create token based on mode and show result ===
   const { update } = await sendLoadingMessage(
     ctx,
-    "🔄 **Creating your token...**\n\n⏳ Processing image and metadata..."
+    "🔄 <b>Creating your token...</b>\n\n⏳ Processing image and metadata..."
   );
 
   let token: any;
