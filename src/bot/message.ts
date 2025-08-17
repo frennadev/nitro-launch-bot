@@ -75,7 +75,7 @@ export const sendBonkLaunchSuccessNotification = async (
     );
 
     const message = await bot.api.sendMessage(chatId, messageData.text, {
-      parse_mode: "MarkdownV2",
+      parse_mode: "HTML",
       reply_markup: messageData.keyboard,
     });
 
@@ -136,7 +136,7 @@ export const sendBonkLaunchSuccessNotification = async (
       await bot.api.sendMessage(
         chatId,
         `🎉 Bonk token launched successfully! Token: ${tokenAddress}`,
-        { parse_mode: "MarkdownV2" }
+        { parse_mode: "HTML" }
       );
     }
   }
