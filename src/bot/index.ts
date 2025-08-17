@@ -870,6 +870,81 @@ bot.command("referrals", async (ctx) => {
 bot.command("wallets", async (ctx) => {
   await ctx.conversation.enter("walletConfigConversation");
 });
+
+bot.command("create", async (ctx) => {
+  try {
+    logger.info("Create token command used by user:", ctx.chat?.id);
+
+    // Clear any existing conversation state
+    await clearConversationState(ctx);
+
+    // Wait a moment for cleanup
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Start create token conversation
+    await ctx.conversation.enter("createTokenConversation", {
+      overwrite: true,
+    });
+  } catch (error: any) {
+    logger.error("Error in create command:", error);
+    await sendMessage(
+      ctx,
+      "❌ Error starting token creation. Please try again."
+    );
+  }
+});
+
+bot.command("tokens", async (ctx) => {
+  try {
+    logger.info("View tokens command used by user:", ctx.chat?.id);
+
+    // Clear any existing conversation state
+    await clearConversationState(ctx);
+
+    // Wait a moment for cleanup
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Start view tokens conversation
+    await ctx.conversation.enter("viewTokensConversation", {
+      overwrite: true,
+    });
+  } catch (error: any) {
+    logger.error("Error in tokens command:", error);
+    await sendMessage(ctx, "❌ Error loading tokens. Please try again.");
+  }
+});
+
+bot.command("commands", async (ctx) => {
+  try {
+    const commandsList = [
+      "🤖 <b>Nitro Bot Commands</b>",
+      "",
+      "<b>🚀 Main Commands:</b>",
+      "• <code>/start</code> - Start the bot and main menu",
+      "• <code>/menu</code> - Show main menu",
+      "• <code>/help</code> - Comprehensive help center",
+      "",
+      "<b>🎯 Token Commands:</b>",
+      "• <code>/create</code> - Create a new token",
+      "• <code>/tokens</code> - View your created tokens",
+      "",
+      "<b>💳 Wallet Commands:</b>",
+      "• <code>/wallets</code> - Manage your wallets",
+      "• <code>/referrals</code> - View referral system",
+      "",
+      "<b>🛒 Trading Commands:</b>",
+      "• <code>/buyexternal</code> - Buy external tokens",
+      "",
+      "<i>💡 Tip: Use the buttons in conversations for easier navigation!</i>",
+    ].join("\n");
+
+    await sendMessage(ctx, commandsList, { parse_mode: "HTML" });
+  } catch (error: any) {
+    logger.error("Error in commands command:", error);
+    await sendMessage(ctx, "❌ Error displaying commands. Please try again.");
+  }
+});
+
 bot.command("ratelimit", async (ctx) => {
   // Simple admin check
   const adminIds = env.ADMIN_IDS
@@ -3205,8 +3280,11 @@ bot.callbackQuery(/^generate_pnl_(.+)$/, async (ctx) => {
 bot.api.setMyCommands([
   { command: "start", description: "Start the bot" },
   { command: "menu", description: "Bot Menu" },
+  { command: "create", description: "Create a new token" },
+  { command: "tokens", description: "View your created tokens" },
   { command: "wallets", description: "Manage Wallets" },
   { command: "referrals", description: "View your referral stats" },
+  { command: "commands", description: "Show all available commands" },
   { command: "help", description: "Get help with the bot" },
 ]);
 
