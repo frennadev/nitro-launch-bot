@@ -174,10 +174,13 @@ const viewTokensConversation = async (
           compressCallbackData(CallBackQueries.FUND_TOKEN_WALLETS, tokenAddress)
         );
 
-      // Debug: Log the callback data being generated
+      // Debug: Log the callback data being generated for monitor button
+      const monitorCallbackData = compressCallbackData(CallBackQueries.VIEW_TOKEN_TRADES, tokenAddress);
       console.log(
-        "Generated sell individual callback data:",
-        `${CallBackQueries.SELL_INDIVIDUAL}_${tokenAddress}`
+        "Generated monitor callback data:",
+        monitorCallbackData,
+        "for token:",
+        tokenAddress
       );
       console.log(
         "Generated fund token wallets callback data:",
