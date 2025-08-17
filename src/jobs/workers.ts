@@ -52,7 +52,7 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `${data.userChatId}-token_launch-${data.tokenAddress}`;
+    const loadingKey = `super-${data.userChatId}-token_launch-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Token Launch Job starting...");
@@ -165,7 +165,7 @@ export const sellDevWorker = new Worker<SellDevJob>(
   devSellQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `${data.userChatId}-dev_sell-${data.tokenAddress}`;
+    const loadingKey = `super-${data.userChatId}-dev_sell-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Sell Dev Job starting...");
@@ -343,8 +343,8 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
   walletSellQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `${data.userChatId}-wallet_sell-${data.tokenAddress}`;
-    const logIdentifier = `jobs-sell-wallet-${data.tokenAddress}`;
+    const loadingKey = `super-${data.userChatId}-wallet_sell-${data.tokenAddress}`;
+    const logIdentifier = `super-jobs-sell-wallet-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Wallet Sell Job starting...");
@@ -586,7 +586,7 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
   prepareLaunchQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `${data.userChatId}-prepare_launch-${data.tokenAddress}`;
+    const loadingKey = `super-${data.userChatId}-prepare_launch-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Prepare Launch Job starting...");
@@ -705,7 +705,7 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
   executeLaunchQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `${data.userChatId}-execute_launch-${data.tokenAddress}`;
+    const loadingKey = `super-${data.userChatId}-execute_launch-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Execute Launch Job starting...");
