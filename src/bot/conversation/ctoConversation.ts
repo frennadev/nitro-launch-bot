@@ -5,6 +5,7 @@ import {
   getUser,
   getFundingWallet,
   getWalletBalance,
+  getAllBuyerWallets,
 } from "../../backend/functions";
 import { sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
@@ -87,6 +88,171 @@ async function calculateExpectedMarketCap(
   }
 }
 
+// Prefunded CTO operation function that bypasses the mixer
+async function executePrefundedCTOOperation(
+  tokenAddress: string,
+  userId: string,
+  totalAmount: number,
+  detectedPlatform?: string
+): Promise<{
+  success: boolean;
+  error?: string;
+  successfulBuys: number;
+  failedBuys: number;
+}> {
+  try {
+    const { getAllTradingWallets } = await import(
+      "../../backend/functions-main"
+    );
+    const { logger } = await import("../../blockchain/common/logger");
+
+    logger.info(
+      `[CTO-Prefunded] Starting prefunded CTO operation for token ${tokenAddress}, user ${userId}, amount ${totalAmount} SOL, platform: ${detectedPlatform || "auto-detected"}`
+    );
+
+    // Get buyer wallets with private keys - these should already be funded
+    const buyerWallets = await getAllTradingWallets(userId);
+    if (!buyerWallets || buyerWallets.length === 0) {
+      return {
+        success: false,
+        error: "No buyer wallets found. Please configure buyer wallets first.",
+        successfulBuys: 0,
+        failedBuys: 0,
+      };
+    }
+
+    logger.info(`[CTO-Prefunded] Found ${buyerWallets.length} buyer wallets`);
+
+    // Check total available balance in buyer wallets
+    const { getWalletBalance } = await import("../../backend/functions");
+    let totalAvailableBalance = 0;
+    const walletBalances = [];
+
+    for (const wallet of buyerWallets) {
+      const balance = await getWalletBalance(wallet.publicKey);
+      walletBalances.push({ wallet, balance });
+      totalAvailableBalance += balance;
+    }
+
+    if (totalAvailableBalance < totalAmount) {
+      return {
+        success: false,
+        error: `Insufficient balance in buyer wallets. Available: ${totalAvailableBalance.toFixed(6)} SOL, Required: ${totalAmount.toFixed(6)} SOL`,
+        successfulBuys: 0,
+        failedBuys: 0,
+      };
+    }
+
+    // Execute direct buys from buyer wallets using the simplified approach
+    // Since we're bypassing the mixer, we'll use a simpler execution pattern
+
+    // Calculate amount per wallet (distribute the total amount)
+    const amountPerWallet = totalAmount / buyerWallets.length;
+    logger.info(
+      `[CTO-Prefunded] Executing ${amountPerWallet.toFixed(6)} SOL buy per wallet across ${buyerWallets.length} wallets`
+    );
+
+    let successfulBuys = 0;
+    let failedBuys = 0;
+
+    // Import required functions for direct execution
+    const { detectTokenPlatformWithCache } = await import(
+      "../../service/token-detection-service"
+    );
+
+    // Detect platform for optimization
+    await detectTokenPlatformWithCache(tokenAddress);
+
+    // Execute buys sequentially to avoid overwhelming the network
+    for (let i = 0; i < buyerWallets.length; i++) {
+      const wallet = buyerWallets[i];
+      const walletBalance = walletBalances[i].balance;
+
+      // Skip wallets with insufficient balance
+      if (walletBalance < amountPerWallet + 0.005) {
+        // 0.005 SOL buffer for fees
+        logger.warn(
+          `[CTO-Prefunded] Skipping wallet ${wallet.publicKey} - insufficient balance: ${walletBalance.toFixed(6)} SOL`
+        );
+        failedBuys++;
+        continue;
+      }
+
+      try {
+        // Create keypair from private key
+        const { Keypair } = await import("@solana/web3.js");
+        const bs58 = await import("bs58");
+        const walletKeypair = Keypair.fromSecretKey(
+          bs58.default.decode(wallet.privateKey)
+        );
+
+        // Execute the buy using the main external buy function which handles platform detection
+        const { executeExternalBuyNoConfirmation } = await import(
+          "../../blockchain/pumpfun/externalBuyNoConfirmation"
+        );
+
+        // Create a dummy context for the function (it's not actually used in no-confirmation mode)
+        const dummyCtx = {} as Context;
+
+        const result = await executeExternalBuyNoConfirmation(
+          tokenAddress,
+          walletKeypair,
+          amountPerWallet,
+          3, // slippage
+          0.001, // priority fee
+          dummyCtx
+        );
+
+        if (result.success) {
+          successfulBuys++;
+          logger.info(
+            `[CTO-Prefunded] Wallet ${i + 1} buy successful: ${result.signature}`
+          );
+        } else {
+          failedBuys++;
+          logger.error(
+            `[CTO-Prefunded] Wallet ${i + 1} buy failed: ${result.error}`
+          );
+        }
+
+        // Small delay between buys to avoid rate limiting
+        if (i < buyerWallets.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        failedBuys++;
+        logger.error(
+          `[CTO-Prefunded] Wallet ${i + 1} buy error:`,
+          errorMessage
+        );
+      }
+    }
+
+    logger.info(
+      `[CTO-Prefunded] CTO operation completed. Successful: ${successfulBuys}, Failed: ${failedBuys}`
+    );
+
+    return {
+      success: successfulBuys > 0,
+      successfulBuys,
+      failedBuys,
+      error: successfulBuys === 0 ? "All buy operations failed" : undefined,
+    };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const { logger } = await import("../../blockchain/common/logger");
+    logger.error(`[CTO-Prefunded] Error:`, errorMessage);
+    return {
+      success: false,
+      error: `Prefunded CTO operation failed: ${errorMessage}`,
+      successfulBuys: 0,
+      failedBuys: 0,
+    };
+  }
+}
+
 export const ctoConversation = async (
   conversation: Conversation<Context>,
   ctx: Context,
@@ -97,7 +263,7 @@ export const ctoConversation = async (
   // Validate user
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await sendMessage(ctx, "❌ User not found. Please try again.");
+    await sendMessage(ctx, "🚫 User not found. Please try again!");
     return conversation.halt();
   }
 
@@ -106,7 +272,7 @@ export const ctoConversation = async (
   if (!fundingWallet) {
     await sendMessage(
       ctx,
-      "❌ No funding wallet found. Please configure a funding wallet first."
+      "🔑 No funding wallet found. Please configure a funding wallet first!"
     );
     return conversation.halt();
   }
@@ -117,35 +283,163 @@ export const ctoConversation = async (
     await sendMessage(
       ctx,
       [
-        "❌ <b>Insufficient Balance</b>",
+        "💰 <b>Insufficient Balance</b>",
         "",
-        "<b>Your funding wallet needs at least 0.01 SOL for CTO operations.</b>",
+        "Your funding wallet needs at least 0.01 SOL for CTO operations.",
         "",
-        `<b>Current Balance:</b> <code>${fundingBalance.toFixed(6)} SOL</code>`,
-        `<b>Required Minimum:</b> <code>0.01 SOL</code>`,
+        `💳 <b>Current Balance:</b> <code>${fundingBalance.toFixed(6)} SOL</code>`,
+        `✅ <b>Required Minimum:</b> <code>0.01 SOL</code>`,
         "",
-        "<i>Please add more SOL to your funding wallet to continue.</i>",
+        "Please add more SOL to your funding wallet to continue! 🔋",
       ].join("\n"),
       { parse_mode: "HTML" }
     );
     return conversation.halt();
   }
 
-  // Ask for buy amount
+  // Get buyer wallets for prefunded mode check
+  const buyerWallets = await getAllBuyerWallets(user.id);
+
+  // Calculate total buyer wallet balance
+  let totalBuyerBalance = 0;
+  if (buyerWallets.length > 0) {
+    const buyerBalances = await Promise.all(
+      buyerWallets.map(async (wallet) => {
+        try {
+          return await getWalletBalance(wallet.publicKey);
+        } catch {
+          return 0;
+        }
+      })
+    );
+    totalBuyerBalance = buyerBalances.reduce(
+      (sum, balance) => sum + balance,
+      0
+    );
+  }
+
+  // Ask for CTO mode selection
   await sendMessage(
     ctx,
     [
       "🎯 <b>CTO - Call To Others</b>",
       "",
-      `<b>📍 Token:</b> <code>${tokenAddress}</code>`,
-      `<b>💰 Available Balance:</b> ${fundingBalance.toFixed(6)} SOL`,
+      `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+      "",
+      "🔧 <b>Choose CTO Mode:</b>",
+      "",
+      "🏦 <b>Standard Mode (Mixer)</b>",
+      `💰 Available: ${fundingBalance.toFixed(6)} SOL`,
+      "• Distribute funds via secure mixer 🔒",
+      "• Anonymous transactions ⚡",
+      "• Higher security & privacy 🛡️",
+      "",
+      "⚡ <b>Prefunded Mode (Direct)</b>",
+      `💳 Available: ${totalBuyerBalance.toFixed(6)} SOL (${buyerWallets.length} wallets)`,
+      "• Use pre-funded buyer wallets 🚀",
+      "• Faster execution ⚡",
+      "• No mixer delay 🕐",
+      "",
+      "💡 Select your preferred mode:",
+    ].join("\n"),
+    {
+      parse_mode: "HTML",
+      reply_markup: new InlineKeyboard()
+        .text("🏦 Standard Mode", "mode_standard")
+        .text("⚡ Prefunded Mode", "mode_prefunded")
+        .row()
+        .text("❌ Cancel", CallBackQueries.CANCEL),
+    }
+  );
+
+  // Wait for mode selection
+  const modeSelection = await conversation.waitFor("callback_query:data");
+  await modeSelection.answerCallbackQuery();
+
+  if (modeSelection.callbackQuery?.data === CallBackQueries.CANCEL) {
+    await sendMessage(modeSelection, "❌ CTO operation cancelled!");
+    return conversation.halt();
+  }
+
+  const selectedMode = modeSelection.callbackQuery?.data;
+  const isStandardMode = selectedMode === "mode_standard";
+  const isPrefundedMode = selectedMode === "mode_prefunded";
+
+  // Validate mode selection
+  if (isPrefundedMode && buyerWallets.length === 0) {
+    await sendMessage(
+      modeSelection,
+      [
+        "⚠️ <b>No Buyer Wallets Found</b>",
+        "",
+        "Prefunded mode requires buyer wallets to be configured first.",
+        "",
+        "💡 <b>Options:</b>",
+        "• Configure buyer wallets in Wallet Config 🔧",
+        "• Use Standard Mode instead 🏦",
+        "• Cancel and setup wallets first ❌",
+      ].join("\n"),
+      { parse_mode: "HTML" }
+    );
+    return conversation.halt();
+  }
+
+  if (isPrefundedMode && totalBuyerBalance < 0.01) {
+    await sendMessage(
+      modeSelection,
+      [
+        "💰 <b>Insufficient Buyer Wallet Balance</b>",
+        "",
+        `💳 <b>Total Available:</b> <code>${totalBuyerBalance.toFixed(6)} SOL</code>`,
+        `✅ <b>Required Minimum:</b> <code>0.01 SOL</code>`,
+        "",
+        "💡 <b>Options:</b>",
+        "• Fund your buyer wallets with SOL 💰",
+        "• Use Standard Mode instead 🏦",
+        "• Cancel and fund wallets first ❌",
+      ].join("\n"),
+      { parse_mode: "HTML" }
+    );
+    return conversation.halt();
+  }
+
+  // Ask for buy amount based on selected mode
+  const availableBalance = isPrefundedMode ? totalBuyerBalance : fundingBalance;
+  const modeDescription = isPrefundedMode
+    ? "⚡ Prefunded Mode"
+    : "🏦 Standard Mode";
+  const walletSource = isPrefundedMode
+    ? `${buyerWallets.length} buyer wallets`
+    : "funding wallet";
+
+  await sendMessage(
+    modeSelection,
+    [
+      `💸 <b>${modeDescription} - Amount Selection</b>`,
+      "",
+      `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+      `💰 <b>Available Balance:</b> ${availableBalance.toFixed(6)} SOL`,
+      `💳 <b>Source:</b> ${walletSource}`,
       "",
       "💸 <b>How much SOL would you like to spend?</b>",
       "",
-      "<b>🔄 Process Overview:</b>",
-      "• <i>Distribute funds via secure mixer</i>",
-      "• <i>Execute coordinated buy transactions</i>",
-      "• <i>Generate buying pressure on token</i>",
+      ...(isPrefundedMode
+        ? [
+            "⚡ <b>Prefunded Process:</b>",
+            "• Use existing buyer wallet funds 💳",
+            "• Execute direct buy transactions 🚀",
+            "• No mixer delay - instant execution ⚡",
+            "",
+            `📊 <b>Wallet Details:</b>`,
+            `• Total Wallets: ${buyerWallets.length}`,
+            `• Combined Balance: ${totalBuyerBalance.toFixed(6)} SOL`,
+          ]
+        : [
+            "🔄 <b>Standard Process:</b>",
+            "• Distribute funds via secure mixer 🔒",
+            "• Execute coordinated buy transactions ⚡",
+            "• Generate buying pressure on token 📈",
+          ]),
       "",
       "💡 <b>Enter amount in SOL:</b>",
       "Examples: <code>0.5</code> | <code>1.0</code> | <code>2.5</code>",
@@ -163,7 +457,7 @@ export const ctoConversation = async (
   const amountInput = await conversation.wait();
   if (amountInput.callbackQuery?.data === CallBackQueries.CANCEL) {
     await amountInput.answerCallbackQuery();
-    await sendMessage(amountInput, "❌ CTO operation cancelled.");
+    await sendMessage(amountInput, "❌ CTO operation cancelled!");
     return conversation.halt();
   }
 
@@ -171,7 +465,7 @@ export const ctoConversation = async (
   if (!buyAmountText) {
     await sendMessage(
       amountInput,
-      "❌ No amount provided. CTO operation cancelled."
+      "🚫 No amount provided. CTO operation cancelled!"
     );
     return conversation.halt();
   }
@@ -180,34 +474,32 @@ export const ctoConversation = async (
   if (isNaN(buyAmount) || buyAmount <= 0) {
     await sendMessage(
       amountInput,
-      "❌ Invalid amount. Please enter a valid number."
+      "⚠️ Invalid amount. Please enter a valid number!"
     );
     return conversation.halt();
   }
 
   // Check if amount is available (leave some buffer for fees)
   const requiredBalance = buyAmount + 0.01; // 0.01 SOL buffer for fees
-  if (requiredBalance > fundingBalance) {
+  if (requiredBalance > availableBalance) {
     await sendMessage(
       amountInput,
       [
-        "💰 <b>Insufficient Funding Balance</b>",
+        "💰 <b>Insufficient Balance</b>",
         "",
-        "┌─────────────────────────────────",
-        `│ <b>Requested Amount:</b> ${buyAmount.toFixed(6)} SOL`,
-        `│ <b>Available Balance:</b> ${fundingBalance.toFixed(6)} SOL`,
-        `│ <b>Required (+ fees):</b> ${requiredBalance.toFixed(6)} SOL`,
-        `│ <b>Shortage:</b> ${(requiredBalance - fundingBalance).toFixed(6)} SOL`,
-        "└─────────────────────────────────",
+        `💸 <b>Requested Amount:</b> ${buyAmount.toFixed(6)} SOL`,
+        `💳 <b>Available Balance:</b> ${availableBalance.toFixed(6)} SOL`,
+        `✅ <b>Required (+ fees):</b> ${requiredBalance.toFixed(6)} SOL`,
+        `🚨 <b>Shortage:</b> ${(requiredBalance - availableBalance).toFixed(6)} SOL`,
         "",
-        "⚠️ <b>Your funding wallet needs more SOL to proceed.</b>",
+        `⚠️ Your ${isPrefundedMode ? "buyer wallets need" : "funding wallet needs"} more SOL to proceed!`,
         "",
         "💡 <b>Options:</b>",
-        "• Enter a smaller amount",
-        "• Top up your funding wallet",
-        "• Check wallet balance and try again",
+        "• Enter a smaller amount 📉",
+        `• ${isPrefundedMode ? "Fund your buyer wallets" : "Top up your funding wallet"} 💰`,
+        "• Check wallet balance and try again 🔄",
         "",
-        "<i>🔒 Fee buffer: 0.01 SOL for transaction costs</i>",
+        "🔒 Fee buffer: 0.01 SOL for transaction costs",
       ].join("\n"),
       { parse_mode: "HTML" }
     );
@@ -220,19 +512,17 @@ export const ctoConversation = async (
     [
       "🔍 <b>Platform Detection</b>",
       "",
-      "┌─────────────────────────────────",
-      `│ <b>Token:</b> <code>${tokenAddress}</code>`,
-      "└─────────────────────────────────",
+      `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
       "",
-      "⏳ <b>Analyzing token platform...</b>",
+      "⏳ Analyzing token platform...",
       "",
-      "🔎 <i>Checking supported exchanges:</i>",
-      "• PumpFun Bonding Curve",
-      "• PumpSwap DEX",
-      "• Bonk Pool (Raydium)",
-      "• CPMM (Graduated)",
+      "🔎 <b>Checking supported exchanges:</b>",
+      "• PumpFun Bonding Curve 🎯",
+      "• PumpSwap DEX 🔄",
+      "• Bonk Pool (Raydium) 🐕",
+      "• CPMM (Graduated) 🏊",
       "",
-      "⚡ <i>Optimizing trading strategy...</i>",
+      "⚡ Optimizing trading strategy...",
     ].join("\n"),
     { parse_mode: "HTML" }
   );
@@ -272,6 +562,10 @@ export const ctoConversation = async (
         platformIcon = "🏊";
         platformDetails = "Raydium CPMM (Graduated Bonk)";
         break;
+      case "meteora":
+        platformIcon = "🌌";
+        platformDetails = "Meteora DBC (Direct Bonding Curve)";
+        break;
       case "unknown":
         platformIcon = "❓";
         platformDetails = "Unknown Platform (Will try multiple DEXs)";
@@ -287,28 +581,26 @@ export const ctoConversation = async (
       [
         "✅ <b>Platform Detection Complete</b>",
         "",
-        "┌─────────────────────────────────",
-        `│ <b>Token:</b> <code>${tokenAddress}</code>`,
-        `│ <b>Platform:</b> ${platformIcon} ${platformDetails}`,
-        "└─────────────────────────────────",
+        `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+        `🏢 <b>Platform:</b> ${platformIcon} ${platformDetails}`,
         "",
         "🎯 <b>Trading Strategy:</b>",
         (() => {
           switch (platform) {
             case "pumpfun":
-              return "• Direct bonding curve trading for best prices";
+              return "• Direct bonding curve trading for best prices 💰";
             case "pumpswap":
-              return "• Jupiter → PumpSwap routing for optimal liquidity";
+              return "• Jupiter → PumpSwap routing for optimal liquidity 🌊";
             case "bonk":
-              return "• Bonk pool trading via Raydium Launch Lab";
+              return "• Bonk pool trading via Raydium Launch Lab 🚀";
             case "cpmm":
-              return "• Raydium CPMM trading for graduated Bonk tokens";
+              return "• Raydium CPMM trading for graduated Bonk tokens 🏊";
             default:
-              return "• Multi-platform fallback (Jupiter → PumpSwap → PumpFun)";
+              return "• Multi-platform fallback (Jupiter → PumpSwap → PumpFun) 🔄";
           }
         })(),
         "",
-        "⚡ <i>Proceeding automatically with optimal platform routing...</i>",
+        "⚡ Proceeding automatically with optimal platform routing...",
       ].join("\n"),
       { parse_mode: "HTML" }
     );
@@ -327,28 +619,56 @@ export const ctoConversation = async (
       platform === "bonk"
     );
 
+    // Show buyer wallet details for prefunded mode
+    let buyerWalletInfo = "";
+    if (isPrefundedMode) {
+      const buyerBalanceDetails = await Promise.all(
+        buyerWallets.slice(0, 5).map(async (wallet, index) => {
+          const balance = await getWalletBalance(wallet.publicKey);
+          return `• Wallet ${index + 1}: ${balance.toFixed(4)} SOL`;
+        })
+      );
+
+      buyerWalletInfo = [
+        "",
+        "💳 <b>Buyer Wallet Details:</b>",
+        ...buyerBalanceDetails,
+        ...(buyerWallets.length > 5
+          ? [`• ...and ${buyerWallets.length - 5} more wallets`]
+          : []),
+        "",
+      ].join("\n");
+    }
+
     // Show final confirmation with platform information
     await sendMessage(
       amountInput,
       [
-        "🎯 <b>CTO Operation Confirmation</b>",
+        `🎯 <b>CTO Operation Confirmation</b>`,
         "",
-        "┌─────────────────────────────────",
-        `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
-        `│ <b>🏢 Platform:</b> ${platformIcon} ${platformDetails}`,
-        `│ <b>💰 Buy Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
-        `│ <b>📈 Expected MC:</b> <code>$${expectedMarketCap}</code>`,
-        `│ <b>💳 Balance:</b> <code>${fundingBalance.toFixed(6)} SOL</code>`,
-        "└─────────────────────────────────",
-        "",
+        `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+        `🏢 <b>Platform:</b> ${platformIcon} ${platformDetails}`,
+        `🔧 <b>Mode:</b> ${modeDescription}`,
+        `💰 <b>Buy Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+        `📈 <b>Expected MC:</b> <code>$${expectedMarketCap}</code>`,
+        `💳 <b>Balance:</b> <code>${availableBalance.toFixed(6)} SOL</code>`,
+        buyerWalletInfo,
         "🔄 <b>Operation Process:</b>",
-        `• Distribute <code>${buyAmount.toFixed(6)} SOL</code> via secure mixer`,
-        `• Execute coordinated buys on <b>${platformDetails}</b>`,
-        "• Generate market buying pressure",
+        ...(isPrefundedMode
+          ? [
+              `• Use ${buyerWallets.length} pre-funded buyer wallets 💳`,
+              `• Execute direct buys on <b>${platformDetails}</b> 🚀`,
+              "• Generate instant buying pressure ⚡",
+            ]
+          : [
+              `• Distribute <code>${buyAmount.toFixed(6)} SOL</code> via secure mixer 🔒`,
+              `• Execute coordinated buys on <b>${platformDetails}</b> ⚡`,
+              "• Generate market buying pressure 📈",
+            ]),
         "",
-        "⚠️ <b>Warning:</b> This operation is irreversible",
+        "⚠️ This operation is irreversible!",
         "",
-        "💡 <b>Ready to proceed?</b>",
+        "💡 Ready to proceed?",
       ].join("\n"),
       {
         parse_mode: "HTML",
@@ -371,18 +691,16 @@ export const ctoConversation = async (
       [
         "⚠️ <b>Platform Detection Failed</b>",
         "",
-        "┌─────────────────────────────────",
-        `│ <b>Token:</b> <code>${tokenAddress}</code>`,
-        `│ <b>Status:</b> ❌ Detection Error`,
-        `│ <b>Error:</b> ${platformError.message || "Unknown error"}`,
-        "└─────────────────────────────────",
+        `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+        `🚫 <b>Status:</b> Detection Error`,
+        `⚠️ <b>Error:</b> ${platformError.message || "Unknown error"}`,
         "",
         "🔄 <b>Fallback Strategy Activated:</b>",
-        "• Multi-platform routing enabled",
-        "• Jupiter → PumpSwap → PumpFun",
-        "• Ensures maximum trading compatibility",
+        "• Multi-platform routing enabled 🌐",
+        "• Jupiter → PumpSwap → PumpFun 🔄",
+        "• Ensures maximum trading compatibility ✅",
         "",
-        "⚡ <i>Proceeding automatically with fallback routing...</i>",
+        "⚡ Proceeding automatically with fallback routing...",
       ].join("\n"),
       { parse_mode: "HTML" }
     );
@@ -408,27 +726,34 @@ export const ctoConversation = async (
       [
         "🎯 <b>CTO Operation Confirmation</b>",
         "",
-        "┌─────────────────────────────────",
-        `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
-        `│ <b>🏢 Platform:</b> ❓ Multi-Platform Fallback`,
-        `│ <b>💰 Buy Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
-        `│ <b>📈 Expected MC:</b> <code>$${expectedMarketCapFallback}</code>`,
-        `│ <b>💳 Balance:</b> <code>${fundingBalance.toFixed(6)} SOL</code>`,
-        "└─────────────────────────────────",
+        `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+        `🏢 <b>Platform:</b> ❓ Multi-Platform Fallback`,
+        `🔧 <b>Mode:</b> ${modeDescription}`,
+        `💰 <b>Buy Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+        `📈 <b>Expected MC:</b> <code>$${expectedMarketCapFallback}</code>`,
+        `💳 <b>Balance:</b> <code>${availableBalance.toFixed(6)} SOL</code>`,
         "",
         "🔄 <b>Operation Process:</b>",
-        `• Distribute <code>${buyAmount.toFixed(6)} SOL</code> via secure mixer`,
-        "• Execute coordinated buys with multi-platform routing",
-        "• Generate market buying pressure",
+        ...(isPrefundedMode
+          ? [
+              `• Use ${buyerWallets.length} pre-funded buyer wallets 💳`,
+              "• Execute direct buys with multi-platform routing 🚀",
+              "• Generate instant buying pressure ⚡",
+            ]
+          : [
+              `• Distribute <code>${buyAmount.toFixed(6)} SOL</code> via secure mixer 🔒`,
+              "• Execute coordinated buys with multi-platform routing ⚡",
+              "• Generate market buying pressure 📈",
+            ]),
         "",
         "🛡️ <b>Fallback Strategy:</b>",
-        "• Jupiter → PumpSwap → PumpFun routing",
-        "• Maximum compatibility across platforms",
-        "• Auto-retry on different DEXs if needed",
+        "• Jupiter → PumpSwap → PumpFun routing 🔄",
+        "• Maximum compatibility across platforms 🌐",
+        "• Auto-retry on different DEXs if needed ⚡",
         "",
-        "⚠️ <b>Warning:</b> This operation is irreversible",
+        "⚠️ This operation is irreversible!",
         "",
-        "💡 <b>Ready to proceed?</b>",
+        "💡 Ready to proceed?",
       ].join("\n"),
       {
         parse_mode: "HTML",
@@ -445,7 +770,7 @@ export const ctoConversation = async (
 
   if (confirmation.callbackQuery?.data === CallBackQueries.CANCEL) {
     await confirmation.answerCallbackQuery();
-    await sendMessage(confirmation, "❌ CTO operation cancelled.");
+    await sendMessage(confirmation, "❌ CTO operation cancelled!");
     return conversation.halt();
   }
 
@@ -466,26 +791,33 @@ export const ctoConversation = async (
       const processingMessage = await sendMessage(
         confirmation,
         [
-          "🔄 <b>CTO Operation In Progress</b>",
+          `🔄 <b>CTO Operation In Progress</b>`,
           "",
-          "┌─────────────────────────────────",
-          `│ <b>Token:</b> <code>${tokenAddress}</code>`,
-          `│ <b>Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
-          `│ <b>Platform:</b> ${platform === "bonk" ? "🐕 Bonk Pool" : platform === "pumpfun" ? "🎯 PumpFun" : platform === "pumpswap" ? "🔄 PumpSwap" : "❓ Multi-Platform"}`,
-          "└─────────────────────────────────",
+          `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+          `💰 <b>Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+          `🏢 <b>Platform:</b> ${platform === "bonk" ? "🐕 Bonk Pool" : platform === "pumpfun" ? "🎯 PumpFun" : platform === "pumpswap" ? "🔄 PumpSwap" : "❓ Multi-Platform"}`,
+          `🔧 <b>Mode:</b> ${modeDescription}`,
           "",
-          "⏳ <b>Step 1:</b> Distributing SOL via secure mixer...",
-          "⏳ <b>Step 2:</b> Executing coordinated buy transactions...",
-          "⏳ <b>Step 3:</b> Generating buying pressure...",
+          ...(isPrefundedMode
+            ? [
+                "⏳ <b>Step 1:</b> Checking buyer wallet balances... 💳",
+                "⏳ <b>Step 2:</b> Executing direct buy transactions... 🚀",
+                "⏳ <b>Step 3:</b> Generating instant buying pressure... ⚡",
+              ]
+            : [
+                "⏳ <b>Step 1:</b> Distributing SOL via secure mixer... 🔒",
+                "⏳ <b>Step 2:</b> Executing coordinated buy transactions... ⚡",
+                "⏳ <b>Step 3:</b> Generating buying pressure... 📈",
+              ]),
           "",
-          "🕐 <b>Estimated Time:</b> 30-60 seconds",
+          `🕐 <b>Estimated Time:</b> ${isPrefundedMode ? "15-30 seconds" : "30-60 seconds"}`,
           "",
-          "<i>⚡ Please wait while we process your CTO operation...</i>",
+          "⚡ Please wait while we process your CTO operation...",
         ].join("\n"),
         { parse_mode: "HTML" }
       );
 
-      // Execute CTO operation with detected platform
+      // Execute CTO operation with detected platform and mode
       const { executeCTOOperation } = await import(
         "../../blockchain/pumpfun/ctoOperation"
       );
@@ -503,18 +835,15 @@ export const ctoConversation = async (
           [
             "✅ <b>CTO Operation Completed Successfully!</b>",
             "",
-            "┌─────────────────────────────────",
-            `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
-            `│ <b>💰 Total Spent:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
-            `│ <b>🎯 Successful Buys:</b> <code>${result.successfulBuys || 0}</code>`,
-            `│ <b>❌ Failed Buys:</b> <code>${result.failedBuys || 0}</code>`,
-            "└─────────────────────────────────",
+            `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+            `💰 <b>Total Spent:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+            `🎯 <b>Successful Buys:</b> <code>${result.successfulBuys || 0}</code>`,
+            `❌ <b>Failed Buys:</b> <code>${result.failedBuys || 0}</code>`,
             "",
-            "🎉 <b>Buying pressure has been applied to the token!</b>",
+            "🎉 Buying pressure has been applied to the token!",
+            "📊 Opening monitor page to track your position...",
             "",
-            "📊 <b>Opening monitor page to track your position...</b>",
-            "",
-            "<i>⚡ Please wait while we load the monitoring interface...</i>",
+            "⚡ Please wait while we load the monitoring interface...",
           ].join("\n"),
           { parse_mode: "HTML" }
         );
@@ -534,22 +863,20 @@ export const ctoConversation = async (
             [
               "⚠️ <b>CTO Operation Partially Completed</b>",
               "",
-              "┌─────────────────────────────────",
-              `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
-              `│ <b>✅ Successful Buys:</b> <code>${result.successfulBuys || 0}</code>`,
-              `│ <b>❌ Failed Buys:</b> <code>${result.failedBuys || 0}</code>`,
-              "└─────────────────────────────────",
+              `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+              `✅ <b>Successful Buys:</b> <code>${result.successfulBuys || 0}</code>`,
+              `❌ <b>Failed Buys:</b> <code>${result.failedBuys || 0}</code>`,
               "",
-              "🎯 <b>Some buying pressure was successfully applied!</b>",
+              "🎯 Some buying pressure was successfully applied!",
               "",
               "⚠️ <b>Partial Success Details:</b>",
-              "• Some transactions completed successfully",
-              "• Others failed due to network/mixer issues",
+              "• Some transactions completed successfully ✅",
+              "• Others failed due to network/mixer issues ❌",
               `• Reason: ${result.error || "Unknown mixer issues"}`,
               "",
-              "📊 <b>Opening monitor page to track your position...</b>",
+              "📊 Opening monitor page to track your position...",
               "",
-              "<i>⚡ Your successful buys are still active and trackable...</i>",
+              "⚡ Your successful buys are still active and trackable...",
             ].join("\n"),
             { parse_mode: "HTML" }
           );
@@ -569,28 +896,26 @@ export const ctoConversation = async (
             [
               "❌ <b>CTO Operation Failed</b>",
               "",
-              "┌─────────────────────────────────",
-              `│ <b>🪙 Token:</b> <code>${tokenAddress}</code>`,
-              `│ <b>💰 Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
-              `│ <b>🚫 Status:</b> Complete Failure`,
-              "└─────────────────────────────────",
+              `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+              `💰 <b>Amount:</b> <code>${buyAmount.toFixed(6)} SOL</code>`,
+              `🚫 <b>Status:</b> Complete Failure`,
               "",
               "📊 <b>Operation Results:</b>",
-              `• <b>✅ Successful Buys:</b> <code>${result.successfulBuys || 0}</code>`,
-              `• <b>❌ Failed Buys:</b> <code>${result.failedBuys || 0}</code>`,
+              `• ✅ <b>Successful Buys:</b> <code>${result.successfulBuys || 0}</code>`,
+              `• ❌ <b>Failed Buys:</b> <code>${result.failedBuys || 0}</code>`,
               "",
               "🔍 <b>Error Details:</b>",
               `<code>${result.error || "Unknown error occurred"}</code>`,
               "",
-              "⚠️ <b>No buying pressure was applied to the token.</b>",
+              "⚠️ No buying pressure was applied to the token.",
               "",
               "💡 <b>Recommended Actions:</b>",
-              "• Check your wallet balances",
-              "• Withdraw any remaining funds",
-              "• Retry the operation",
-              "• Contact support if issues persist",
+              "• Check your wallet balances 💳",
+              "• Withdraw any remaining funds 💰",
+              "• Retry the operation 🔄",
+              "• Contact support if issues persist 📞",
               "",
-              "<i>🔒 Your funds are safe and can be withdrawn anytime.</i>",
+              "🔒 Your funds are safe and can be withdrawn anytime!",
             ].join("\n"),
             {
               parse_mode: "HTML",
@@ -654,7 +979,7 @@ export const ctoConversation = async (
                 tokenAddress
               );
             } else if (actionData === CallBackQueries.CANCEL) {
-              await sendMessage(failureAction, "❌ CTO operation cancelled.");
+              await sendMessage(failureAction, "❌ CTO operation cancelled!");
               return conversation.halt();
             }
           } catch (waitError: any) {
@@ -673,8 +998,8 @@ export const ctoConversation = async (
       try {
         await sendMessage(
           confirmation,
-          `❌ **CTO Operation Error**\n\n${error.message || "Unknown error occurred"}`,
-          { parse_mode: "Markdown" }
+          `❌ <b>CTO Operation Error</b>\n\n${error.message || "Unknown error occurred"} 🚨`,
+          { parse_mode: "HTML" }
         );
       } catch (msgError: any) {
         logger.warn("Failed to send error message:", msgError.message);
