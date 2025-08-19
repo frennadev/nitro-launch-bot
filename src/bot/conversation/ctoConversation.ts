@@ -143,17 +143,16 @@ async function executePrefundedCTOOperation(
       };
     }
 
-    // Execute direct buys from buyer wallets using the simplified approach
-    // Since we're bypassing the mixer, we'll use a simpler execution pattern
+    // Execute direct buys from buyer wallets using each wallet's full available balance
+    // This maximizes buying power by using ALL available SOL from each wallet
 
-    // Calculate amount per wallet (distribute the total amount)
-    const amountPerWallet = totalAmount / buyerWallets.length;
     logger.info(
-      `[CTO-Prefunded] Executing ${amountPerWallet.toFixed(6)} SOL buy per wallet across ${buyerWallets.length} wallets`
+      `[CTO-Prefunded] Executing maximum balance buys across ${buyerWallets.length} wallets`
     );
 
     let successfulBuys = 0;
     let failedBuys = 0;
+    let totalSpent = 0;
 
     // Import required functions for direct execution
     const { detectTokenPlatformWithCache } = await import(
@@ -168,15 +167,24 @@ async function executePrefundedCTOOperation(
       const wallet = buyerWallets[i];
       const walletBalance = walletBalances[i].balance;
 
-      // Skip wallets with insufficient balance
-      if (walletBalance < amountPerWallet + 0.005) {
-        // 0.005 SOL buffer for fees
+      // Calculate maximum spendable amount (reserve fees)
+      const transactionFeeReserve = 0.01; // Priority fees + base fees
+      const accountCreationReserve = 0.008; // ATA creation costs
+      const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+      const availableForSpend = walletBalance - totalFeeReserve;
+
+      // Skip wallets with insufficient balance for any meaningful buy
+      if (availableForSpend <= 0.001) {
         logger.warn(
-          `[CTO-Prefunded] Skipping wallet ${wallet.publicKey} - insufficient balance: ${walletBalance.toFixed(6)} SOL`
+          `[CTO-Prefunded] Skipping wallet ${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-4)} - insufficient balance: ${walletBalance.toFixed(6)} SOL (need > ${totalFeeReserve + 0.001} SOL)`
         );
         failedBuys++;
         continue;
       }
+
+      logger.info(
+        `[CTO-Prefunded] Wallet ${i + 1}/${buyerWallets.length}: ${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-4)} - Balance: ${walletBalance.toFixed(6)} SOL, Available: ${availableForSpend.toFixed(6)} SOL`
+      );
 
       try {
         // Create keypair from private key
@@ -194,10 +202,11 @@ async function executePrefundedCTOOperation(
         // Create a dummy context for the function (it's not actually used in no-confirmation mode)
         const dummyCtx = {} as Context;
 
+        // Use the full available balance for maximum buying power
         const result = await executeExternalBuyNoConfirmation(
           tokenAddress,
           walletKeypair,
-          amountPerWallet,
+          availableForSpend, // Use full available balance instead of fixed amount
           3, // slippage
           0.001, // priority fee
           dummyCtx
@@ -205,8 +214,9 @@ async function executePrefundedCTOOperation(
 
         if (result.success) {
           successfulBuys++;
+          totalSpent += availableForSpend;
           logger.info(
-            `[CTO-Prefunded] Wallet ${i + 1} buy successful: ${result.signature}`
+            `[CTO-Prefunded] Wallet ${i + 1} buy successful: ${availableForSpend.toFixed(6)} SOL spent - ${result.signature}`
           );
         } else {
           failedBuys++;
@@ -231,7 +241,7 @@ async function executePrefundedCTOOperation(
     }
 
     logger.info(
-      `[CTO-Prefunded] CTO operation completed. Successful: ${successfulBuys}, Failed: ${failedBuys}`
+      `[CTO-Prefunded] CTO operation completed. Successful: ${successfulBuys}, Failed: ${failedBuys}, Total Spent: ${totalSpent.toFixed(6)} SOL`
     );
 
     return {
@@ -422,15 +432,15 @@ export const ctoConversation = async (
         `💳 <b>Source:</b> ${walletSource}`,
         "",
         "⚡ <b>Prefunded Process:</b>",
-        "• Using ALL available buyer wallet funds 💳",
+        "• Using FULL balance from each wallet 💳",
         "• Execute direct buy transactions 🚀",
         "• No mixer delay - instant execution ⚡",
-        "• No manual amount input required 🤖",
+        "• Maximum buying power utilization 🚀",
         "",
         `📊 <b>Wallet Details:</b>`,
         `• Total Wallets: ${buyerWallets.length}`,
         `• Combined Balance: ${buyAmount.toFixed(6)} SOL`,
-        `• Amount per wallet: ~${(buyAmount / buyerWallets.length).toFixed(6)} SOL`,
+        `• Each wallet: Uses full available balance (minus fees)`,
         "",
         "🚀 <b>Ready to execute with detected balance!</b>",
       ].join("\n"),
