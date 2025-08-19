@@ -403,87 +403,129 @@ export const ctoConversation = async (
     return conversation.halt();
   }
 
-  // Ask for buy amount based on selected mode
-  const availableBalance = isPrefundedMode ? totalBuyerBalance : fundingBalance;
-  const modeDescription = isPrefundedMode
-    ? "⚡ Prefunded Mode"
-    : "🏦 Standard Mode";
-  const walletSource = isPrefundedMode
-    ? `${buyerWallets.length} buyer wallets`
-    : "funding wallet";
+  let buyAmount: number;
+  let currentContext: any; // Context for sending messages
+  const modeDescription = isPrefundedMode ? "⚡ Prefunded Mode" : "🏦 Standard Mode";
 
-  await sendMessage(
-    modeSelection,
-    [
-      `💸 <b>${modeDescription} - Amount Selection</b>`,
-      "",
-      `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
-      `💰 <b>Available Balance:</b> ${availableBalance.toFixed(6)} SOL`,
-      `💳 <b>Source:</b> ${walletSource}`,
-      "",
-      "💸 <b>How much SOL would you like to spend?</b>",
-      "",
-      ...(isPrefundedMode
-        ? [
-            "⚡ <b>Prefunded Process:</b>",
-            "• Use existing buyer wallet funds 💳",
-            "• Execute direct buy transactions 🚀",
-            "• No mixer delay - instant execution ⚡",
-            "",
-            `📊 <b>Wallet Details:</b>`,
-            `• Total Wallets: ${buyerWallets.length}`,
-            `• Combined Balance: ${totalBuyerBalance.toFixed(6)} SOL`,
-          ]
-        : [
-            "🔄 <b>Standard Process:</b>",
-            "• Distribute funds via secure mixer 🔒",
-            "• Execute coordinated buy transactions ⚡",
-            "• Generate buying pressure on token 📈",
-          ]),
-      "",
-      "💡 <b>Enter amount in SOL:</b>",
-      "Examples: <code>0.5</code> | <code>1.0</code> | <code>2.5</code>",
-    ].join("\n"),
-    {
-      parse_mode: "HTML",
-      reply_markup: new InlineKeyboard().text(
-        "❌ Cancel",
-        CallBackQueries.CANCEL
-      ),
+  if (isPrefundedMode) {
+    // PREFUNDED MODE: Use all available balance automatically
+    buyAmount = totalBuyerBalance;
+    const walletSource = `${buyerWallets.length} buyer wallets`;
+
+    await sendMessage(
+      modeSelection,
+      [
+        `💸 <b>${modeDescription} - Auto Amount Detection</b>`,
+        "",
+        `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+        `💰 <b>Total Available Balance:</b> ${buyAmount.toFixed(6)} SOL`,
+        `💳 <b>Source:</b> ${walletSource}`,
+        "",
+        "⚡ <b>Prefunded Process:</b>",
+        "• Using ALL available buyer wallet funds 💳",
+        "• Execute direct buy transactions 🚀",
+        "• No mixer delay - instant execution ⚡",
+        "• No manual amount input required 🤖",
+        "",
+        `📊 <b>Wallet Details:</b>`,
+        `• Total Wallets: ${buyerWallets.length}`,
+        `• Combined Balance: ${buyAmount.toFixed(6)} SOL`,
+        `• Amount per wallet: ~${(buyAmount / buyerWallets.length).toFixed(6)} SOL`,
+        "",
+        "🚀 <b>Ready to execute with detected balance!</b>",
+      ].join("\n"),
+      {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard()
+          .text("🚀 Execute CTO", "EXECUTE_PREFUNDED_CTO")
+          .row()
+          .text("❌ Cancel", CallBackQueries.CANCEL),
+      }
+    );
+
+    // Wait for execution confirmation
+    const executeConfirm = await conversation.wait();
+    currentContext = executeConfirm;
+    if (executeConfirm.callbackQuery?.data === CallBackQueries.CANCEL) {
+      await executeConfirm.answerCallbackQuery();
+      await sendMessage(executeConfirm, "❌ CTO operation cancelled!");
+      return conversation.halt();
     }
-  );
 
-  // Wait for amount input
-  const amountInput = await conversation.wait();
-  if (amountInput.callbackQuery?.data === CallBackQueries.CANCEL) {
-    await amountInput.answerCallbackQuery();
-    await sendMessage(amountInput, "❌ CTO operation cancelled!");
-    return conversation.halt();
-  }
+    if (executeConfirm.callbackQuery?.data !== "EXECUTE_PREFUNDED_CTO") {
+      await executeConfirm.answerCallbackQuery();
+      await sendMessage(executeConfirm, "❌ Invalid selection. CTO operation cancelled!");
+      return conversation.halt();
+    }
 
-  const buyAmountText = amountInput.message?.text?.trim();
-  if (!buyAmountText) {
+    await executeConfirm.answerCallbackQuery();
+  } else {
+    // STANDARD MODE: Ask for buy amount
+    const walletSource = "funding wallet";
+    const availableBalance = fundingBalance;
+
     await sendMessage(
-      amountInput,
-      "🚫 No amount provided. CTO operation cancelled!"
+      modeSelection,
+      [
+        `💸 <b>${modeDescription} - Amount Selection</b>`,
+        "",
+        `🪙 <b>Token:</b> <code>${tokenAddress}</code>`,
+        `💰 <b>Available Balance:</b> ${availableBalance.toFixed(6)} SOL`,
+        `💳 <b>Source:</b> ${walletSource}`,
+        "",
+        "💸 <b>How much SOL would you like to spend?</b>",
+        "",
+        "🔄 <b>Standard Process:</b>",
+        "• Distribute funds via secure mixer 🔒",
+        "• Execute coordinated buy transactions ⚡",
+        "• Generate buying pressure on token 📈",
+        "",
+        "💡 <b>Enter amount in SOL:</b>",
+        "Examples: <code>0.5</code> | <code>1.0</code> | <code>2.5</code>",
+      ].join("\n"),
+      {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard().text(
+          "❌ Cancel",
+          CallBackQueries.CANCEL
+        ),
+      }
     );
-    return conversation.halt();
-  }
 
-  const buyAmount = parseFloat(buyAmountText);
-  if (isNaN(buyAmount) || buyAmount <= 0) {
-    await sendMessage(
-      amountInput,
-      "⚠️ Invalid amount. Please enter a valid number!"
-    );
-    return conversation.halt();
+    // Wait for amount input
+    const amountInput = await conversation.wait();
+    currentContext = amountInput;
+    if (amountInput.callbackQuery?.data === CallBackQueries.CANCEL) {
+      await amountInput.answerCallbackQuery();
+      await sendMessage(currentContext, "❌ CTO operation cancelled!");
+      return conversation.halt();
+    }
+
+    const buyAmountText = amountInput.message?.text?.trim();
+    if (!buyAmountText) {
+      await sendMessage(
+        currentContext,
+        "🚫 No amount provided. CTO operation cancelled!"
+      );
+      return conversation.halt();
+    }
+
+    buyAmount = parseFloat(buyAmountText);
+    if (isNaN(buyAmount) || buyAmount <= 0) {
+      await sendMessage(
+        currentContext,
+        "⚠️ Invalid amount. Please enter a valid number!"
+      );
+      return conversation.halt();
+    }
   }
 
   // Check if amount is available (leave some buffer for fees)
   const requiredBalance = buyAmount + 0.01; // 0.01 SOL buffer for fees
+  const availableBalance = isPrefundedMode ? totalBuyerBalance : fundingBalance;
   if (requiredBalance > availableBalance) {
     await sendMessage(
-      amountInput,
+      currentContext,
       [
         "💰 <b>Insufficient Balance</b>",
         "",
@@ -508,7 +550,7 @@ export const ctoConversation = async (
 
   // === PLATFORM DETECTION STEP ===
   const platformDetectionMessage = await sendMessage(
-    amountInput,
+    currentContext,
     [
       "🔍 <b>Platform Detection</b>",
       "",
@@ -646,7 +688,7 @@ export const ctoConversation = async (
 
     // Show final confirmation with platform information
     await sendMessage(
-      amountInput,
+      currentContext,
       [
         `🎯 <b>CTO Operation Confirmation</b>`,
         "",
@@ -726,7 +768,7 @@ export const ctoConversation = async (
 
     // Show final confirmation with fallback information
     await sendMessage(
-      amountInput,
+      currentContext,
       [
         "🎯 <b>CTO Operation Confirmation</b>",
         "",

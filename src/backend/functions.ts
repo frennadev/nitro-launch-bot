@@ -908,7 +908,8 @@ export const enqueueTokenLaunch = async (
   devWallet: string,
   buyWallets: string[],
   devBuy: number,
-  buyAmount: number
+  buyAmount: number,
+  mode: "normal" | "prefunded" = "normal"
 ) => {
   const session = await mongoose.startSession();
 
@@ -1015,6 +1016,7 @@ export const enqueueTokenLaunch = async (
             buyWallets.length
           ),
           launchStage: 1,
+          mode,
         }
       );
     });
@@ -1092,6 +1094,7 @@ export const enqueueTokenLaunchRetry = async (
             updatedToken.launchData!.buyWallets.length
           ),
         launchStage: updatedToken.launchData!.launchStage || 1,
+        mode: (updatedToken.launchData as any)?.mode || "normal",
       };
       await tokenLaunchQueue.add(
         `launch-${tokenAddress}-${updatedToken.launchData?.launchAttempt}`,

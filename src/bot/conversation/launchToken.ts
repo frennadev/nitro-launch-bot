@@ -692,10 +692,6 @@ Your token launch has been successfully resubmitted using your previous paramete
           }
         );
 
-        // if (launch === "prefunded") {
-        //   break;
-        // }
-
         const buyAmountCtx = await conversation.waitFor([
           "message:text",
           "callback_query:data",
@@ -991,6 +987,59 @@ Please enter a smaller buy amount:`,
           }
         }
       }
+    } else if (launchMode == "prefunded") {
+      // PREFUNDED MODE: Use all available balance from buyer wallets automatically
+      buyAmount = Number(totalBalance.toFixed(4));
+      
+      await sendMessage(
+        ctx,
+        `⚡ <b>Prefunded Launch - Auto Amount Detection</b>
+
+📊 <b>Wallet Configuration:</b>
+• <b>Available Buyer Wallets:</b> ${buyerWallets.length}
+• <b>Total Available Balance:</b> ${buyAmount.toFixed(6)} SOL
+• <b>Average per wallet:</b> ~${(buyAmount / buyerWallets.length).toFixed(6)} SOL
+
+⚡ <b>Prefunded Process:</b>
+• Using ALL available buyer wallet funds 💳
+• Execute direct buy transactions 🚀
+• No mixer delay - instant execution ⚡
+• No manual amount input required 🤖
+
+🚀 <b>Ready to launch with detected balance!</b>
+
+<i>💭 The system will automatically use all available SOL from your buyer wallets for the token purchase.</i>`,
+        {
+          parse_mode: "HTML",
+          reply_markup: new InlineKeyboard()
+            .text("🚀 Continue with Auto-Detected Amount", "CONTINUE_PREFUNDED_AUTO")
+            .row()
+            .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
+        }
+      );
+
+      const autoAmountChoice = await conversation.waitFor("callback_query:data");
+      await autoAmountChoice.answerCallbackQuery();
+
+      if (autoAmountChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+        await sendMessage(ctx, "<b>❌ Launch Cancelled</b>", {
+          parse_mode: "HTML",
+        });
+        return conversation.halt();
+      }
+
+      if (autoAmountChoice.callbackQuery?.data !== "CONTINUE_PREFUNDED_AUTO") {
+        await sendMessage(ctx, "<b>❌ Invalid selection. Launch Cancelled</b>", {
+          parse_mode: "HTML",
+        });
+        return conversation.halt();
+      }
+
+      await sendMessage(
+        ctx,
+        "<b>✅ Prefunded Launch Configuration Confirmed</b>\n\n<i>Proceeding with auto-detected wallet balances...</i>",
+        { parse_mode: "HTML" }
+      );
     }
 
     if (buyAmount == 0) {

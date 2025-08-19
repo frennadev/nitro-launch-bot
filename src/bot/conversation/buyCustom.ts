@@ -50,7 +50,7 @@ export const buyCustonConversation = async (
 
     // Use new external buy system with automatic platform detection
     const buyerKeypair = secretKeyToKeypair(fundingWallet.privateKey);
-    const result = await executeExternalBuy(mint, buyerKeypair, buyAmount);
+    const result = await executeExternalBuy(mint, buyerKeypair, buyAmount, 3, 0.001, ctx);
 
     if (result.success) {
       const platformText =

@@ -79,7 +79,7 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         data.buyAmount,
         data.devBuy,
         data.launchStage,
-        "normal"
+        data.mode || "normal"
       );
 
       // Update loading state - Phase 5: Finalizing
