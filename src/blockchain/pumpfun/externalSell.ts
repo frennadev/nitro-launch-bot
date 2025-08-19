@@ -865,7 +865,7 @@ ${meteoraError.message}`);
         const result = await executeHeavenSell(
           tokenAddress,
           bs58.encode(sellerKeypair.secretKey),
-          BigInt(tokenAmount)
+          BigInt(tokenAmount * 0.99)
         );
 
         if (result.success && result.signature) {
