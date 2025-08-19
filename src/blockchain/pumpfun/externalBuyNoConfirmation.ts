@@ -17,6 +17,7 @@ export interface ExternalBuyResult {
     | "bonk"
     | "cpmm"
     | "meteora"
+    | "heaven"
     | "unknown";
   solReceived?: string;
 }
@@ -69,6 +70,15 @@ export async function executeExternalBuyNoConfirmation(
         `[${logId}] Using CPMM-specific buy logic (no confirmation, fees in background)`
       );
       return await executeCpmmBuyNoConfirmation(
+        tokenAddress,
+        buyerKeypair,
+        solAmount,
+        logId
+      );
+    } else if (platform === "heaven") {
+      logger.info(`
+        [${logId}] Using Heaven-specific buy logic (no confirmation, fees in background)`);
+      return await executeHeavenBuyNoConfirmation(
         tokenAddress,
         buyerKeypair,
         solAmount,
@@ -579,6 +589,184 @@ async function executeMeteoraBuyNoConfirmation(
         success: false,
         signature: "",
         error: `Meteora buy failed: ${errorMessage}`,
+      };
+    }
+  }
+}
+
+async function executeHeavenBuyNoConfirmation(
+  tokenAddress: string,
+  buyerKeypair: Keypair,
+  solAmount: number,
+  logId: string
+): Promise<ExternalBuyResult> {
+  try {
+    logger.info(
+      `[${logId}] Starting Heaven buy (no confirmation, fees in background) for ${solAmount} SOL`
+    );
+
+    // CRITICAL FIX: Check wallet balance and reserve SOL for transaction costs
+    const walletBalance = await connection.getBalance(
+      buyerKeypair.publicKey,
+      "confirmed"
+    );
+    const walletBalanceSOL = walletBalance / 1_000_000_000;
+
+    // Reserve fees for buy transaction AND account creation costs
+    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
+    const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+    const availableForTrade = walletBalanceSOL - totalFeeReserve;
+
+    logger.info(
+      `[${logId}] Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`
+    );
+    logger.info(
+      `[${logId}] Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`
+    );
+    logger.info(
+      `[${logId}] Account creation reserve: ${accountCreationReserve.toFixed(6)} SOL`
+    );
+    logger.info(
+      `[${logId}] Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`
+    );
+    logger.info(
+      `[${logId}] Available for trade: ${availableForTrade.toFixed(6)} SOL`
+    );
+
+    // Validate we have enough balance
+    if (availableForTrade <= 0) {
+      const errorMsg = `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees`;
+      logger.error(`[${logId}] ${errorMsg}`);
+      return {
+        success: false,
+        signature: "",
+        error: errorMsg,
+      };
+    }
+
+    // Use the minimum of requested amount or available balance
+    const actualTradeAmount = Math.min(solAmount, availableForTrade);
+
+    if (actualTradeAmount < solAmount) {
+      logger.warn(
+        `[${logId}] Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations`
+      );
+    }
+
+    // Import Heaven buy service with proper path
+    const { executeHeavenBuy } = await import(
+      "../../service/heaven/heaven-service"
+    );
+
+    logger.info(
+      `[${logId}] Executing Heaven buy with auto-detection for ${actualTradeAmount.toFixed(6)} SOL...`
+    );
+
+    // Use the executeHeavenBuy function
+    const result = await executeHeavenBuy(
+      tokenAddress,
+      bs58.encode(buyerKeypair.secretKey),
+      actualTradeAmount
+    );
+
+    if (result.success && result.signature) {
+      logger.info(
+        `[${logId}] Heaven buy successful: ${result.signature} (confirmation and fee collection will happen in background)`
+      );
+
+      return {
+        success: true,
+        signature: result.signature,
+        platform: "heaven", // Heaven DEX platform
+        solReceived: actualTradeAmount.toString(), // Return the actual amount that was traded
+      };
+    } else {
+      throw new Error(result.error || "Heaven buy failed");
+    }
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Handle "PoolIsCompleted" error with smart routing fallback to CPMM
+    if (
+      errorMessage.includes("PoolIsCompleted") ||
+      errorMessage.includes("0x177d") ||
+      errorMessage.includes("Token is not a Heaven token")
+    ) {
+      logger.info(
+        `[${logId}] Heaven failed - falling back to CPMM: ${errorMessage}`
+      );
+
+      try {
+        // Use the minimum of requested amount or available balance
+        const walletBalance = await connection.getBalance(
+          buyerKeypair.publicKey,
+          "confirmed"
+        );
+        const walletBalanceSOL = walletBalance / 1_000_000_000;
+        const transactionFeeReserve = 0.01;
+        const accountCreationReserve = 0.008;
+        const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+        const availableForTrade = walletBalanceSOL - totalFeeReserve;
+        const actualTradeAmount = Math.min(solAmount, availableForTrade);
+
+        // Import RaydiumCpmmService as fallback
+        const RaydiumCpmmService = (
+          await import("../../service/raydium-cpmm-service")
+        ).default;
+
+        // Create RaydiumCpmmService instance
+        const cpmmService = new RaydiumCpmmService();
+
+        // Convert SOL amount to lamports using the adjusted amount
+        const buyAmountLamports = BigInt(
+          Math.floor(actualTradeAmount * 1_000_000_000)
+        );
+
+        // Create the buy transaction with the adjusted amount (fee collection happens in background)
+        const buyTx = await cpmmService.buyTx({
+          mint: tokenAddress,
+          privateKey: bs58.encode(buyerKeypair.secretKey),
+          amount_in: buyAmountLamports,
+        });
+
+        // Send the transaction WITHOUT waiting for confirmation
+        const signature = await connection.sendTransaction(buyTx, {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+          maxRetries: 3,
+        });
+
+        logger.info(
+          `[${logId}] CPMM fallback success: ${signature} (confirmation and fee collection will happen in background)`
+        );
+
+        return {
+          success: true,
+          signature: signature,
+          platform: "cpmm",
+          solReceived: actualTradeAmount.toString(),
+        };
+      } catch (fallbackError: unknown) {
+        const fallbackErrorMessage =
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : String(fallbackError);
+        logger.error(
+          `[${logId}] Both Heaven and CPMM failed: ${fallbackErrorMessage}`
+        );
+        return {
+          success: false,
+          signature: "",
+          error: `Smart routing failed: ${fallbackErrorMessage}`,
+        };
+      }
+    } else {
+      logger.error(`[${logId}] Heaven buy error: ${errorMessage}`);
+      return {
+        success: false,
+        signature: "",
+        error: `Heaven buy failed: ${errorMessage}`,
       };
     }
   }

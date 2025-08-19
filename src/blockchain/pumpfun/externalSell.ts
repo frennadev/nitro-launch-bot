@@ -371,7 +371,15 @@ export interface SimpleExternalSellResult {
   success: boolean;
   signature?: string;
   error?: string;
-  platform?: "jupiter" | "pumpswap" | "pumpfun" | "cpmm" | "bonk" | "unknown";
+  platform?:
+    | "jupiter"
+    | "pumpswap"
+    | "pumpfun"
+    | "cpmm"
+    | "bonk"
+    | "unknown"
+    | "meteora"
+    | "heaven";
   solReceived?: string;
   tokensSold?: string;
   tokenInfo?: {
@@ -672,15 +680,25 @@ export async function executeExternalSell(
 
       try {
         // Use the dedicated Bonk sell function
-        const { executeBonkSell } = await import("../../service/bonk-transaction-handler");
-        
+        const { executeBonkSell } = await import(
+          "../../service/bonk-transaction-handler"
+        );
+
         // Calculate the percentage based on the tokenAmount vs total balance
         const { getTokenBalance } = await import("../../backend/utils");
-        const totalBalance = await getTokenBalance(tokenAddress, sellerKeypair.publicKey.toBase58());
-        const sellPercentage = totalBalance > 0 ? Math.round((tokenAmount / totalBalance) * 100) : 100;
-        
-        logger.info(`[${logId}] Selling ${tokenAmount} tokens (${sellPercentage}% of ${totalBalance} total balance)`);
-        
+        const totalBalance = await getTokenBalance(
+          tokenAddress,
+          sellerKeypair.publicKey.toBase58()
+        );
+        const sellPercentage =
+          totalBalance > 0
+            ? Math.round((tokenAmount / totalBalance) * 100)
+            : 100;
+
+        logger.info(
+          `[${logId}] Selling ${tokenAmount} tokens (${sellPercentage}% of ${totalBalance} total balance)`
+        );
+
         const bonkResult = await executeBonkSell(
           sellPercentage,
           bs58.encode(sellerKeypair.secretKey),
@@ -705,44 +723,60 @@ export async function executeExternalSell(
               );
             }
           }
-          logger.info(`[${logId}] Bonk sell successful: ${bonkResult.signature}`);
-          
+          logger.info(
+            `[${logId}] Bonk sell successful: ${bonkResult.signature}`
+          );
+
           // Get actual SOL received from Bonk result or parse from transaction
           let actualSolReceived = bonkResult.actualSolReceived || 0;
-          
+
           // If Bonk doesn't provide the amount, try to parse it from the transaction
           if (actualSolReceived === 0) {
             try {
-              const { parseTransactionAmounts } = await import("../../backend/utils");
+              const { parseTransactionAmounts } = await import(
+                "../../backend/utils"
+              );
               const actualAmounts = await parseTransactionAmounts(
                 bonkResult.signature || "",
                 sellerKeypair.publicKey.toBase58(),
                 tokenAddress,
                 "sell"
               );
-              
+
               if (actualAmounts.success && actualAmounts.actualSolReceived) {
                 actualSolReceived = actualAmounts.actualSolReceived;
-                logger.info(`[${logId}] Actual SOL received from blockchain: ${actualSolReceived} SOL`);
+                logger.info(
+                  `[${logId}] Actual SOL received from blockchain: ${actualSolReceived} SOL`
+                );
               } else {
-                logger.warn(`[${logId}] Failed to parse actual amounts from transaction: ${actualAmounts.error}`);
+                logger.warn(
+                  `[${logId}] Failed to parse actual amounts from transaction: ${actualAmounts.error}`
+                );
                 // Use a more realistic estimate based on token amount and price
                 if (tokenInfo?.price && tokenInfo.price > 0) {
-                  const tokenValueInUSD = (tokenAmount / Math.pow(10, tokenInfo.decimals || 6)) * tokenInfo.price;
+                  const tokenValueInUSD =
+                    (tokenAmount / Math.pow(10, tokenInfo.decimals || 6)) *
+                    tokenInfo.price;
                   const estimatedSolPrice = 170; // Rough SOL price estimate
                   actualSolReceived = tokenValueInUSD / estimatedSolPrice;
-                  logger.info(`[${logId}] Using price-based estimate: ${actualSolReceived} SOL`);
+                  logger.info(
+                    `[${logId}] Using price-based estimate: ${actualSolReceived} SOL`
+                  );
                 } else {
                   actualSolReceived = 0.01; // Final fallback
-                  logger.warn(`[${logId}] Using fallback estimate: ${actualSolReceived} SOL`);
+                  logger.warn(
+                    `[${logId}] Using fallback estimate: ${actualSolReceived} SOL`
+                  );
                 }
               }
             } catch (parseError: any) {
-              logger.warn(`[${logId}] Error parsing transaction amounts: ${parseError.message}`);
+              logger.warn(
+                `[${logId}] Error parsing transaction amounts: ${parseError.message}`
+              );
               actualSolReceived = 0.01; // Fallback estimate
             }
           }
-          
+
           // Collect transaction fee after successful sell (non-blocking)
           await collectFeeAsync(
             bs58.encode(sellerKeypair.secretKey),
@@ -760,17 +794,121 @@ export async function executeExternalSell(
             tokenInfo: tokenInfo || undefined,
           };
         } else {
-          logger.warn(`[${logId}] Bonk sell failed: ${bonkResult.error || bonkResult.message}`);
+          logger.warn(
+            `[${logId}] Bonk sell failed: ${bonkResult.error || bonkResult.message}`
+          );
         }
       } catch (bonkError: any) {
-        logger.warn(
-          `[${logId}] Bonk sell threw error: ${bonkError.message}`
+        logger.warn(`[${logId}] Bonk sell threw error: ${bonkError.message}`);
+      }
+    }
+
+    // Handle Meteora tokens with universal auto-sell service
+    if (platform === "meteora") {
+      logger.info(`[${logId}] Using universal Meteora service for sell`);
+
+      try {
+        const { executeMeteoraSell } = await import(
+          "../../service/meteora/meteora-sell-service"
         );
+
+        const result = await executeMeteoraSell(
+          tokenAddress,
+          bs58.encode(sellerKeypair.secretKey),
+          tokenAmount
+        );
+
+        if (result.success && result.signature) {
+          logger.info(
+            `[${logId}] Universal Meteora ${result.tokenType} sell successful: ${result.signature}`
+          );
+
+          // Collect transaction fee after successful sell (non-blocking)
+          await collectFeeAsync(
+            bs58.encode(sellerKeypair.secretKey),
+            0.01, // Estimate for sell
+            "sell",
+            logId
+          );
+
+          return {
+            success: true,
+            signature: result.signature,
+            platform: "meteora",
+            solReceived: "unknown",
+            tokensSold: tokenAmount.toString(),
+          };
+        } else {
+          throw new Error(result.error || "Meteora sell failed");
+        }
+      } catch (meteoraError: any) {
+        logger.error(
+          `[${logId}] Universal Meteora sell failed: ${meteoraError.message}`
+        );
+        throw new Error(`
+❌ Meteora Sell Failed
+Unable to complete sale on Meteora
+
+${meteoraError.message}`);
+      }
+    }
+
+    // Handle Heaven DEX tokens with native Heaven service
+    if (platform === "heaven") {
+      logger.info(`[${logId}] Using native Heaven DEX service for sell`);
+
+      try {
+        const { executeHeavenSell } = await import(
+          "../../service/heaven/heaven-service"
+        );
+
+        const result = await executeHeavenSell(
+          tokenAddress,
+          bs58.encode(sellerKeypair.secretKey),
+          BigInt(tokenAmount)
+        );
+
+        if (result.success && result.signature) {
+          logger.info(
+            `[${logId}] Universal Heaven DEX sell successful: ${result.signature}`
+          );
+
+          // Collect transaction fee after successful sell (non-blocking)
+          await collectFeeAsync(
+            bs58.encode(sellerKeypair.secretKey),
+            0.01, // Estimate for sell
+            "sell",
+            logId
+          );
+
+          return {
+            success: true,
+            signature: result.signature,
+            platform: "heaven",
+            solReceived: "unknown",
+            tokensSold: tokenAmount.toString(),
+          };
+        } else {
+          throw new Error(result.error || "Heaven DEX sell failed");
+        }
+      } catch (heavenError: any) {
+        logger.error(
+          `[${logId}] Universal Heaven DEX sell failed: ${heavenError.message}`
+        );
+        throw new Error(`
+❌ Heaven DEX Sell Failed
+Unable to complete sale on Heaven DEX
+
+${heavenError.message}`);
       }
     }
 
     // Handle graduated tokens with optimized platform priority: PumpSwap/CPMM first, Jupiter fallback
-    if (platform === "pumpswap" || platform === "cpmm" || (await isTokenGraduated(tokenAddress))) {
+    if (
+      platform === "pumpswap" ||
+      platform === "cpmm" ||
+      (await isTokenGraduated(tokenAddress))
+    ) {
       logger.info(
         `[${logId}] Token is graduated/external (${platform}), using optimized platform priority: PumpSwap/CPMM first, Jupiter fallback`
       );
@@ -807,7 +945,9 @@ export async function executeExternalSell(
               tokenInfo,
             };
           } else {
-            logger.warn(`[${logId}] PumpSwap sell failed: ${pumpswapResult.error}`);
+            logger.warn(
+              `[${logId}] PumpSwap sell failed: ${pumpswapResult.error}`
+            );
           }
         } catch (pumpswapError: any) {
           logger.warn(
@@ -820,9 +960,11 @@ export async function executeExternalSell(
       if (platform === "cpmm" || platform === "unknown") {
         logger.info(`[${logId}] Trying CPMM for graduated token`);
         try {
-          const RaydiumCpmmService = (await import("../../service/raydium-cpmm-service")).default;
+          const RaydiumCpmmService = (
+            await import("../../service/raydium-cpmm-service")
+          ).default;
           const cpmmService = new RaydiumCpmmService();
-          
+
           const cpmmResult = await cpmmService.sellWithFeeCollection({
             mint: tokenAddress,
             privateKey: bs58.encode(sellerKeypair.secretKey),
@@ -863,14 +1005,14 @@ export async function executeExternalSell(
             logger.warn(`[${logId}] CPMM sell failed`);
           }
         } catch (cpmmError: any) {
-          logger.warn(
-            `[${logId}] CPMM sell threw error: ${cpmmError.message}`
-          );
+          logger.warn(`[${logId}] CPMM sell threw error: ${cpmmError.message}`);
         }
       }
 
       // Jupiter as final fallback for graduated tokens
-      logger.info(`[${logId}] PumpSwap/CPMM failed, trying Jupiter as fallback`);
+      logger.info(
+        `[${logId}] PumpSwap/CPMM failed, trying Jupiter as fallback`
+      );
       try {
         const jupiterService = new JupiterPumpswapService();
         const result = await jupiterService.executeSell(
@@ -933,7 +1075,9 @@ export async function executeExternalSell(
             tokenInfo,
           };
         } else {
-          logger.warn(`[${logId}] Jupiter fallback sell failed: ${result.error}`);
+          logger.warn(
+            `[${logId}] Jupiter fallback sell failed: ${result.error}`
+          );
         }
       } catch (jupiterError: any) {
         logger.warn(

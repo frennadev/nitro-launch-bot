@@ -566,6 +566,10 @@ export const ctoConversation = async (
         platformIcon = "🌌";
         platformDetails = "Meteora DBC (Direct Bonding Curve)";
         break;
+      case "heaven":
+        platformIcon = "🌈";
+        platformDetails = "Heaven DEX (Advanced Trading)";
+        break;
       case "unknown":
         platformIcon = "❓";
         platformDetails = "Unknown Platform (Will try multiple DEXs)";

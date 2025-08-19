@@ -39,7 +39,14 @@ export interface TokenLaunchStatus {
 const platformCache = new Map<
   string,
   {
-    platform: "pumpswap" | "pumpfun" | "bonk" | "cpmm" | "unknown";
+    platform:
+      | "pumpswap"
+      | "pumpfun"
+      | "bonk"
+      | "cpmm"
+      | "unknown"
+      | "meteora"
+      | "heaven";
     timestamp: number;
     permanent: boolean;
   }
@@ -63,7 +70,9 @@ const LAUNCH_STATUS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes for launch status
  */
 export async function detectTokenPlatformFast(
   tokenAddress: string
-): Promise<"pumpswap" | "pumpfun" | "bonk" | "cpmm" | "unknown"> {
+): Promise<
+  "pumpswap" | "pumpfun" | "bonk" | "cpmm" | "unknown" | "meteora" | "heaven"
+> {
   // Check cache first
   const cached = getCachedPlatform(tokenAddress);
   if (cached) {
@@ -89,7 +98,9 @@ export async function detectTokenPlatformFast(
  */
 export async function detectTokenPlatform(
   tokenAddress: string
-): Promise<"pumpswap" | "pumpfun" | "bonk" | "cpmm" | "meteora" | "unknown"> {
+): Promise<
+  "pumpswap" | "pumpfun" | "bonk" | "cpmm" | "meteora" | "heaven" | "unknown"
+> {
   const logId = `platform-detect-${tokenAddress.substring(0, 8)}`;
   logger.info(
     `[${logId}]: Starting platform detection using bonding curve approach`
@@ -347,6 +358,22 @@ export async function detectTokenPlatform(
             );
           }
 
+          // Check if it's a Heaven DEX token
+          try {
+            const { isHeavenSupportedToken } = await import(
+              "../service/heaven/discovery"
+            );
+            const isHeaven = await isHeavenSupportedToken(tokenAddress);
+            if (isHeaven) {
+              logger.info(`[${logId}]: Token detected as Heaven DEX`);
+              return "heaven";
+            }
+          } catch (heavenError: any) {
+            logger.debug(
+              `[${logId}]: Heaven check failed: ${heavenError.message}`
+            );
+          }
+
           return "pumpswap";
         }
       } catch (bonkError: any) {
@@ -384,7 +411,14 @@ export function getCachedPlatform(
  */
 export function setCachedPlatform(
   tokenAddress: string,
-  platform: "pumpswap" | "pumpfun" | "bonk" | "cpmm" | "unknown",
+  platform:
+    | "pumpswap"
+    | "pumpfun"
+    | "bonk"
+    | "cpmm"
+    | "unknown"
+    | "meteora"
+    | "heaven",
   permanent: boolean = false
 ) {
   platformCache.set(tokenAddress, {
@@ -416,7 +450,9 @@ export function markTokenAsPumpFun(tokenAddress: string) {
  */
 export async function detectTokenPlatformWithCache(
   tokenAddress: string
-): Promise<"pumpswap" | "pumpfun" | "bonk" | "cpmm" | "unknown" | "meteora"> {
+): Promise<
+  "pumpswap" | "pumpfun" | "bonk" | "cpmm" | "unknown" | "meteora" | "heaven"
+> {
   // Check cache first
   const cached = getCachedPlatform(tokenAddress);
   if (cached) {
