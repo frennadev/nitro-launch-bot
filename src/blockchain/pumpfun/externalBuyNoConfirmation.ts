@@ -5,6 +5,7 @@ import { logger } from "../common/logger";
 import { getSolBalance } from "../../backend/utils";
 import { JupiterPumpswapService } from "../../service/jupiter-pumpswap-service";
 import bs58 from "bs58";
+import { collectTransactionFee } from "../../backend/functions-main";
 
 export interface ExternalBuyResult {
   success: boolean;
@@ -20,6 +21,31 @@ export interface ExternalBuyResult {
     | "heaven"
     | "unknown";
   solReceived?: string;
+}
+
+// Helper function to collect transaction fees (non-blocking)
+async function collectFeeAsync(
+  privateKey: string,
+  amount: number,
+  type: "buy" | "sell",
+  logId: string
+): Promise<void> {
+  try {
+    const feeResult = await collectTransactionFee(privateKey, amount, type);
+    if (feeResult.success) {
+      logger.info(
+        `[${logId}] Transaction fee collected: ${feeResult.feeAmount} SOL`
+      );
+    } else {
+      logger.warn(
+        `[${logId}] Transaction fee collection failed: ${feeResult.error}`
+      );
+    }
+  } catch (feeError: any) {
+    logger.warn(
+      `[${logId}] Transaction fee collection error: ${feeError.message}`
+    );
+  }
 }
 
 /**
@@ -563,6 +589,16 @@ async function executeMeteoraBuyNoConfirmation(
           `[${logId}] CPMM fallback success: ${signature} (confirmation and fee collection will happen in background)`
         );
 
+        // Collect transaction fee after successful CPMM fallback (non-blocking)
+        collectFeeAsync(
+          bs58.encode(buyerKeypair.secretKey),
+          actualTradeAmount,
+          "buy",
+          logId
+        ).catch((feeError) => {
+          logger.warn(`[${logId}] CPMM fallback fee collection promise failed: ${feeError.message}`);
+        });
+
         return {
           success: true,
           signature: signature,
@@ -675,6 +711,16 @@ async function executeHeavenBuyNoConfirmation(
         `[${logId}] Heaven buy successful: ${result.signature} (confirmation and fee collection will happen in background)`
       );
 
+      // Collect transaction fee after successful buy (non-blocking)
+      collectFeeAsync(
+        bs58.encode(buyerKeypair.secretKey),
+        actualTradeAmount,
+        "buy",
+        logId
+      ).catch((feeError) => {
+        logger.warn(`[${logId}] Fee collection promise failed: ${feeError.message}`);
+      });
+
       return {
         success: true,
         signature: result.signature,
@@ -740,6 +786,16 @@ async function executeHeavenBuyNoConfirmation(
         logger.info(
           `[${logId}] CPMM fallback success: ${signature} (confirmation and fee collection will happen in background)`
         );
+
+        // Collect transaction fee after successful CPMM fallback (non-blocking)
+        collectFeeAsync(
+          bs58.encode(buyerKeypair.secretKey),
+          actualTradeAmount,
+          "buy",
+          logId
+        ).catch((feeError) => {
+          logger.warn(`[${logId}] CPMM fallback fee collection promise failed: ${feeError.message}`);
+        });
 
         return {
           success: true,
