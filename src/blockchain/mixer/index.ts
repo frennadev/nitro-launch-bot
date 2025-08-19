@@ -198,7 +198,7 @@ async function runMixer(
     // Configure the mixer with optimized settings for speed
     const config: MongoMixerConfig = {
       // Optimized mixer settings (500ms-2s total operation time)
-      intermediateWalletCount: 5, // Use 5 intermediate wallets for strong privacy
+      intermediateWalletCount: 8, // Use 8 intermediate wallets for strong privacy
       minDelay: options?.parallelMode ? 0 : 500, // No delays in parallel mode
       maxDelay: options?.parallelMode ? 0 : 2000, // No delays in parallel mode
       useFreshWallets: false, // Use MongoDB wallet pool
@@ -405,9 +405,9 @@ async function createCustomMixingRoutes(
 
     // Get intermediate wallets from MongoDB
     const walletManager = mixer.getWalletManager();
-    const intermediateWallets = await walletManager.reserveWalletsForMixing(5); // 5 per route for strong privacy
+    const intermediateWallets = await walletManager.reserveWalletsForMixing(8); // 8 per route for strong privacy
 
-    if (intermediateWallets.length < 5) {
+    if (intermediateWallets.length < 8) {
       throw new Error(`Insufficient intermediate wallets for route ${i + 1}`);
     }
 
@@ -416,7 +416,7 @@ async function createCustomMixingRoutes(
         keypair: fundingWallet,
         publicKey: fundingWallet.publicKey,
       },
-      intermediates: intermediateWallets.slice(0, 5).map((wallet: any) => ({
+      intermediates: intermediateWallets.slice(0, 8).map((wallet: any) => ({
         keypair: walletManager.getKeypairFromStoredWallet(wallet),
         publicKey: new PublicKey(wallet.publicKey),
         balance: wallet.balance - 0.006,
