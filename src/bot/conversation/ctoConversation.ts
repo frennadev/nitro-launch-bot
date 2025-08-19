@@ -870,15 +870,27 @@ export const ctoConversation = async (
       );
 
       // Execute CTO operation with detected platform and mode
-      const { executeCTOOperation } = await import(
-        "../../blockchain/pumpfun/ctoOperation"
-      );
-      const result = await executeCTOOperation(
-        tokenAddress,
-        user.id,
-        buyAmount,
-        platform
-      );
+      let result;
+      if (isPrefundedMode) {
+        // Use prefunded execution that bypasses mixer
+        result = await executePrefundedCTOOperation(
+          tokenAddress,
+          user.id,
+          buyAmount,
+          platform
+        );
+      } else {
+        // Use standard execution with mixer
+        const { executeCTOOperation } = await import(
+          "../../blockchain/pumpfun/ctoOperation"
+        );
+        result = await executeCTOOperation(
+          tokenAddress,
+          user.id,
+          buyAmount,
+          platform
+        );
+      }
 
       if (result.success) {
         // Success message with detailed results
