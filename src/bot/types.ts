@@ -88,4 +88,8 @@ export enum CallBackQueries {
 
   // Mix Funds feature
   MIX_FUNDS = "mix_funds",
+
+  // View Token Wallets feature
+  VIEW_TOKEN_WALLETS = "view_token_wallets",
+  SELL_WALLET_TOKEN = "sell_wallet_token",
 }

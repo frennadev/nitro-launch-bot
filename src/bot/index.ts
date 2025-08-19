@@ -90,6 +90,7 @@ import { buyExternalTokenConversation } from "./conversation/externalTokenBuy";
 import { referralsConversation } from "./conversation/referrals";
 import { ctoConversation } from "./conversation/ctoConversation";
 import { ctoMonitorConversation } from "./conversation/ctoMonitor";
+import { handleViewTokenWallets } from "./monitor";
 import { PublicKey } from "@solana/web3.js";
 import { executeFundingBuy } from "../blockchain/pumpfun/buy";
 import { buyCustonConversation } from "./conversation/buyCustom";
@@ -1781,7 +1782,12 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
           "📊 Monitor",
           `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`
         )
-        .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
+        .text(
+          "� View Wallets",
+          compressCallbackData(CallBackQueries.VIEW_TOKEN_WALLETS, tokenAddress)
+        )
+        .row()
+        .text("�📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
         .text("🔄 Refresh", `refresh_ca_${tokenAddress}`)
         .row()
         .text("🏠 Menu", CallBackQueries.BACK),
@@ -2002,6 +2008,132 @@ bot.callbackQuery(/^fund_top_wallets_(.+)_(\d+)$/, async (ctx) => {
       ctx,
       "❌ Error starting fund token wallets conversation. Please try again."
     );
+  }
+});
+
+// Handle view token wallets button clicks
+bot.callbackQuery(/^(vtw_|view_token_wallets_)/, async (ctx) => {
+  logger.info(
+    `[ViewTokenWallets] Callback triggered with data: ${ctx.callbackQuery.data}`
+  );
+  await safeAnswerCallbackQuery(ctx, "👝 Loading wallet holdings...");
+
+  let tokenAddress: string;
+  let page: number = 0;
+  const data = ctx.callbackQuery.data;
+
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    tokenAddress = decompressed.tokenAddress;
+    // Check if page number is included in the decompressed data
+    const pageMatch = decompressed.tokenAddress.match(/^(.+)_(\d+)$/);
+    if (pageMatch) {
+      tokenAddress = pageMatch[1];
+      page = parseInt(pageMatch[2]);
+    }
+  } else {
+    // Handle legacy uncompressed format
+    const parts = data.split("_");
+    tokenAddress = parts.slice(3).join("_");
+    // Check if last part is a page number
+    const lastPart = parts[parts.length - 1];
+    if (/^\d+$/.test(lastPart)) {
+      page = parseInt(lastPart);
+      tokenAddress = parts.slice(3, -1).join("_");
+    }
+  }
+
+  const userId = ctx.chat?.id.toString();
+  if (!userId) {
+    await sendMessage(ctx, "❌ User ID not found.");
+    return;
+  }
+
+  logger.info(
+    `[ViewTokenWallets] Displaying wallets for token: ${tokenAddress}, page: ${page}`
+  );
+
+  try {
+    await handleViewTokenWallets(ctx, userId, tokenAddress, page);
+  } catch (error) {
+    logger.error(
+      `[ViewTokenWallets] Error displaying wallets for token: ${tokenAddress}`,
+      error
+    );
+    await sendMessage(ctx, "❌ Error loading wallet data. Please try again.");
+  }
+});
+
+// Handle sell wallet token button clicks
+bot.callbackQuery(/^(swt_|sell_wallet_token_)/, async (ctx) => {
+  logger.info(
+    `[SellWalletToken] Callback triggered with data: ${ctx.callbackQuery.data}`
+  );
+  await safeAnswerCallbackQuery(ctx, "💸 Preparing to sell wallet tokens...");
+
+  let tokenAddress: string;
+  let walletAddress: string;
+  let walletType: string;
+  const data = ctx.callbackQuery.data;
+
+  if (isCompressedCallbackData(data)) {
+    const decompressed = decompressCallbackData(data);
+    if (!decompressed) {
+      await sendMessage(ctx, "❌ Invalid callback data.");
+      return;
+    }
+    // For sell wallet token, the format is: tokenAddress_walletAddress_walletType
+    const parts = decompressed.tokenAddress.split("_");
+    if (parts.length >= 3) {
+      tokenAddress = parts[0];
+      walletAddress = parts[1];
+      walletType = parts[2];
+    } else {
+      await sendMessage(ctx, "❌ Invalid wallet token data format.");
+      return;
+    }
+  } else {
+    // Handle legacy uncompressed format
+    const parts = data.split("_");
+    if (parts.length >= 6) {
+      // sell_wallet_token_tokenAddress_walletAddress_walletType
+      tokenAddress = parts[3];
+      walletAddress = parts[4];
+      walletType = parts[5];
+    } else {
+      await sendMessage(ctx, "❌ Invalid wallet token data format.");
+      return;
+    }
+  }
+
+  const userId = ctx.chat?.id.toString();
+  if (!userId) {
+    await sendMessage(ctx, "❌ User ID not found.");
+    return;
+  }
+
+  logger.info(
+    `[SellWalletToken] Selling tokens from ${walletType} wallet: ${walletAddress} for token: ${tokenAddress}`
+  );
+
+  try {
+    // Redirect to the existing sell individual token conversation with specific wallet
+    await ctx.conversation.enter(
+      "sellIndividualToken",
+      tokenAddress,
+      0,
+      walletAddress
+    );
+  } catch (error) {
+    logger.error(
+      `[SellWalletToken] Error starting sell conversation for wallet: ${walletAddress}`,
+      error
+    );
+    await sendMessage(ctx, "❌ Error starting sell process. Please try again.");
   }
 });
 
@@ -3740,6 +3872,11 @@ bot.on("message:text", async (ctx) => {
                 "📊 Monitor",
                 `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`
               )
+              .text(
+                "👝 View Wallets",
+                compressCallbackData(CallBackQueries.VIEW_TOKEN_WALLETS, text)
+              )
+              .row()
               .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
               .text("🔄 Refresh", `refresh_ca_${text}`)
               .row()
@@ -4043,7 +4180,15 @@ bot.on("message:text", async (ctx) => {
                     "📊 Monitor",
                     `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`
                   )
-                  .text("📈 CTO", `${CallBackQueries.CTO}_${text}`)
+                  .text(
+                    "� View Wallets",
+                    compressCallbackData(
+                      CallBackQueries.VIEW_TOKEN_WALLETS,
+                      text
+                    )
+                  )
+                  .row()
+                  .text("�📈 CTO", `${CallBackQueries.CTO}_${text}`)
                   .text("🔄 Refresh", `refresh_ca_${text}`)
                   .row()
                   .text(

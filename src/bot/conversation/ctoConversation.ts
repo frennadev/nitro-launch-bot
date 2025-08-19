@@ -7,7 +7,7 @@ import {
   getWalletBalance,
   getAllBuyerWallets,
 } from "../../backend/functions";
-import { sendMessage } from "../../backend/sender";
+import { sendFirstMessage, sendMessage } from "../../backend/sender";
 import { logger } from "../../blockchain/common/logger";
 import { CallBackQueries } from "../types";
 import { safeEditMessageText, sendErrorWithAutoDelete } from "../utils";
@@ -280,7 +280,7 @@ export const ctoConversation = async (
   // Get funding wallet
   const fundingWallet = await getFundingWallet(user.id);
   if (!fundingWallet) {
-    await sendMessage(
+    await sendFirstMessage(
       ctx,
       "🔑 No funding wallet found. Please configure a funding wallet first!"
     );
@@ -290,7 +290,7 @@ export const ctoConversation = async (
   // Check funding wallet balance
   const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
   if (fundingBalance < 0.01) {
-    await sendMessage(
+    await sendFirstMessage(
       ctx,
       [
         "💰 <b>Insufficient Balance</b>",
@@ -329,7 +329,7 @@ export const ctoConversation = async (
   }
 
   // Ask for CTO mode selection
-  await sendMessage(
+  await sendFirstMessage(
     ctx,
     [
       "🎯 <b>CTO - Call To Others</b>",
@@ -415,7 +415,9 @@ export const ctoConversation = async (
 
   let buyAmount: number;
   let currentContext: any; // Context for sending messages
-  const modeDescription = isPrefundedMode ? "⚡ Prefunded Mode" : "🏦 Standard Mode";
+  const modeDescription = isPrefundedMode
+    ? "⚡ Prefunded Mode"
+    : "🏦 Standard Mode";
 
   if (isPrefundedMode) {
     // PREFUNDED MODE: Use all available balance automatically
@@ -464,7 +466,10 @@ export const ctoConversation = async (
 
     if (executeConfirm.callbackQuery?.data !== "EXECUTE_PREFUNDED_CTO") {
       await executeConfirm.answerCallbackQuery();
-      await sendMessage(executeConfirm, "❌ Invalid selection. CTO operation cancelled!");
+      await sendMessage(
+        executeConfirm,
+        "❌ Invalid selection. CTO operation cancelled!"
+      );
       return conversation.halt();
     }
 
@@ -530,13 +535,13 @@ export const ctoConversation = async (
     }
   }
 
-  // Check if amount is available 
+  // Check if amount is available
   const availableBalance = isPrefundedMode ? totalBuyerBalance : fundingBalance;
-  
+
   if (!isPrefundedMode) {
     // Only apply fee buffer check for standard mode
     const requiredBalance = buyAmount + 0.01; // 0.01 SOL buffer for fees
-    
+
     if (requiredBalance > availableBalance) {
       await sendMessage(
         currentContext,

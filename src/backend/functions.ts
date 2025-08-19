@@ -37,16 +37,16 @@ import { sendAndConfirmTransaction } from "@solana/web3.js";
 import { getExternalPumpAddressService } from "../service/external-pump-address-service";
 import bs58 from "bs58";
 
-export const getUser = async (telegramId: String) => {
+export const getUser = async (telegramId: string) => {
   const user = await UserModel.findOne({
     telegramId,
   }).exec();
   return user;
 };
 
-export const getDevWallet = async (userId: String) => {
+export const getDevWallet = async (userId: string) => {
   const wallet = await WalletModel.findOne({
-    user: userId,
+    user: new mongoose.Types.ObjectId(userId),
     isDev: true,
   });
   return {
@@ -114,11 +114,14 @@ export const createUser = async (
 };
 
 export const getOrCreateDevWallet = async (userId: string) => {
-  let wallet = await WalletModel.findOne({ user: userId, isDev: true }).exec();
+  let wallet = await WalletModel.findOne({
+    user: new mongoose.Types.ObjectId(userId),
+    isDev: true,
+  }).exec();
   if (!wallet) {
     const [devWallet] = generateKeypairs(1);
     wallet = await WalletModel.create({
-      user: userId,
+      user: new mongoose.Types.ObjectId(userId),
       publicKey: devWallet.publicKey,
       privateKey: encryptPrivateKey(devWallet.secretKey),
       isDev: true,
@@ -130,7 +133,7 @@ export const getOrCreateDevWallet = async (userId: string) => {
 
 export const getAllDevWallets = async (userId: string) => {
   const wallets = await WalletModel.find({
-    user: userId,
+    user: new mongoose.Types.ObjectId(userId),
     isDev: true,
   })
     .sort({ createdAt: 1 })
@@ -1432,7 +1435,7 @@ export const generateNewFundingWallet = async (userId: string) => {
 
 export const getAllBuyerWallets = async (userId: string) => {
   const wallets = await WalletModel.find({
-    user: userId,
+    user: new mongoose.Types.ObjectId(userId),
     isBuyer: true,
   })
     .sort({ createdAt: 1 })
@@ -3255,7 +3258,7 @@ export const getWalletForTrading = async (
   tokenAddress?: string
 ) => {
   const buyerWallets = await WalletModel.find({
-    user: userId,
+    user: new mongoose.Types.ObjectId(userId),
     isBuyer: true,
   })
     .sort({ createdAt: 1 })
@@ -3318,7 +3321,7 @@ export const getWalletForTrading = async (
  */
 export const getAllTradingWallets = async (userId: string) => {
   const buyerWallets = await WalletModel.find({
-    user: userId,
+    user: new mongoose.Types.ObjectId(userId),
     isBuyer: true,
   })
     .sort({ createdAt: 1 })
