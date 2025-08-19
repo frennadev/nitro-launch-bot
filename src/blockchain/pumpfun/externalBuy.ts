@@ -5,6 +5,7 @@ import JupiterPumpswapService from "../../service/jupiter-pumpswap-service";
 import bs58 from "bs58";
 import { getSolBalance } from "../../backend/utils";
 import { type Context } from "grammy";
+import { collectTransactionFee } from "../../backend/functions-main";
 
 export interface ExternalBuyResult {
   success: boolean;
@@ -214,6 +215,24 @@ async function executeBonkBuy(
 
     logger.info(`[${logId}] Bonk buy successful: ${signature}`);
 
+    // Collect 1% transaction fee after successful buy
+    try {
+      const { collectTransactionFee } = await import("../../backend/functions-main");
+      const feeResult = await collectTransactionFee(
+        bs58.encode(buyerKeypair.secretKey),
+        actualTradeAmount,
+        "buy"
+      );
+      
+      if (feeResult.success) {
+        logger.info(`[${logId}] Bonk buy transaction fee collected: ${feeResult.feeAmount} SOL`);
+      } else {
+        logger.warn(`[${logId}] Failed to collect Bonk buy transaction fee: ${feeResult.error}`);
+      }
+    } catch (feeError: any) {
+      logger.warn(`[${logId}] Error collecting Bonk buy transaction fee: ${feeError.message}`);
+    }
+
     // Record the successful Bonk buy transaction
     try {
       const { recordTransactionWithActualAmounts } = await import(
@@ -315,6 +334,24 @@ async function executeCpmmBuy(
     }
 
     logger.info(`[${logId}] CPMM buy successful: ${signature}`);
+
+    // Collect 1% transaction fee after successful buy
+    try {
+      const { collectTransactionFee } = await import("../../backend/functions-main");
+      const feeResult = await collectTransactionFee(
+        bs58.encode(buyerKeypair.secretKey),
+        solAmount,
+        "buy"
+      );
+      
+      if (feeResult.success) {
+        logger.info(`[${logId}] CPMM buy transaction fee collected: ${feeResult.feeAmount} SOL`);
+      } else {
+        logger.warn(`[${logId}] Failed to collect CPMM buy transaction fee: ${feeResult.error}`);
+      }
+    } catch (feeError: any) {
+      logger.warn(`[${logId}] Error collecting CPMM buy transaction fee: ${feeError.message}`);
+    }
 
     // Record the successful CPMM buy transaction
     try {
