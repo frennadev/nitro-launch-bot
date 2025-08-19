@@ -520,33 +520,39 @@ export const ctoConversation = async (
     }
   }
 
-  // Check if amount is available (leave some buffer for fees)
-  const requiredBalance = buyAmount + 0.01; // 0.01 SOL buffer for fees
+  // Check if amount is available 
   const availableBalance = isPrefundedMode ? totalBuyerBalance : fundingBalance;
-  if (requiredBalance > availableBalance) {
-    await sendMessage(
-      currentContext,
-      [
-        "💰 <b>Insufficient Balance</b>",
-        "",
-        `💸 <b>Requested Amount:</b> ${buyAmount.toFixed(6)} SOL`,
-        `💳 <b>Available Balance:</b> ${availableBalance.toFixed(6)} SOL`,
-        `✅ <b>Required (+ fees):</b> ${requiredBalance.toFixed(6)} SOL`,
-        `🚨 <b>Shortage:</b> ${(requiredBalance - availableBalance).toFixed(6)} SOL`,
-        "",
-        `⚠️ Your ${isPrefundedMode ? "buyer wallets need" : "funding wallet needs"} more SOL to proceed!`,
-        "",
-        "💡 <b>Options:</b>",
-        "• Enter a smaller amount 📉",
-        `• ${isPrefundedMode ? "Fund your buyer wallets" : "Top up your funding wallet"} 💰`,
-        "• Check wallet balance and try again 🔄",
-        "",
-        "🔒 Fee buffer: 0.01 SOL for transaction costs",
-      ].join("\n"),
-      { parse_mode: "HTML" }
-    );
-    return conversation.halt();
+  
+  if (!isPrefundedMode) {
+    // Only apply fee buffer check for standard mode
+    const requiredBalance = buyAmount + 0.01; // 0.01 SOL buffer for fees
+    
+    if (requiredBalance > availableBalance) {
+      await sendMessage(
+        currentContext,
+        [
+          "💰 <b>Insufficient Balance</b>",
+          "",
+          `💸 <b>Requested Amount:</b> ${buyAmount.toFixed(6)} SOL`,
+          `💳 <b>Available Balance:</b> ${availableBalance.toFixed(6)} SOL`,
+          `✅ <b>Required (+ fees):</b> ${requiredBalance.toFixed(6)} SOL`,
+          `🚨 <b>Shortage:</b> ${(requiredBalance - availableBalance).toFixed(6)} SOL`,
+          "",
+          "⚠️ Your funding wallet needs more SOL to proceed!",
+          "",
+          "💡 <b>Options:</b>",
+          "• Enter a smaller amount 📉",
+          "• Top up your funding wallet 💰",
+          "• Check wallet balance and try again 🔄",
+          "",
+          "🔒 Fee buffer: 0.01 SOL for transaction costs",
+        ].join("\n"),
+        { parse_mode: "HTML" }
+      );
+      return conversation.halt();
+    }
   }
+  // For prefunded mode: Skip balance check - the execution logic will handle individual wallet balances and fees automatically
 
   // === PLATFORM DETECTION STEP ===
   const platformDetectionMessage = await sendMessage(
