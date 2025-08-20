@@ -8,14 +8,17 @@ import {
   getFundingWallet,
   getWalletBalance,
   abbreviateNumber,
+  getDefaultDevWallet,
 } from "../backend/functions";
 import { sendMessage } from "../backend/sender";
 import { getTokenInfo, getTokenBalance } from "../backend/utils";
 import { InlineKeyboard } from "grammy";
 import { CallBackQueries } from "./types";
 import { compressCallbackData } from "./utils";
-import { Keypair } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
+import { getEnhancedTokenInfo, formatTokenDisplay, getToken2022Balance } from "../service/token-value-calculator";
+import { TokenInfoService } from "../service/token-info-service";
 
 export const handleViewTokenTrades = async (
   ctx: ConversationFlavor<Context>,
@@ -33,16 +36,15 @@ export const handleViewTokenTrades = async (
       );
     }
 
-    // Get token info
-    const tokenInfo = await getTokenInfo(tokenAddress);
-    if (!tokenInfo) {
-      await sendMessage(
-        ctx,
-        `❌ **Token not found**\n\nCould not fetch information for token: \`${tokenAddress}\``,
-        { parse_mode: "Markdown" }
-      );
+    // Get enhanced token info (supports Heaven DEX Token-2022)
+    const devWalletAddress = await getDefaultDevWallet(userId);
+    if (!devWalletAddress) {
+      await sendMessage(ctx, "❌ Dev wallet not found", { parse_mode: "Markdown" });
       return;
     }
+
+    const userPubkey = new PublicKey(devWalletAddress);
+    const enhancedTokenInfo = await getEnhancedTokenInfo(tokenAddress, userPubkey);
 
     // Generate monitor message with current data
     const refreshTime = new Date().toLocaleTimeString("en-US", {
@@ -52,11 +54,10 @@ export const handleViewTokenTrades = async (
       second: "2-digit",
     });
 
-    // Extract token name and symbol from the correct structure
-    const tokenName =
-      tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
-    const tokenSymbol =
-      tokenInfo.baseToken?.symbol || tokenInfo.symbol || "Unknown";
+    // Use enhanced token info for proper Heaven DEX support
+    const tokenName = enhancedTokenInfo.name;
+    const tokenSymbol = enhancedTokenInfo.symbol;
+    const tokenPrice = enhancedTokenInfo.priceUsd;
 
     const monitorMessage = [
       `📊 **Token Monitor**`,
@@ -68,10 +69,11 @@ export const handleViewTokenTrades = async (
       `**Last Updated:** ${refreshTime}`,
       ``,
       `**Market Data:**`,
-      `• Price: $${tokenInfo.priceUsd || "N/A"}`,
-      `• Market Cap: $${tokenInfo.marketCap ? tokenInfo.marketCap.toLocaleString() : "N/A"}`,
-      `• Volume (24h): $${tokenInfo.volume24h ? tokenInfo.volume24h.toLocaleString() : "N/A"}`,
-      `• Liquidity: $${tokenInfo.liquidity ? (typeof tokenInfo.liquidity === "object" ? tokenInfo.liquidity.usd?.toLocaleString() : tokenInfo.liquidity.toLocaleString()) : "N/A"}`,
+      `• Price: $${enhancedTokenInfo.priceUsd > 0 ? enhancedTokenInfo.priceUsd.toFixed(8) : "N/A"}`,
+      `• Market Cap: $${enhancedTokenInfo.marketCap ? enhancedTokenInfo.marketCap.toLocaleString() : "N/A"}`,
+      `• Volume (24h): $${enhancedTokenInfo.volume24h ? enhancedTokenInfo.volume24h.toLocaleString() : "N/A"}`,
+      `• Price Change (24h): ${enhancedTokenInfo.priceChange24h ? (enhancedTokenInfo.priceChange24h > 0 ? '+' : '') + enhancedTokenInfo.priceChange24h.toFixed(2) + '%' : "N/A"}`,
+      `• DEX: ${enhancedTokenInfo.isToken2022 ? "🏆 Heaven DEX (Token-2022)" : "Standard DEX"}`,
       ``,
       `💡 **Tip:** Use /menu or /start to return to the main menu.`,
     ].join("\n");
@@ -179,22 +181,19 @@ export const handleViewTokenWallets = async (
     // Use the MongoDB user ID (ObjectId) for wallet operations
     const userObjectId = user._id.toString();
 
-    // Get token info for price calculation
-    const tokenInfo = await getTokenInfo(tokenAddress);
-    if (!tokenInfo) {
-      await sendMessage(
-        ctx,
-        `❌ **Token not found**\n\nCould not fetch information for token: \`${tokenAddress}\``,
-        { parse_mode: "Markdown" }
-      );
+    // Get enhanced token info for price calculation (supports Heaven DEX Token-2022)
+    const devWalletAddress = await getDefaultDevWallet(String(user.id));
+    if (!devWalletAddress) {
+      await sendMessage(ctx, "❌ Dev wallet not found", { parse_mode: "Markdown" });
       return;
     }
+    
+    const userPubkey = new PublicKey(devWalletAddress);
+    const enhancedTokenInfo = await getEnhancedTokenInfo(tokenAddress, userPubkey);
 
-    const tokenPrice = parseFloat(tokenInfo.priceUsd || "0");
-    const tokenName =
-      tokenInfo.baseToken?.name || tokenInfo.name || "Unknown Token";
-    const tokenSymbol =
-      tokenInfo.baseToken?.symbol || tokenInfo.symbol || "Unknown";
+    const tokenPrice = enhancedTokenInfo.priceUsd;
+    const tokenName = enhancedTokenInfo.name;
+    const tokenSymbol = enhancedTokenInfo.symbol;
 
     const walletHolders: WalletHolder[] = [];
 
@@ -203,19 +202,18 @@ export const handleViewTokenWallets = async (
     const devWalletData = await getDevWallet(userObjectId);
     const fundingWalletData = await getFundingWallet(userObjectId);
 
-    // Check buyer wallets
+    // Check buyer wallets (with Token-2022 support)
     for (const wallet of buyerWallets) {
       try {
-        const tokenBalance = await getTokenBalance(
-          tokenAddress,
-          wallet.publicKey
-        );
+        const walletPubkey = new PublicKey(wallet.publicKey);
+        const tokenBalance = await getToken2022Balance(tokenAddress, walletPubkey);
         if (tokenBalance > 0) {
           const solBalance = await getWalletBalance(wallet.publicKey);
-          const tokenValueUsd = (tokenBalance / 1e6) * tokenPrice;
+          const tokenBalanceUI = Number(tokenBalance) / Math.pow(10, enhancedTokenInfo.decimals);
+          const tokenValueUsd = tokenBalanceUI * tokenPrice;
           walletHolders.push({
             pubkey: wallet.publicKey,
-            balance: tokenBalance,
+            balance: Number(tokenBalance),
             tokenPrice: tokenValueUsd,
             solBalance: solBalance,
             shortAddress:
@@ -237,13 +235,14 @@ export const handleViewTokenWallets = async (
         );
         const devPublicKey = devKeypair.publicKey.toString();
 
-        const tokenBalance = await getTokenBalance(tokenAddress, devPublicKey);
+        const tokenBalance = await getToken2022Balance(tokenAddress, devKeypair.publicKey);
         if (tokenBalance > 0) {
           const solBalance = await getWalletBalance(devPublicKey);
-          const tokenValueUsd = (tokenBalance / 1e6) * tokenPrice;
+          const tokenBalanceUI = Number(tokenBalance) / Math.pow(10, enhancedTokenInfo.decimals);
+          const tokenValueUsd = tokenBalanceUI * tokenPrice;
           walletHolders.push({
             pubkey: devPublicKey,
-            balance: tokenBalance,
+            balance: Number(tokenBalance),
             tokenPrice: tokenValueUsd,
             solBalance: solBalance,
             shortAddress:
@@ -259,18 +258,17 @@ export const handleViewTokenWallets = async (
     // Check funding wallet
     if (fundingWalletData?.publicKey) {
       try {
-        const tokenBalance = await getTokenBalance(
-          tokenAddress,
-          fundingWalletData.publicKey
-        );
+        const fundingPubkey = new PublicKey(fundingWalletData.publicKey);
+        const tokenBalance = await getToken2022Balance(tokenAddress, fundingPubkey);
         if (tokenBalance > 0) {
           const solBalance = await getWalletBalance(
             fundingWalletData.publicKey
           );
-          const tokenValueUsd = (tokenBalance / 1e6) * tokenPrice;
+          const tokenBalanceUI = Number(tokenBalance) / Math.pow(10, enhancedTokenInfo.decimals);
+          const tokenValueUsd = tokenBalanceUI * tokenPrice;
           walletHolders.push({
             pubkey: fundingWalletData.publicKey,
-            balance: tokenBalance,
+            balance: Number(tokenBalance),
             tokenPrice: tokenValueUsd,
             solBalance: solBalance,
             shortAddress:
