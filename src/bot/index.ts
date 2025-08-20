@@ -918,7 +918,7 @@ bot.command("tokens", async (ctx) => {
 bot.command("commands", async (ctx) => {
   try {
     const commandsList = [
-      "🤖 <b>SUP BOT Commands</b>",
+      "🤖 <b>Nitro Bot Commands</b>",
       "",
       "<b>🚀 Main Commands:</b>",
       "• <code>/start</code> - Start the bot and main menu",
