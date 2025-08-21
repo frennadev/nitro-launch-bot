@@ -886,7 +886,7 @@ ${meteoraError.message}`);
             signature: result.signature,
             platform: "heaven",
             solReceived: "unknown",
-            tokensSold: tokenAmount.toString(),
+            tokensSold: `${tokenAmount}`,
           };
         } else {
           throw new Error(result.error || "Heaven DEX sell failed");
