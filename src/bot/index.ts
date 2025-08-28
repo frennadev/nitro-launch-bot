@@ -55,6 +55,7 @@ import {
   compressCallbackData,
   decompressCallbackData,
   isCompressedCallbackData,
+  formatUSDFull,
 } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
@@ -114,7 +115,7 @@ import { airdropSolConversation } from "./conversation/airdropSol";
 import { predictMcConversation } from "./conversation/predictMc";
 import { fundTokenWalletsConversation } from "./conversation/fundTokenWallets";
 import mongoose from "mongoose";
-import { htmlToJpg } from "../utils/generatePnlCard";
+import { htmlToJpg, LaunchCardData } from "../utils/generatePnlCard";
 import relaunchTokenConversation from "./conversation/relaunchTokenConversation";
 
 // Platform detection and caching for external tokens
@@ -3181,20 +3182,24 @@ bot.callbackQuery(/^generate_pnl_(.+)$/, async (ctx) => {
       return;
     }
 
-    const user = await getUser(userId);
+    // Execute all database queries in parallel for faster execution
+    const [user, trade] = await Promise.all([
+      getUser(userId),
+      TokenModel.findOne({ tokenAddress: tradeId }),
+    ]);
+
     if (!user) {
       await ctx.reply("❌ User not found.");
       return;
     }
 
-    // Get trade record by ID
-    const trade = await TokenModel.findOne({ tokenAddress: tradeId });
     console.log(`Trade record: ${trade}`);
 
     if (!trade) {
       await ctx.reply("❌ Token record not found.");
       return;
     }
+
     if (trade.user.toString() !== user.id) {
       await ctx.reply("❌ Not authorized to view this trade.");
       return;
@@ -3202,9 +3207,11 @@ bot.callbackQuery(/^generate_pnl_(.+)$/, async (ctx) => {
 
     const tokenAddress = trade.tokenAddress;
 
-    const buyerWallets = await getAllBuyerWallets(user.id);
-    const devWallet = await getDefaultDevWallet(String(user.id));
-    const devWalletAddress = devWallet;
+    // Execute wallet queries in parallel for faster execution
+    const [buyerWallets, devWalletAddress] = await Promise.all([
+      getAllBuyerWallets(user.id),
+      getDefaultDevWallet(String(user.id)),
+    ]);
 
     // Get dev wallet token balance for this token
     let devWalletTokenBalance = 0;
@@ -3379,42 +3386,49 @@ bot.callbackQuery(/^generate_pnl_(.+)$/, async (ctx) => {
 
     // const pnlPercent = totalInvested > 0 ? (pnlSol / totalInvested) * 100 : 0;
 
-    // Prepare data for PNL card generation
-    const pnlCardData = {
-      tokenSymbol,
-      tokenName: tokenSymbol, // Use symbol as name for now
-      positionType: "LONG" as const,
-      pnlValue: totalCurrentWorthSol,
-      roi: Math.abs(Number(pnLPercentage)),
-      entryPrice: 0,
-      currentPrice: +price,
-      positionSize: `${initial.toFixed(3)} SOL`,
-      marketCap,
-      openedTime: "",
-      username: user.userName || "Unknown",
-      isProfit: totalCurrentWorthSol >= initial,
+    // Prepare data for PNL card
+    const pnlCardData: LaunchCardData = {
+      ticker: tokenSymbol,
+      percentGain: `${pnLPercentage}%`,
+      investedToken: initial.toFixed(2),
+      investedUsd: formatUSDFull(initial * (solPrice || 0)),
+      returnsToken: (totalCurrentWorthSol + payout).toFixed(2),
+      returnsUsd: formatUSDFull(
+        (totalCurrentWorthSol + payout) * (solPrice || 0)
+      ),
+      deployedOn: new Date(),
+      isProfit: totalPnL >= 0,
     };
 
     // Generate PNL card image buffer
-    const pnlCardBuffer = await htmlToJpg(pnlCardData);
+    const botInfo = await ctx.api.getMe();
+    const botUsername = botInfo.username;
+    const [referralLinkResult, pnlCardResult] = await Promise.allSettled([
+      generateReferralLink(user.id, botUsername),
+      htmlToJpg(pnlCardData),
+    ]);
+    const referralLink =
+      referralLinkResult.status === "fulfilled" ? referralLinkResult.value : "";
+    const pnlCardBuffer =
+      pnlCardResult.status === "fulfilled" ? pnlCardResult.value : null;
 
-    const pnlKeyboard = new InlineKeyboard()
-      .text("🔄 Refresh PNL", `generate_pnl_${tokenAddress}`)
-      .text(
-        "💸 Sell Token",
-        `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}_0`
-      );
+    if (pnlCardBuffer) {
+      const pnlKeyboard = new InlineKeyboard()
+        .text("🔄 Refresh PNL", `generate_pnl_${tokenAddress}`)
+        .text(
+          "💸 Sell Token",
+          `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}_0`
+        );
 
-    const message = await ctx.replyWithPhoto(new InputFile(pnlCardBuffer), {
-      caption: `📊 PNL Card for ${tokenSymbol}`,
-      reply_markup: pnlKeyboard,
-    });
+      await ctx.replyWithPhoto(new InputFile(pnlCardBuffer), {
+        caption: `<b>${pnLFormatted}</b> ${tokenSymbol}/SOL ${totalPnL >= 0 ? "📈" : "📉"} (<a href="https://dexscreener.com/solana/${tokenAddress}">Chart</a>)
 
-    lastMessageMap.set(String(userId), {
-      chatId: userId,
-      messageId: message.message_id,
-      timestamp: Date.now(),
-    });
+  <b>Share token with your Reflink:</b>
+  ${referralLink}-${tokenAddress}`,
+        parse_mode: "HTML",
+        reply_markup: pnlKeyboard,
+      });
+    }
   } catch (error) {
     logger.error(
       `[GeneratePNL] Error generating PNL card for trade ${tradeId}:`,

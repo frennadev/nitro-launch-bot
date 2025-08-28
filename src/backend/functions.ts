@@ -4772,8 +4772,11 @@ export const launchBonkToken = async (
               maxRetries: 3,
             });
 
-            // Record the transaction immediately (success assumed, will be updated if needed)
-            await recordTransaction(
+            // Record the transaction with actual amounts from blockchain
+            const { recordTransactionWithActualAmounts } = await import(
+              "./utils"
+            );
+            await recordTransactionWithActualAmounts(
               tokenAddress,
               wallet.publicKey,
               "snipe_buy",
@@ -4781,9 +4784,10 @@ export const launchBonkToken = async (
               true,
               token.launchData?.launchAttempt || 1,
               {
-                amountSol: buyAmountSOL,
+                amountSol: buyAmountSOL, // Fallback estimated amount
                 errorMessage: undefined,
-              }
+              },
+              true // Enable actual amount parsing from blockchain
             );
 
             // Collect platform fee after sending transaction (no minimum threshold)

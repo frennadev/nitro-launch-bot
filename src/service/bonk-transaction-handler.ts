@@ -1,8 +1,14 @@
 import { Keypair, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import BonkService from "./bonk-service";
-import bs58 from "bs58"
+import bs58 from "bs58";
 import { connection } from "./config";
 import { logger } from "../jobs/logger";
+
+// Define interfaces for better type safety
+interface BonkTransactionResult {
+  signature: string;
+  actualTransactionAmountSol: number;
+}
 
 const CONFIG_MODE = "default";
 
@@ -77,10 +83,14 @@ export async function executeBonkBuy(
   try {
     // Check balance
     const balance = await connection.getBalance(wallet.publicKey);
-    logger.info(`[${logId}]: 💰 SOL balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+    logger.info(
+      `[${logId}]: 💰 SOL balance: ${balance / LAMPORTS_PER_SOL} SOL`
+    );
 
     if (balance < 0.01 * LAMPORTS_PER_SOL) {
-      logger.error(`[${logId}]: ❌ Insufficient SOL balance (need at least 0.01 SOL)`);
+      logger.error(
+        `[${logId}]: ❌ Insufficient SOL balance (need at least 0.01 SOL)`
+      );
       throw new Error("Insufficient SOL balance. Please top up your wallet.");
     }
 
@@ -90,46 +100,41 @@ export async function executeBonkBuy(
 
     // Create BonkService instance with the selected configuration
     const bonkService = new BonkService(config);
-    const buyAmount = BigInt(buyAmountInSol * LAMPORTS_PER_SOL); // 0.001 SOL
+    const buyAmount = BigInt(buyAmountInSol * LAMPORTS_PER_SOL);
 
     logger.info(
       `[${logId}]: [bonkhandler] ${buyAmount} SOL for ${privateKey.substring(0, 8)}..., ${tokenMint}`
     );
 
     // Set timeout for pool discovery
-    const poolDiscoveryPromise = new Promise((resolve, reject) => {
-      (async () => {
-        try {
-          const tx = await bonkService.buyTx({
-            mint: new PublicKey(tokenMint),
-            amount: buyAmount,
-            privateKey: privateKey,
-          });
+    const poolDiscoveryPromise = new Promise<BonkTransactionResult>(
+      (resolve, reject) => {
+        (async () => {
+          try {
+            // Use buyWithFeeCollection to get actual SOL spent
+            const buyResult = await bonkService.buyWithFeeCollection({
+              mint: new PublicKey(tokenMint),
+              amount: buyAmount,
+              privateKey: privateKey,
+            });
 
-          // Send the transaction
-          const signature = await connection.sendTransaction(tx);
-          logger.info(`[${logId}]: 📡 Transaction sent, waiting for confirmation...`);
-
-          const confirmation = await connection.confirmTransaction(
-            signature,
-            "confirmed"
-          );
-          if (confirmation.value.err) {
-            reject(
-              new Error(
-                `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
-              )
-            );
-          } else {
-            resolve(signature);
+            if (buyResult.success && buyResult.signature) {
+              resolve({
+                signature: buyResult.signature,
+                actualTransactionAmountSol:
+                  buyResult.actualTransactionAmountSol,
+              });
+            } else {
+              reject(new Error("Buy transaction failed"));
+            }
+          } catch (error) {
+            reject(error);
           }
-        } catch (error) {
-          reject(error);
-        }
-      })();
-    });
+        })();
+      }
+    );
 
-    const timeoutPromise = new Promise((_, reject) => {
+    const timeoutPromise = new Promise<BonkTransactionResult>((_, reject) => {
       setTimeout(() => {
         reject(
           new Error(
@@ -145,19 +150,26 @@ export async function executeBonkBuy(
     }
 
     logger.info(`[${logId}]: ✅ Transaction successful!`);
-    logger.info(`[${logId}]: 📝 Signature: ${result}`);
-    logger.info(`[${logId}]: 🔗 Explorer: https://solscan.io/tx/${result}`);
-    
+    logger.info(`[${logId}]: 📝 Signature: ${result.signature}`);
+    logger.info(
+      `[${logId}]: � Actual SOL spent: ${result.actualTransactionAmountSol} SOL`
+    );
+    logger.info(
+      `[${logId}]: 🔗 Explorer: https://solscan.io/tx/${result.signature}`
+    );
+
     return {
       success: true,
-      signature: result as string,
-      explorerUrl: "https://solscan.io/tx/" + result,
+      signature: result.signature,
+      actualSolSpent: result.actualTransactionAmountSol,
+      explorerUrl: "https://solscan.io/tx/" + result.signature,
       message: "Buy transaction executed successfully",
     };
-  } catch (error: any) {
-    logger.error(`[${logId}]: ❌ Test failed: ${error.message}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`[${logId}]: ❌ Test failed: ${errorMessage}`);
 
-    if (error.message.includes("timeout")) {
+    if (errorMessage.includes("timeout")) {
       logger.info(`[${logId}]: 💡 Suggestions:`);
       logger.info(`[${logId}]:    - Try using a different RPC endpoint`);
       logger.info(`[${logId}]:    - Check your internet connection`);
@@ -167,19 +179,21 @@ export async function executeBonkBuy(
         message:
           "Transaction timed out. Try using a different RPC endpoint or try again later",
       };
-    } else if (error.message.includes("429")) {
+    } else if (errorMessage.includes("429")) {
       logger.info(`[${logId}]: 💡 RPC rate limit exceeded - try again later`);
       return {
         error: "RateLimit",
         message: "RPC rate limit exceeded - try again later",
       };
-    } else if (error.message.includes("pool not found")) {
-      logger.info(`[${logId}]: 💡 Token may not have a BONK pool or pool is inactive`);
+    } else if (errorMessage.includes("pool not found")) {
+      logger.info(
+        `[${logId}]: 💡 Token may not have a BONK pool or pool is inactive`
+      );
       return {
         error: "PoolNotFound",
         message: "Token may not have a BONK pool or pool is inactive",
       };
-    } else if (error.message.includes("ExceededSlippage")) {
+    } else if (errorMessage.includes("ExceededSlippage")) {
       logger.info(`[${logId}]: 💡 Try using a more aggressive config mode:`);
       logger.info(`[${logId}]:    - 'aggressive' for volatile tokens`);
       logger.info(`[${logId}]:    - 'maximum' for extremely volatile tokens`);
@@ -193,7 +207,7 @@ export async function executeBonkBuy(
     return {
       error: "TransactionFailed",
       message:
-        error.message || "An unknown error occurred during the transaction",
+        errorMessage || "An unknown error occurred during the transaction",
     };
   }
 }
@@ -215,38 +229,51 @@ export async function executeBonkSell(
 
   try {
     const balance = await connection.getBalance(wallet.publicKey);
-    logger.info(`[${logId}]: 💰 SOL balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+    logger.info(
+      `[${logId}]: 💰 SOL balance: ${balance / LAMPORTS_PER_SOL} SOL`
+    );
 
     const config = getConfigForMode(configMode);
     logger.info(`[${logId}]: 🔧 Using configuration: ${configMode} mode`);
 
     const bonkService = new BonkService(config);
-    
+
     // Set timeout for pool discovery
-    const poolDiscoveryPromise = new Promise((resolve, reject) => {
-      (async () => {
-        try {
-          // Use sellWithFeeCollection instead of sellTx to collect platform fees
-          const result = await bonkService.sellWithFeeCollection({
-            mint: new PublicKey(tokenMint),
-            amount: BigInt(tokenAmount || 0), // Will be calculated from percentage
-            privateKey: privateKey,
-            percentage: percentage,
-          });
+    const poolDiscoveryPromise = new Promise<BonkTransactionResult>(
+      (resolve, reject) => {
+        (async () => {
+          try {
+            // Use sellWithFeeCollection instead of sellTx to collect platform fees
+            const result = await bonkService.sellWithFeeCollection({
+              mint: new PublicKey(tokenMint),
+              amount: BigInt(tokenAmount || 0), // Will be calculated from percentage
+              privateKey: privateKey,
+              percentage: percentage,
+            });
 
-          logger.info(`[${logId}]: ✅ Sell transaction successful with fee collection!`);
-          logger.info(`[${logId}]: 📝 Signature: ${result.signature}`);
-          logger.info(`[${logId}]: 💰 SOL received: ${result.actualTransactionAmountSol} SOL`);
-          logger.info(`[${logId}]: 💸 Fee collected: ${result.feeCollected ? 'Yes' : 'No'}`);
+            logger.info(
+              `[${logId}]: ✅ Sell transaction successful with fee collection!`
+            );
+            logger.info(`[${logId}]: 📝 Signature: ${result.signature}`);
+            logger.info(
+              `[${logId}]: 💰 SOL received: ${result.actualTransactionAmountSol} SOL`
+            );
+            logger.info(
+              `[${logId}]: 💸 Fee collected: ${result.feeCollected ? "Yes" : "No"}`
+            );
 
-          resolve(result.signature);
-        } catch (error) {
-          reject(error);
-        }
-      })();
-    });
+            resolve({
+              signature: result.signature,
+              actualTransactionAmountSol: result.actualTransactionAmountSol,
+            });
+          } catch (error) {
+            reject(error);
+          }
+        })();
+      }
+    );
 
-    const timeoutPromise = new Promise((_, reject) => {
+    const timeoutPromise = new Promise<BonkTransactionResult>((_, reject) => {
       setTimeout(() => {
         reject(new Error("⏰ Sell transaction timed out after 5 minutes."));
       }, 300000);
@@ -265,21 +292,27 @@ export async function executeBonkSell(
     }
 
     logger.info(`[${logId}]: ✅ Sell transaction successful!`);
-    logger.info(`[${logId}]: 📝 Signature: ${result}`);
-    logger.info(`[${logId}]: 🔗 Explorer: https://solscan.io/tx/${result}`);
+    logger.info(`[${logId}]: 📝 Signature: ${result.signature}`);
+    logger.info(
+      `[${logId}]: � Actual SOL received: ${result.actualTransactionAmountSol} SOL`
+    );
+    logger.info(
+      `[${logId}]: �🔗 Explorer: https://solscan.io/tx/${result.signature}`
+    );
 
     return {
-      ...result,
       success: true,
-      signature: result,
-      actualSolReceived: typeof (result as any)?.actualTransactionAmountSol === 'number' ? (result as any).actualTransactionAmountSol : 0,
-      explorerUrl: "https://solscan.io/tx/" + result,
-      message: "Sell transaction executed successfully with platform fees collected",
+      signature: result.signature,
+      actualSolReceived: result.actualTransactionAmountSol,
+      explorerUrl: "https://solscan.io/tx/" + result.signature,
+      message:
+        "Sell transaction executed successfully with platform fees collected",
     };
-  } catch (error: any) {
-    logger.error(`[${logId}]: ❌ Sell test failed: ${error.message}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`[${logId}]: ❌ Sell test failed: ${errorMessage}`);
 
-    if (error.message.includes("No token balance found")) {
+    if (errorMessage.includes("No token balance found")) {
       return {
         success: false,
         signature: undefined,
@@ -287,7 +320,7 @@ export async function executeBonkSell(
         error: "NoTokenBalance",
         message: "You don't have any tokens to sell",
       };
-    } else if (error.message.includes("timeout")) {
+    } else if (errorMessage.includes("timeout")) {
       return {
         success: false,
         signature: undefined,
@@ -296,7 +329,7 @@ export async function executeBonkSell(
         message:
           "Transaction timed out. Try using a different RPC endpoint or try again later",
       };
-    } else if (error.message.includes("429")) {
+    } else if (errorMessage.includes("429")) {
       return {
         success: false,
         signature: undefined,
@@ -304,7 +337,7 @@ export async function executeBonkSell(
         error: "RateLimit",
         message: "RPC rate limit exceeded - try again later",
       };
-    } else if (error.message.includes("pool not found")) {
+    } else if (errorMessage.includes("pool not found")) {
       return {
         success: false,
         signature: undefined,
@@ -312,7 +345,7 @@ export async function executeBonkSell(
         error: "PoolNotFound",
         message: "Token may not have a BONK pool or pool is inactive",
       };
-    } else if (error.message.includes("ExceededSlippage")) {
+    } else if (errorMessage.includes("ExceededSlippage")) {
       return {
         success: false,
         signature: undefined,
@@ -327,7 +360,7 @@ export async function executeBonkSell(
         signature: undefined,
         actualSolReceived: 0,
         error: "UnknownError",
-        message: error.message,
+        message: errorMessage,
       };
     }
   }
@@ -340,7 +373,8 @@ export function getAvailableConfigModes() {
   return [
     {
       name: "conservative",
-      description: "Lower slippage, fewer retries - safer but may fail more often",
+      description:
+        "Lower slippage, fewer retries - safer but may fail more often",
       settings: getConfigForMode("conservative"),
     },
     {
@@ -350,7 +384,8 @@ export function getAvailableConfigModes() {
     },
     {
       name: "aggressive",
-      description: "Higher slippage, more retries - better success rate for volatile tokens",
+      description:
+        "Higher slippage, more retries - better success rate for volatile tokens",
       settings: getConfigForMode("aggressive"),
     },
     {
@@ -388,4 +423,4 @@ export function validatePrivateKey(privateKey: string): boolean {
   } catch {
     return false;
   }
-} 
+}

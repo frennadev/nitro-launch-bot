@@ -1095,7 +1095,7 @@ export async function launchBonkTokenWithDevBuy(
       console.log(`Metadata URI: ${token.tokenMetadataUrl}`);
       console.log(`Dev buy: ${devBuy > 0 ? `${devBuy} SOL ✅` : "Skipped"}`);
 
-      // Record the combined transaction
+      // Record the combined transaction (token creation)
       const { recordTransaction } = await import("../../backend/functions");
       await recordTransaction(
         tokenAddress,
@@ -1105,10 +1105,30 @@ export async function launchBonkTokenWithDevBuy(
         true,
         token.launchData?.launchAttempt || 1,
         {
-          amountSol: devBuy,
+          amountSol: 0, // Token creation doesn't cost SOL
           errorMessage: undefined,
         }
       );
+
+      // Record dev buy separately if it was included
+      if (devBuy > 0) {
+        const { recordTransactionWithActualAmounts } = await import(
+          "../../backend/utils"
+        );
+        await recordTransactionWithActualAmounts(
+          tokenAddress,
+          wallet.publicKey.toString(),
+          "dev_buy",
+          signature,
+          true,
+          token.launchData?.launchAttempt || 1,
+          {
+            amountSol: devBuy, // Fallback estimated amount
+            errorMessage: undefined,
+          },
+          true // Enable actual amount parsing from blockchain
+        );
+      }
 
       // Update token state to launched
       await TokenModel.updateOne(
