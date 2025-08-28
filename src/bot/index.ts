@@ -1753,16 +1753,21 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
       return;
     }
 
-    // **INSTANT REFRESH: Show updated token page immediately**
+    // **SEAMLESS REFRESH: Clear cache and fetch fresh data**
     const tokenInfoService = TokenInfoService.getInstance();
 
-    // Force fresh data by bypassing cache
-    const tokenInfo = await tokenInfoService.getTokenInfo(tokenAddress); // TokenInfoService doesn't support force refresh parameter
+    // Clear token cache to force fresh data fetch
+    tokenInfoService.clearTokenCache(tokenAddress);
+    logger.info(`[refresh] Cleared cache for token: ${tokenAddress}`);
+
+    // Fetch fresh token data
+    const tokenInfo = await tokenInfoService.getTokenInfo(tokenAddress);
     if (!tokenInfo) {
       await sendMessage(ctx, "❌ Token not found or invalid address.");
       return;
     }
 
+    // Generate fresh token message with current data
     const tokenMessage = await formatTokenMessage(
       tokenInfo,
       ctx,
@@ -1783,11 +1788,11 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
           `${CallBackQueries.VIEW_TOKEN_TRADES}_${tokenAddress}`
         )
         .text(
-          "� View Wallets",
+          "👝 View Wallets",
           compressCallbackData(CallBackQueries.VIEW_TOKEN_WALLETS, tokenAddress)
         )
         .row()
-        .text("�📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
+        .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
         .text("🔄 Refresh", `refresh_ca_${tokenAddress}`)
         .row()
         .text("🏠 Menu", CallBackQueries.BACK),
@@ -1796,11 +1801,15 @@ bot.callbackQuery(/^refresh_ca_(.+)$/, async (ctx) => {
     logger.info(
       `[refresh] Successfully refreshed token data for ${tokenAddress}`
     );
+
+    // Provide user feedback about the refresh
+    await safeAnswerCallbackQuery(ctx, "✅ Token data refreshed successfully!");
   } catch (error) {
     logger.error(
       `[refresh] Error refreshing token data: ${(error as Error).message}`
     );
     await sendMessage(ctx, "❌ Error refreshing token data. Please try again.");
+    await safeAnswerCallbackQuery(ctx, "❌ Refresh failed. Try again.");
   }
 });
 
@@ -3743,19 +3752,10 @@ bot.on("message:text", async (ctx) => {
         );
 
         // **ULTRA-FAST DISPLAY: Show token page IMMEDIATELY with zero blocking operations**
-        let initialTokenName = "Loading...";
-        let initialTokenSymbol = "...";
-        let initialPlatformInfo = "🔍 Detecting...";
-        let initialHoldingsText = "📌 Checking token holdings...";
-        let initialMarketCap = "Loading...";
-        let initialPrice = "Loading...";
-        let initialLiquidity = "Loading...";
-        let initialDex = "Loading...";
-        let initialRenouncedText = "🔍 Checking...";
-        let initialFrozenText = "🔍 Checking...";
 
         // Only check cache (this is instant, no blocking calls)
         const cachedPlatform = getCachedPlatform(text);
+        let initialPlatformInfo = "🔍 Detecting...";
         if (cachedPlatform) {
           if (cachedPlatform === "pumpswap") {
             initialPlatformInfo = "⚡ Pumpswap";
@@ -3901,318 +3901,11 @@ bot.on("message:text", async (ctx) => {
           return;
         }
 
-        // **BACKGROUND UPDATES: ALL data fetching happens in background, including user checks**
-        const updatePromises = [
-          // User and token info fetch (moved to background)
-          (async () => {
-            try {
-              // Get user info in background
-              const user = await getUser(ctx.chat.id.toString());
-              let tokenName = initialTokenName;
-              let tokenSymbol = initialTokenSymbol;
-              let isUserToken = false;
-
-              // Check if it's a user token
-              if (user) {
-                const userToken = await getUserTokenWithBuyWallets(
-                  user.id,
-                  text
-                );
-                if (userToken) {
-                  tokenName = userToken.name;
-                  tokenSymbol = userToken.symbol;
-                  isUserToken = true;
-                }
-              }
-
-              // If not a user token, fetch from external API
-              if (!isUserToken) {
-                const tokenInfo = await getTokenInfo(text);
-                if (tokenInfo && tokenInfo.baseToken) {
-                  tokenName = tokenInfo.baseToken.name || tokenName;
-                  tokenSymbol = tokenInfo.baseToken.symbol || tokenSymbol;
-                  return {
-                    type: "tokenInfo",
-                    name: tokenName,
-                    symbol: tokenSymbol,
-                    marketCap: formatUSD(tokenInfo.marketCap),
-                    price: tokenInfo.priceUsd,
-                    liquidity: tokenInfo.liquidity
-                      ? formatUSD(tokenInfo.liquidity.usd)
-                      : "N/A",
-                    dex: tokenInfo.dexId,
-                    pairAddress: tokenInfo.pairAddress,
-                    isUserToken: false,
-                  };
-                }
-              }
-
-              // Return user token info
-              return {
-                type: "tokenInfo",
-                name: tokenName,
-                symbol: tokenSymbol,
-                marketCap: "User Token",
-                price: "N/A",
-                liquidity: "N/A",
-                dex: "PUMPFUN",
-                pairAddress: null,
-                isUserToken: true,
-              };
-            } catch (error: any) {
-              logger.warn(`Token info fetch failed: ${error.message}`);
-              return null;
-            }
-          })(),
-
-          // Holdings check (moved to background)
-          (async () => {
-            try {
-              const user = await getUser(ctx.chat.id.toString());
-              if (user) {
-                // Use the new function to calculate supply percentage
-                const { calculateUserTokenSupplyPercentage } = await import(
-                  "../backend/functions"
-                );
-                const supplyData = await calculateUserTokenSupplyPercentage(
-                  user.id,
-                  text
-                );
-
-                let totalTokenBalance = supplyData.totalBalance;
-                let walletsWithBalance = supplyData.walletsWithBalance;
-                let devWalletBalance = 0;
-                let supplyPercentageText = "";
-
-                // Add supply percentage information if user has tokens
-                if (supplyData.totalBalance > 0) {
-                  supplyPercentageText = `\n📊 **Supply Ownership:** ${supplyData.supplyPercentageFormatted} of total supply`;
-                }
-
-                // Check dev wallet
-                try {
-                  const devWalletAddress = await getDefaultDevWallet(
-                    String(user.id)
-                  );
-                  devWalletBalance = await getTokenBalance(
-                    text,
-                    devWalletAddress
-                  );
-                  if (devWalletBalance > 0) {
-                    totalTokenBalance += devWalletBalance;
-                    walletsWithBalance++;
-                  }
-                } catch (error) {
-                  logger.warn(`Error checking dev wallet balance:`, error);
-                }
-
-                return {
-                  type: "holdings",
-                  balance: totalTokenBalance,
-                  walletsWithBalance: walletsWithBalance,
-                  devWalletBalance: devWalletBalance,
-                  supplyPercentageText,
-                };
-              }
-              return {
-                type: "holdings",
-                balance: 0,
-                walletsWithBalance: 0,
-                devWalletBalance: 0,
-              };
-            } catch (error: any) {
-              logger.warn(`Holdings check failed: ${error.message}`);
-              return {
-                type: "holdings",
-                balance: 0,
-                walletsWithBalance: 0,
-                devWalletBalance: 0,
-              };
-            }
-          })(),
-
-          // Platform detection (only if not cached)
-          !cachedPlatform
-            ? (async () => {
-                try {
-                  // Use fast detection that respects recent cache
-                  const { detectTokenPlatformFast } = await import(
-                    "../service/token-detection-service"
-                  );
-                  const platform = await detectTokenPlatformFast(text);
-
-                  let platformText = "❓ Unknown platform";
-                  if (platform === "pumpswap") {
-                    platformText = "⚡ Pumpswap";
-                  } else if (platform === "pumpfun") {
-                    platformText = "🚀 PumpFun";
-                  }
-                  return { type: "platform", platform: platformText };
-                } catch (error) {
-                  return null;
-                }
-              })()
-            : Promise.resolve(null),
-
-          // Renounced and frozen check
-          checkTokenRenouncedAndFrozen(text)
-            .then((renouncedAndFrozen) => {
-              return {
-                type: "security",
-                renouncedText: renouncedAndFrozen.isRenounced
-                  ? "🟢 Renounced"
-                  : "🔴 Not Renounced",
-                frozenText: renouncedAndFrozen.isFrozen
-                  ? "🟢 Freeze"
-                  : "🔴 Not Freezed",
-              };
-            })
-            .catch((error: any) => {
-              logger.warn(`Security check failed: ${error.message}`);
-              return {
-                type: "security",
-                renouncedText: "❓ Renounced check failed",
-                frozenText: "❓ Freeze check failed",
-              };
-            }),
-        ];
-
-        // Wait for all background operations and update the message
-        Promise.allSettled(updatePromises).then(async (results) => {
-          try {
-            let tokenName = initialTokenName;
-            let tokenSymbol = initialTokenSymbol;
-            let marketCap = initialMarketCap;
-            let price = initialPrice;
-            let liquidity = initialLiquidity;
-            let dex = initialDex;
-            let platformInfo = initialPlatformInfo;
-            let holdingsText = initialHoldingsText;
-            let walletsWithBalance = 0;
-            let renouncedText = initialRenouncedText;
-            let frozenText = initialFrozenText;
-            let pairAddress = null;
-
-            // Process results
-            results.forEach((result) => {
-              if (result.status === "fulfilled" && result.value) {
-                const data = result.value;
-                if (data.type === "tokenInfo") {
-                  tokenName = (data as any).name;
-                  tokenSymbol = (data as any).symbol;
-                  marketCap = (data as any).marketCap;
-                  price = (data as any).price;
-                  liquidity = (data as any).liquidity;
-                  dex = (data as any).dex.toLocaleUpperCase();
-                  pairAddress = (data as any).pairAddress;
-                } else if (data.type === "holdings") {
-                  walletsWithBalance = (data as any).walletsWithBalance;
-                  if ((data as any).balance > 0) {
-                    const formattedBalance = (
-                      (data as any).balance / 1e6
-                    ).toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    });
-
-                    // Check if dev wallet has tokens
-                    const devWalletBalance =
-                      (data as any).devWalletBalance || 0;
-                    const supplyPercentageText =
-                      (data as any).supplyPercentageText || "";
-
-                    if (devWalletBalance > 0) {
-                      const formattedDevBalance = (
-                        devWalletBalance / 1e6
-                      ).toLocaleString(undefined, {
-                        maximumFractionDigits: 2,
-                      });
-                      holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} wallet(s) (including dev wallet: ${formattedDevBalance})${supplyPercentageText}`;
-                    } else {
-                      holdingsText = `💰 ${formattedBalance} tokens across ${walletsWithBalance} buyer wallet(s)${supplyPercentageText}`;
-                    }
-                  } else {
-                    holdingsText = `📌 No tokens found in your buyer wallets`;
-                  }
-                } else if (data.type === "platform") {
-                  platformInfo = (data as any).platform;
-                } else if (data.type === "security") {
-                  renouncedText = (data as any).renouncedText;
-                  frozenText = (data as any).frozenText;
-                }
-              }
-            });
-
-            // Update Photon link with actual pair address if available
-            if (pairAddress) {
-              const photonLink = links.find((link) => link.abbr === "PHO");
-              if (photonLink) {
-                photonLink.url = `https://photon-sol.tinyastro.io/en/lp/${pairAddress}`;
-              }
-            }
-
-            const tokenInfoService = TokenInfoService.getInstance();
-
-            const tokenInfo = await tokenInfoService.getTokenInfo(text);
-            if (!tokenInfo) {
-              await sendMessage(ctx, "❌ Token not found or invalid address.");
-              return;
-            }
-            const tokenMessage = await formatTokenMessage(
-              tokenInfo,
-              ctx,
-              ctx.chat.id.toString(),
-              "2"
-            );
-
-            // Update the message with all the fetched data
-            await ctx.api.editMessageText(
-              ctx.chat!.id,
-              message.message_id,
-              tokenMessage,
-              {
-                parse_mode: "HTML",
-                reply_markup: new InlineKeyboard()
-                  .url("📊 Chart", `https://dexscreener.com/solana/${text}`)
-                  .url("🔗 Contract", `https://solscan.io/token/${text}`)
-                  .text("💸 Sell", `sell_token_${text}`)
-                  .row()
-                  .text(
-                    "📊 Monitor",
-                    `${CallBackQueries.VIEW_TOKEN_TRADES}_${text}`
-                  )
-                  .text(
-                    "� View Wallets",
-                    compressCallbackData(
-                      CallBackQueries.VIEW_TOKEN_WALLETS,
-                      text
-                    )
-                  )
-                  .row()
-                  .text("�📈 CTO", `${CallBackQueries.CTO}_${text}`)
-                  .text("🔄 Refresh", `refresh_ca_${text}`)
-                  .row()
-                  .text(
-                    "💰 Relaunch",
-                    `${CallBackQueries.RELAUNCH_TOKEN}_${text}`
-                  )
-                  .text(
-                    "🎁 Airdrop SOL",
-                    `${CallBackQueries.AIRDROP_SOL}_${text}`
-                  )
-                  .row()
-                  .text("🏠 Menu", CallBackQueries.BACK),
-              }
-            );
-
-            logger.info(
-              `[token-display] Successfully updated token details for ${text}`
-            );
-          } catch (updateError: any) {
-            logger.error(
-              `[token-display] Failed to update message: ${updateError.message}`
-            );
-          }
-        });
+        // Token info page displayed - no auto refresh
+        // Use the refresh button to manually update token data
+        logger.info(
+          `[token-display] Token info page displayed for ${text}. Auto-refresh disabled. Use refresh button for updates.`
+        );
 
         logger.info(
           `[token-display] Token display handler completed for: ${text}`
