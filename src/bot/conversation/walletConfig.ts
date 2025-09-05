@@ -64,7 +64,7 @@ Balance: <b>${devBalance.toFixed(4)} SOL</b>
 Balance: <b>${fundingBalance.toFixed(4)} SOL</b>
 
 <b>👥 Buyer Wallets</b>
-Count: <b>${buyerWallets.length}/40</b>
+Count: <b>${buyerWallets.length}/73</b>
 Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
 
 <i>💡 Keep your funding wallet topped up for launches</i>

@@ -168,13 +168,14 @@ export async function simpleDirectTransfer(
 }
 
 /**
- * Generate optimized distribution amounts for buyer wallets
+ * Generate optimized distribution amounts for buyer wallets using 73-wallet system
+ * UPDATED: Now uses the main generateBuyDistribution function with 73-wallet randomization
  * CRITICAL FIX: Account for rent exemption in amount calculations
  */
-export function generateDistributionAmounts(
+export async function generateDistributionAmounts(
   totalSol: number,
   destinationCount: number
-): number[] {
+): Promise<number[]> {
   const RENT_EXEMPTION = 2190880; // ~0.000891 SOL per wallet
   const TRANSACTION_FEE = 7000; // ~0.000007 SOL per wallet
   const BUFFER = 5000; // ~0.000005 SOL per wallet
@@ -193,64 +194,98 @@ export function generateDistributionAmounts(
     );
   }
 
-  // Incremental sequence in SOL: 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5...
-  const incrementalSequence = [
-    0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1,
-  ];
-  const incrementalLamports = incrementalSequence.map((sol) =>
-    Math.floor(sol * 1e9)
-  );
-
-  // Calculate optimal wallet count for available amount (not including overhead)
-  function calculateOptimalWalletCount(amount: number): number {
-    let cumulativeTotal = 0;
-    for (let i = 0; i < incrementalSequence.length; i++) {
-      cumulativeTotal += incrementalLamports[i];
-      if (amount <= cumulativeTotal) {
-        return i + 1;
-      }
-    }
-    const baseTotal = incrementalLamports.reduce((sum, amt) => sum + amt, 0);
-    const extraWallets = Math.ceil(
-      (amount - baseTotal) / Math.floor(2.5 * 1e9)
+  // 🚀 NEW: Use the main 73-wallet randomized distribution system
+  try {
+    // Import the main distribution function
+    const { generateBuyDistribution } = await import("../../backend/functions");
+    
+    // Convert available amount back to SOL for the function
+    const availableSol = availableForDistribution / 1e9;
+    
+    // Generate distribution using the 73-wallet system
+    const solDistribution = generateBuyDistribution(availableSol, destinationCount);
+    
+    // Convert back to lamports and add overhead
+    const amounts = solDistribution.map(solAmount => 
+      Math.floor(solAmount * 1e9) + OVERHEAD_PER_WALLET
     );
-    return incrementalSequence.length + extraWallets;
-  }
+    
+    // Pad remaining destinations with minimum overhead (for unused wallets)
+    while (amounts.length < destinationCount) {
+      amounts.push(OVERHEAD_PER_WALLET);
+    }
+    
+    console.log(`🎲 Using 73-wallet randomized distribution: ${solDistribution.filter(x => x > 0).length} active wallets`);
+    
+    return amounts;
+    
+  } catch (error) {
+    console.warn("Failed to use 73-wallet distribution, falling back to legacy system:", error);
+    
+    // FALLBACK: Legacy incremental sequence
+    const incrementalSequence = [
+      0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1,
+    ];
+    const incrementalLamports = incrementalSequence.map((sol) =>
+      Math.floor(sol * 1e9)
+    );
 
-  const optimalWalletCount = calculateOptimalWalletCount(
-    availableForDistribution
-  );
-  const walletsToUse = Math.min(optimalWalletCount, destinationCount);
-
-  const amounts: number[] = [];
-  let remainingLamports = availableForDistribution;
-
-  // Distribute using incremental pattern for optimal wallets
-  for (let i = 0; i < walletsToUse; i++) {
-    if (i < incrementalSequence.length) {
-      const incrementAmount = incrementalLamports[i];
-
-      if (i === walletsToUse - 1) {
-        amounts.push(remainingLamports);
-      } else if (remainingLamports >= incrementAmount) {
-        amounts.push(incrementAmount);
-        remainingLamports -= incrementAmount;
-      } else {
-        amounts.push(remainingLamports);
-        remainingLamports = 0;
+    // Calculate optimal wallet count for available amount (not including overhead)
+    function calculateOptimalWalletCount(amount: number): number {
+      let cumulativeTotal = 0;
+      for (let i = 0; i < incrementalSequence.length; i++) {
+        cumulativeTotal += incrementalLamports[i];
+        if (amount <= cumulativeTotal) {
+          return i + 1;
+        }
       }
-    } else {
-      const walletsLeft = walletsToUse - i;
-      const amountPerWallet = Math.floor(remainingLamports / walletsLeft);
+      const baseTotal = incrementalLamports.reduce((sum, amt) => sum + amt, 0);
+      const extraWallets = Math.ceil(
+        (amount - baseTotal) / Math.floor(2.5 * 1e9)
+      );
+      return incrementalSequence.length + extraWallets;
+    }
 
-      if (i === walletsToUse - 1) {
-        amounts.push(remainingLamports);
+    const optimalWalletCount = calculateOptimalWalletCount(
+      availableForDistribution
+    );
+    const walletsToUse = Math.min(optimalWalletCount, destinationCount);
+
+    const amounts: number[] = [];
+    let remainingLamports = availableForDistribution;
+
+    // Distribute using incremental pattern for optimal wallets
+    for (let i = 0; i < walletsToUse; i++) {
+      if (i < incrementalSequence.length) {
+        const incrementAmount = incrementalLamports[i];
+
+        if (i === walletsToUse - 1) {
+          amounts.push(remainingLamports + OVERHEAD_PER_WALLET);
+        } else if (remainingLamports >= incrementAmount) {
+          amounts.push(incrementAmount + OVERHEAD_PER_WALLET);
+          remainingLamports -= incrementAmount;
+        } else {
+          amounts.push(remainingLamports + OVERHEAD_PER_WALLET);
+          remainingLamports = 0;
+        }
       } else {
-        amounts.push(amountPerWallet);
-        remainingLamports -= amountPerWallet;
+        const walletsLeft = walletsToUse - i;
+        const amountPerWallet = Math.floor(remainingLamports / walletsLeft);
+
+        if (i === walletsToUse - 1) {
+          amounts.push(remainingLamports + OVERHEAD_PER_WALLET);
+        } else {
+          amounts.push(amountPerWallet + OVERHEAD_PER_WALLET);
+          remainingLamports -= amountPerWallet;
+        }
       }
     }
-  }
 
-  return amounts;
+    // Pad remaining destinations with minimum overhead (for unused wallets)
+    while (amounts.length < destinationCount) {
+      amounts.push(OVERHEAD_PER_WALLET);
+    }
+    
+    return amounts;
+  }
 }

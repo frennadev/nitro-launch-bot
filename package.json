@@ -14,6 +14,18 @@
     "start:node": "node build/index.js",
     "demo:lightweight": "node lightweight-bot.js",
     "drain-wallets": "bun run src/blockchain/mixer/drain-wallets.ts",
+    "test-token-create": "tsx test-token-create.ts",
+    "test-bonk-create": "tsx test-bonk-create.ts",
+    "test-integration": "tsx test-integration.ts",
+    "test-migration": "tsx test-migration-systems.ts",
+    "test-73-wallets": "tsx test-73-wallet-system.ts",
+    "test-mixer-73": "tsx test-mixer-73-wallet.ts",
+    "test-parallel-safety": "tsx test-parallel-mixer-safety.ts",
+    "test-parallel-real": "tsx test-parallel-mixer-real.ts",
+    "test-parallel-enabled": "tsx test-parallel-enabled.ts",
+    "test-smart-retry": "tsx test-smart-balance-retry.ts",
+    "test-production": "tsx test-production-ready.ts",
+    "test-user-experience": "tsx test-user-experience.ts",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "devDependencies": {

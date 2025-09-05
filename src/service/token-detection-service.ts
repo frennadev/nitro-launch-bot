@@ -1,5 +1,5 @@
 // Token Detection Service
-// Determines whether to use Pumpswap or PumpFun for a given token
+// Determines platform and provides comprehensive token launch status using Universal Pool Discovery
 
 import { Connection, PublicKey } from "@solana/web3.js";
 import { connection } from "../blockchain/common/connection.ts";
@@ -10,6 +10,8 @@ import {
 import { logger } from "../blockchain/common/logger.ts";
 import { getBonkPoolState } from "./bonk-pool-service.ts";
 import { getCpmmPoolState } from "../backend/get-cpmm-poolinfo.ts";
+import { universalPoolDiscovery, PoolInfo } from "../services/pool-discovery/universal-discovery";
+import { solanaTrackerService } from "../services/token/solana-tracker-service";
 
 export interface TokenDetectionResult {
   isPumpswap: boolean;
@@ -28,10 +30,14 @@ export interface TokenLaunchStatus {
     | "cpmm"
     | "raydium"
     | "jupiter"
+    | "meteora"
+    | "heaven"
     | "unknown";
   hasLiquidity: boolean;
   hasTradingVolume: boolean;
   lastActivity?: Date;
+  poolInfo?: PoolInfo;
+  tokenInfo?: any;
   error?: string;
 }
 
@@ -41,12 +47,13 @@ const platformCache = new Map<
   {
     platform:
       | "pumpswap"
-      | "pumpfun"
+      | "pumpfun" 
       | "bonk"
       | "cpmm"
       | "unknown"
       | "meteora"
-      | "heaven";
+      | "heaven"
+      | "raydium";
     timestamp: number;
     permanent: boolean;
   }
@@ -393,7 +400,7 @@ export async function detectTokenPlatform(
  */
 export function getCachedPlatform(
   tokenAddress: string
-): "pumpswap" | "pumpfun" | "bonk" | "cpmm" | "unknown" | null {
+): "pumpswap" | "pumpfun" | "bonk" | "cpmm" | "unknown" | "meteora" | "heaven" | "raydium" | null {
   const cached = platformCache.get(tokenAddress);
   if (!cached) return null;
 
@@ -1039,6 +1046,137 @@ export async function isBonkTokenGraduated(
  */
 export function markTokenAsBonk(tokenAddress: string) {
   setCachedPlatform(tokenAddress, "bonk", true);
+}
+
+/**
+ * 🚀 UNIVERSAL TOKEN DETECTION - Uses new optimized pool discovery
+ * Comprehensive token analysis with smart caching and parallel discovery
+ */
+export async function detectTokenUniversal(tokenAddress: string): Promise<TokenLaunchStatus> {
+  const logId = `universal-detect-${tokenAddress.substring(0, 8)}`;
+  logger.info(`[${logId}] Starting universal token detection`);
+
+  try {
+    // 🎯 STEP 1: Parallel pool discovery and token info fetch
+    const [poolInfo, tokenInfo] = await Promise.allSettled([
+      universalPoolDiscovery.discoverPool(tokenAddress),
+      solanaTrackerService.getTokenInfo(tokenAddress)
+    ]);
+
+    const pool = poolInfo.status === 'fulfilled' ? poolInfo.value : null;
+    const token = tokenInfo.status === 'fulfilled' ? tokenInfo.value : null;
+
+    if (poolInfo.status === 'rejected') {
+      logger.debug(`[${logId}] Pool discovery failed:`, poolInfo.reason);
+    }
+    if (tokenInfo.status === 'rejected') {
+      logger.debug(`[${logId}] Token info fetch failed:`, tokenInfo.reason);
+    }
+
+    // 🚀 STEP 2: Determine launch status based on discovered data
+    const result: TokenLaunchStatus = {
+      isLaunched: false,
+      isListed: false,
+      platform: "unknown",
+      hasLiquidity: false,
+      hasTradingVolume: false,
+      poolInfo: pool || undefined,
+      tokenInfo: token || undefined,
+    };
+
+    if (pool) {
+      // Pool found - token is launched
+      result.isLaunched = true;
+      result.isListed = true;
+      result.platform = pool.platform;
+
+      // Check for liquidity based on platform
+      if (pool.platform === "pumpfun") {
+        result.hasLiquidity = pool.realQuote ? Number(pool.realQuote) > 0 : false;
+      } else if (pool.virtualQuote && pool.virtualBase) {
+        result.hasLiquidity = Number(pool.virtualQuote) > 0 && Number(pool.virtualBase) > 0;
+      }
+
+      logger.info(`[${logId}] Token found on ${pool.platform} platform`);
+    }
+
+    if (token) {
+      // Enhanced data from SolanaTracker
+      result.hasTradingVolume = token.volume24h > 0;
+      result.hasLiquidity = result.hasLiquidity || token.liquidity > 0;
+      
+      if (token.volume24h > 0) {
+        result.lastActivity = new Date();
+      }
+
+      logger.info(`[${logId}] Token info: Volume24h=${token.volume24h}, Liquidity=${token.liquidity}`);
+    }
+
+    // 🎯 STEP 3: Final status determination
+    if (!result.isLaunched && token?.price && token.price > 0) {
+      // Token has price data but no pool found - might be on unsupported platform
+      result.isLaunched = true;
+      result.platform = "unknown";
+    }
+
+    logger.info(`[${logId}] Detection complete:`, {
+      isLaunched: result.isLaunched,
+      platform: result.platform,
+      hasLiquidity: result.hasLiquidity,
+      hasTradingVolume: result.hasTradingVolume
+    });
+
+    return result;
+
+  } catch (error: any) {
+    logger.error(`[${logId}] Universal detection failed:`, error.message);
+    return {
+      isLaunched: false,
+      isListed: false,
+      platform: "unknown",
+      hasLiquidity: false,
+      hasTradingVolume: false,
+      error: error.message,
+    };
+  }
+}
+
+/**
+ * 🎯 SMART PLATFORM DETECTION - Uses universal discovery with fallback
+ * Optimized version of detectTokenPlatform with better caching
+ */
+export async function detectTokenPlatformSmart(tokenAddress: string): Promise<string> {
+  const logId = `smart-platform-${tokenAddress.substring(0, 8)}`;
+  
+  try {
+    // Check cache first
+    const cached = getCachedPlatform(tokenAddress);
+    if (cached) {
+      logger.debug(`[${logId}] Using cached platform: ${cached}`);
+      return cached;
+    }
+
+    // Use universal discovery
+    const poolInfo = await universalPoolDiscovery.discoverPool(tokenAddress);
+    
+    if (poolInfo) {
+      const platform = poolInfo.platform;
+      // Map raydium to cpmm for compatibility with existing cache system
+      const cacheablePlatform = platform === "raydium" ? "cpmm" : platform;
+      setCachedPlatform(tokenAddress, cacheablePlatform as any, false);
+      logger.info(`[${logId}] Platform detected: ${platform}`);
+      return platform;
+    }
+
+    // Fallback to legacy detection if universal fails
+    logger.debug(`[${logId}] Universal discovery failed, using legacy detection`);
+    const legacyPlatform = await detectTokenPlatform(tokenAddress);
+    return legacyPlatform;
+
+  } catch (error: any) {
+    logger.error(`[${logId}] Smart platform detection failed:`, error.message);
+    return "unknown";
+  }
 }
 
 /**

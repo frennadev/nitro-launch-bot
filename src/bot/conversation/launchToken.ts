@@ -679,9 +679,9 @@ Your token launch has been successfully resubmitted using your previous paramete
           `💰 <b>Enter Buy Amount</b>
 
 📊 <b>Wallet Configuration:</b>
-• <b>Current Funded Wallets:</b> ${buyerWallets.length}/40
+• <b>Current Funded Wallets:</b> ${buyerWallets.length}/73
 • <b>Your Maximum:</b> ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL
-• <b>System Maximum:</b> ${maxBuyAmount.toFixed(1)} SOL (with 40 wallets)
+• <b>System Maximum:</b> ${maxBuyAmount.toFixed(1)} SOL (with 73 wallets)
 
 💡 <b>Please enter a value between 0.1 and ${maxBuyAmountWithCurrentWallets.toFixed(1)} SOL</b>
 

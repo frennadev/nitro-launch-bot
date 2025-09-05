@@ -92,7 +92,7 @@ export default async function helpConversation(
         "",
         "*Launch Parameters:*",
         "• *Dev Buy Amount*: Your initial investment",
-        "• *Buyer Wallets*: 1-40 wallets for token distribution",
+        "• *Buyer Wallets*: 1-73 wallets for token distribution",
         "• *Buy Amounts*: Customize per wallet or use equal distribution",
         "",
         "*Important Notes:*",

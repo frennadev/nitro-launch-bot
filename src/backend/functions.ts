@@ -948,9 +948,9 @@ export const enqueueTokenLaunch = async (
         }
       }
 
-      if (existingBuyerWallets + newWalletsToCreate > 40) {
+      if (existingBuyerWallets + newWalletsToCreate > 73) {
         throw new Error(
-          `Adding ${newWalletsToCreate} new wallets would exceed the maximum of 40 buyer wallets allowed`
+          `Adding ${newWalletsToCreate} new wallets would exceed the maximum of 73 buyer wallets allowed`
         );
       }
 
@@ -1454,8 +1454,8 @@ export const addBuyerWallet = async (userId: string, privateKey: string) => {
     isBuyer: true,
   });
 
-  if (existingWallets >= 40) {
-    throw new Error("Maximum of 40 buyer wallets allowed");
+  if (existingWallets >= 73) {
+    throw new Error("Maximum of 73 buyer wallets allowed");
   }
 
   const keypair = secretKeyToKeypair(privateKey);
@@ -1492,8 +1492,8 @@ export const generateNewBuyerWallet = async (userId: string) => {
     isBuyer: true,
   });
 
-  if (existingWallets >= 40) {
-    throw new Error("Maximum of 40 buyer wallets allowed");
+  if (existingWallets >= 73) {
+    throw new Error("Maximum of 73 buyer wallets allowed");
   }
 
   const [buyerWallet] = generateKeypairs(1);
@@ -1860,9 +1860,9 @@ export const enqueuePrepareTokenLaunch = async (
         }
       }
 
-      if (existingBuyerWallets + newWalletsToCreate > 40) {
+      if (existingBuyerWallets + newWalletsToCreate > 73) {
         throw new Error(
-          `Adding ${newWalletsToCreate} new wallets would exceed the maximum of 40 buyer wallets allowed`
+          `Adding ${newWalletsToCreate} new wallets would exceed the maximum of 73 buyer wallets allowed`
         );
       }
 
@@ -2524,13 +2524,13 @@ export const getDetailedSellSummary = async (tokenAddress: string) => {
 };
 
 /**
- * Calculate required wallets for buy amount with new 40 wallet system (84 SOL max)
- * First 7 wallets (reduced by 18%): 0.41-1.066 SOL each (5.494 SOL total)
- * Next 8 wallets (8-15): 1.25 SOL each (10.0 SOL total)
- * Next 5 wallets (16-20): 2.2 SOL each (11.0 SOL total)
- * Next 10 wallets (21-30): 2.251 SOL each (22.506 SOL total)
- * Last 10 wallets (31-40): 3.5 SOL each (35.0 SOL total)
- * Maximum buy amount supported: 84.0 SOL with 40 wallets
+ * Calculate required wallets for buy amount with new 73 wallet system (85 SOL max)
+ * Tier 1 (1-15): 0.15-0.85 SOL each (~9.0 SOL total)
+ * Tier 2 (16-25): 0.85-1.45 SOL each (~11.5 SOL total)  
+ * Tier 3 (26-39): 1.45-2.25 SOL each (~25.9 SOL total)
+ * Tier 4 (40-58): 2.0-3.2 SOL each (~48.4 SOL total) - Large buys start
+ * Tier 5 (59-73): 2.8-4.5 SOL each (~52.5 SOL total) - Whale territory
+ * Maximum buy amount supported: 85.0 SOL with 73 wallets
  */
 export const calculateRequiredWallets = (buyAmount: number): number => {
   // Enforce maximum buy amount
@@ -2609,39 +2609,23 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
   } else {
     // Use all 30 wallets + additional wallets from last 10 (1.851 SOL each)
     const remainingAmount = buyAmount - firstThirtyTotal;
-    const additionalWallets = Math.min(10, Math.ceil(remainingAmount / 1.851));
-    return Math.min(40, 30 + additionalWallets);
+    const additionalWallets = Math.min(43, Math.ceil(remainingAmount / 2.5));
+    return Math.min(73, 30 + additionalWallets);
   }
 };
 
 /**
- * Calculate the maximum buy amount supported by the 40 wallet system (84 SOL max)
- * First 7 wallets (reduced): 5.494 SOL
- * Next 8 wallets (8-15): 14.0 SOL
- * Next 5 wallets (16-20): 18.0 SOL
- * Next 10 wallets (21-30): 28.0 SOL
- * Last 10 wallets (31-40): 18.506 SOL
- * Maximum total: 84.0 SOL
+ * Calculate the maximum buy amount supported by the 73 wallet system (85 SOL max)
+ * Tier 1 (1-15): 0.15-0.85 SOL each = ~9.0 SOL max
+ * Tier 2 (16-25): 0.85-1.45 SOL each = ~11.5 SOL max  
+ * Tier 3 (26-39): 1.45-2.25 SOL each = ~25.9 SOL max
+ * Tier 4 (40-58): 2.0-3.2 SOL each = ~48.4 SOL max - Large buys start
+ * Tier 5 (59-73): 2.8-4.5 SOL each = ~52.5 SOL max - Whale territory
+ * Maximum total: 85.0 SOL
  */
 export const calculateMaxBuyAmount = (): number => {
-  const firstSevenReduced = [0.41, 0.574, 0.738, 0.82, 0.902, 0.984, 1.066];
-
-  const firstSevenTotal = firstSevenReduced.reduce(
-    (sum, amount) => sum + amount,
-    0
-  );
-  const nextEightTotal = 8 * 1.25; // 10.0 SOL
-  const nextFiveTotal = 5 * 2.2; // 11.0 SOL
-  const nextTenTotal = 10 * 2.251; // 22.506 SOL
-  const lastTenTotal = 10 * 3.5; // 35.0 SOL
-
-  return (
-    firstSevenTotal +
-    nextEightTotal +
-    nextFiveTotal +
-    nextTenTotal +
-    lastTenTotal
-  ); // 84.0 SOL
+  // Return the new maximum for 73 wallet system
+  return 85.0;
 };
 
 /**
@@ -2698,176 +2682,174 @@ export const calculateMaxBuyAmountWithWallets = (
 };
 
 /**
- * Generate buy distribution for sequential wallet buying with new 40 wallet system (84 SOL max)
- * First 7 wallets (reduced by 18%): 0.41-1.066 SOL each
- * Next 8 wallets (8-15): 1.25 SOL each
- * Next 5 wallets (16-20): 2.2 SOL each
- * Next 10 wallets (21-30): 2.251 SOL each
- * Last 10 wallets (31-40): 3.5 SOL each
+ * 🎲 Generate randomized buy distribution for 73 wallet system (85 SOL max)
+ * Tier 1 (1-15): 0.15-0.85 SOL each (randomized small buys)
+ * Tier 2 (16-25): 0.85-1.45 SOL each (randomized medium buys)  
+ * Tier 3 (26-39): 1.45-2.25 SOL each (randomized medium-large buys)
+ * Tier 4 (40-58): 2.0-3.2 SOL each (randomized large buys) ⭐ LARGE BUYS START
+ * Tier 5 (59-73): 2.8-4.5 SOL each (randomized whale buys) ⭐ WHALE TERRITORY
  */
 export const generateBuyDistribution = (
   buyAmount: number,
-  availableWallets: number
+  availableWallets: number,
+  randomSeed?: number
 ): number[] => {
-  const maxWallets = Math.min(availableWallets, 40);
-
-  const firstSevenReduced = [0.41, 0.574, 0.738, 0.82, 0.902, 0.984, 1.066];
-
-  const firstSevenTotal = firstSevenReduced.reduce(
-    (sum, amount) => sum + amount,
-    0
-  );
-  const nextEightTotal = 8 * 1.25; // 10.0 SOL
-  const firstFifteenTotal = firstSevenTotal + nextEightTotal;
-
-  if (buyAmount <= firstSevenTotal) {
-    // Use only the first reduced sequence wallets needed
-    const distribution: number[] = [];
-    let remaining = buyAmount;
-
-    for (let i = 0; i < Math.min(maxWallets, firstSevenReduced.length); i++) {
-      if (remaining <= 0) break;
-
-      if (remaining >= firstSevenReduced[i]) {
-        distribution.push(firstSevenReduced[i]);
-        remaining -= firstSevenReduced[i];
-      } else {
-        distribution.push(remaining);
-        remaining = 0;
-      }
-    }
-
-    return distribution;
-  } else if (buyAmount <= firstFifteenTotal) {
-    // Use all 7 reduced wallets + distribute remaining across next 8 wallets
-    const distribution = [...firstSevenReduced];
-    let remaining = buyAmount - firstSevenTotal;
-
-    for (let i = 0; i < Math.min(maxWallets - 7, 8); i++) {
-      if (remaining <= 0) break;
-
-      if (remaining >= 1.25) {
-        distribution.push(1.25);
-        remaining -= 1.25;
-      } else {
-        distribution.push(remaining);
-        remaining = 0;
-      }
-    }
-
-    return distribution;
-  } else if (buyAmount <= firstFifteenTotal + 5 * 2.2) {
-    // Use all 15 wallets + distribute remaining across next 5 wallets (2.2 SOL each)
-    const distribution = [...firstSevenReduced];
-    // Add the 8 wallets with 1.25 SOL each
-    for (let i = 0; i < 8; i++) {
-      distribution.push(1.25);
-    }
-
-    let remaining = buyAmount - firstFifteenTotal;
-
-    const additionalWalletsNeeded = Math.min(
-      5,
-      Math.min(maxWallets - 15, Math.ceil(remaining / 2.2))
-    );
-
-    if (additionalWalletsNeeded > 0) {
-      for (let i = 0; i < additionalWalletsNeeded; i++) {
-        if (remaining <= 0) break;
-
-        if (i === additionalWalletsNeeded - 1) {
-          distribution.push(remaining);
-        } else {
-          const walletAmount = Math.min(
-            2.2,
-            Math.max(2.2, remaining / (additionalWalletsNeeded - i))
-          );
-          distribution.push(walletAmount);
-          remaining -= walletAmount;
-        }
-      }
-    }
-
-    return distribution;
-  } else if (buyAmount <= firstFifteenTotal + 5 * 2.2 + 10 * 2.251) {
-    // Use all 20 wallets + distribute remaining across next 10 wallets (2.251 SOL each)
-    const distribution = [...firstSevenReduced];
-    // Add the 8 wallets with 1.25 SOL each
-    for (let i = 0; i < 8; i++) {
-      distribution.push(1.25);
-    }
-    // Add the 5 wallets with 2.2 SOL each
-    for (let i = 0; i < 5; i++) {
-      distribution.push(2.2);
-    }
-
-    let remaining = buyAmount - firstFifteenTotal - 5 * 2.2;
-
-    const additionalWalletsNeeded = Math.min(
-      10,
-      Math.min(maxWallets - 20, Math.ceil(remaining / 2.251))
-    );
-
-    if (additionalWalletsNeeded > 0) {
-      for (let i = 0; i < additionalWalletsNeeded; i++) {
-        if (remaining <= 0) break;
-
-        if (i === additionalWalletsNeeded - 1) {
-          distribution.push(remaining);
-        } else {
-          const walletAmount = Math.min(
-            2.251,
-            Math.max(2.251, remaining / (additionalWalletsNeeded - i))
-          );
-          distribution.push(walletAmount);
-          remaining -= walletAmount;
-        }
-      }
-    }
-
-    return distribution;
-  } else {
-    // Use all 30 wallets + distribute remaining across last 10 wallets (3.5 SOL each)
-    const distribution = [...firstSevenReduced];
-    // Add the 8 wallets with 1.25 SOL each
-    for (let i = 0; i < 8; i++) {
-      distribution.push(1.25);
-    }
-    // Add the 5 wallets with 2.2 SOL each
-    for (let i = 0; i < 5; i++) {
-      distribution.push(2.2);
-    }
-    // Add the 10 wallets with 2.251 SOL each
-    for (let i = 0; i < 10; i++) {
-      distribution.push(2.251);
-    }
-
-    let remaining = buyAmount - firstFifteenTotal - 5 * 2.2 - 10 * 2.251;
-
-    const additionalWalletsNeeded = Math.min(
-      10,
-      Math.min(maxWallets - 30, Math.ceil(remaining / 3.5))
-    );
-
-    if (additionalWalletsNeeded > 0) {
-      for (let i = 0; i < additionalWalletsNeeded; i++) {
-        if (remaining <= 0) break;
-
-        if (i === additionalWalletsNeeded - 1) {
-          distribution.push(remaining);
-        } else {
-          const walletAmount = Math.min(
-            3.5,
-            Math.max(3.5, remaining / (additionalWalletsNeeded - i))
-          );
-          distribution.push(walletAmount);
-          remaining -= walletAmount;
-        }
-      }
-    }
-
-    return distribution;
+  const maxWallets = Math.min(availableWallets, 73);
+  
+  // Set random seed for reproducible results if provided
+  let seededRandom = Math.random;
+  if (randomSeed !== undefined) {
+    let seed = randomSeed;
+    seededRandom = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
   }
+
+  // 🎯 Tier definitions with randomized ranges
+  const tiers = [
+    { wallets: [1, 15], range: [0.15, 0.85], name: "Small Random" },
+    { wallets: [16, 25], range: [0.85, 1.45], name: "Medium Random" },
+    { wallets: [26, 39], range: [1.45, 2.25], name: "Medium-Large" },
+    { wallets: [40, 58], range: [2.0, 3.2], name: "Large Buys" },    // 🔥 Large buys start here
+    { wallets: [59, 73], range: [2.8, 4.5], name: "Whale Territory" } // 🐋 Whale buys
+  ];
+
+  /**
+   * Generate randomized amount within tier bounds with anti-pattern logic
+   */
+  const generateTierAmount = (minAmount: number, maxAmount: number, avoidPatterns: number[] = []): number => {
+    const random = seededRandom();
+    let amount = minAmount + (random * (maxAmount - minAmount));
+    
+    // Add precision variance (2-3 decimal places randomly)
+    const precision = Math.floor(seededRandom() * 2) + 2; // 2 or 3 decimal places
+    const precisionFactor = Math.pow(10, precision);
+    amount = Math.round(amount * precisionFactor) / precisionFactor;
+    
+    // Anti-pattern: avoid obvious round numbers and recent similar amounts
+    const roundNumbers = [1.0, 2.0, 3.0, 4.0, 5.0, 1.5, 2.5, 3.5, 4.5];
+    const isRoundNumber = roundNumbers.some(round => Math.abs(amount - round) < 0.001);
+    const isTooSimilar = avoidPatterns.some(prev => Math.abs(amount - prev) < 0.05);
+    
+    if ((isRoundNumber || isTooSimilar) && seededRandom() > 0.3) {
+      // Add small random variance to break patterns
+      const variance = (seededRandom() - 0.5) * 0.2;
+      amount = Math.max(minAmount, Math.min(maxAmount, amount + variance));
+      amount = Math.round(amount * precisionFactor) / precisionFactor;
+    }
+    
+    return amount;
+  };
+
+  /**
+   * Calculate required wallets for the buy amount using tier system
+   */
+  const calculateWalletsNeeded = (amount: number): number => {
+    let remaining = amount;
+    let walletsUsed = 0;
+    
+    for (const tier of tiers) {
+      const tierWalletCount = tier.wallets[1] - tier.wallets[0] + 1;
+      const tierMaxTotal = tierWalletCount * tier.range[1];
+      
+      if (remaining <= 0) break;
+      
+      if (remaining <= tierMaxTotal) {
+        // This tier can handle the remaining amount
+        const avgAmountPerWallet = (tier.range[0] + tier.range[1]) / 2;
+        walletsUsed += Math.ceil(remaining / avgAmountPerWallet);
+        break;
+      } else {
+        // Use all wallets in this tier
+        walletsUsed += tierWalletCount;
+        remaining -= tierMaxTotal;
+      }
+    }
+    
+    return Math.min(walletsUsed, maxWallets);
+  };
+
+  const walletsNeeded = calculateWalletsNeeded(buyAmount);
+  const distribution: number[] = [];
+  const recentAmounts: number[] = [];
+  let remaining = buyAmount;
+  let currentWallet = 1;
+
+  // 🎲 Generate randomized distribution across tiers
+  for (const tier of tiers) {
+    if (remaining <= 0 || currentWallet > walletsNeeded) break;
+    
+    const tierStart = tier.wallets[0];
+    const tierEnd = Math.min(tier.wallets[1], walletsNeeded);
+    
+    if (currentWallet > tierEnd) continue;
+    
+    const walletsInThisTier = Math.max(0, tierEnd - Math.max(tierStart, currentWallet) + 1);
+    
+    for (let i = 0; i < walletsInThisTier && remaining > 0; i++) {
+      const isLastWallet = currentWallet === walletsNeeded;
+      
+      if (isLastWallet) {
+        // Last wallet gets all remaining amount
+        distribution.push(Number(remaining.toFixed(3)));
+        remaining = 0;
+      } else {
+        // Calculate max amount this wallet can take (leave minimum for remaining wallets)
+        const walletsLeft = walletsNeeded - currentWallet;
+        const minForRemainingWallets = walletsLeft * 0.15; // Minimum 0.15 SOL per remaining wallet
+        const maxThisWallet = Math.min(
+          tier.range[1],
+          remaining - minForRemainingWallets
+        );
+        
+        if (maxThisWallet < tier.range[0]) {
+          // If we can't meet minimum for this tier, give it the remaining
+          distribution.push(Number(remaining.toFixed(3)));
+          remaining = 0;
+        } else {
+          // 🔥 ENFORCE LARGE BUY RULE: No buys ≥2.0 SOL before wallet 40
+          const effectiveMaxAmount = currentWallet < 40 ? Math.min(maxThisWallet, 1.99) : maxThisWallet;
+          const effectiveMinAmount = Math.max(tier.range[0], 0.15);
+          
+          if (effectiveMaxAmount < effectiveMinAmount) {
+            // If we can't meet minimum after large buy restriction, give remaining
+            distribution.push(Number(remaining.toFixed(3)));
+            remaining = 0;
+          } else {
+            const amount = generateTierAmount(
+              effectiveMinAmount,
+              effectiveMaxAmount,
+              recentAmounts.slice(-3) // Avoid patterns with last 3 amounts
+            );
+            
+            distribution.push(amount);
+            remaining -= amount;
+            recentAmounts.push(amount);
+            
+            // Keep only last 5 amounts for pattern detection
+            if (recentAmounts.length > 5) {
+              recentAmounts.shift();
+            }
+          }
+        }
+      }
+      
+      currentWallet++;
+    }
+  }
+
+  // 🔧 Final adjustment to ensure exact total
+  const totalDistributed = distribution.reduce((sum, amount) => sum + amount, 0);
+  const difference = buyAmount - totalDistributed;
+  
+  if (Math.abs(difference) > 0.001 && distribution.length > 0) {
+    // Adjust the last wallet to match exact total
+    distribution[distribution.length - 1] += difference;
+    distribution[distribution.length - 1] = Number(distribution[distribution.length - 1].toFixed(3));
+  }
+
+  return distribution;
 };
 
 // ========== WALLET POOL FUNCTIONS ==========

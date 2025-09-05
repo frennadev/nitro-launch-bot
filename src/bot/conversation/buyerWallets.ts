@@ -14,8 +14,8 @@ import {
 } from "../../backend/functions-main";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 
-const WALLETS_PER_PAGE = 5; // Increased from 3 to 5 for better UI with 40 wallets
-const MAX_WALLETS = 40; // Updated from 20 to 40
+const WALLETS_PER_PAGE = 5; // Optimized for 73 wallet system
+const MAX_WALLETS = 73; // Updated from 40 to 73 wallets (85 SOL max)
 
 const manageBuyerWalletsConversation = async (
   conversation: Conversation<Context>,
