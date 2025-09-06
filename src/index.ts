@@ -117,7 +117,7 @@ const nitroLaunchRunner = async () => {
       }
       botLogger.error("Error occurred while starting bot", e)
     });
-};
+}
 
 nitroLaunchRunner().catch((err) => {
   botLogger.error("Start failed", err);

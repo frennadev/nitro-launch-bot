@@ -1,7 +1,7 @@
-import { tokenLaunchQueue, devSellQueue, walletSellQueue } from "./queues.js";
-import { launchTokenWorker, sellDevWorker, sellWalletWorker } from "./workers.js";
-import { closeRedis, connectDB, disconnectDB } from "./db.js";
-import { logger } from "./logger.js";
+import { tokenLaunchQueue, devSellQueue, walletSellQueue } from "./queues";
+import { launchTokenWorker, sellDevWorker, sellWalletWorker } from "./workers";
+import { closeRedis, connectDB, disconnectDB } from "./db";
+import { logger } from "./logger";
 
 connectDB()
   .then(() => {
