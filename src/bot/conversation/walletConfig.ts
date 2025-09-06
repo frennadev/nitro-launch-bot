@@ -201,22 +201,35 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
       return conversation.halt();
     }
 
-    // Calculate distribution amounts ensuring rent exemption (using 90% of funding wallet)
-    const availableForDistribution = availableForMixing - totalMinimumRequired;
-    const baseAmountPerWallet = availableForDistribution / buyerWallets.length;
-    const finalAmountPerWallet = baseAmountPerWallet + OVERHEAD_PER_WALLET;
+    // Use the new 73-wallet distribution system for proper randomized amounts
+    const { generateBuyDistribution } = await import("../../backend/functions");
+    
+    // Calculate the total amount available for distribution
+    const totalAmountForDistribution = availableForMixing;
+    
+    // Generate the proper 73-wallet distribution
+    const distributionAmounts = generateBuyDistribution(
+      totalAmountForDistribution,
+      buyerWallets.length,
+      0.01, // minBuyAmount
+      Math.min(2.0, totalAmountForDistribution / buyerWallets.length * 1.5) // maxBuyAmount with reasonable cap
+    );
+    
+    // Calculate average amount for display
+    const averageAmountPerWallet = totalAmountForDistribution / buyerWallets.length;
 
     // Show confirmation with details
     await sendMessage(
       next,
-      `🔀 <b>Mix Funds Confirmation</b>\n\n` +
+      `🔀 <b>Mix Funds Confirmation (73-Wallet System)</b>\n\n` +
         `<b>Funding Wallet Balance:</b> ${fundingBalance.toFixed(6)} SOL\n` +
         `<b>Amount to Mix (90%):</b> ${(fundingBalance * 0.9).toFixed(6)} SOL\n` +
         `<b>Reserve (10%):</b> ${(fundingBalance * 0.1).toFixed(6)} SOL\n` +
         `<b>Number of Buyer Wallets:</b> ${buyerWallets.length}\n` +
-        `<b>Amount per Wallet:</b> ~${finalAmountPerWallet.toFixed(6)} SOL\n` +
-        `<b>Includes Rent Exemption:</b> ${RENT_EXEMPTION_SOL.toFixed(6)} SOL\n\n` +
-        `<i>This will distribute 90% of your funding wallet balance across all buyer wallets, leaving 10% as a reserve.</i>\n\n` +
+        `<b>Average per Wallet:</b> ~${averageAmountPerWallet.toFixed(6)} SOL\n` +
+        `<b>Distribution:</b> Randomized, tiered amounts\n` +
+        `<b>Large buys (≥2.0 SOL):</b> ${buyerWallets.length >= 40 ? 'Wallets 40+' : 'N/A'}\n\n` +
+        `<i>🎯 Uses advanced 73-wallet distribution system with randomized amounts, anti-pattern logic, and proper tiering for maximum privacy.</i>\n\n` +
         `Are you sure you want to proceed?`,
       {
         parse_mode: "HTML" as ParseMode,
@@ -274,63 +287,30 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
           `🔄 Starting mixer operation for ${buyerWallets.length} wallets...`
         );
 
-        // Use the fast mixer for proper privacy mixing
-        const { initializeFastMixer } = await import(
+        // Use the new 73-wallet distribution mixer
+        const { initializeMixerWithCustomAmounts } = await import(
           "../../blockchain/mixer/init-mixer"
         );
 
         try {
-          const mixerResult = await (async () => {
-            try {
-              return await initializeFastMixer(
-                fundingWallet.privateKey,
-                fundingWallet.privateKey,
-                totalAmountForMixer,
-                destinationAddresses
-              );
-            } catch (error: unknown) {
-              console.warn(
-                `Fast mixer failed, falling back to progress mixer:`,
-                error instanceof Error ? error.message : String(error)
-              );
-              try {
-                const { initializeMixerWithProgress } = await import(
-                  "../../blockchain/mixer/init-mixer"
-                );
-                return await initializeMixerWithProgress(
-                  fundingWallet.privateKey,
-                  fundingWallet.privateKey,
-                  totalAmountForMixer,
-                  destinationAddresses
-                );
-              } catch (error2: unknown) {
-                console.warn(
-                  `Progress mixer failed, falling back to standard mixer:`,
-                  error2 instanceof Error ? error2.message : String(error2)
-                );
-                // Final fallback to standard mixer to ensure system stability
-                const { initializeMixer } = await import(
-                  "../../blockchain/mixer/init-mixer"
-                );
-                return await initializeMixer(
-                  fundingWallet.privateKey,
-                  fundingWallet.privateKey,
-                  totalAmountForMixer,
-                  destinationAddresses
-                );
-              }
-            }
-          })();
+          const mixerResult = await initializeMixerWithCustomAmounts(
+            fundingWallet.privateKey,
+            fundingWallet.privateKey,
+            destinationAddresses,
+            distributionAmounts
+          );
 
           // Check mixer results
           if (mixerResult && mixerResult.successCount > 0) {
             await sendMessage(
               confirmCtx,
-              `✅ <b>Funds Mixed Successfully!</b>\n\n` +
-                `Mixed ${totalAmountForMixer.toFixed(6)} SOL (90% of funding wallet) across ${buyerWallets.length} buyer wallets.\n\n` +
+              `✅ <b>73-Wallet Distribution Complete!</b>\n\n` +
+                `Mixed ${totalAmountForDistribution.toFixed(6)} SOL (90% of funding wallet) across ${buyerWallets.length} buyer wallets.\n\n` +
                 `<b>Successful transfers:</b> ${mixerResult.successCount}/${mixerResult.totalRoutes || buyerWallets.length}\n` +
+                `<b>Distribution:</b> Randomized, tiered amounts\n` +
+                `<b>Large buys (≥2.0 SOL):</b> ${buyerWallets.length >= 40 ? 'Placed in wallets 40+' : 'N/A'}\n` +
                 `<b>Reserve remaining:</b> ${(fundingBalance * 0.1).toFixed(6)} SOL\n\n` +
-                `<i>Funds distributed through mixer for enhanced privacy</i>`,
+                `<i>🎯 Used advanced 73-wallet system with anti-pattern logic and privacy mixing</i>`,
               { parse_mode: "HTML" }
             );
           } else {
