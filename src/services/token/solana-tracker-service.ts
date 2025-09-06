@@ -1,5 +1,6 @@
 import axios from "axios";
 import { logger } from "../../blockchain/common/logger";
+import { env } from "../../config";
 
 export interface TokenInfo {
   name: string;
@@ -25,8 +26,8 @@ export class SolanaTrackerService {
   private readonly CACHE_TTL_DEFAULT = 30 * 60 * 1000; // 30 minutes
   private readonly CACHE_TTL_POPULAR = 60 * 60 * 1000; // 60 minutes
   private readonly CACHE_TTL_NEW = 15 * 60 * 1000; // 15 minutes for new tokens
-  private readonly BASE_URL = "https://api.solanatracker.io";
-  private readonly API_KEY = process.env.SOLANA_TRACKER_API_KEY;
+  private readonly BASE_URL = env.SOLANA_TRACKER_BASE_URL || "https://data.solanatracker.io";
+  private readonly API_KEY = env.SOLANA_TRACKER_API_KEY;
   
   // Cache hit tracking
   private cacheHits = 0;

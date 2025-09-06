@@ -43,6 +43,10 @@ export const env = cleanEnv(process.env, {
   UTILS_HELIUS_RPC: validStr(),
   ADMIN_IDS: str({ default: "" }),
 
+  // SolanaTracker API Configuration (Replacing Birdeye)
+  SOLANA_TRACKER_API_KEY: str({ default: "" }),
+  SOLANA_TRACKER_BASE_URL: str({ default: "https://data.solanatracker.io" }),
+
   // Platform Fee Configuration (hidden from users)
   PLATFORM_FEE_WALLET: str({ default: "GRx7vW9ndEhqiL5e8scBQTdse3db9GCVyx9JyH2Ho7R" }),
   LAUNCH_FEE_SOL: num({ default: 0.05 }),

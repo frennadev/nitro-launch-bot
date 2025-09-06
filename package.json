@@ -26,6 +26,10 @@
     "test-smart-retry": "tsx test-smart-balance-retry.ts",
     "test-production": "tsx test-production-ready.ts",
     "test-user-experience": "tsx test-user-experience.ts",
+    "test-solanatracker": "bun run test-solanatracker.ts",
+    "dev": "bun run src/index.ts",
+    "dev:job": "bun run src/jobs/index.ts",
+    "setup": "chmod +x setup-local.sh && ./setup-local.sh",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "devDependencies": {
