@@ -30,8 +30,6 @@ async function generateRandomAmounts(
   totalSol: number,
   destinationCount: number
 ): Promise<number[]> {
-  // 🚨 PRODUCTION HOTFIX: Use legacy distribution to prevent import failures
-  console.log(`🔄 Using legacy incremental distribution for production stability`);
   const amounts: number[] = [];
   const totalLamports = Math.floor(totalSol * 1e9);
   const baseAmount = Math.floor(totalLamports / destinationCount);
@@ -69,6 +67,7 @@ export async function runMixer(
     maxConcurrentTx?: number;
     balanceCheckTimeout?: number;
     fastMode?: boolean;
+    customAmounts?: number[]; // ✅ NEW: Allow custom distribution amounts
   }
 ) {
   console.log("🚀 Starting Solana Mixer");
@@ -110,8 +109,15 @@ export async function runMixer(
     console.log(`\n💼 Funding wallet: ${fundingWallet.publicKey.toString()}`);
     console.log(`💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`);
 
-    // Generate random amounts for each destination
-    const amounts = await generateRandomAmounts(totalAmountSol, destinationWallets.length);
+    // Use custom amounts if provided, otherwise generate random amounts
+    let amounts: number[];
+    if (options?.customAmounts && options.customAmounts.length === destinationWallets.length) {
+      console.log(`🎯 Using custom 73-wallet distribution amounts`);
+      amounts = options.customAmounts.map(amount => Math.floor(amount * 1e9)); // Convert SOL to lamports
+    } else {
+      console.log(`🔄 Using legacy incremental distribution for production stability`);
+      amounts = await generateRandomAmounts(totalAmountSol, destinationWallets.length);
+    }
 
     // Verify total matches
     const totalCheck = amounts.reduce((sum, amount) => sum + amount, 0);

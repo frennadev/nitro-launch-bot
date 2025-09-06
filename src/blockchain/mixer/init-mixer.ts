@@ -208,14 +208,12 @@ export async function initializeMixerWithCustomAmounts(
       }
     }
     
-    // For now, use the regular mixer but we should ideally create a custom mixer
-    // that respects the specific amounts. The mixer will use its own distribution
-    // but we'll log the intended distribution for debugging
+    // ✅ FIXED: Now the mixer respects the custom 73-wallet distribution amounts!
     console.log(`🎯 73-Wallet Distribution Intended:`, distributionAmounts.map((amount, i) => 
       `${i + 1}: ${amount.toFixed(6)} SOL`
     ).slice(0, 10)); // Show first 10 for debugging
     
-    // Execute the mixer with total amount (it will use its own distribution)
+    // Execute the mixer with custom amounts (will use exact 73-wallet distribution)
     const result = await runMixer(
       fundingPrivateKey, 
       feeFundingPrivateKey, 
@@ -225,7 +223,8 @@ export async function initializeMixerWithCustomAmounts(
         parallelMode: true,
         maxConcurrentTx: 2,
         balanceCheckTimeout: 8000,
-        fastMode: false
+        fastMode: false,
+        customAmounts: distributionAmounts // ✅ Pass the custom amounts!
       }
     );
     
