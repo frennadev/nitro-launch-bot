@@ -262,17 +262,32 @@ async function createCustomMixingRoutes(
       mixer.config.intermediateWalletCount
     );
 
+    // CRITICAL CHECK: Ensure we have enough valid intermediate wallets
+    if (!intermediateWallets || intermediateWallets.length < mixer.config.intermediateWalletCount) {
+      console.error(`❌ CRITICAL: Insufficient intermediate wallets! Need ${mixer.config.intermediateWalletCount}, got ${intermediateWallets?.length || 0}`);
+      console.error(`   This means NO PRIVACY MIXING will occur - funds will go direct!`);
+      throw new Error(`Insufficient intermediate wallets for privacy mixing. Need ${mixer.config.intermediateWalletCount}, got ${intermediateWallets?.length || 0}. Cannot proceed without proper privacy protection.`);
+    }
+
     const route = {
       source: {
         publicKey: fundingWallet.publicKey,
         keypair: fundingWallet,
         balance: amount + 0.006, // Add buffer for fees
       },
-      intermediates: intermediateWallets.map((wallet: any) => ({
-        publicKey: new PublicKey(wallet.publicKey),
-        keypair: mixer.walletManager.getKeypairFromStoredWallet(wallet),
-        balance: wallet.balance - 0.006,
-      })),
+      intermediates: intermediateWallets.map((wallet: any) => {
+        try {
+          const keypair = mixer.walletManager.getKeypairFromStoredWallet(wallet);
+          return {
+            publicKey: new PublicKey(wallet.publicKey),
+            keypair: keypair,
+            balance: wallet.balance - 0.006,
+          };
+        } catch (decryptError) {
+          console.error(`❌ Failed to decrypt intermediate wallet ${wallet.publicKey}: ${decryptError}`);
+          throw new Error(`Intermediate wallet decryption failed: ${wallet.publicKey}`);
+        }
+      }),
       destination,
       amount,
     };
@@ -288,27 +303,42 @@ async function createCustomMixingRoutes(
 
 /**
  * Execute custom mixing with pre-defined routes and amounts
+ * Uses the new smart balance checking system for better reliability
  */
 async function executeCustomMixing(mixer: any, routes: any[]) {
-  // Use the mixer's internal execution method
   const results = [];
 
   for (const route of routes) {
     try {
-      const result = await mixer.executeSingleRouteOptimized(
+      // Use the parallel execution method which has the new smart balance checking
+      const result = await mixer.executeSingleRouteParallel(
         route,
-        1000,
-        0,
-        routes.length - 1,
-        0
+        0, // No delays in parallel mode
+        0, // currentTransactionIndex
+        routes.length - 1, // totalDelays
+        0  // remainingTime
       );
       results.push(result);
     } catch (error) {
-      results.push({
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-        signatures: [],
-      });
+      console.warn(`⚠️ Parallel execution failed for route, falling back to optimized: ${error instanceof Error ? error.message : String(error)}`);
+      
+      // Fallback to optimized method if parallel fails
+      try {
+        const result = await mixer.executeSingleRouteOptimized(
+          route,
+          1000,
+          0,
+          routes.length - 1,
+          0
+        );
+        results.push(result);
+      } catch (fallbackError) {
+        results.push({
+          success: false,
+          error: fallbackError instanceof Error ? fallbackError.message : "Unknown error",
+          signatures: [],
+        });
+      }
     }
   }
 
