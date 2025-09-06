@@ -4,12 +4,72 @@ import { SolanaConnectionManager } from "./connection";
 import { MongoWalletManager, type StoredWallet } from "./mongodb";
 import { generateSecureKeypair, getRandomDelay, cryptoShuffle, getAmountVariation, sleep } from "./crypto";
 
+// RPC Rate Limiter to prevent overwhelming the RPC endpoint
+class RPCRateLimiter {
+  private requestTimes: number[] = [];
+  private transactionTimes: number[] = [];
+  private readonly maxRequestsPerSecond: number;
+  private readonly maxTransactionsPerSecond: number;
+  private readonly burstAllowance: number;
+
+  constructor(config: { maxRequestsPerSecond: number; maxTransactionsPerSecond: number; burstAllowance: number }) {
+    this.maxRequestsPerSecond = config.maxRequestsPerSecond;
+    this.maxTransactionsPerSecond = config.maxTransactionsPerSecond;
+    this.burstAllowance = config.burstAllowance;
+  }
+
+  async waitForRequestSlot(): Promise<void> {
+    const now = Date.now();
+    const oneSecondAgo = now - 1000;
+    
+    // Clean old entries
+    this.requestTimes = this.requestTimes.filter(time => time > oneSecondAgo);
+    
+    // Check if we need to wait
+    if (this.requestTimes.length >= this.maxRequestsPerSecond) {
+      const oldestRequest = this.requestTimes[0];
+      const waitTime = 1000 - (now - oldestRequest) + 10; // Add 10ms buffer
+      if (waitTime > 0) {
+        console.log(`⏳ RPC rate limit: waiting ${waitTime}ms for request slot`);
+        await sleep(waitTime);
+      }
+    }
+    
+    this.requestTimes.push(now);
+  }
+
+  async waitForTransactionSlot(): Promise<void> {
+    const now = Date.now();
+    const oneSecondAgo = now - 1000;
+    
+    // Clean old entries
+    this.transactionTimes = this.transactionTimes.filter(time => time > oneSecondAgo);
+    
+    // Check if we need to wait
+    if (this.transactionTimes.length >= this.maxTransactionsPerSecond) {
+      const oldestTx = this.transactionTimes[0];
+      const waitTime = 1000 - (now - oldestTx) + 50; // Add 50ms buffer for transactions
+      if (waitTime > 0) {
+        console.log(`⏳ RPC rate limit: waiting ${waitTime}ms for transaction slot`);
+        await sleep(waitTime);
+      }
+    }
+    
+    this.transactionTimes.push(now);
+  }
+}
+
 export interface MongoMixerConfig extends MixerConfig {
   mongoUri: string;
   databaseName: string;
   encryptionKey?: string;
   maxRetries?: number;
   retryDelay?: number;
+  rpcRateLimit?: {
+    maxRequestsPerSecond: number;
+    maxTransactionsPerSecond: number;
+    burstAllowance: number;
+  };
 }
 
 export interface MongoMixingResult extends MixingResult {
@@ -26,6 +86,7 @@ export class MongoSolanaMixer {
   private connectionManager: SolanaConnectionManager;
   private walletManager: MongoWalletManager;
   private state: MixerState;
+  private rateLimiter?: RPCRateLimiter;
 
   constructor(config: MongoMixerConfig) {
     this.config = {
@@ -37,6 +98,12 @@ export class MongoSolanaMixer {
     this.connectionManager = new SolanaConnectionManager(config.rpcEndpoint, config.priorityFee);
 
     this.walletManager = new MongoWalletManager(config.mongoUri, config.databaseName, config.encryptionKey);
+
+    // Initialize RPC rate limiter if configured
+    if (config.rpcRateLimit) {
+      this.rateLimiter = new RPCRateLimiter(config.rpcRateLimit);
+      console.log(`🚦 RPC Rate Limiter: ${config.rpcRateLimit.maxRequestsPerSecond} req/sec, ${config.rpcRateLimit.maxTransactionsPerSecond} tx/sec`);
+    }
 
     this.state = {
       intermediateWalletPool: [],
@@ -624,10 +691,20 @@ export class MongoSolanaMixer {
           }
         }
         
+        // Apply RPC rate limiting before sending transaction
+        if (this.rateLimiter) {
+          await this.rateLimiter.waitForTransactionSlot();
+        }
+        
         // Create and send transaction
         let signature: string;
         
         if (this.config.feeFundingWallet && i > 0) {
+          // Wait for request slot for transaction creation
+          if (this.rateLimiter) {
+            await this.rateLimiter.waitForRequestSlot();
+          }
+          
           const transaction = await this.connectionManager.createTransferTransactionWithFeePayer(
             currentWallet.publicKey,
             destination,
@@ -640,6 +717,11 @@ export class MongoSolanaMixer {
             this.config.feeFundingWallet,
           ]);
         } else {
+          // Wait for request slot for transaction creation
+          if (this.rateLimiter) {
+            await this.rateLimiter.waitForRequestSlot();
+          }
+          
           const transaction = await this.connectionManager.createTransferTransaction(
             currentWallet.publicKey,
             destination,
@@ -666,6 +748,11 @@ export class MongoSolanaMixer {
           
           while (!balanceConfirmed && (Date.now() - balanceCheckStart) < balanceCheckTimeout) {
             try {
+              // Apply rate limiting for balance checks
+              if (this.rateLimiter) {
+                await this.rateLimiter.waitForRequestSlot();
+              }
+              
               const currentBalance = await this.connectionManager.getBalance(nextWallet);
               
               if (currentBalance >= expectedAmount) {

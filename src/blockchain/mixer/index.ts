@@ -158,11 +158,18 @@ async function runMixer(
       maxRetries: 2, // Reduce from 3 for speed
       retryDelay: 2000, // Reduce from 5000ms
       
-      // NEW: Parallel processing configuration (DISABLED for production stability)
-      parallelMode: false, // Disable parallel mode to prevent production issues
-      maxConcurrentTx: options?.maxConcurrentTx || 3,
-      balanceCheckTimeout: options?.balanceCheckTimeout || 5000,
+      // NEW: Parallel processing configuration (ENABLED with RPC rate limiting)
+      parallelMode: true, // Enable parallel mode with proper rate limiting
+      maxConcurrentTx: options?.maxConcurrentTx || 2, // Reduced to 2 for RPC safety (5 tx/sec limit)
+      balanceCheckTimeout: options?.balanceCheckTimeout || 8000, // Increased timeout for stability
       fastMode: options?.fastMode || false,
+      
+      // RPC Rate Limiting (based on your plan: 50 req/sec, 5 tx/sec)
+      rpcRateLimit: {
+        maxRequestsPerSecond: 40, // Stay under 50 req/sec limit
+        maxTransactionsPerSecond: 4, // Stay under 5 tx/sec limit
+        burstAllowance: 10, // Allow short bursts
+      },
     };
 
     const mixer = new MongoSolanaMixer(config);
