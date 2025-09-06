@@ -164,7 +164,7 @@ ${platformEmoji} <b>Platform:</b> ${platformName}
         totalNeeded,
         destinationAddresses,
         {
-          parallelMode: true,          // Enable parallel mode for speed (safety tests passed)
+          parallelMode: false,         // Disable parallel mode for production stability
           maxConcurrentTx: 3,          // Keep concurrent options available
           balanceCheckTimeout: 5000,   // 5 second timeout for balance checks
           fastMode: false,             // Disable optimizations for stability

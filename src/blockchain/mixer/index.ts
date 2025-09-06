@@ -36,129 +36,36 @@ async function generateRandomAmounts(
   totalSol: number,
   destinationCount: number
 ): Promise<number[]> {
-  // 🚀 NEW: Use the main 73-wallet randomized distribution system
-  try {
-    // Import the main distribution function
-    const { generateBuyDistribution } = await import("../../backend/functions");
+  // 🚨 PRODUCTION HOTFIX: Use legacy distribution to prevent import failures
+  console.log(`🔄 Using legacy incremental distribution for production stability`);
+  
+  // Legacy incremental distribution system (STABLE)
+  const amounts: number[] = [];
+  const totalLamports = Math.floor(totalSol * 1e9);
+  
+  // Calculate base amount per destination
+  const baseAmount = Math.floor(totalLamports / destinationCount);
+  let remainder = totalLamports - (baseAmount * destinationCount);
+  
+  // Distribute amounts with slight randomization
+  for (let i = 0; i < destinationCount; i++) {
+    let amount = baseAmount;
     
-    // Generate distribution using the 73-wallet system
-    const solDistribution = generateBuyDistribution(totalSol, destinationCount);
-    
-    // Convert to lamports
-    const amounts = solDistribution.map(solAmount => 
-      Math.floor(solAmount * 1e9)
-    );
-    
-    // Pad remaining destinations with zeros (for unused wallets)
-    while (amounts.length < destinationCount) {
-      amounts.push(0);
+    // Add remainder to early destinations
+    if (remainder > 0) {
+      amount += 1;
+      remainder--;
     }
     
-    console.log(
-      `🎯 Buy Amount: ${totalSol} SOL → Using ${solDistribution.filter(x => x > 0).length}/${destinationCount} wallets (73-wallet randomized system)`
-    );
+    // Add small random variation (±5%)
+    const variation = Math.floor(amount * 0.05 * (Math.random() - 0.5));
+    amount = Math.max(Math.floor(MIN_AMOUNT_PER_DESTINATION * 1e9), amount + variation);
     
-    // Validate total matches (within rounding tolerance)
-    const actualTotal = amounts.reduce((sum, amount) => sum + amount, 0);
-    const expectedTotal = Math.floor(totalSol * 1e9);
-    if (Math.abs(actualTotal - expectedTotal) > amounts.filter(x => x > 0).length) {
-      console.warn(
-        `Amount distribution mismatch: expected ${expectedTotal}, got ${actualTotal}`
-      );
-    }
-    
-    return amounts;
-    
-  } catch (error) {
-    console.warn("Failed to use 73-wallet distribution, falling back to legacy system:", error);
-    
-    // FALLBACK: Legacy incremental sequence
-    const totalLamports = Math.floor(totalSol * 1e9);
-    
-    const incrementalSequence = [
-      0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1,
-    ];
-    const incrementalLamports = incrementalSequence.map((sol) =>
-      Math.floor(sol * 1e9)
-    );
-
-    // Calculate the optimal number of wallets needed for this amount
-    function calculateOptimalWalletCount(amount: number): number {
-      let cumulativeTotal = 0;
-      for (let i = 0; i < incrementalSequence.length; i++) {
-        cumulativeTotal += incrementalLamports[i];
-        if (amount <= cumulativeTotal) {
-          return i + 1; // Return 1-based wallet count
-        }
-      }
-      // For amounts larger than our sequence, use more wallets proportionally
-      const baseTotal = incrementalLamports.reduce((sum, amt) => sum + amt, 0);
-      const extraWallets = Math.ceil(
-        (amount - baseTotal) / Math.floor(2.5 * 1e9)
-      ); // 2.5 SOL per extra wallet
-      return incrementalSequence.length + extraWallets;
-    }
-
-    // Calculate optimal wallet count for this buy amount
-    const optimalWalletCount = calculateOptimalWalletCount(totalLamports);
-
-    // Use the minimum of optimal count and available destinations
-    const walletsToUse = Math.min(optimalWalletCount, destinationCount);
-
-    console.log(
-      `🎯 Buy Amount: ${totalSol} SOL → Using ${walletsToUse}/${destinationCount} wallets (legacy incremental system)`
-    );
-
-    const amounts: number[] = [];
-    let remainingLamports = totalLamports;
-
-    // Distribute using incremental pattern for the wallets we're using
-    for (let i = 0; i < walletsToUse; i++) {
-      if (i < incrementalSequence.length) {
-        const incrementAmount = incrementalLamports[i];
-
-        if (i === walletsToUse - 1) {
-          // Last wallet gets all remaining amount
-          amounts.push(remainingLamports);
-        } else if (remainingLamports >= incrementAmount) {
-          // Use the incremental amount if we have enough
-          amounts.push(incrementAmount);
-          remainingLamports -= incrementAmount;
-        } else {
-          // Give remaining to this wallet if less than increment
-          amounts.push(remainingLamports);
-          remainingLamports = 0;
-        }
-      } else {
-        // For wallets beyond sequence, distribute remaining evenly
-        const walletsLeft = walletsToUse - i;
-        const amountPerWallet = Math.floor(remainingLamports / walletsLeft);
-
-        if (i === walletsToUse - 1) {
-          amounts.push(remainingLamports);
-        } else {
-          amounts.push(amountPerWallet);
-          remainingLamports -= amountPerWallet;
-        }
-      }
-    }
-
-    // Pad the amounts array with zeros for unused destinations to maintain array length
-    while (amounts.length < destinationCount) {
-      amounts.push(0);
-    }
-
-    // Validate total matches (within rounding tolerance)
-    const actualTotal = amounts.reduce((sum, amount) => sum + amount, 0);
-    if (Math.abs(actualTotal - totalLamports) > walletsToUse) {
-      console.warn(
-        `Amount distribution mismatch: expected ${totalLamports}, got ${actualTotal}`
-      );
-    }
-
-    return amounts;
+    amounts.push(amount);
   }
-}
+  
+  console.log(`✅ Generated ${amounts.length} amounts using legacy stable distribution`);
+  return amounts;
 
 /**
  * Simple Solana Mixer - Mix SOL through intermediate wallets for privacy
@@ -251,8 +158,8 @@ async function runMixer(
       maxRetries: 2, // Reduce from 3 for speed
       retryDelay: 2000, // Reduce from 5000ms
       
-      // NEW: Parallel processing configuration (ENABLED - safety tests passed)
-      parallelMode: true, // Enable parallel mode for 81.5% speed improvement
+      // NEW: Parallel processing configuration (DISABLED for production stability)
+      parallelMode: false, // Disable parallel mode to prevent production issues
       maxConcurrentTx: options?.maxConcurrentTx || 3,
       balanceCheckTimeout: options?.balanceCheckTimeout || 5000,
       fastMode: options?.fastMode || false,
