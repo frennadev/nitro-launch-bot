@@ -3,7 +3,7 @@ import { getMint, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import axios from "axios";
 import { connection } from "./config";
 import { logger } from "../jobs/logger";
-import { BirdeyesResponse } from "./responseTypes";
+// Removed BirdeyesResponse - no longer using Birdeye API
 
 export interface TokenInfo {
   address: string;
@@ -161,32 +161,33 @@ export class TokenInfoService {
     tokenAddress: string
   ): Promise<Partial<TokenInfo> | null> {
     try {
+      // Use actual DexScreener API instead of Birdeye
       const response = await axios.get(
-        "https://public-api.birdeye.so/defi/token_overview?address=" +
-          tokenAddress,
+        `https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`,
         {
-          headers: {
-            accept: "application/json",
-            "x-chain": "solana",
-            "X-API-KEY": "e750e17792ae478983170f78486de13c",
-          },
           timeout: 5000,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; NitroBot/1.0)",
+          },
         }
       );
 
-      // Get the pair with highest liquidity
-      const bestPair: BirdeyesResponse = response.data;
+      const data = response.data || [];
+      if (!data.length || !data[0]) {
+        return null;
+      }
 
+      const tokenData = data[0];
       return {
-        name: bestPair.data.name,
-        symbol: bestPair.data.symbol,
-        price: bestPair.data.price,
-        priceChange24h: bestPair.data.priceChange24hPercent || 0,
-        marketCap: bestPair.data.marketCap || 0,
-        volume24h: bestPair.data.v24hUSD || 0,
-        liquidity: bestPair.data.liquidity || 0,
-        supply: `${bestPair.data.totalSupply}` || "0",
-        decimals: bestPair.data.decimals,
+        name: tokenData.baseToken?.name || "Unknown",
+        symbol: tokenData.baseToken?.symbol || "UNKNOWN",
+        price: parseFloat(tokenData.priceUsd || "0"),
+        priceChange24h: parseFloat(tokenData.priceChange?.h24 || "0"),
+        marketCap: tokenData.marketCap || 0,
+        volume24h: tokenData.volume?.h24 || 0,
+        liquidity: tokenData.liquidity?.usd || 0,
+        supply: "0", // DexScreener doesn't provide supply
+        decimals: tokenData.baseToken?.decimals || 9,
         address: tokenAddress,
       };
     } catch (error) {

@@ -200,12 +200,12 @@ export const ctoMonitorConversation = async (
     let supplyPercentage = 0;
     let supplyPercentageText = "0.0000%";
 
-    if (tokenInfo.birdeye?.totalSupply && totalSupply > 0) {
+    if (tokenInfo.solanatracker?.totalSupply && totalSupply > 0) {
       // Convert supply to number (it might be a string)
       const totalTokenSupply =
-        typeof tokenInfo.birdeye.totalSupply === "string"
-          ? parseFloat(tokenInfo.birdeye.totalSupply)
-          : tokenInfo.birdeye.totalSupply;
+        typeof tokenInfo.solanatracker.totalSupply === "string"
+          ? parseFloat(tokenInfo.solanatracker.totalSupply)
+          : tokenInfo.solanatracker.totalSupply;
 
       // Calculate percentage held
       console.log(

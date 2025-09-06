@@ -4934,7 +4934,7 @@ export const calculateUserTokenSupplyPercentage = async (
 
     logger.info(JSON.stringify(tokenInfo, null, 2));
     logger.info(
-      `[calculateUserTokenSupplyPercentage] Token info for ${tokenAddress}: ${tokenInfo.birdeye.totalSupply} SUPPLY`
+      `[calculateUserTokenSupplyPercentage] Token info for ${tokenAddress}: ${tokenInfo.solanatracker?.totalSupply || 'N/A'} SUPPLY`
     );
     // Try different supply sources based on data structure
     if (tokenInfo.supply) {
@@ -4944,11 +4944,11 @@ export const calculateUserTokenSupplyPercentage = async (
         `[calculateUserTokenSupplyPercentage] Using direct supply: ${supplyValue}`
       );
       totalSupply = supplyValue;
-    } else if (tokenInfo.birdeye?.totalSupply) {
-      // Birdeye format
-      const supplyValue = Number(tokenInfo.birdeye.totalSupply);
+    } else if (tokenInfo.solanatracker?.totalSupply) {
+      // SolanaTracker format
+      const supplyValue = Number(tokenInfo.solanatracker.totalSupply);
       logger.info(
-        `[calculateUserTokenSupplyPercentage] Using Birdeye supply: ${supplyValue}`
+        `[calculateUserTokenSupplyPercentage] Using SolanaTracker supply: ${supplyValue}`
       );
       totalSupply = supplyValue;
     } else if (tokenInfo.baseToken?.decimals) {
@@ -4976,7 +4976,7 @@ export const calculateUserTokenSupplyPercentage = async (
       `[calculateUserTokenSupplyPercentage] Token supply sources for ${tokenAddress}:`,
       {
         directSupply: tokenInfo.supply,
-        birdeyeSupply: tokenInfo.birdeye?.totalSupply,
+        solanatrackerSupply: tokenInfo.solanatracker?.totalSupply,
         totalSupplyCalculated: totalSupply.toString(),
         totalSupplyFormatted,
       }

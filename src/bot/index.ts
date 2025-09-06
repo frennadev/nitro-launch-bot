@@ -2634,12 +2634,12 @@ bot.callbackQuery(
       let supplyPercentage = 0;
       let supplyPercentageText = "";
 
-      if (tokenInfo.birdeye.totalSupply && totalSupply > 0) {
-        // Convert supply to number (it might be a string)
-        const totalTokenSupply =
-          typeof tokenInfo.birdeye.totalSupply === "string"
-            ? parseFloat(tokenInfo.birdeye.totalSupply)
-            : tokenInfo.birdeye.totalSupply;
+    if (tokenInfo.solanatracker?.totalSupply && totalSupply > 0) {
+      // Convert supply to number (it might be a string)
+      const totalTokenSupply =
+        typeof tokenInfo.solanatracker.totalSupply === "string"
+          ? parseFloat(tokenInfo.solanatracker.totalSupply)
+          : tokenInfo.solanatracker.totalSupply;
 
         // Calculate percentage held
         console.log(
@@ -3009,12 +3009,12 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
     let supplyPercentage = 0;
     let supplyPercentageText = "";
 
-    if (tokenInfo.birdeye.totalSupply && totalSupply > 0) {
+    if (tokenInfo.solanatracker?.totalSupply && totalSupply > 0) {
       // Convert supply to number (it might be a string)
       const totalTokenSupply =
-        typeof tokenInfo.birdeye.totalSupply === "string"
-          ? parseFloat(tokenInfo.birdeye.totalSupply)
-          : tokenInfo.birdeye.totalSupply;
+        typeof tokenInfo.solanatracker.totalSupply === "string"
+          ? parseFloat(tokenInfo.solanatracker.totalSupply)
+          : tokenInfo.solanatracker.totalSupply;
 
       // Calculate percentage held
       console.log(
