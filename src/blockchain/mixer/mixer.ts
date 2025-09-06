@@ -16,7 +16,7 @@ dotenv.config();
 
 const MONGODB_URI = env.MONGODB_URI;
 const DATABASE_NAME = process.env.DATABASE_NAME;
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+const ENCRYPTION_KEY = env.ENCRYPTION_SECRET; // ✅ FIXED: Use ENCRYPTION_SECRET from env config
 const SOLANA_RPC_ENDPOINT = env.HELIUS_MIXER_RPC_URL;
 
 // Minimum amount per destination (0.01 SOL)
