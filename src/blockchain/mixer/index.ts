@@ -483,6 +483,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       process.exit(1);
     });
 }
-
-// Export the main function
-export { runMixer };

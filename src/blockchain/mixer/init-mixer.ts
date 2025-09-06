@@ -1,4 +1,4 @@
-import { runMixer } from ".";
+import { runMixer } from "./mixer";
 import { updateMixerProgress, updateMixerStatus } from "../../bot/loading";
 
 export async function initializeMixer(
