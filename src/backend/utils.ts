@@ -18,7 +18,7 @@ import { DexscreenerTokenResponse } from "./types";
 
 export function encryptPrivateKey(privateKey: string): string {
   const SECRET_KEY = crypto.scryptSync(
-    env.ENCRYPTION_SECRET,
+    env.ENCRYPTION_SECRET as string,
     "salt",
     ENCRYPTION_IV_LENGTH * 2
   );
@@ -38,7 +38,7 @@ export function encryptPrivateKey(privateKey: string): string {
 
 export function decryptPrivateKey(encryptedPrivateKey: string): string {
   const SECRET_KEY = crypto.scryptSync(
-    env.ENCRYPTION_SECRET,
+    env.ENCRYPTION_SECRET as string,
     "salt",
     ENCRYPTION_IV_LENGTH * 2
   );
@@ -280,7 +280,11 @@ export async function getSolBalance(
   return lamports / LAMPORTS_PER_SOL;
 }
 
-// Birdeye API types
+// Legacy Birdeye API types - being removed
+export interface BirdeyeExtensions {
+  description: string;
+}
+
 export interface BirdeyeResponse {
   data: BirdeyeData;
   success: boolean;
@@ -541,59 +545,7 @@ export interface BirdeyeData {
   numberMarkets: number;
 }
 
-export interface BirdeyeExtensions {
-  description: string;
-}
-
-/**
- * Get token information from Birdeye API
- */
-export const getBirdeyeTokenInfo = async (
-  tokenAddress: string
-): Promise<BirdeyeData | null> => {
-  try {
-    const response = await axios.get(
-      "https://public-api.birdeye.so/defi/token_overview?address=" +
-        tokenAddress,
-      {
-        headers: {
-          accept: "application/json",
-          "x-chain": "solana",
-          "X-API-KEY": "e750e17792ae478983170f78486de13c",
-        },
-        timeout: 5000,
-      }
-    );
-
-    const data: BirdeyeResponse = response.data || {};
-
-    if (!data.success || !data.data) {
-      console.log(
-        `[getBirdeyeTokenInfo] Birdeye API returned unsuccessful response for ${tokenAddress}`
-      );
-      return null;
-    }
-
-    console.log(
-      `[getBirdeyeTokenInfo] Successfully fetched data for ${tokenAddress}:`,
-      {
-        name: data.data.name,
-        symbol: data.data.symbol,
-        marketCap: data.data.marketCap,
-        price: data.data.price,
-        liquidity: data.data.liquidity,
-      }
-    );
-
-    return data.data;
-  } catch (error: any) {
-    console.error(
-      `[getBirdeyeTokenInfo] Error fetching token info for ${tokenAddress}:`,
-      error.message
-    );
-    return null;
-  }
-};
+// Birdeye functions removed - migrated to SolanaTracker
 
 export const getTokenInfo = async (tokenAddress: string) => {
   const cacheKey = `${tokenAddress}::data`;
@@ -613,22 +565,24 @@ export const getTokenInfo = async (tokenAddress: string) => {
       // Continue without cache
     }
 
-    // First try Birdeye API
-    console.log(`[getTokenInfo] Fetching from Birdeye API for ${tokenAddress}`);
-    const birdeyeData = await getBirdeyeTokenInfo(tokenAddress);
+    // First try SolanaTracker API
+    console.log(`[getTokenInfo] Fetching from SolanaTracker API for ${tokenAddress}`);
+    const { SolanaTrackerService } = await import('../services/token/solana-tracker-service');
+    const solanaTracker = new SolanaTrackerService();
+    const solanaTrackerData = await solanaTracker.getTokenInfo(tokenAddress);
 
-    if (birdeyeData) {
-      // Convert Birdeye data to DexScreener-compatible format for backward compatibility
+    if (solanaTrackerData) {
+      // Convert SolanaTracker data to DexScreener-compatible format for backward compatibility
       const convertedData = {
         chainId: "solana",
-        dexId: "birdeye",
-        url: `https://birdeye.so/token/${tokenAddress}`,
-        pairAddress: tokenAddress, // Use token address as pair address for Birdeye
+        dexId: "solanatracker",
+        url: `https://solanatracker.io/token/${tokenAddress}`,
+        pairAddress: tokenAddress,
         baseToken: {
           address: tokenAddress,
-          name: birdeyeData.name,
-          symbol: birdeyeData.symbol,
-          decimals: birdeyeData.decimals,
+          name: solanaTrackerData.name || "Unknown",
+          symbol: solanaTrackerData.symbol || "UNKNOWN",
+          decimals: solanaTrackerData.decimals || 9,
         },
         quoteToken: {
           address: "So11111111111111111111111111111111111111112", // WSOL
@@ -636,31 +590,29 @@ export const getTokenInfo = async (tokenAddress: string) => {
           symbol: "SOL",
           decimals: 9,
         },
-        priceNative: birdeyeData.price
-          ? (birdeyeData.price / 240).toString()
+        priceNative: solanaTrackerData.price
+          ? (solanaTrackerData.price / 240).toString()
           : "0", // Rough SOL price estimate
-        priceUsd: birdeyeData.price ? birdeyeData.price.toString() : "0",
-        marketCap: birdeyeData.marketCap || 0,
+        priceUsd: solanaTrackerData.price ? solanaTrackerData.price.toString() : "0",
+        marketCap: solanaTrackerData.marketCap || 0,
         liquidity: {
-          usd: birdeyeData.liquidity || 0,
+          usd: solanaTrackerData.liquidity || 0,
           base: 0,
           quote: 0,
         },
-        fdv: birdeyeData.fdv || birdeyeData.marketCap || 0,
+        fdv: solanaTrackerData.marketCap || 0,
         pairCreatedAt: Date.now() - 86400000, // Estimate 1 day ago
         info: {
-          imageUrl: birdeyeData.logoURI || null,
-          websites: [`https://birdeye.so/token/${tokenAddress}`],
+          imageUrl: solanaTrackerData.logoURI || null,
+          websites: [`https://solanatracker.io/token/${tokenAddress}`],
           socials: [],
         },
-        // Additional Birdeye-specific data
-        birdeye: {
-          totalSupply: birdeyeData.totalSupply,
-          circulatingSupply: birdeyeData.circulatingSupply,
-          holder: birdeyeData.holder,
-          priceChange24h: birdeyeData.priceChange24hPercent,
-          volume24h: birdeyeData.v24hUSD,
-          trades24h: birdeyeData.trade24h,
+        // Additional SolanaTracker-specific data
+        solanatracker: {
+          totalSupply: solanaTrackerData.supply,
+          holder: solanaTrackerData.holders,
+          priceChange24h: solanaTrackerData.priceChangePercentage,
+          volume24h: solanaTrackerData.volume24h,
         },
       };
 
@@ -680,14 +632,14 @@ export const getTokenInfo = async (tokenAddress: string) => {
       }
 
       console.log(
-        `[getTokenInfo] Birdeye data successfully converted for ${tokenAddress}`
+        `[getTokenInfo] SolanaTracker data successfully converted for ${tokenAddress}`
       );
       return convertedData;
     }
 
-    // If Birdeye fails, try DexScreener as fallback
+    // If SolanaTracker fails, try DexScreener as fallback
     console.log(
-      `[getTokenInfo] Birdeye failed, trying DexScreener fallback for ${tokenAddress}`
+      `[getTokenInfo] SolanaTracker failed, trying DexScreener fallback for ${tokenAddress}`
     );
     const response = await axios.get(
       `https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`,

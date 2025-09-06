@@ -1302,6 +1302,12 @@ bot.callbackQuery(CallBackQueries.WALLET_CONFIG, async (ctx) => {
   await ctx.conversation.enter("walletConfigConversation");
 });
 
+// ✅ FIXED: Handle MIX_FUNDS callback to enter wallet config conversation
+bot.callbackQuery(CallBackQueries.MIX_FUNDS, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔀 Loading mixer...");
+  await ctx.conversation.enter("walletConfigConversation");
+});
+
 bot.callbackQuery(CallBackQueries.BACK, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
   await ctx.conversation.enter("mainMenuConversation");

@@ -495,7 +495,7 @@ export class TokenInfoService {
   private async getTokenPrice(tokenAddress: string): Promise<TokenValue | null> {
     const sources = [
       () => this.getPriceFromDexScreener(tokenAddress),
-      () => this.getPriceFromBirdeye(tokenAddress),
+      () => this.getPriceFromSolanaTracker(tokenAddress),
       () => this.getPriceFromJupiter(tokenAddress)
     ];
     
@@ -538,21 +538,17 @@ export class TokenInfoService {
   }
 
   /**
-   * Birdeye price API
+   * SolanaTracker price API
    */
-  private async getPriceFromBirdeye(tokenAddress: string): Promise<TokenValue | null> {
+  private async getPriceFromSolanaTracker(tokenAddress: string): Promise<TokenValue | null> {
     try {
-      const response = await axios.get(
-        `https://public-api.birdeye.so/defi/price?address=${tokenAddress}`,
-        { 
-          timeout: 5000,
-          headers: { 'X-API-KEY': process.env.BIRDEYE_API_KEY || 'e750e17792ae478983170f78486de13c' }
-        }
-      );
+      const { SolanaTrackerService } = await import('../services/token/solana-tracker-service');
+      const solanaTracker = new SolanaTrackerService();
+      const tokenInfo = await solanaTracker.getTokenInfo(tokenAddress);
       
-      if (response.data?.success && response.data?.data?.value) {
+      if (tokenInfo && tokenInfo.price) {
         return {
-          priceUsd: response.data.data.value
+          priceUsd: tokenInfo.price
         };
       }
       
