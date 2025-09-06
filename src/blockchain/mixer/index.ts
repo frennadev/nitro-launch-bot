@@ -415,7 +415,10 @@ async function executeCustomMixing(mixer: any, routes: any[]) {
   return results;
 }
 
-// CLI usage
+// Export the main function
+export { runMixer };
+
+// CLI usage (only when run directly)
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
 
@@ -483,5 +486,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       process.exit(1);
     });
 }
-
-export { runMixer };
