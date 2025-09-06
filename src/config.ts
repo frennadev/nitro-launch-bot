@@ -3,8 +3,10 @@ import { cleanEnv, makeValidator, str, num } from "envalid";
 
 config();
 
-const validStr = makeValidator((x) => {
-  if (!x) throw new Error("Should not empty");
+const validStr = makeValidator((x, name) => {
+  if (!x) {
+    throw new Error(`Environment variable ${name} is required but not set. Please check your .env file or deployment configuration.`);
+  }
   return x;
 });
 
