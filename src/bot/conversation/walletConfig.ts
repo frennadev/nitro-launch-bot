@@ -202,21 +202,25 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
     }
 
     // Use the new 73-wallet distribution system for proper randomized amounts
-    const { generateBuyDistribution } = await import("../../backend/functions");
+    const { generateBuyDistribution, calculateRequiredWallets } = await import("../../backend/functions");
     
     // Calculate the total amount available for distribution
     const totalAmountForDistribution = availableForMixing;
     
-    // Generate the proper 73-wallet distribution
+    // ✅ FIXED: Calculate how many wallets are actually needed for this amount
+    const walletsNeeded = calculateRequiredWallets(totalAmountForDistribution);
+    const actualWalletsToUse = Math.min(walletsNeeded, buyerWallets.length);
+    
+    // Generate the proper 73-wallet distribution using only the needed wallets
     const distributionAmounts = generateBuyDistribution(
       totalAmountForDistribution,
-      buyerWallets.length,
-      0.01, // minBuyAmount
-      Math.min(2.0, totalAmountForDistribution / buyerWallets.length * 1.5) // maxBuyAmount with reasonable cap
+      actualWalletsToUse, // ✅ Use calculated wallet count, not all wallets!
+      0.01 // randomSeed (optional)
     );
     
-    // Calculate average amount for display
-    const averageAmountPerWallet = totalAmountForDistribution / buyerWallets.length;
+    // Calculate average amount for display (based on actual wallets used)
+    const averageAmountPerWallet = totalAmountForDistribution / actualWalletsToUse;
+    const totalBuyerWallets = buyerWallets.length;
 
     // Show confirmation with details
     await sendMessage(
@@ -225,11 +229,12 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
         `<b>Funding Wallet Balance:</b> ${fundingBalance.toFixed(6)} SOL\n` +
         `<b>Amount to Mix (90%):</b> ${(fundingBalance * 0.9).toFixed(6)} SOL\n` +
         `<b>Reserve (10%):</b> ${(fundingBalance * 0.1).toFixed(6)} SOL\n` +
-        `<b>Number of Buyer Wallets:</b> ${buyerWallets.length}\n` +
-        `<b>Average per Wallet:</b> ~${averageAmountPerWallet.toFixed(6)} SOL\n` +
-        `<b>Distribution:</b> Randomized, tiered amounts\n` +
-        `<b>Large buys (≥2.0 SOL):</b> ${buyerWallets.length >= 40 ? 'Wallets 40+' : 'N/A'}\n\n` +
-        `<i>🎯 Uses advanced 73-wallet distribution system with randomized amounts, anti-pattern logic, and proper tiering for maximum privacy.</i>\n\n` +
+        `<b>Total Buyer Wallets:</b> ${totalBuyerWallets}\n` +
+        `<b>Wallets Needed for Amount:</b> ${actualWalletsToUse} wallets\n` +
+        `<b>Average per Used Wallet:</b> ~${averageAmountPerWallet.toFixed(6)} SOL\n` +
+        `<b>Distribution:</b> Tiered (${actualWalletsToUse <= 15 ? 'Tier 1' : actualWalletsToUse <= 25 ? 'Tier 1-2' : actualWalletsToUse <= 39 ? 'Tier 1-3' : actualWalletsToUse <= 58 ? 'Tier 1-4' : 'All Tiers'})\n` +
+        `<b>Large buys (≥2.0 SOL):</b> ${actualWalletsToUse >= 40 ? 'Yes (Wallets 40+)' : 'No (Amount too small)'}\n\n` +
+        `<i>🎯 Smart wallet selection: Only uses ${actualWalletsToUse} of your ${totalBuyerWallets} wallets based on the amount being mixed.</i>\n\n` +
         `Are you sure you want to proceed?`,
       {
         parse_mode: "HTML" as ParseMode,
@@ -261,8 +266,8 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
         const availableForMixing = fundingBalance * 0.9;
         const totalFundingLamports = Math.floor(availableForMixing * 1e9);
 
-        // Reserve extra buffer for transaction fees across all transfers
-        const totalTransferFees = buyerWallets.length * 10000; // 0.00001 SOL per transfer
+        // Reserve extra buffer for transaction fees (only for wallets actually being used)
+        const totalTransferFees = actualWalletsToUse * 10000; // 0.00001 SOL per transfer
 
         // Calculate total amount for mixer (we'll let the mixer handle distribution)
         const totalAmountForMixer =
@@ -272,19 +277,19 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
         if (totalAmountForMixer <= 0) {
           await sendMessage(
             confirmCtx,
-            `❌ Insufficient funds for mixer operation.\n\nNeed: ${totalMinimumRequired.toFixed(6)} SOL minimum\nHave: ${fundingBalance.toFixed(6)} SOL`
+            `❌ Insufficient funds for mixer operation.\n\nNeed: ${(totalAmountForDistribution + (totalTransferFees / 1e9)).toFixed(6)} SOL minimum\nHave: ${fundingBalance.toFixed(6)} SOL`
           );
           return conversation.halt();
         }
 
-        // Get buyer wallet addresses
-        const destinationAddresses = buyerWallets.map(
-          (wallet) => wallet.publicKey
-        );
+        // ✅ FIXED: Get only the wallet addresses that will actually receive funds
+        const destinationAddresses = buyerWallets
+          .slice(0, actualWalletsToUse) // Only use the first N wallets needed
+          .map((wallet) => wallet.publicKey);
 
         await sendMessage(
           confirmCtx,
-          `🔄 Starting mixer operation for ${buyerWallets.length} wallets...`
+          `🔄 Starting mixer operation for ${actualWalletsToUse} of ${buyerWallets.length} wallets...`
         );
 
         // Use the new 73-wallet distribution mixer
@@ -304,13 +309,14 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
           if (mixerResult && mixerResult.successCount > 0) {
             await sendMessage(
               confirmCtx,
-              `✅ <b>73-Wallet Distribution Complete!</b>\n\n` +
-                `Mixed ${totalAmountForDistribution.toFixed(6)} SOL (90% of funding wallet) across ${buyerWallets.length} buyer wallets.\n\n` +
-                `<b>Successful transfers:</b> ${mixerResult.successCount}/${mixerResult.totalRoutes || buyerWallets.length}\n` +
-                `<b>Distribution:</b> Randomized, tiered amounts\n` +
-                `<b>Large buys (≥2.0 SOL):</b> ${buyerWallets.length >= 40 ? 'Placed in wallets 40+' : 'N/A'}\n` +
+              `✅ <b>Smart Wallet Distribution Complete!</b>\n\n` +
+                `Mixed ${totalAmountForDistribution.toFixed(6)} SOL (90% of funding wallet) across ${actualWalletsToUse} of ${buyerWallets.length} buyer wallets.\n\n` +
+                `<b>Successful transfers:</b> ${mixerResult.successCount}/${mixerResult.totalRoutes || actualWalletsToUse}\n` +
+                `<b>Distribution:</b> Tiered amounts (${actualWalletsToUse <= 15 ? 'Tier 1' : actualWalletsToUse <= 25 ? 'Tier 1-2' : actualWalletsToUse <= 39 ? 'Tier 1-3' : actualWalletsToUse <= 58 ? 'Tier 1-4' : 'All Tiers'})\n` +
+                `<b>Large buys (≥2.0 SOL):</b> ${actualWalletsToUse >= 40 ? 'Yes (Wallets 40+)' : 'No (Amount too small)'}\n` +
+                `<b>Unused wallets:</b> ${buyerWallets.length - actualWalletsToUse} (kept clean for future use)\n` +
                 `<b>Reserve remaining:</b> ${(fundingBalance * 0.1).toFixed(6)} SOL\n\n` +
-                `<i>🎯 Used advanced 73-wallet system with anti-pattern logic and privacy mixing</i>`,
+                `<i>🎯 Smart selection: Only used the exact number of wallets needed for optimal distribution</i>`,
               { parse_mode: "HTML" }
             );
           } else {
