@@ -33,6 +33,7 @@
     "test-pumpfun-single-tx": "bun run test-pumpfun-single-tx.ts",
     "test-integration": "bun run test-integration.ts",
     "test-bot-status": "bun run test-bot-status.ts",
+    "test-bot-integration": "bun run test-bot-integration.ts",
     "dev": "bun run src/index.ts",
     "dev:job": "bun run src/jobs/index.ts",
     "setup": "chmod +x setup-local.sh && ./setup-local.sh",
