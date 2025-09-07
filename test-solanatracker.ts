@@ -48,10 +48,10 @@ async function testSolanaTracker() {
         console.log(`   ✅ Success (${endTime - startTime}ms)`);
         console.log(`   📝 Name: ${tokenInfo.name}`);
         console.log(`   🏷️  Symbol: ${tokenInfo.symbol}`);
-        console.log(`   💰 Price: $${tokenInfo.price.toFixed(6)}`);
-        console.log(`   📈 Market Cap: $${tokenInfo.marketCap.toLocaleString()}`);
-        console.log(`   💧 Liquidity: $${tokenInfo.liquidity.toLocaleString()}`);
-        console.log(`   📊 24h Volume: $${tokenInfo.volume24h.toLocaleString()}`);
+        console.log(`   💰 Price: $${tokenInfo.price ? Number(tokenInfo.price).toFixed(6) : 'N/A'}`);
+        console.log(`   📈 Market Cap: $${tokenInfo.marketCap ? tokenInfo.marketCap.toLocaleString() : 'N/A'}`);
+        console.log(`   💧 Liquidity: $${tokenInfo.liquidity ? tokenInfo.liquidity.toLocaleString() : 'N/A'}`);
+        console.log(`   📊 24h Volume: $${tokenInfo.volume24h ? tokenInfo.volume24h.toLocaleString() : 'N/A'}`);
         console.log(`   🔢 Decimals: ${tokenInfo.decimals}`);
         if (tokenInfo.holders) {
           console.log(`   👥 Holders: ${tokenInfo.holders.toLocaleString()}`);

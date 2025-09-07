@@ -2,6 +2,7 @@ import {
   ComputeBudgetProgram,
   Keypair,
   LAMPORTS_PER_SOL,
+  SystemProgram,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
@@ -18,6 +19,10 @@ import {
   tokenCreateInstruction,
   maestroBuyInstructions,
 } from "./instructions";
+import {
+  PUMPFUN_PROGRAM,
+  PUMPFUN_EVENT_AUTHORITY,
+} from "./constants";
 import {
   applySlippage,
   getBondingCurve,
@@ -586,6 +591,7 @@ export const executeTokenLaunch = async (
     const launchInstructions: TransactionInstruction[] = [];
     let devBuyTokenAmount: string | undefined;
 
+    // 1. Token creation instruction
     const createIx = tokenCreateInstruction(
       mintKeypair,
       devKeypair,
@@ -594,33 +600,57 @@ export const executeTokenLaunch = async (
       metadataUri
     );
     launchInstructions.push(createIx);
+
+    // 2. ExtendAccount instruction (required after token creation)
+    const extendAccountIx = new TransactionInstruction({
+      keys: [
+        { pubkey: getBondingCurve(mintKeypair.publicKey).bondingCurve, isSigner: false, isWritable: true }, // account
+        { pubkey: devKeypair.publicKey, isSigner: true, isWritable: true }, // user
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system_program
+        { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false }, // event_authority
+        { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false }, // program
+      ],
+      programId: PUMPFUN_PROGRAM,
+      data: Buffer.from([234, 102, 194, 203, 150, 72, 62, 229]) // ExtendAccount discriminator
+    });
+    launchInstructions.push(extendAccountIx);
+
+    // 3. Dev buy instructions (if devBuy > 0)
     if (devBuy > 0) {
+      // Create ATA for dev using createAssociatedTokenAccountIdempotentInstruction
       const devAta = getAssociatedTokenAddressSync(
         mintKeypair.publicKey,
         devKeypair.publicKey
       );
-      const createDevAtaIx = createAssociatedTokenAccountInstruction(
+      const createDevAtaIx = createAssociatedTokenAccountIdempotentInstruction(
         devKeypair.publicKey,
         devAta,
         devKeypair.publicKey,
         mintKeypair.publicKey
       );
+      launchInstructions.push(createDevAtaIx);
+
+      // Calculate buy amounts with proper buffer
       const devBuyLamports = BigInt(Math.ceil(devBuy * LAMPORTS_PER_SOL));
+      // Add 10% buffer to max SOL cost to account for fees and slippage
+      const maxSolCostWithBuffer = BigInt(Math.ceil(Number(devBuyLamports) * 1.10));
+      
       const { tokenOut } = quoteBuy(
         devBuyLamports,
         globalSetting.initialVirtualTokenReserves,
         globalSetting.initialVirtualSolReserves,
         globalSetting.initialRealTokenReserves
       );
-      const tokenOutWithSlippage = applySlippage(tokenOut, 1);
+      const tokenOutWithSlippage = applySlippage(tokenOut, 2); // 2% slippage for safety
+
       const devBuyIx = buyInstruction(
         mintKeypair.publicKey,
-        devKeypair.publicKey,
-        devKeypair.publicKey,
-        tokenOutWithSlippage,
-        devBuyLamports
+        devKeypair.publicKey, // tokenCreator
+        devKeypair.publicKey, // buyer
+        tokenOutWithSlippage, // amount (tokens to receive)
+        maxSolCostWithBuffer // maxSolCost (max SOL to spend with buffer)
       );
-      launchInstructions.push(...[createDevAtaIx, devBuyIx]);
+      launchInstructions.push(devBuyIx);
 
       // Store dev buy token amount for later recording
       devBuyTokenAmount = tokenOut.toString();

@@ -106,8 +106,8 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
       mintPk,
       new PublicKey(bondingCurveData.creator),
       devKeypair.publicKey,
-      solLamports,
-      tokensWithSlippage
+      tokensWithSlippage, // amount (tokens to receive)
+      solLamports // maxSolCost (max SOL to spend)
     );
     console.log(`[${logId}]: Buy instruction created`);
 
