@@ -15,6 +15,7 @@ import PumpFunMarketCapService from "./pumpfun-marketcap-service";
 import { connection } from "./config";
 import { logger } from "../utils/logger";
 import { env } from "../config";
+import UnifiedMarketCapService from "./unified-marketcap-service";
 
 export class TokenInfoService {
   private static instance: TokenInfoService;
@@ -583,7 +584,7 @@ export class TokenInfoService {
       //     timeout: 5000,
       //   }
       // );
-      const service = new PumpFunMarketCapService(env.HELIUS_RPC_URL);
+      const service = new UnifiedMarketCapService(env.HELIUS_RPC_URL);
       let birdeyeResult: Partial<TokenInfo> | null = {};
 
       console.log("📊 Fetching market cap data...\n");
