@@ -1,0 +1,463 @@
+export interface CallChannelTokenInfo {
+  tokenAddress: string;
+  fullMessage: string;
+  marketCap: number;
+  price: number;
+  volume: number;
+  liquidity: number;
+  priceChangePercentage: number;
+  name: string;
+  imageUrl: string | null;
+  twitter: string | null;
+  website: string | null;
+  telegram: string | null;
+  description: string | null;
+  symbol: string;
+  decimals: number;
+  channelId: string;
+}
+
+export interface MarketCapNotificationData {
+  tokenAddress: string;
+  messageId: string;
+  milestone: string;
+  milestoneType: "multiplier" | "percentage";
+  savedMarketCap: number;
+  currentMarketCap: number;
+  multiplier: number;
+  growthPercentage: number;
+  tokenName?: string;
+  tokenSymbol?: string;
+  channelUsername: string;
+  sentAt: Date;
+}
+
+export interface BirdeyesResponse {
+  data: Data;
+  success: boolean;
+}
+
+export interface Data {
+  address: string;
+  decimals: number;
+  symbol: string;
+  name: string;
+  marketCap: number;
+  fdv: number;
+  extensions: Extensions;
+  logoURI: string;
+  liquidity: number;
+  lastTradeUnixTime: number;
+  lastTradeHumanTime: Date;
+  price: number;
+  history1mPrice: number;
+  priceChange1mPercent: number;
+  history5mPrice: number;
+  priceChange5mPercent: number;
+  history30mPrice: number;
+  priceChange30mPercent: number;
+  history1hPrice: number;
+  priceChange1hPercent: number;
+  history2hPrice: number;
+  priceChange2hPercent: number;
+  history4hPrice: number;
+  priceChange4hPercent: number;
+  history6hPrice: number;
+  priceChange6hPercent: number;
+  history8hPrice: number;
+  priceChange8hPercent: number;
+  history12hPrice: number;
+  priceChange12hPercent: number;
+  history24hPrice: number;
+  priceChange24hPercent: number;
+  uniqueWallet1m: number;
+  uniqueWalletHistory1m: number;
+  uniqueWallet1mChangePercent: number;
+  uniqueWallet5m: number;
+  uniqueWalletHistory5m: number;
+  uniqueWallet5mChangePercent: number;
+  uniqueWallet30m: number;
+  uniqueWalletHistory30m: number;
+  uniqueWallet30mChangePercent: number;
+  uniqueWallet1h: number;
+  uniqueWalletHistory1h: number;
+  uniqueWallet1hChangePercent: number;
+  uniqueWallet2h: number;
+  uniqueWalletHistory2h: number;
+  uniqueWallet2hChangePercent: number;
+  uniqueWallet4h: number;
+  uniqueWalletHistory4h: number;
+  uniqueWallet4hChangePercent: number;
+  uniqueWallet8h: number;
+  uniqueWalletHistory8h: number;
+  uniqueWallet8hChangePercent: number;
+  uniqueWallet24h: number;
+  uniqueWalletHistory24h: number;
+  uniqueWallet24hChangePercent: number;
+  totalSupply: number;
+  circulatingSupply: number;
+  holder: number;
+  trade1m: number;
+  tradeHistory1m: number;
+  trade1mChangePercent: number;
+  sell1m: number;
+  sellHistory1m: number;
+  sell1mChangePercent: number;
+  buy1m: number;
+  buyHistory1m: number;
+  buy1mChangePercent: number;
+  v1m: number;
+  v1mUSD: number;
+  vHistory1m: number;
+  vHistory1mUSD: number;
+  v1mChangePercent: number;
+  vBuy1m: number;
+  vBuy1mUSD: number;
+  vBuyHistory1m: number;
+  vBuyHistory1mUSD: number;
+  vBuy1mChangePercent: number;
+  vSell1m: number;
+  vSell1mUSD: number;
+  vSellHistory1m: number;
+  vSellHistory1mUSD: number;
+  vSell1mChangePercent: number;
+  trade5m: number;
+  tradeHistory5m: number;
+  trade5mChangePercent: number;
+  sell5m: number;
+  sellHistory5m: number;
+  sell5mChangePercent: number;
+  buy5m: number;
+  buyHistory5m: number;
+  buy5mChangePercent: number;
+  v5m: number;
+  v5mUSD: number;
+  vHistory5m: number;
+  vHistory5mUSD: number;
+  v5mChangePercent: number;
+  vBuy5m: number;
+  vBuy5mUSD: number;
+  vBuyHistory5m: number;
+  vBuyHistory5mUSD: number;
+  vBuy5mChangePercent: number;
+  vSell5m: number;
+  vSell5mUSD: number;
+  vSellHistory5m: number;
+  vSellHistory5mUSD: number;
+  vSell5mChangePercent: number;
+  trade30m: number;
+  tradeHistory30m: number;
+  trade30mChangePercent: number;
+  sell30m: number;
+  sellHistory30m: number;
+  sell30mChangePercent: number;
+  buy30m: number;
+  buyHistory30m: number;
+  buy30mChangePercent: number;
+  v30m: number;
+  v30mUSD: number;
+  vHistory30m: number;
+  vHistory30mUSD: number;
+  v30mChangePercent: number;
+  vBuy30m: number;
+  vBuy30mUSD: number;
+  vBuyHistory30m: number;
+  vBuyHistory30mUSD: number;
+  vBuy30mChangePercent: number;
+  vSell30m: number;
+  vSell30mUSD: number;
+  vSellHistory30m: number;
+  vSellHistory30mUSD: number;
+  vSell30mChangePercent: number;
+  trade1h: number;
+  tradeHistory1h: number;
+  trade1hChangePercent: number;
+  sell1h: number;
+  sellHistory1h: number;
+  sell1hChangePercent: number;
+  buy1h: number;
+  buyHistory1h: number;
+  buy1hChangePercent: number;
+  v1h: number;
+  v1hUSD: number;
+  vHistory1h: number;
+  vHistory1hUSD: number;
+  v1hChangePercent: number;
+  vBuy1h: number;
+  vBuy1hUSD: number;
+  vBuyHistory1h: number;
+  vBuyHistory1hUSD: number;
+  vBuy1hChangePercent: number;
+  vSell1h: number;
+  vSell1hUSD: number;
+  vSellHistory1h: number;
+  vSellHistory1hUSD: number;
+  vSell1hChangePercent: number;
+  trade2h: number;
+  tradeHistory2h: number;
+  trade2hChangePercent: number;
+  sell2h: number;
+  sellHistory2h: number;
+  sell2hChangePercent: number;
+  buy2h: number;
+  buyHistory2h: number;
+  buy2hChangePercent: number;
+  v2h: number;
+  v2hUSD: number;
+  vHistory2h: number;
+  vHistory2hUSD: number;
+  v2hChangePercent: number;
+  vBuy2h: number;
+  vBuy2hUSD: number;
+  vBuyHistory2h: number;
+  vBuyHistory2hUSD: number;
+  vBuy2hChangePercent: number;
+  vSell2h: number;
+  vSell2hUSD: number;
+  vSellHistory2h: number;
+  vSellHistory2hUSD: number;
+  vSell2hChangePercent: number;
+  trade4h: number;
+  tradeHistory4h: number;
+  trade4hChangePercent: number;
+  sell4h: number;
+  sellHistory4h: number;
+  sell4hChangePercent: number;
+  buy4h: number;
+  buyHistory4h: number;
+  buy4hChangePercent: number;
+  v4h: number;
+  v4hUSD: number;
+  vHistory4h: number;
+  vHistory4hUSD: number;
+  v4hChangePercent: number;
+  vBuy4h: number;
+  vBuy4hUSD: number;
+  vBuyHistory4h: number;
+  vBuyHistory4hUSD: number;
+  vBuy4hChangePercent: number;
+  vSell4h: number;
+  vSell4hUSD: number;
+  vSellHistory4h: number;
+  vSellHistory4hUSD: number;
+  vSell4hChangePercent: number;
+  trade8h: number;
+  tradeHistory8h: number;
+  trade8hChangePercent: number;
+  sell8h: number;
+  sellHistory8h: number;
+  sell8hChangePercent: number;
+  buy8h: number;
+  buyHistory8h: number;
+  buy8hChangePercent: number;
+  v8h: number;
+  v8hUSD: number;
+  vHistory8h: number;
+  vHistory8hUSD: number;
+  v8hChangePercent: number;
+  vBuy8h: number;
+  vBuy8hUSD: number;
+  vBuyHistory8h: number;
+  vBuyHistory8hUSD: number;
+  vBuy8hChangePercent: number;
+  vSell8h: number;
+  vSell8hUSD: number;
+  vSellHistory8h: number;
+  vSellHistory8hUSD: number;
+  vSell8hChangePercent: number;
+  trade24h: number;
+  tradeHistory24h: number;
+  trade24hChangePercent: number;
+  sell24h: number;
+  sellHistory24h: number;
+  sell24hChangePercent: number;
+  buy24h: number;
+  buyHistory24h: number;
+  buy24hChangePercent: number;
+  v24h: number;
+  v24hUSD: number;
+  vHistory24h: number;
+  vHistory24hUSD: number;
+  v24hChangePercent: number;
+  vBuy24h: number;
+  vBuy24hUSD: number;
+  vBuyHistory24h: number;
+  vBuyHistory24hUSD: number;
+  vBuy24hChangePercent: number;
+  vSell24h: number;
+  vSell24hUSD: number;
+  vSellHistory24h: number;
+  vSellHistory24hUSD: number;
+  vSell24hChangePercent: number;
+  numberMarkets: number;
+}
+
+export interface Extensions {
+  description: string;
+}
+
+export interface TokenInfo {
+  address: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  supply: string;
+  price?: number;
+  dex: string;
+  dexId?: string;
+  priceChange24h?: number;
+  marketCap?: number;
+  volume24h?: number;
+  liquidity?: number;
+  holders?: number;
+  description?: string;
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+  image?: string;
+  verified?: boolean;
+}
+
+export interface IChannelMessage {
+  channelUsername: string;
+  channelId: string;
+  tokenAddress: string;
+  tokenName: string;
+  tokenSymbol: string;
+  marketCap: number;
+  price: number;
+  volume?: number;
+  liquidity?: number;
+  priceChangePercentage?: number;
+  decimals?: number;
+  description?: string;
+  imageUrl?: string;
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+  messageContent?: string;
+  messageId?: string;
+  alerts: string[];
+  sentAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IGroupedChannelMessages {
+  tokenAddress: string;
+  messages: IChannelMessage[];
+}
+
+export interface SolanaTrackerResponse {
+  token: Token;
+  pools: Pool[];
+  events: { [key: string]: Event };
+  risk: SolanaTrackerResponseRisk;
+  buys: number;
+  sells: number;
+  txns: number;
+  holders: number;
+}
+
+export interface Event {
+  priceChangePercentage: number;
+}
+
+export interface Pool {
+  poolId: string;
+  liquidity: { [key: string]: number };
+  price: { [key: string]: number };
+  tokenSupply: number;
+  lpBurn: number;
+  tokenAddress: string;
+  marketCap: { [key: string]: number };
+  market: string;
+  raydium?: Raydium;
+  quoteToken: string;
+  decimals: number;
+  security: Security;
+  lastUpdated: number;
+  createdAt?: number;
+  deployer: null | string;
+  txns?: Txns;
+}
+
+export interface Raydium {
+  baseLiquidity: ELiquidity;
+  quoteLiquidity: ELiquidity;
+}
+
+export interface ELiquidity {
+  amount: number;
+  usd: number;
+}
+
+export interface Security {
+  freezeAuthority: null;
+  mintAuthority: null;
+}
+
+export interface Txns {
+  buys: number;
+  sells: number;
+  total: number;
+  volume: number;
+  volume24h: number;
+}
+
+export interface SolanaTrackerResponseRisk {
+  snipers: Ers;
+  insiders: Ers;
+  top10: number;
+  dev: Dev;
+  rugged: boolean;
+  risks: RiskElement[];
+  score: number;
+}
+
+export interface Dev {
+  percentage: number;
+  amount: number;
+}
+
+export interface Ers {
+  count: number;
+  totalBalance: number;
+  totalPercentage: number;
+  wallets: any[];
+}
+
+export interface RiskElement {
+  name: string;
+  description: string;
+  level: string;
+  score: number;
+}
+
+export interface Token {
+  name: string;
+  symbol: string;
+  mint: string;
+  uri: string;
+  decimals: number;
+  description: string;
+  image: string;
+  showName: boolean;
+  createdOn: string;
+  twitter: string;
+  telegram: string;
+  hasFileMetaData: boolean;
+  strictSocials: StrictSocials;
+  creation: Creation;
+}
+
+export interface Creation {
+  creator: string;
+  created_tx: string;
+  created_time: number;
+}
+
+export interface StrictSocials {
+  twitter: string;
+  telegram: string;
+}
