@@ -962,10 +962,42 @@ export async function archiveAddress(
 }
 
 /**
- * Get current SOL price from CoinGecko API
+ * Get current SOL price from Helius RPC (primary) with CoinGecko fallback
  */
 export const getCurrentSolPrice = async (): Promise<number> => {
   try {
+    // Try Helius DAS API first (consistent with our market cap services)
+    const heliusRpcUrl = process.env.HELIUS_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e';
+    const SOL_MINT = 'So11111111111111111111111111111111111111112';
+    
+    const heliusResponse = await axios.post(heliusRpcUrl, {
+      jsonrpc: '2.0',
+      id: 'sol-price-request',
+      method: 'getAsset',
+      params: {
+        id: SOL_MINT,
+        displayOptions: {
+          showFungible: true
+        }
+      }
+    }, {
+      timeout: 5000,
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    const heliusPrice = heliusResponse.data?.result?.token_info?.price_info?.price_per_token;
+    if (heliusPrice && heliusPrice > 0) {
+      console.log(`[getCurrentSolPrice] Current SOL price (Helius): $${heliusPrice}`);
+      return heliusPrice;
+    }
+  } catch (heliusError: any) {
+    console.warn(`[getCurrentSolPrice] Helius failed: ${heliusError.message}`);
+  }
+
+  try {
+    // Fallback to CoinGecko
     const response = await axios.get(
       "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
       {
@@ -975,7 +1007,7 @@ export const getCurrentSolPrice = async (): Promise<number> => {
 
     const price = response.data?.solana?.usd;
     if (price && price > 0) {
-      console.log(`[getCurrentSolPrice] Current SOL price: $${price}`);
+      console.log(`[getCurrentSolPrice] Current SOL price (CoinGecko): $${price}`);
       return price;
     }
 
@@ -1007,8 +1039,8 @@ export const getCurrentSolPrice = async (): Promise<number> => {
       );
     }
 
-    // Final fallback to a reasonable estimate
-    console.warn(`[getCurrentSolPrice] Using fallback SOL price: $182`);
-    return 182; // Conservative fallback
+    // Final fallback to a reasonable current estimate
+    console.warn(`[getCurrentSolPrice] Using fallback SOL price: $220`);
+    return 220; // Updated fallback price
   }
 };
