@@ -346,11 +346,30 @@ const createTokenMetadata = async (
       symbol,
       description,
       image: ipfsImage,
+      external_url: website || "",
+      attributes: [],
+      properties: {
+        files: [
+          {
+            uri: ipfsImage,
+            type: "image/png"
+          }
+        ],
+        category: "image"
+      },
+      // Keep social links in both formats for compatibility
       socials: {
         twitter,
+        x: twitter, // X.com support
         telegram,
         website,
       },
+      // Also add social links as top-level fields (alternative format)
+      // Support both twitter and x for compatibility
+      twitter: twitter || "",
+      x: twitter || "", // X.com support
+      telegram: telegram || "",
+      website: website || ""
     };
 
     const ipfsMetadataResult = await uploadJsonToPinata(

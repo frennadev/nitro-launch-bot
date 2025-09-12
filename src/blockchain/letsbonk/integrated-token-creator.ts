@@ -405,6 +405,8 @@ export async function createBonkToken(
       symbol,
       description: `${name} Token`,
       image: imageUri,
+      external_url: socials?.website || "",
+      attributes: [],
       properties: {
         files: [
           {
@@ -414,9 +416,20 @@ export async function createBonkToken(
         ],
         category: "image",
       },
+      // Keep social links in both formats for compatibility
+      socials: {
+        website: socials?.website || "",
+        telegram: socials?.telegram || "",
+        twitter: socials?.twitter || "",
+        x: socials?.twitter || "", // X.com support
+      },
     };
+    // Also add social links as top-level fields (alternative format)
     if (socials) {
-      if (socials.twitter) metadata.twitter = socials.twitter;
+      if (socials.twitter) {
+        metadata.twitter = socials.twitter;
+        metadata.x = socials.twitter; // X.com support
+      }
       if (socials.telegram) metadata.telegram = socials.telegram;
       if (socials.website) metadata.website = socials.website;
     }

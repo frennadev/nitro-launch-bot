@@ -336,6 +336,7 @@ export class TokenInfoService {
               if (!result.twitter && data.twitter_url)
                 result.twitter = data.twitter_url;
               if (!result.twitter && data.x) result.twitter = data.x;
+              if (!result.twitter && data.x_url) result.twitter = data.x_url;
               if (!result.telegram && data.telegram_url)
                 result.telegram = data.telegram_url;
 

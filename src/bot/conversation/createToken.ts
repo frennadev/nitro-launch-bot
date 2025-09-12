@@ -271,7 +271,7 @@ const createTokenConversation = async (
     let socialsInfo = "";
     const socialLinks = [];
     if (twitter) {
-      socialLinks.push(`🐦 <a href="${twitter}">Twitter</a>`);
+      socialLinks.push(`🐦 <a href="${twitter}">X (Twitter)</a>`);
     }
     if (telegram) {
       socialLinks.push(`💬 <a href="${telegram}">Telegram</a>`);
@@ -313,7 +313,7 @@ ${socialsInfo ? `🌐 <b>Social Links:</b>\n${socialsInfo}` : ""}
     let socialsInfo = "";
     const socialLinks = [];
     if (twitter) {
-      socialLinks.push(`🐦 <a href="${twitter}">Twitter</a>`);
+      socialLinks.push(`🐦 <a href="${twitter}">X (Twitter)</a>`);
     }
     if (telegram) {
       socialLinks.push(`💬 <a href="${telegram}">Telegram</a>`);
