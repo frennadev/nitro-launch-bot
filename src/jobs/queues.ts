@@ -9,30 +9,30 @@ import type {
 } from "./types";
 
 export const tokenLaunchQueue = new Queue<LaunchTokenJob>(
-  "super-token-launch",
+  "bundler-token-launch",
   {
     connection: redisClient,
   }
 );
 
 export const prepareLaunchQueue = new Queue<PrepareTokenLaunchJob>(
-  "super-prepare-launch",
+  "bundler-prepare-launch",
   {
     connection: redisClient,
   }
 );
 
 export const executeLaunchQueue = new Queue<ExecuteTokenLaunchJob>(
-  "super-execute-launch",
+  "bundler-execute-launch",
   {
     connection: redisClient,
   }
 );
 
-export const devSellQueue = new Queue<SellDevJob>("super-dev-sell", {
+export const devSellQueue = new Queue<SellDevJob>("bundler-dev-sell", {
   connection: redisClient,
 });
 
-export const walletSellQueue = new Queue<SellWalletJob>("super-wallet-sell", {
+export const walletSellQueue = new Queue<SellWalletJob>("bundler-wallet-sell", {
   connection: redisClient,
 });
