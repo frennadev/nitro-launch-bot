@@ -919,7 +919,7 @@ bot.command("tokens", async (ctx) => {
 bot.command("commands", async (ctx) => {
   try {
     const commandsList = [
-      "🤖 <b>Nitro Bot Commands</b>",
+      "🤖 <b>Bundler Commands</b>",
       "",
       "<b>🚀 Main Commands:</b>",
       "• <code>/start</code> - Start the bot and main menu",
@@ -2634,12 +2634,12 @@ bot.callbackQuery(
       let supplyPercentage = 0;
       let supplyPercentageText = "";
 
-    if (tokenInfo.solanatracker?.totalSupply && totalSupply > 0) {
-      // Convert supply to number (it might be a string)
-      const totalTokenSupply =
-        typeof tokenInfo.solanatracker.totalSupply === "string"
-          ? parseFloat(tokenInfo.solanatracker.totalSupply)
-          : tokenInfo.solanatracker.totalSupply;
+      if (tokenInfo.solanatracker?.totalSupply && totalSupply > 0) {
+        // Convert supply to number (it might be a string)
+        const totalTokenSupply =
+          typeof tokenInfo.solanatracker.totalSupply === "string"
+            ? parseFloat(tokenInfo.solanatracker.totalSupply)
+            : tokenInfo.solanatracker.totalSupply;
 
         // Calculate percentage held
         console.log(
@@ -3419,6 +3419,7 @@ bot.callbackQuery(/^generate_pnl_(.+)$/, async (ctx) => {
       pnlCardResult.status === "fulfilled" ? pnlCardResult.value : null;
 
     if (pnlCardBuffer) {
+      return;
       const pnlKeyboard = new InlineKeyboard()
         .text("🔄 Refresh PNL", `generate_pnl_${tokenAddress}`)
         .text(
