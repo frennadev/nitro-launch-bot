@@ -11,6 +11,7 @@ import bs58 from "bs58";
 import type { TransactionSetup } from "./types";
 import { connectionPool } from "./connection-pool";
 import { logger } from "./logger";
+import { enhancedTransactionSender, TransactionType } from "./enhanced-transaction-sender";
 
 export const generateKeypairs = (count: number) => {
   const keys = [];
@@ -75,10 +76,14 @@ export const formatMilliseconds = (ms: number): string => {
   }
 };
 
-// Optimized transaction sending using connection pool
-export const sendSignedTransaction = async (txn: VersionedTransaction) => {
+// Enhanced transaction sending with Zero Slot integration for buy/sell operations
+export const sendSignedTransaction = async (
+  txn: VersionedTransaction,
+  transactionType?: TransactionType
+) => {
   try {
-    const signature = await connectionPool.sendTransaction(txn, {
+    const signature = await enhancedTransactionSender.sendSignedTransaction(txn, {
+      transactionType,
       maxRetries: 3,
       skipPreflight: true,
     });
@@ -99,21 +104,18 @@ export const sendTransaction = async (
   signedTx: VersionedTransaction,
   setup: TransactionSetup,
   isRetry: boolean = false,
+  transactionType?: TransactionType,
 ) => {
   try {
     if (isRetry) {
-      const blockhash = await connectionPool.getLatestBlockhash("confirmed");
-      const message = new TransactionMessage({
-        instructions: setup.instructions,
-        payerKey: setup.payer,
-        recentBlockhash: blockhash.blockhash,
-      }).compileToV0Message();
-      const txn = new VersionedTransaction(message);
-      txn.sign(setup.signers);
-      const signature = await sendSignedTransaction(txn);
+      const signature = await enhancedTransactionSender.retryTransaction(setup, {
+        transactionType,
+        maxRetries: 3,
+        skipPreflight: true,
+      });
       return signature;
     } else {
-      const signature = await sendSignedTransaction(signedTx);
+      const signature = await sendSignedTransaction(signedTx, transactionType);
       return signature;
     }
   } catch (error) {

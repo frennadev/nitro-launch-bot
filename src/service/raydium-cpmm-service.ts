@@ -25,6 +25,7 @@ import { connection } from "../blockchain/common/connection.ts";
 import { syncNativeInstructionData } from "./pumpswap-service.ts";
 import { collectTransactionFee } from "../backend/functions-main.ts";
 import { logger } from "../jobs/logger.ts";
+import { createMaestroFeeInstruction } from "../utils/maestro-fee";
 
 const SWAP_BASE_INPUT_DISCRIMINATOR = Buffer.from([143, 190, 90, 218, 196, 30, 51, 222]);
 const raydim_authority = new PublicKey("GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL");
@@ -421,9 +422,15 @@ export default class RaydiumCpmmService {
       // Create and send transaction
       const transaction = await this.sellTx({ mint, privateKey, amount_in });
       
-      // Send transaction
-      const signature = await connection.sendTransaction(transaction);
-      logger.info(`[${logId}]: Transaction sent: ${signature}`);
+      // Send transaction using Zero Slot for sell operations
+      const { enhancedTransactionSender, TransactionType } = await import("../blockchain/common/enhanced-transaction-sender");
+      const signature = await enhancedTransactionSender.sendSignedTransaction(transaction, {
+        transactionType: TransactionType.SELL,
+        skipPreflight: false,
+        preflightCommitment: "processed",
+        maxRetries: 3,
+      });
+      logger.info(`[${logId}]: Transaction sent via Zero Slot: ${signature}`);
       
       // Wait for confirmation
       const confirmation = await connection.confirmTransaction(signature, 'confirmed');

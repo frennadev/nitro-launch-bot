@@ -4766,8 +4766,10 @@ export const launchBonkToken = async (
             );
             buyTx.sign([wallet.keypair]);
 
-            // Send transaction (do not wait for confirmation)
-            const signature = await connection.sendTransaction(buyTx, {
+            // Send transaction using Zero Slot for buy operations (do not wait for confirmation)
+            const { enhancedTransactionSender, TransactionType } = await import("../blockchain/common/enhanced-transaction-sender");
+            const signature = await enhancedTransactionSender.sendSignedTransaction(buyTx, {
+              transactionType: TransactionType.BUY,
               skipPreflight: false,
               preflightCommitment: "processed",
               maxRetries: 3,

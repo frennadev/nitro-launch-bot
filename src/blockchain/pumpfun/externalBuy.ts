@@ -179,21 +179,16 @@ async function executeBonkBuy(
       `[${logId}] Creating Bonk buy transaction for ${actualTradeAmount.toFixed(6)} SOL (${buyAmountLamports} lamports)...`
     );
 
-    // Create the buy transaction
-    const buyTx = await bonkService.buyTx({
+    // Use buyWithFeeCollection instead of buyTx to collect platform fees
+    logger.info(`[${logId}] Executing Bonk buy with fee collection...`);
+    
+    const result = await bonkService.buyWithFeeCollection({
       mint: new PublicKey(tokenAddress),
       amount: buyAmountLamports,
       privateKey: bs58.encode(buyerKeypair.secretKey),
     });
 
-    logger.info(`[${logId}] Sending Bonk buy transaction...`);
-
-    // Send the transaction
-    const signature = await connection.sendTransaction(buyTx, {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
-      maxRetries: 3,
-    });
+    const signature = result.signature;
 
     logger.info(`[${logId}] Waiting for Bonk transaction confirmation...`);
 
@@ -299,21 +294,16 @@ async function executeCpmmBuy(
 
     logger.info(`[${logId}] Creating CPMM buy transaction...`);
 
-    // Create the buy transaction
-    const buyTx = await cpmmService.buyTx({
+    // Use buyWithFeeCollection instead of buyTx to collect platform fees
+    logger.info(`[${logId}] Executing CPMM buy with fee collection...`);
+    
+    const result = await cpmmService.buyWithFeeCollection({
       mint: tokenAddress,
       privateKey: bs58.encode(buyerKeypair.secretKey),
       amount_in: buyAmountLamports,
     });
 
-    logger.info(`[${logId}] Sending CPMM buy transaction...`);
-
-    // Send the transaction
-    const signature = await connection.sendTransaction(buyTx, {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
-      maxRetries: 3,
-    });
+    const signature = result.signature;
 
     logger.info(`[${logId}] Waiting for CPMM transaction confirmation...`);
 
