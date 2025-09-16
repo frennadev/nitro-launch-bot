@@ -318,6 +318,14 @@ async function executeBonkBuyNoConfirmation(
       error: `Bonk buy failed: ${error.message}`,
     };
   }
+  } catch (error: any) {
+    logger.error(`[${logId}] Bonk buy outer error: ${error.message}`);
+    return {
+      success: false,
+      signature: "",
+      error: `Bonk buy failed: ${error.message}`,
+    };
+  }
 }
 
 /**
@@ -427,6 +435,14 @@ async function executeCpmmBuyNoConfirmation(
       };
   } catch (error: any) {
     logger.error(`[${logId}] CPMM buy error: ${error.message}`);
+    return {
+      success: false,
+      signature: "",
+      error: `CPMM buy failed: ${error.message}`,
+    };
+  }
+  } catch (error: any) {
+    logger.error(`[${logId}] CPMM buy outer error: ${error.message}`);
     return {
       success: false,
       signature: "",
