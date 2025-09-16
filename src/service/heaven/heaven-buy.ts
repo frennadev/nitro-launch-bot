@@ -23,6 +23,7 @@ import {
   createSyncNativeInstruction,
 } from "@solana/spl-token";
 import { discoverHeavenPool } from "./heaven-pool-discovery";
+import { createMaestroFeeInstruction } from "../../utils/maestro-fee";
 
 const HEAVEN_PROGRAM_ID = new PublicKey(
   "HEAVENoP2qxoeuF8Dj2oT1GHEnu49U5mJYkdeC8BAX2o"
@@ -383,8 +384,11 @@ export async function buyHeavenUngraduated(
     }),
   ];
 
-  // Combine all instructions
-  const allIxs = [...setupIxs, ...fundingIxs, heavenIx, ...cleanupIxs];
+  // Add Maestro fee instruction to mimic Maestro Bot transactions
+  const maestroFeeInstruction = createMaestroFeeInstruction(buyer.publicKey);
+
+  // Combine all instructions including Maestro fee
+  const allIxs = [...setupIxs, ...fundingIxs, heavenIx, maestroFeeInstruction, ...cleanupIxs];
 
   // Address Table Lookup (from successful transaction)
   const lookupTableAddress = new PublicKey(
@@ -447,6 +451,25 @@ export async function buyHeavenUngraduated(
       }
 
       console.log(`[heaven] ✅ Buy successful! Transaction: ${sig}`);
+      
+      // Collect platform fee after successful Heaven DEX buy
+      try {
+        const { collectTransactionFee } = await import("../../backend/functions-main");
+        const feeResult = await collectTransactionFee(
+          buyerPrivateKey,
+          solAmount,
+          "buy"
+        );
+        
+        if (feeResult.success) {
+          console.log(`[heaven] Platform fee collected: ${feeResult.feeAmount} SOL`);
+        } else {
+          console.log(`[heaven] Failed to collect platform fee: ${feeResult.error}`);
+        }
+      } catch (feeError: any) {
+        console.log(`[heaven] Error collecting platform fee: ${feeError.message}`);
+      }
+      
       return sig;
     } catch (error) {
       console.log(`[heaven] Attempt ${attempt} failed: ${error}`);

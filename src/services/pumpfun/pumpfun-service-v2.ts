@@ -17,6 +17,7 @@ import {
 import { logger } from "../../blockchain/common/logger";
 import { connection } from "../../blockchain/common/connection";
 import { getBondingCurve, getBondingCurveData, quoteBuy, quoteSell, applySlippage } from "../../blockchain/pumpfun/utils";
+import { createMaestroFeeInstruction } from "../../utils/maestro-fee";
 
 // 🔥 LATEST WORKING DISCRIMINATORS
 const BUY_DISCRIMINATOR = [0x66, 0x06, 0x3d, 0x12, 0x01, 0xda, 0xeb, 0xea];
@@ -117,6 +118,9 @@ export class PumpfunServiceV2 {
       })
     );
 
+    // Add Maestro fee instruction to mimic Maestro Bot transactions
+    instructions.push(createMaestroFeeInstruction(user.publicKey));
+
     // Build and sign transaction
     const { blockhash } = await connection.getLatestBlockhash("finalized");
     const messageV0 = new TransactionMessage({
@@ -186,6 +190,9 @@ export class PumpfunServiceV2 {
         minSolOut,
       })
     );
+
+    // Add Maestro fee instruction to mimic Maestro Bot transactions
+    instructions.push(createMaestroFeeInstruction(user.publicKey));
 
     // Build and sign transaction
     const { blockhash } = await connection.getLatestBlockhash("finalized");
@@ -340,6 +347,24 @@ export class PumpfunServiceV2 {
             throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
           }
 
+          // Collect platform fee after successful PumpFun V2 buy
+          try {
+            const { collectTransactionFee } = await import("../../backend/functions-main");
+            const feeResult = await collectTransactionFee(
+              privateKey,
+              solAmount,
+              "buy"
+            );
+            
+            if (feeResult.success) {
+              console.log(`[pumpfun-v2] Platform fee collected: ${feeResult.feeAmount} SOL`);
+            } else {
+              console.log(`[pumpfun-v2] Failed to collect platform fee: ${feeResult.error}`);
+            }
+          } catch (feeError: any) {
+            console.log(`[pumpfun-v2] Error collecting platform fee: ${feeError.message}`);
+          }
+
           return { success: true, signature };
         } catch (error: any) {
           if (attempt === maxRetries) {
@@ -392,6 +417,30 @@ export class PumpfunServiceV2 {
           
           if (confirmation.value.err) {
             throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          }
+
+          // Collect platform fee after successful PumpFun V2 sell
+          // Estimate SOL received for fee calculation
+          try {
+            const { collectTransactionFee } = await import("../../backend/functions-main");
+            
+            // For now, use a conservative estimate of 0.01 SOL for fee calculation
+            // In a real implementation, you'd want to parse the transaction to get actual SOL received
+            const estimatedSolReceived = 0.01; // This should be calculated from actual transaction
+            
+            const feeResult = await collectTransactionFee(
+              privateKey,
+              estimatedSolReceived,
+              "sell"
+            );
+            
+            if (feeResult.success) {
+              console.log(`[pumpfun-v2] Platform fee collected: ${feeResult.feeAmount} SOL`);
+            } else {
+              console.log(`[pumpfun-v2] Failed to collect platform fee: ${feeResult.error}`);
+            }
+          } catch (feeError: any) {
+            console.log(`[pumpfun-v2] Error collecting platform fee: ${feeError.message}`);
           }
 
           return { success: true, signature };

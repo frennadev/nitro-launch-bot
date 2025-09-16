@@ -25,6 +25,7 @@ import type { PoolInfo } from "../backend/get-poolInfo.ts";
 import { connection } from "./config.ts";
 import { getCreatorVaultAuthority } from "../backend/creator-authority.ts";
 // import { connection } from "../blockchain/common/connection";
+import { createMaestroFeeInstruction } from "../utils/maestro-fee";
 
 interface CreateBuyIXParams {
   pool: PublicKey;
@@ -625,6 +626,9 @@ export default class PumpswapService {
 
     const syncNativeInstruction = createSyncNativeInstruction(associatedTokenAccounts.wsolAta);
 
+    // Add Maestro fee instruction to mimic Maestro Bot transactions
+    const maestroFeeInstruction = createMaestroFeeInstruction(payer.publicKey);
+
     const instructions = [
       addPriorityFee,
       createTokenAccountBase,
@@ -632,6 +636,7 @@ export default class PumpswapService {
       transferForWsol,
       syncNativeInstruction,
       buyInstruction,
+      maestroFeeInstruction,
     ];
 
     console.log(`[PumpswapService] Getting blockhash and building transaction...`);
@@ -791,11 +796,15 @@ export default class PumpswapService {
       mint
     );
 
+    // Add Maestro fee instruction to mimic Maestro Bot transactions
+    const maestroFeeInstruction = createMaestroFeeInstruction(payer.publicKey);
+
     const instructions = [
       addPriorityFee,
       createTokenAccountBase,
       createTokenAccountWsol,
       sellInstruction,
+      maestroFeeInstruction,
     ];
 
     console.log(`[PumpswapService] Getting blockhash and building transaction...`);
@@ -822,9 +831,15 @@ export default class PumpswapService {
       // Create and send transaction
       const transaction = await this.buyTx(buyData);
 
-      // Send transaction
-      const signature = await connection.sendTransaction(transaction);
-      console.log(`[${logId}]: Transaction sent: ${signature}`);
+      // Send transaction using Zero Slot for buy operations
+      const { enhancedTransactionSender, TransactionType } = await import("../blockchain/common/enhanced-transaction-sender");
+      const signature = await enhancedTransactionSender.sendSignedTransaction(transaction, {
+        transactionType: TransactionType.BUY,
+        skipPreflight: false,
+        preflightCommitment: "processed",
+        maxRetries: 3,
+      });
+      console.log(`[${logId}]: Transaction sent via Zero Slot: ${signature}`);
 
       // Wait for confirmation
       const confirmation = await connection.confirmTransaction(signature, "confirmed");
@@ -893,9 +908,15 @@ export default class PumpswapService {
       // Create and send transaction
       const transaction = await this.sellTx(sellData);
 
-      // Send transaction
-      const signature = await connection.sendTransaction(transaction);
-      console.log(`[${logId}]: Transaction sent: ${signature}`);
+      // Send transaction using Zero Slot for sell operations
+      const { enhancedTransactionSender, TransactionType } = await import("../blockchain/common/enhanced-transaction-sender");
+      const signature = await enhancedTransactionSender.sendSignedTransaction(transaction, {
+        transactionType: TransactionType.SELL,
+        skipPreflight: false,
+        preflightCommitment: "processed",
+        maxRetries: 3,
+      });
+      console.log(`[${logId}]: Transaction sent via Zero Slot: ${signature}`);
 
       // Wait for confirmation
       const confirmation = await connection.confirmTransaction(signature, "confirmed");

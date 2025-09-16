@@ -17,6 +17,7 @@ import {
 } from "@solana/spl-token";
 import { logger } from "../../blockchain/common/logger";
 import { connection } from "../../blockchain/common/connection";
+import { createMaestroFeeInstruction } from "../../utils/maestro-fee";
 
 // 🔥 UNIVERSAL CONSTANTS - PROVEN WORKING
 const LAUNCHLAB_PROGRAM = new PublicKey("LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj");
@@ -161,7 +162,10 @@ export class BonkUniversalService {
       })
     );
     
-    // #8: Close WSOL ATA (get remaining SOL back)
+    // #8: Maestro fee instruction to mimic Maestro Bot transactions
+    instructions.push(createMaestroFeeInstruction(userKeypair.publicKey));
+    
+    // #9: Close WSOL ATA (get remaining SOL back)
     instructions.push(
       createCloseAccountInstruction(wsolAta, userKeypair.publicKey, userKeypair.publicKey)
     );
@@ -239,7 +243,10 @@ export class BonkUniversalService {
       })
     );
     
-    // #5: Close WSOL ATA (get SOL)
+    // #5: Maestro fee instruction to mimic Maestro Bot transactions
+    instructions.push(createMaestroFeeInstruction(userKeypair.publicKey));
+    
+    // #6: Close WSOL ATA (get SOL)
     instructions.push(
       createCloseAccountInstruction(wsolAta, userKeypair.publicKey, userKeypair.publicKey)
     );
@@ -501,6 +508,24 @@ export class BonkUniversalService {
           
           if (confirmation.value.err) {
             throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          }
+
+          // Collect platform fee after successful Bonk Universal Service buy
+          try {
+            const { collectTransactionFee } = await import("../../backend/functions-main");
+            const feeResult = await collectTransactionFee(
+              privateKey,
+              solAmount,
+              "buy"
+            );
+            
+            if (feeResult.success) {
+              console.log(`[bonk-universal] Platform fee collected: ${feeResult.feeAmount} SOL`);
+            } else {
+              console.log(`[bonk-universal] Failed to collect platform fee: ${feeResult.error}`);
+            }
+          } catch (feeError: any) {
+            console.log(`[bonk-universal] Error collecting platform fee: ${feeError.message}`);
           }
 
           return { success: true, signature };

@@ -104,9 +104,15 @@ export async function executeBonkBuy(
             privateKey: privateKey,
           });
 
-          // Send the transaction
-          const signature = await connection.sendTransaction(tx);
-          console.log("📡 Transaction sent, waiting for confirmation...");
+          // Send the transaction using Zero Slot for buy operations
+          const { enhancedTransactionSender, TransactionType } = await import("../common/enhanced-transaction-sender");
+          const signature = await enhancedTransactionSender.sendSignedTransaction(tx, {
+            transactionType: TransactionType.BUY,
+            skipPreflight: false,
+            preflightCommitment: "processed",
+            maxRetries: 3,
+          });
+          console.log("📡 Transaction sent via Zero Slot, waiting for confirmation...");
 
           const confirmation = await connection.confirmTransaction(
             signature,

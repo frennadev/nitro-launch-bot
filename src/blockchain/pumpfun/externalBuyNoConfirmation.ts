@@ -286,34 +286,30 @@ async function executeBonkBuyNoConfirmation(
       `[${logId}] Creating Bonk buy transaction for ${actualTradeAmount.toFixed(6)} SOL...`
     );
 
-    // Create the buy transaction with the adjusted amount (fee collection happens in background)
-    const buyTx = await bonkService.buyTx({
-      mint: new PublicKey(tokenAddress),
-      amount: BigInt(Math.floor(actualTradeAmount * 1_000_000_000)), // Use adjusted amount
-      privateKey: bs58.encode(buyerKeypair.secretKey),
-    });
-
+    // Use buyWithFeeCollection for proper fee handling
     logger.info(
-      `[${logId}] Sending Bonk buy transaction (no confirmation wait, fees in background)...`
+      `[${logId}] Executing Bonk buy with fee collection (no confirmation wait)...`
     );
 
-    // Send the transaction WITHOUT waiting for confirmation
-    const signature = await connection.sendTransaction(buyTx, {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
-      maxRetries: 3,
-    });
+    try {
+      const result = await bonkService.buyWithFeeCollection({
+        mint: new PublicKey(tokenAddress),
+        amount: BigInt(Math.floor(actualTradeAmount * 1_000_000_000)), // Use adjusted amount
+        privateKey: bs58.encode(buyerKeypair.secretKey),
+      });
 
-    logger.info(
-      `[${logId}] Bonk buy transaction sent successfully: ${signature} (confirmation and fee collection will happen in background)`
-    );
+      const signature = result.signature;
 
-    return {
-      success: true,
-      signature: signature,
-      platform: "bonk",
-      solReceived: actualTradeAmount.toString(), // Return the actual amount that was traded
-    };
+      logger.info(
+        `[${logId}] Bonk buy transaction sent successfully: ${signature} (confirmation and fee collection will happen in background)`
+      );
+
+      return {
+        success: true,
+        signature: signature,
+        platform: "bonk",
+        solReceived: actualTradeAmount.toString(), // Return the actual amount that was traded
+      };
   } catch (error: any) {
     logger.error(`[${logId}] Bonk buy error: ${error.message}`);
     return {
@@ -405,33 +401,30 @@ async function executeCpmmBuyNoConfirmation(
     );
 
     // Create the buy transaction with the adjusted amount (fee collection happens in background)
-    const buyTx = await cpmmService.buyTx({
-      mint: tokenAddress,
-      privateKey: bs58.encode(buyerKeypair.secretKey),
-      amount_in: buyAmountLamports,
-    });
-
+    // Use buyWithFeeCollection for proper fee handling
     logger.info(
-      `[${logId}] Sending CPMM buy transaction (no confirmation wait, fees in background)...`
+      `[${logId}] Executing CPMM buy with fee collection (no confirmation wait)...`
     );
 
-    // Send the transaction WITHOUT waiting for confirmation
-    const signature = await connection.sendTransaction(buyTx, {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
-      maxRetries: 3,
-    });
+    try {
+      const result = await cpmmService.buyWithFeeCollection({
+        mint: tokenAddress,
+        privateKey: bs58.encode(buyerKeypair.secretKey),
+        amount_in: buyAmountLamports,
+      });
 
-    logger.info(
-      `[${logId}] CPMM buy transaction sent successfully: ${signature} (confirmation and fee collection will happen in background)`
-    );
+      const signature = result.signature;
 
-    return {
-      success: true,
-      signature: signature,
-      platform: "cpmm",
-      solReceived: actualTradeAmount.toString(), // Return the actual amount that was traded
-    };
+      logger.info(
+        `[${logId}] CPMM buy transaction sent successfully: ${signature} (confirmation and fee collection will happen in background)`
+      );
+
+      return {
+        success: true,
+        signature: signature,
+        platform: "cpmm",
+        solReceived: actualTradeAmount.toString(), // Return the actual amount that was traded
+      };
   } catch (error: any) {
     logger.error(`[${logId}] CPMM buy error: ${error.message}`);
     return {
@@ -571,33 +564,20 @@ async function executeMeteoraBuyNoConfirmation(
           Math.floor(actualTradeAmount * 1_000_000_000)
         );
 
-        // Create the buy transaction with the adjusted amount (fee collection happens in background)
-        const buyTx = await cpmmService.buyTx({
+        // Use buyWithFeeCollection for proper fee handling
+        const result = await cpmmService.buyWithFeeCollection({
           mint: tokenAddress,
           privateKey: bs58.encode(buyerKeypair.secretKey),
           amount_in: buyAmountLamports,
         });
 
-        // Send the transaction WITHOUT waiting for confirmation
-        const signature = await connection.sendTransaction(buyTx, {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
-          maxRetries: 3,
-        });
+        const signature = result.signature;
 
         logger.info(
-          `[${logId}] CPMM fallback success: ${signature} (confirmation and fee collection will happen in background)`
+          `[${logId}] CPMM fallback success with fee collection: ${signature}`
         );
 
-        // Collect transaction fee after successful CPMM fallback (non-blocking)
-        collectFeeAsync(
-          bs58.encode(buyerKeypair.secretKey),
-          actualTradeAmount,
-          "buy",
-          logId
-        ).catch((feeError) => {
-          logger.warn(`[${logId}] CPMM fallback fee collection promise failed: ${feeError.message}`);
-        });
+        // Fee collection is now handled by buyWithFeeCollection method
 
         return {
           success: true,
@@ -769,33 +749,20 @@ async function executeHeavenBuyNoConfirmation(
           Math.floor(actualTradeAmount * 1_000_000_000)
         );
 
-        // Create the buy transaction with the adjusted amount (fee collection happens in background)
-        const buyTx = await cpmmService.buyTx({
+        // Use buyWithFeeCollection for proper fee handling
+        const result = await cpmmService.buyWithFeeCollection({
           mint: tokenAddress,
           privateKey: bs58.encode(buyerKeypair.secretKey),
           amount_in: buyAmountLamports,
         });
 
-        // Send the transaction WITHOUT waiting for confirmation
-        const signature = await connection.sendTransaction(buyTx, {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
-          maxRetries: 3,
-        });
+        const signature = result.signature;
 
         logger.info(
-          `[${logId}] CPMM fallback success: ${signature} (confirmation and fee collection will happen in background)`
+          `[${logId}] CPMM fallback success with fee collection: ${signature}`
         );
 
-        // Collect transaction fee after successful CPMM fallback (non-blocking)
-        collectFeeAsync(
-          bs58.encode(buyerKeypair.secretKey),
-          actualTradeAmount,
-          "buy",
-          logId
-        ).catch((feeError) => {
-          logger.warn(`[${logId}] CPMM fallback fee collection promise failed: ${feeError.message}`);
-        });
+        // Fee collection is now handled by buyWithFeeCollection method
 
         return {
           success: true,
