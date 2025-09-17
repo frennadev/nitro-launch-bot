@@ -206,7 +206,6 @@ bot.use(async (ctx, next) => {
         "🚫 **Access Denied**\n\n" +
           "This bot is currently restricted to authorized users only.\n\n" +
           `❌ **Username:** @${username || "undefined"}\n` +
-          `✅ **Authorized Users:** @saintlessteel, @dyingangels, @SuperDevBack\n\n` +
           "Contact the bot administrator if you believe this is an error.",
         { parse_mode: "Markdown" }
       );
