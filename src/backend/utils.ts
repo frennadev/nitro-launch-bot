@@ -331,7 +331,7 @@ export const getTokenInfo = async (tokenAddress: string) => {
           ? (solanaTrackerData.price / 240).toString()
           : "0", // Rough SOL price estimate
         priceUsd: solanaTrackerData.price ? solanaTrackerData.price.toString() : "0",
-        marketCap: solanaTrackerData.marketCap || 0,
+        marketCap: Number(solanaTrackerData.marketCap) || 0,
         liquidity: {
           usd: solanaTrackerData.liquidity || 0,
           base: 0,

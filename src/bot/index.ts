@@ -2696,8 +2696,8 @@ bot.callbackQuery(
           ).toFixed(2) + "%";
       }
 
-      const marketCap = formatUSD(tokenInfo.marketCap);
-      const price = tokenInfo.priceUsd;
+      const marketCap = formatUSD(tokenInfo.marketCap || 0);
+      const price = tokenInfo.priceUsd || 0;
       const botUsername = bot.botInfo.username;
       const referralLink = await generateReferralLink(user.id, botUsername);
 
@@ -2768,7 +2768,7 @@ bot.callbackQuery(
 └─ 📈 Total P&L: <b>${pnLFormatted}</b>
 
 💹 <b>Market Information</b>
-├─ 💵 Current Price: <code>$${Number(price).toFixed(5)}</code>
+├─ 💵 Current Price: <code>$${Number(price || 0).toFixed(8)}</code>
 └─ 🏦 Market Cap: <code>${marketCap}</code>
 
 🕐 Last Update: <code>${new Date().toLocaleTimeString("en-US", {
@@ -3128,7 +3128,7 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
 └─ 📈 Total P&L: <b>${pnLFormatted}</b>
 
 💹 <b>Market Information</b>
-├─ 💵 Current Price: <code>$${Number(price).toFixed(5)}</code>
+├─ 💵 Current Price: <code>$${Number(price || 0).toFixed(8)}</code>
 └─ 🏦 Market Cap: <code>${marketCap}</code>
 
 🕐 Last Update: <code>${new Date().toLocaleTimeString("en-US", {

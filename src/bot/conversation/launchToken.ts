@@ -217,6 +217,9 @@ const launchTokenConversation = async (
 <code>${tokenAddress}</code>
 
 <b>⏳ Status:</b> <i>Initializing launch process...</i>
+
+⚠️ <b>PRIVACY REMINDER:</b> For maximum anonymity, ensure you've used <b>🔀 Mix Funds</b> before launching!
+
 <b>🚀 Choose Your Launch Mode</b>
 
 <b>🎯 Normal Launch:</b>
@@ -1062,7 +1065,6 @@ Please enter a smaller buy amount:`,
       {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard()
-          .text("⏭️ Skip (0 SOL)", "DEV_BUY_0")
           .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
       }
     );
