@@ -5237,29 +5237,30 @@ export const fundTokenWallets = async (
     );
 
     // Generate random distribution amounts
-    const distributionAmounts = generateRandomDistribution(
-      totalAmount,
-      walletsToFund.length
-    );
-
-    // Use mixer to distribute funds
-    const { runMixer } = await import("../blockchain/mixer/index");
+    // Use mixer to distribute funds with 73-wallet distribution
+    const { runMixer } = await import("../blockchain/mixer/mixer");
     const destinationAddresses = walletsToFund.map((w) => w.address);
 
+    // Generate 73-wallet distribution for the total amount
+    const distributionAmounts = generateBuyDistribution(totalAmount, destinationAddresses.length);
+
     logger.info(
-      `[${logId}]: Starting mixer: ${totalAmount} SOL to ${destinationAddresses.length} wallets`
+      `[${logId}]: Starting mixer: ${totalAmount} SOL to ${destinationAddresses.length} wallets with 73-wallet distribution`
     );
 
     const mixerResult = await runMixer(
       fundingWallet.privateKey,
       fundingWallet.privateKey, // Use same wallet for fees
       totalAmount,
-      destinationAddresses
+      destinationAddresses,
+      {
+        customAmounts: distributionAmounts // Use 73-wallet distribution
+      }
     );
 
     // Check mixer results
     const successfulRoutes =
-      mixerResult.results?.filter((result) => result.success) || [];
+      mixerResult.results?.filter((result: any) => result.success) || [];
 
     if (successfulRoutes.length === 0) {
       logger.error(
@@ -5275,7 +5276,7 @@ export const fundTokenWallets = async (
     }
 
     // Calculate actual amounts funded
-    const actualFundedAmounts = successfulRoutes.map((route) => {
+    const actualFundedAmounts = successfulRoutes.map((route: any) => {
       const destinationIndex = destinationAddresses.findIndex(
         (addr) => addr === route.route.destination.toString()
       );
@@ -5287,7 +5288,7 @@ export const fundTokenWallets = async (
     });
 
     const totalFunded = actualFundedAmounts.reduce(
-      (sum, item) => sum + item.solReceived,
+      (sum: number, item: any) => sum + item.solReceived,
       0
     );
 

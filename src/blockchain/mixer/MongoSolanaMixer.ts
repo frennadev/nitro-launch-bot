@@ -130,7 +130,7 @@ export class MongoSolanaMixer {
   /**
    * Main mixing function with MongoDB wallet management and failure recovery
    */
-  async mixFunds(fundingWallet: Keypair, destinationWallets: PublicKey[]): Promise<MongoMixingResult[]> {
+  async mixFunds(fundingWallet: Keypair, destinationWallets: PublicKey[], customAmounts?: number[]): Promise<MongoMixingResult[]> {
     const results: MongoMixingResult[] = [];
     const allUsedWalletIds: string[] = []; // Track all wallets used in this operation
 
@@ -138,19 +138,29 @@ export class MongoSolanaMixer {
       // Validate inputs
       await this.validateInputs(fundingWallet, destinationWallets);
 
-      // Calculate distribution amounts
+      // Calculate distribution amounts using 73-wallet system
       const totalBalance = await this.connectionManager.getMaxTransferableAmount(fundingWallet.publicKey);
-      const amountPerDestination = Math.floor(totalBalance / destinationWallets.length);
+      let distributionAmounts: number[];
 
-      if (amountPerDestination <= 0) {
-        throw new Error("Insufficient funds for distribution");
+      if (customAmounts && customAmounts.length === destinationWallets.length) {
+        // Use provided custom amounts (73-wallet distribution)
+        distributionAmounts = customAmounts.map(amount => Math.floor(amount * 1e9)); // Convert SOL to lamports
+        console.log(`🎯 Using 73-wallet distribution with ${customAmounts.length} custom amounts`);
+      } else {
+        // Generate 73-wallet distribution from total balance
+        const totalBalanceSOL = totalBalance / 1e9;
+        const { generateBuyDistribution } = await import("../../backend/functions");
+        const distributionSOL = generateBuyDistribution(totalBalanceSOL, destinationWallets.length);
+        distributionAmounts = distributionSOL.map(amount => Math.floor(amount * 1e9));
+        console.log(`🎲 Generated 73-wallet distribution for ${distributionSOL.length} wallets`);
       }
 
       console.log(`💰 Total balance: ${totalBalance} lamports`);
-      console.log(`📊 Amount per destination: ${amountPerDestination} lamports`);
+      console.log(`📊 Distribution: ${distributionAmounts.length} wallets with tiered amounts`);
+      console.log(`   First 5 amounts: ${distributionAmounts.slice(0, 5).map(a => (a / 1e9).toFixed(6)).join(', ')} SOL`);
 
-      // Create mixing routes with MongoDB wallets
-      const routes = await this.createMixingRoutesWithMongo(fundingWallet, destinationWallets, amountPerDestination);
+      // Create mixing routes with MongoDB wallets using proper distribution
+      const routes = await this.createMixingRoutesWithMongo(fundingWallet, destinationWallets, distributionAmounts);
 
       // Pre-fund intermediate wallets if fee funding wallet is provided
       if (this.config.feeFundingWallet) {
@@ -281,12 +291,12 @@ export class MongoSolanaMixer {
   }
 
   /**
-   * Create mixing routes using MongoDB wallets
+   * Create mixing routes using MongoDB wallets with proper 73-wallet distribution
    */
   private async createMixingRoutesWithMongo(
     fundingWallet: Keypair,
     destinationWallets: PublicKey[],
-    baseAmount: number,
+    distributionAmounts: number[],
     excludeWalletIds: string[] = []
   ): Promise<MixingRoute[]> {
     const routes: MixingRoute[] = [];
@@ -305,13 +315,19 @@ export class MongoSolanaMixer {
 
     let walletIndex = 0;
 
-    for (const destination of destinationWallets) {
-      // Add small random variation to amount for privacy
-      const amount = baseAmount + getAmountVariation(baseAmount);
+    for (let i = 0; i < destinationWallets.length; i++) {
+      const destination = destinationWallets[i];
+      // Use exact amount from 73-wallet distribution (no random variation)
+      const amount = distributionAmounts[i] || 0;
+
+      if (amount <= 0) {
+        console.log(`⚠️ Skipping destination ${i + 1}: amount is ${amount} lamports`);
+        continue;
+      }
 
       // Get intermediate wallets for this route
       const intermediates: WalletInfo[] = [];
-      for (let i = 0; i < this.config.intermediateWalletCount; i++) {
+      for (let j = 0; j < this.config.intermediateWalletCount; j++) {
         const storedWallet = reservedWallets[walletIndex++];
         const keypair = this.walletManager.getKeypairFromStoredWallet(storedWallet);
 
@@ -335,6 +351,8 @@ export class MongoSolanaMixer {
       routes.push(route);
     }
 
+    console.log(`🎯 Created ${routes.length} routes with 73-wallet distribution amounts`);
+    
     // Shuffle routes to randomize execution order
     return cryptoShuffle(routes);
   }
