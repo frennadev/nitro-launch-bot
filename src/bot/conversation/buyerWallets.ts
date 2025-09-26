@@ -161,43 +161,64 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
             return await manageBuyerWalletsConversation(conversation, next);
           }
 
-          // Create formatted export message
-          const exportLines = [
+          // Split wallets into chunks to avoid message length limits
+          const WALLETS_PER_MESSAGE = 5; // Telegram message limit consideration
+          const chunks = [];
+          
+          for (let i = 0; i < walletExports.length; i += WALLETS_PER_MESSAGE) {
+            chunks.push(walletExports.slice(i, i + WALLETS_PER_MESSAGE));
+          }
+
+          // Send header message
+          const headerMessage = [
             `🔐 <b>Bulk Buyer Wallets Export</b>`,
             `📊 <b>Total Wallets:</b> ${walletExports.length}`,
-            ``,
-            `<b>📋 Wallet Details:</b>`
-          ];
-
-          walletExports.forEach((wallet, index) => {
-            exportLines.push(
-              ``,
-              `<b>${index + 1}. ${wallet.shortAddress}</b>`,
-              `<b>Address:</b> <code>${wallet.address}</code>`,
-              `<b>Balance:</b> ${wallet.balance.toFixed(6)} SOL`,
-              `<b>Private Key:</b> <span class="tg-spoiler">${wallet.privateKey}</span>`
-            );
-          });
-
-          exportLines.push(
+            `📄 <b>Messages:</b> ${chunks.length + 1} (including this header)`,
             ``,
             `⚠️ <b>SECURITY WARNING:</b>`,
             `• Save these private keys securely`,
-            `• Delete this message after saving`,
+            `• Delete these messages after saving`,
             `• Never share private keys with anyone`,
             `• Consider using hardware wallets for large amounts`
-          );
+          ].join("\n");
 
-          const exportMessage = exportLines.join("\n");
-
-          const deleteKeyboard = new InlineKeyboard()
-            .text("🗑️ Delete Message", "del_message")
-            .text("🔙 Back to Wallets", CallBackQueries.MANAGE_BUYER_WALLETS);
-
-          await sendMessage(next, exportMessage, {
+          await sendMessage(next, headerMessage, {
             parse_mode: "HTML",
-            reply_markup: deleteKeyboard,
           });
+
+          // Send wallet chunks
+          for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+            const chunk = chunks[chunkIndex];
+            const startIndex = chunkIndex * WALLETS_PER_MESSAGE;
+            
+            const chunkLines = [
+              `📋 <b>Wallets ${startIndex + 1}-${startIndex + chunk.length} of ${walletExports.length}</b>`,
+              ``
+            ];
+
+            chunk.forEach((wallet, index) => {
+              const globalIndex = startIndex + index + 1;
+              chunkLines.push(
+                `<b>${globalIndex}. ${wallet.shortAddress}</b>`,
+                `<b>Address:</b> <code>${wallet.address}</code>`,
+                `<b>Private Key:</b> <span class="tg-spoiler">${wallet.privateKey}</span>`,
+                ``
+              );
+            });
+
+            const isLastChunk = chunkIndex === chunks.length - 1;
+            const deleteKeyboard = new InlineKeyboard()
+              .text("🗑️ Delete Message", "del_message");
+            
+            if (isLastChunk) {
+              deleteKeyboard.text("🔙 Back to Wallets", CallBackQueries.MANAGE_BUYER_WALLETS);
+            }
+
+            await sendMessage(next, chunkLines.join("\n"), {
+              parse_mode: "HTML",
+              reply_markup: deleteKeyboard,
+            });
+          }
 
           // Return to wallet management after export
           return await manageBuyerWalletsConversation(conversation, next);
