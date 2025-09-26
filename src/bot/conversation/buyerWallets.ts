@@ -108,6 +108,12 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         .row();
     }
 
+    // Add bulk export button if there are wallets
+    if (wallets.length > 0) {
+      kb.text("📤 Export All Private Keys", CallBackQueries.EXPORT_ALL_BUYER_WALLETS)
+        .row();
+    }
+
     kb.text("🔙 Back", CallBackQueries.BACK);
 
     await sendMessage(ctx, messageText, {
@@ -126,6 +132,80 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         // Import and start wallet config conversation (since this is accessed from wallet config)
         const walletConfigConversation = await import("./walletConfig");
         return await walletConfigConversation.default(conversation, next);
+      }
+
+      if (data === CallBackQueries.EXPORT_ALL_BUYER_WALLETS) {
+        try {
+          // Get all wallet private keys
+          const walletExports = [];
+          
+          for (const wallet of wallets) {
+            try {
+              const privateKey = await getBuyerWalletPrivateKey(user.id, wallet.id);
+              const shortAddress = `${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-8)}`;
+              
+              walletExports.push({
+                address: wallet.publicKey,
+                shortAddress,
+                privateKey,
+                balance: 0 // Balance will be fetched separately if needed
+              });
+            } catch (error) {
+              console.error(`Failed to export wallet ${wallet.id}:`, error);
+              // Continue with other wallets even if one fails
+            }
+          }
+
+          if (walletExports.length === 0) {
+            await next.reply("❌ No wallets could be exported.");
+            return await manageBuyerWalletsConversation(conversation, next);
+          }
+
+          // Create formatted export message
+          const exportLines = [
+            `🔐 <b>Bulk Buyer Wallets Export</b>`,
+            `📊 <b>Total Wallets:</b> ${walletExports.length}`,
+            ``,
+            `<b>📋 Wallet Details:</b>`
+          ];
+
+          walletExports.forEach((wallet, index) => {
+            exportLines.push(
+              ``,
+              `<b>${index + 1}. ${wallet.shortAddress}</b>`,
+              `<b>Address:</b> <code>${wallet.address}</code>`,
+              `<b>Balance:</b> ${wallet.balance.toFixed(6)} SOL`,
+              `<b>Private Key:</b> <span class="tg-spoiler">${wallet.privateKey}</span>`
+            );
+          });
+
+          exportLines.push(
+            ``,
+            `⚠️ <b>SECURITY WARNING:</b>`,
+            `• Save these private keys securely`,
+            `• Delete this message after saving`,
+            `• Never share private keys with anyone`,
+            `• Consider using hardware wallets for large amounts`
+          );
+
+          const exportMessage = exportLines.join("\n");
+
+          const deleteKeyboard = new InlineKeyboard()
+            .text("🗑️ Delete Message", "del_message")
+            .text("🔙 Back to Wallets", CallBackQueries.MANAGE_BUYER_WALLETS);
+
+          await sendMessage(next, exportMessage, {
+            parse_mode: "HTML",
+            reply_markup: deleteKeyboard,
+          });
+
+          // Return to wallet management after export
+          return await manageBuyerWalletsConversation(conversation, next);
+
+        } catch (error: any) {
+          await next.reply(`❌ Error exporting wallets: ${error.message}`);
+          return await manageBuyerWalletsConversation(conversation, next);
+        }
       }
 
       if (data === CallBackQueries.GENERATE_BUYER_WALLET) {
