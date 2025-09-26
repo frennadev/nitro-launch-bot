@@ -9,6 +9,7 @@ import {
   getWalletBalance,
 } from "../../backend/functions";
 import { getTokenInfo, getTokenBalance } from "../../backend/utils";
+import { solanaTrackerService } from "../../services/token/solana-tracker-service";
 import { sendMessage } from "../../backend/sender";
 import { sendErrorWithAutoDelete } from "../utils";
 import { CallBackQueries } from "../types";
@@ -28,7 +29,7 @@ export const sellIndividualToken = async (
   address: string,
   page: number = 0,
   specificWallet?: string
-) => {
+): Promise<any> => {
   console.log(
     "sellIndividualToken conversation started for token:",
     address,
@@ -54,9 +55,29 @@ export const sellIndividualToken = async (
   const buyerWallets = await getAllBuyerWallets(String(user._id));
   const walletHolders: WalletHolder[] = [];
 
-  // Get token info for price calculation
+  // Get token info for price calculation using Solana Tracker
   const tokenInfo = await getTokenInfo(address);
-  const tokenPrice = tokenInfo?.price || 0;
+  let tokenPrice = tokenInfo?.priceUsd ? parseFloat(tokenInfo.priceUsd) : 0;
+  
+  // If price is still 0, try direct Solana Tracker service as fallback
+  if (tokenPrice === 0) {
+    console.log(`[sellIndividualToken] Price is 0, trying direct Solana Tracker for ${address}`);
+    try {
+      const directTokenInfo = await solanaTrackerService.getTokenInfo(address);
+      if (directTokenInfo?.price) {
+        tokenPrice = directTokenInfo.price;
+        console.log(`[sellIndividualToken] Direct Solana Tracker price: $${tokenPrice}`);
+      }
+    } catch (error) {
+      console.error(`[sellIndividualToken] Direct Solana Tracker failed:`, error);
+    }
+  }
+  
+  console.log(`[sellIndividualToken] Final token ${address} price info:`, {
+    priceUsd: tokenInfo?.priceUsd,
+    finalPrice: tokenPrice,
+    tokenInfo: tokenInfo ? 'found' : 'not found'
+  });
 
   // If a specific wallet is provided, filter to only that wallet
   const walletsToCheck = specificWallet
