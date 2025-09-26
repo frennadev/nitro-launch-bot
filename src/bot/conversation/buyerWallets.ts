@@ -12,8 +12,6 @@ import {
   deleteBuyerWallet,
   getBuyerWalletPrivateKey,
 } from "../../backend/functions-main";
-import { solanaTrackerService } from "../../services/token/solana-tracker-service";
-import { SolanaConnectionManager } from "../../blockchain/mixer/connection";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 
 const WALLETS_PER_PAGE = 5; // Optimized for 73 wallet system
@@ -148,43 +146,23 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
             return await manageBuyerWalletsConversation(conversation, next);
           }
 
-          // Send loading message
-          await next.reply(`🔄 Exporting ${pageWallets.length} wallets from page ${currentPage}...`);
-
-          // Get wallet private keys and balances for current page only
+          // Get wallet private keys for current page only (instant)
           const walletExports: Array<{
             address: string;
             shortAddress: string;
             privateKey: string;
-            balance: number;
           }> = [];
 
-          const connectionManager = new SolanaConnectionManager(
-            "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
-            2000
-          );
-
-          // Process page wallets (fast since it's only 5 wallets max)
+          // Process page wallets (fast - no balance checking)
           for (const wallet of pageWallets) {
             try {
               const privateKey = await getBuyerWalletPrivateKey(user.id, wallet.id);
               const shortAddress = `${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-8)}`;
               
-              // Get real-time balance
-              let balance = 0;
-              try {
-                const keypair = secretKeyToKeypair(privateKey);
-                const balanceLamports = await connectionManager.getBalance(keypair.publicKey);
-                balance = balanceLamports / 1e9; // Convert to SOL
-              } catch (balanceError) {
-                console.error(`Failed to get balance for ${wallet.publicKey}:`, balanceError);
-              }
-              
               walletExports.push({
                 address: wallet.publicKey,
                 shortAddress,
-                privateKey,
-                balance
+                privateKey
               });
             } catch (error) {
               console.error(`Failed to export wallet ${wallet.id}:`, error);
@@ -197,23 +175,18 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
             return await manageBuyerWalletsConversation(conversation, next);
           }
 
-          // Calculate total SOL balance for this page
-          const totalSolBalance = walletExports.reduce((sum, wallet) => sum + wallet.balance, 0);
-          
           // Create single export message (no chunking needed for 5 wallets)
           const exportLines = [
             `🔐 <b>Page ${currentPage} Wallet Export</b>`,
             `📊 <b>Wallets:</b> ${walletExports.length}`,
-            `💰 <b>Total SOL:</b> ${totalSolBalance.toFixed(6)} SOL`,
             ``
           ];
 
           walletExports.forEach((wallet, index) => {
             const globalIndex = startIndex + index + 1;
-            const balanceDisplay = wallet.balance > 0 ? `💰 ${wallet.balance.toFixed(6)} SOL` : `💤 0 SOL`;
             
             exportLines.push(
-              `<b>${globalIndex}. ${wallet.shortAddress}</b> ${balanceDisplay}`,
+              `<b>${globalIndex}. ${wallet.shortAddress}</b>`,
               `<code>${wallet.address}</code>`,
               `🔑 <span class="tg-spoiler">${wallet.privateKey}</span>`,
               ``
