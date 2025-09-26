@@ -137,8 +137,11 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
       }
 
       if (data === CallBackQueries.EXPORT_ALL_BUYER_WALLETS) {
+        // Send immediate loading message to prevent timeout
+        await next.reply("🔄 Preparing wallet export with real-time balances...");
+        
         try {
-          // Get all wallet private keys
+          // Get all wallet private keys (fast operation)
           const walletExports: Array<{
             address: string;
             shortAddress: string;
@@ -155,7 +158,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
                 address: wallet.publicKey,
                 shortAddress,
                 privateKey,
-                balance: 0 // Balance will be fetched separately if needed
+                balance: 0 // Balance will be fetched separately
               });
             } catch (error) {
               console.error(`Failed to export wallet ${wallet.id}:`, error);
@@ -168,7 +171,10 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
             return await manageBuyerWalletsConversation(conversation, next);
           }
 
-          // Get real-time wallet data using Solana Tracker and connection
+          // Send progress update
+          await next.reply(`📊 Found ${walletExports.length} wallets. Fetching real-time balances...`);
+
+          // Get real-time wallet data using Solana connection (slow operation)
           const connectionManager = new SolanaConnectionManager(
             "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
             2000
@@ -176,28 +182,41 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
           console.log(`🔍 Fetching real-time data for ${walletExports.length} wallets...`);
           
-          // Get SOL balances for all wallets
-          const balancePromises = walletExports.map(async (wallet) => {
-            try {
-              const keypair = secretKeyToKeypair(wallet.privateKey);
-              const balance = await connectionManager.getBalance(keypair.publicKey);
-              return { address: wallet.address, balance: balance / 1e9 }; // Convert to SOL
-            } catch (error) {
-              console.error(`Failed to get balance for ${wallet.address}:`, error);
-              return { address: wallet.address, balance: 0 };
-            }
-          });
-
-          const balances = await Promise.allSettled(balancePromises);
+          // Get SOL balances for all wallets in batches to avoid overwhelming
+          const BALANCE_BATCH_SIZE = 5;
           const balanceMap = new Map<string, number>();
           
-          balances.forEach((result, index) => {
-            if (result.status === 'fulfilled') {
-              balanceMap.set(result.value.address, result.value.balance);
-            } else {
-              balanceMap.set(walletExports[index].address, 0);
+          for (let i = 0; i < walletExports.length; i += BALANCE_BATCH_SIZE) {
+            const batch = walletExports.slice(i, i + BALANCE_BATCH_SIZE);
+            
+            const batchPromises = batch.map(async (wallet) => {
+              try {
+                const keypair = secretKeyToKeypair(wallet.privateKey);
+                const balance = await connectionManager.getBalance(keypair.publicKey);
+                return { address: wallet.address, balance: balance / 1e9 }; // Convert to SOL
+              } catch (error) {
+                console.error(`Failed to get balance for ${wallet.address}:`, error);
+                return { address: wallet.address, balance: 0 };
+              }
+            });
+
+            const batchResults = await Promise.allSettled(batchPromises);
+            
+            batchResults.forEach((result, batchIndex) => {
+              const walletIndex = i + batchIndex;
+              if (result.status === 'fulfilled') {
+                balanceMap.set(result.value.address, result.value.balance);
+              } else {
+                balanceMap.set(walletExports[walletIndex].address, 0);
+              }
+            });
+
+            // Progress update for large wallet collections
+            if (walletExports.length > 10 && i + BALANCE_BATCH_SIZE < walletExports.length) {
+              const progress = Math.round(((i + BALANCE_BATCH_SIZE) / walletExports.length) * 100);
+              await next.reply(`⏳ Progress: ${progress}% (${i + BALANCE_BATCH_SIZE}/${walletExports.length} wallets processed)`);
             }
-          });
+          }
 
           // Update wallet exports with real balances
           walletExports.forEach(wallet => {
@@ -214,6 +233,9 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
           // Calculate total SOL balance
           const totalSolBalance = walletExports.reduce((sum, wallet) => sum + wallet.balance, 0);
+          
+          // Send completion message
+          await next.reply(`✅ Balance fetch complete! Sending export with ${totalSolBalance.toFixed(6)} SOL total...`);
           
           // Send header message
           const headerMessage = [
