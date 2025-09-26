@@ -205,7 +205,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
           const deleteKeyboard = new InlineKeyboard()
             .text("🗑️ Delete Message", "del_message");
 
-          await sendMessage(next, exportMessage, {
+          await next.reply(exportMessage, {
             parse_mode: "HTML",
             reply_markup: deleteKeyboard,
           });
