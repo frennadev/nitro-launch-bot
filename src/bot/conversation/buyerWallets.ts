@@ -12,6 +12,8 @@ import {
   deleteBuyerWallet,
   getBuyerWalletPrivateKey,
 } from "../../backend/functions-main";
+import { solanaTrackerService } from "../../services/token/solana-tracker-service";
+import { SolanaConnectionManager } from "../../blockchain/mixer/connection";
 import { secretKeyToKeypair } from "../../blockchain/common/utils";
 
 const WALLETS_PER_PAGE = 5; // Optimized for 73 wallet system
@@ -137,7 +139,12 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
       if (data === CallBackQueries.EXPORT_ALL_BUYER_WALLETS) {
         try {
           // Get all wallet private keys
-          const walletExports = [];
+          const walletExports: Array<{
+            address: string;
+            shortAddress: string;
+            privateKey: string;
+            balance: number;
+          }> = [];
           
           for (const wallet of wallets) {
             try {
@@ -161,18 +168,58 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
             return await manageBuyerWalletsConversation(conversation, next);
           }
 
+          // Get real-time wallet data using Solana Tracker and connection
+          const connectionManager = new SolanaConnectionManager(
+            "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
+            2000
+          );
+
+          console.log(`🔍 Fetching real-time data for ${walletExports.length} wallets...`);
+          
+          // Get SOL balances for all wallets
+          const balancePromises = walletExports.map(async (wallet) => {
+            try {
+              const keypair = secretKeyToKeypair(wallet.privateKey);
+              const balance = await connectionManager.getBalance(keypair.publicKey);
+              return { address: wallet.address, balance: balance / 1e9 }; // Convert to SOL
+            } catch (error) {
+              console.error(`Failed to get balance for ${wallet.address}:`, error);
+              return { address: wallet.address, balance: 0 };
+            }
+          });
+
+          const balances = await Promise.allSettled(balancePromises);
+          const balanceMap = new Map<string, number>();
+          
+          balances.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+              balanceMap.set(result.value.address, result.value.balance);
+            } else {
+              balanceMap.set(walletExports[index].address, 0);
+            }
+          });
+
+          // Update wallet exports with real balances
+          walletExports.forEach(wallet => {
+            wallet.balance = balanceMap.get(wallet.address) || 0;
+          });
+
           // Split wallets into chunks to avoid message length limits
-          const WALLETS_PER_MESSAGE = 5; // Telegram message limit consideration
+          const WALLETS_PER_MESSAGE = 10; // Increased batch size as requested
           const chunks = [];
           
           for (let i = 0; i < walletExports.length; i += WALLETS_PER_MESSAGE) {
             chunks.push(walletExports.slice(i, i + WALLETS_PER_MESSAGE));
           }
 
+          // Calculate total SOL balance
+          const totalSolBalance = walletExports.reduce((sum, wallet) => sum + wallet.balance, 0);
+          
           // Send header message
           const headerMessage = [
             `🔐 <b>Bulk Buyer Wallets Export</b>`,
             `📊 <b>Total Wallets:</b> ${walletExports.length}`,
+            `💰 <b>Total SOL Balance:</b> ${totalSolBalance.toFixed(6)} SOL`,
             `📄 <b>Messages:</b> ${chunks.length + 1} (including this header)`,
             ``,
             `⚠️ <b>SECURITY WARNING:</b>`,
@@ -198,10 +245,12 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
 
             chunk.forEach((wallet, index) => {
               const globalIndex = startIndex + index + 1;
+              const balanceDisplay = wallet.balance > 0 ? `💰 ${wallet.balance.toFixed(6)} SOL` : `💤 0 SOL`;
+              
               chunkLines.push(
-                `<b>${globalIndex}. ${wallet.shortAddress}</b>`,
-                `<b>Address:</b> <code>${wallet.address}</code>`,
-                `<b>Private Key:</b> <span class="tg-spoiler">${wallet.privateKey}</span>`,
+                `<b>${globalIndex}. ${wallet.shortAddress}</b> ${balanceDisplay}`,
+                `<code>${wallet.address}</code>`,
+                `🔑 <span class="tg-spoiler">${wallet.privateKey}</span>`,
                 ``
               );
             });
