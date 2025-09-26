@@ -110,9 +110,9 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         .row();
     }
 
-    // Add bulk export button if there are wallets
-    if (wallets.length > 0) {
-      kb.text("📤 Export All Private Keys", CallBackQueries.EXPORT_ALL_BUYER_WALLETS)
+    // Add bulk export button if there are wallets on current page
+    if (currentWallets.length > 0) {
+      kb.text("📤 Export Page Private Keys", CallBackQueries.EXPORT_ALL_BUYER_WALLETS)
         .row();
     }
 
@@ -137,28 +137,54 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
       }
 
       if (data === CallBackQueries.EXPORT_ALL_BUYER_WALLETS) {
-        // Send immediate loading message to prevent timeout
-        await next.reply("🔄 Preparing wallet export with real-time balances...");
-        
         try {
-          // Get all wallet private keys (fast operation)
+          // Get current page wallets (much faster - only 5 wallets max)
+          const startIndex = (currentPage - 1) * WALLETS_PER_PAGE;
+          const endIndex = Math.min(startIndex + WALLETS_PER_PAGE, wallets.length);
+          const pageWallets = wallets.slice(startIndex, endIndex);
+
+          if (pageWallets.length === 0) {
+            await next.reply("❌ No wallets on current page to export.");
+            return await manageBuyerWalletsConversation(conversation, next);
+          }
+
+          // Send loading message
+          await next.reply(`🔄 Exporting ${pageWallets.length} wallets from page ${currentPage}...`);
+
+          // Get wallet private keys and balances for current page only
           const walletExports: Array<{
             address: string;
             shortAddress: string;
             privateKey: string;
             balance: number;
           }> = [];
-          
-          for (const wallet of wallets) {
+
+          const connectionManager = new SolanaConnectionManager(
+            "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
+            2000
+          );
+
+          // Process page wallets (fast since it's only 5 wallets max)
+          for (const wallet of pageWallets) {
             try {
               const privateKey = await getBuyerWalletPrivateKey(user.id, wallet.id);
               const shortAddress = `${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-8)}`;
+              
+              // Get real-time balance
+              let balance = 0;
+              try {
+                const keypair = secretKeyToKeypair(privateKey);
+                const balanceLamports = await connectionManager.getBalance(keypair.publicKey);
+                balance = balanceLamports / 1e9; // Convert to SOL
+              } catch (balanceError) {
+                console.error(`Failed to get balance for ${wallet.publicKey}:`, balanceError);
+              }
               
               walletExports.push({
                 address: wallet.publicKey,
                 shortAddress,
                 privateKey,
-                balance: 0 // Balance will be fetched separately
+                balance
               });
             } catch (error) {
               console.error(`Failed to export wallet ${wallet.id}:`, error);
@@ -167,135 +193,55 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
           }
 
           if (walletExports.length === 0) {
-            await next.reply("❌ No wallets could be exported.");
+            await next.reply("❌ No wallets could be exported from current page.");
             return await manageBuyerWalletsConversation(conversation, next);
           }
 
-          // Send progress update
-          await next.reply(`📊 Found ${walletExports.length} wallets. Fetching real-time balances...`);
-
-          // Get real-time wallet data using Solana connection (slow operation)
-          const connectionManager = new SolanaConnectionManager(
-            "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
-            2000
-          );
-
-          console.log(`🔍 Fetching real-time data for ${walletExports.length} wallets...`);
-          
-          // Get SOL balances for all wallets in batches to avoid overwhelming
-          const BALANCE_BATCH_SIZE = 5;
-          const balanceMap = new Map<string, number>();
-          
-          for (let i = 0; i < walletExports.length; i += BALANCE_BATCH_SIZE) {
-            const batch = walletExports.slice(i, i + BALANCE_BATCH_SIZE);
-            
-            const batchPromises = batch.map(async (wallet) => {
-              try {
-                const keypair = secretKeyToKeypair(wallet.privateKey);
-                const balance = await connectionManager.getBalance(keypair.publicKey);
-                return { address: wallet.address, balance: balance / 1e9 }; // Convert to SOL
-              } catch (error) {
-                console.error(`Failed to get balance for ${wallet.address}:`, error);
-                return { address: wallet.address, balance: 0 };
-              }
-            });
-
-            const batchResults = await Promise.allSettled(batchPromises);
-            
-            batchResults.forEach((result, batchIndex) => {
-              const walletIndex = i + batchIndex;
-              if (result.status === 'fulfilled') {
-                balanceMap.set(result.value.address, result.value.balance);
-              } else {
-                balanceMap.set(walletExports[walletIndex].address, 0);
-              }
-            });
-
-            // Progress update for large wallet collections
-            if (walletExports.length > 10 && i + BALANCE_BATCH_SIZE < walletExports.length) {
-              const progress = Math.round(((i + BALANCE_BATCH_SIZE) / walletExports.length) * 100);
-              await next.reply(`⏳ Progress: ${progress}% (${i + BALANCE_BATCH_SIZE}/${walletExports.length} wallets processed)`);
-            }
-          }
-
-          // Update wallet exports with real balances
-          walletExports.forEach(wallet => {
-            wallet.balance = balanceMap.get(wallet.address) || 0;
-          });
-
-          // Split wallets into chunks to avoid message length limits
-          const WALLETS_PER_MESSAGE = 10; // Increased batch size as requested
-          const chunks = [];
-          
-          for (let i = 0; i < walletExports.length; i += WALLETS_PER_MESSAGE) {
-            chunks.push(walletExports.slice(i, i + WALLETS_PER_MESSAGE));
-          }
-
-          // Calculate total SOL balance
+          // Calculate total SOL balance for this page
           const totalSolBalance = walletExports.reduce((sum, wallet) => sum + wallet.balance, 0);
           
-          // Send completion message
-          await next.reply(`✅ Balance fetch complete! Sending export with ${totalSolBalance.toFixed(6)} SOL total...`);
-          
-          // Send header message
-          const headerMessage = [
-            `🔐 <b>Bulk Buyer Wallets Export</b>`,
-            `📊 <b>Total Wallets:</b> ${walletExports.length}`,
-            `💰 <b>Total SOL Balance:</b> ${totalSolBalance.toFixed(6)} SOL`,
-            `📄 <b>Messages:</b> ${chunks.length + 1} (including this header)`,
-            ``,
-            `⚠️ <b>SECURITY WARNING:</b>`,
-            `• Save these private keys securely`,
-            `• Delete these messages after saving`,
-            `• Never share private keys with anyone`,
-            `• Consider using hardware wallets for large amounts`
-          ].join("\n");
+          // Create single export message (no chunking needed for 5 wallets)
+          const exportLines = [
+            `🔐 <b>Page ${currentPage} Wallet Export</b>`,
+            `📊 <b>Wallets:</b> ${walletExports.length}`,
+            `💰 <b>Total SOL:</b> ${totalSolBalance.toFixed(6)} SOL`,
+            ``
+          ];
 
-          await sendMessage(next, headerMessage, {
-            parse_mode: "HTML",
+          walletExports.forEach((wallet, index) => {
+            const globalIndex = startIndex + index + 1;
+            const balanceDisplay = wallet.balance > 0 ? `💰 ${wallet.balance.toFixed(6)} SOL` : `💤 0 SOL`;
+            
+            exportLines.push(
+              `<b>${globalIndex}. ${wallet.shortAddress}</b> ${balanceDisplay}`,
+              `<code>${wallet.address}</code>`,
+              `🔑 <span class="tg-spoiler">${wallet.privateKey}</span>`,
+              ``
+            );
           });
 
-          // Send wallet chunks
-          for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-            const chunk = chunks[chunkIndex];
-            const startIndex = chunkIndex * WALLETS_PER_MESSAGE;
-            
-            const chunkLines = [
-              `📋 <b>Wallets ${startIndex + 1}-${startIndex + chunk.length} of ${walletExports.length}</b>`,
-              ``
-            ];
+          exportLines.push(
+            `⚠️ <b>SECURITY WARNING:</b>`,
+            `• Save these private keys securely`,
+            `• Delete this message after saving`,
+            `• Never share private keys with anyone`
+          );
 
-            chunk.forEach((wallet, index) => {
-              const globalIndex = startIndex + index + 1;
-              const balanceDisplay = wallet.balance > 0 ? `💰 ${wallet.balance.toFixed(6)} SOL` : `💤 0 SOL`;
-              
-              chunkLines.push(
-                `<b>${globalIndex}. ${wallet.shortAddress}</b> ${balanceDisplay}`,
-                `<code>${wallet.address}</code>`,
-                `🔑 <span class="tg-spoiler">${wallet.privateKey}</span>`,
-                ``
-              );
-            });
+          const exportMessage = exportLines.join("\n");
 
-            const isLastChunk = chunkIndex === chunks.length - 1;
-            const deleteKeyboard = new InlineKeyboard()
-              .text("🗑️ Delete Message", "del_message");
-            
-            if (isLastChunk) {
-              deleteKeyboard.text("🔙 Back to Wallets", CallBackQueries.MANAGE_BUYER_WALLETS);
-            }
+          const deleteKeyboard = new InlineKeyboard()
+            .text("🗑️ Delete Message", "del_message");
 
-            await sendMessage(next, chunkLines.join("\n"), {
-              parse_mode: "HTML",
-              reply_markup: deleteKeyboard,
-            });
-          }
+          await sendMessage(next, exportMessage, {
+            parse_mode: "HTML",
+            reply_markup: deleteKeyboard,
+          });
 
-          // Return to wallet management after export
+          // Continue with current conversation (don't return to wallet management)
           return await manageBuyerWalletsConversation(conversation, next);
 
         } catch (error: any) {
-          await next.reply(`❌ Error exporting wallets: ${error.message}`);
+          await next.reply(`❌ Error exporting page wallets: ${error.message}`);
           return await manageBuyerWalletsConversation(conversation, next);
         }
       }
