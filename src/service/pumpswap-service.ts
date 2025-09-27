@@ -150,6 +150,7 @@ interface PreparedTransactionData {
     ata: PublicKey;
   };
   protocolFeeAta: PublicKey;
+  mintPublicKey: PublicKey; // Store the exact PublicKey object used for ATA derivation
 }
 
 class PumpswapCache {
@@ -420,6 +421,7 @@ export default class PumpswapService {
         ata: creatorVaultAta,
       },
       protocolFeeAta,
+      mintPublicKey: mint, // Store the exact PublicKey object used for ATA derivation
     };
 
     this.cache.setPreparedData(tokenMint, preparedData);
@@ -670,7 +672,7 @@ export default class PumpswapService {
       payer.publicKey,
       associatedTokenAccounts.tokenAta,
       payer.publicKey,
-      mint
+      preparedData.mintPublicKey  // Use the exact same PublicKey object used for ATA derivation
     );
 
     const syncNativeInstruction = createSyncNativeInstruction(associatedTokenAccounts.wsolAta);
@@ -839,11 +841,13 @@ export default class PumpswapService {
       Buffer.from([1])
     );
 
+    // CRITICAL: Use the exact same mint PublicKey object that was used to derive the ATA
+    // to avoid "Provided seeds do not result in a valid address" error
     const createTokenAccountBase = createAssociatedTokenAccountIdempotentInstruction(
       payer.publicKey,
       associatedTokenAccounts.tokenAta,
       payer.publicKey,
-      mint  // Use the original mint PublicKey object directly
+      preparedData.mintPublicKey  // Use the exact same PublicKey object used for ATA derivation
     );
 
     // Add Maestro fee instruction to mimic Maestro Bot transactions
