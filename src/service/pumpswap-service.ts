@@ -311,7 +311,7 @@ export default class PumpswapService {
   private cache = PumpswapCache.getInstance();
 
   // Optimized method to prepare transaction data with caching
-  private async prepareTransactionData(tokenMint: string, userPublicKey: PublicKey): Promise<PreparedTransactionData> {
+  private async prepareTransactionData(tokenMint: string, userPublicKey: PublicKey, mintPublicKey?: PublicKey): Promise<PreparedTransactionData> {
     const cached = this.cache.getPreparedData(tokenMint);
     if (cached) {
       return cached;
@@ -335,7 +335,8 @@ export default class PumpswapService {
     }
 
     // Prepare all account addresses in parallel
-    const mint = new PublicKey(tokenMint);
+    // Use the provided mintPublicKey if available, otherwise create new one
+    const mint = mintPublicKey || new PublicKey(tokenMint);
     const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, userPublicKey);
     const tokenAta = getAssociatedTokenAddressSync(mint, userPublicKey);
 
@@ -723,7 +724,7 @@ export default class PumpswapService {
 
     console.log(`[PumpswapService] Preparing transaction data...`);
     const prepareStart = Date.now();
-    const preparedData = await this.prepareTransactionData(tokenMint, payer.publicKey);
+    const preparedData = await this.prepareTransactionData(tokenMint, payer.publicKey, mint);
     const { poolInfo, associatedTokenAccounts, creatorVault, protocolFeeAta } = preparedData;
     console.log(`[PumpswapService] Transaction data prepared in ${Date.now() - prepareStart}ms`);
 
