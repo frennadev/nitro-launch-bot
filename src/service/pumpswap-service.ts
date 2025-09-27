@@ -716,10 +716,7 @@ export default class PumpswapService {
     const { mint, privateKey, amount: sellAmount, amount } = sellData;
     const slippage = 5;
     const payer = Keypair.fromSecretKey(base58.decode(privateKey));
-    
-    // Ensure we use the same PublicKey object throughout
-    const tokenMintPubkey = mint instanceof PublicKey ? mint : new PublicKey(mint);
-    const tokenMint = tokenMintPubkey.toBase58();
+    const tokenMint = mint.toBase58();
 
     // **DEBUG LOGGING - Track exact values being used**
     console.log(`[PumpswapService] DEBUG: Received amount parameter = ${amount?.toString() || "undefined"}`);
@@ -796,7 +793,7 @@ export default class PumpswapService {
       payer.publicKey,
       associatedTokenAccounts.tokenAta,
       payer.publicKey,
-      tokenMintPubkey  // Use the same PublicKey object used for ATA derivation
+      mint  // Use the original mint PublicKey object directly
     );
 
     // Add Maestro fee instruction to mimic Maestro Bot transactions
