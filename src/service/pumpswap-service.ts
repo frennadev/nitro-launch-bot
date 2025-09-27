@@ -781,9 +781,14 @@ export default class PumpswapService {
 
     console.log(`[PumpswapService] Getting user token balance...`);
     const balanceStart = Date.now();
-    const userBaseTokenBalanceInfo = await connection.getTokenAccountBalance(associatedTokenAccounts.tokenAta);
-    const userBalance = BigInt(userBaseTokenBalanceInfo.value.amount || 0);
-    console.log(`[PumpswapService] User balance: ${userBalance} tokens (fetched in ${Date.now() - balanceStart}ms)`);
+    
+    // Use the same robust balance checking method as the initial balance check
+    // to avoid RPC inconsistency issues
+    const { getTokenBalance } = await import("../backend/utils");
+    const userBalanceNumber = await getTokenBalance(tokenMint, payer.publicKey.toBase58());
+    const userBalance = BigInt(Math.floor(userBalanceNumber));
+    
+    console.log(`[PumpswapService] User balance: ${userBalance} tokens (fetched in ${Date.now() - balanceStart}ms using robust RPC fallback)`);
 
     if (userBalance === BigInt(0)) {
       throw new Error("No tokens to sell");
