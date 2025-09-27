@@ -83,11 +83,30 @@ const system_program_id = SYSTEM_PROGRAM_ID;
 const associated_token_program_id = ASSOCIATED_TOKEN_PROGRAM_ID;
 const coin_creator_vault_authority = new PublicKey("Ciid5pckEwdLw5juAtNiQSpmhHzsdcfCQs7h989SPR4T");
 const event_authority = new PublicKey("GS4CU59F31iL7aR2Q8zVS8DRrcRnXX1yjQ66TqNVQnaR");
+const fee_program = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
 export const pumpswap_amm_program_id = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
 export const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 const BUY_DISCRIMINATOR = [102, 6, 61, 18, 1, 218, 235, 234];
 const SELL_DISCRIMINATOR = [51, 230, 133, 164, 1, 127, 131, 173];
+
+// Fee config PDA derivation based on the new pumpswap schema
+const FEE_CONFIG_SEED = "fee_config";
+const FEE_CONFIG_CONSTANT = new Uint8Array([
+  12, 20, 222, 252, 130, 94, 198, 118, 148, 37, 8, 24, 187, 101, 64, 101,
+  244, 41, 141, 49, 86, 213, 113, 180, 212, 248, 9, 12, 24, 233, 168, 99
+]);
+
+function getFeeConfigPDA(): PublicKey {
+  const [feeConfigPDA] = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(FEE_CONFIG_SEED, "utf8"),
+      Buffer.from(FEE_CONFIG_CONSTANT)
+    ],
+    fee_program
+  );
+  return feeConfigPDA;
+}
 
 // New caching interfaces and types
 interface CachedPoolData {
@@ -670,30 +689,31 @@ export default class PumpswapService {
     coin_creator_vault_ata,
     coin_creator_vault_authority,
   }: CreateSellIXParams) => {
+    // Derive the fee_config PDA
+    const fee_config = getFeeConfigPDA();
+    
     const keys: AccountMeta[] = [
-      { pubkey: pool, isSigner: false, isWritable: false },
-      { pubkey: user, isSigner: true, isWritable: true },
-      { pubkey: global_config, isSigner: false, isWritable: false },
-      { pubkey: base_mint, isSigner: false, isWritable: false },
-      { pubkey: quote_mint, isSigner: false, isWritable: false },
-      { pubkey: base_token_ata, isSigner: false, isWritable: true },
-      { pubkey: quote_token_ata, isSigner: false, isWritable: true },
-      { pubkey: pool_base_token_ata, isSigner: false, isWritable: true },
-      { pubkey: pool_quote_token_ata, isSigner: false, isWritable: true },
-      { pubkey: pumpfun_amm_protocol_fee, isSigner: false, isWritable: false },
-      { pubkey: protocol_fee_ata, isSigner: false, isWritable: true },
-      { pubkey: token_program_id, isSigner: false, isWritable: false },
-      { pubkey: token_program_id, isSigner: false, isWritable: false },
-      { pubkey: system_program_id, isSigner: false, isWritable: false },
-      {
-        pubkey: associated_token_program_id,
-        isSigner: false,
-        isWritable: false,
-      },
-      { pubkey: event_authority, isSigner: false, isWritable: false },
-      { pubkey: pumpswap_amm_program_id, isSigner: false, isWritable: false },
-      { pubkey: coin_creator_vault_ata, isSigner: false, isWritable: true },
-      { pubkey: coin_creator_vault_authority, isSigner: false, isWritable: false },
+      { pubkey: pool, isSigner: false, isWritable: false }, // 0: pool
+      { pubkey: user, isSigner: true, isWritable: true }, // 1: user
+      { pubkey: global_config, isSigner: false, isWritable: false }, // 2: global_config
+      { pubkey: base_mint, isSigner: false, isWritable: false }, // 3: base_mint
+      { pubkey: quote_mint, isSigner: false, isWritable: false }, // 4: quote_mint
+      { pubkey: base_token_ata, isSigner: false, isWritable: true }, // 5: user_base_token_account
+      { pubkey: quote_token_ata, isSigner: false, isWritable: true }, // 6: user_quote_token_account
+      { pubkey: pool_base_token_ata, isSigner: false, isWritable: true }, // 7: pool_base_token_account
+      { pubkey: pool_quote_token_ata, isSigner: false, isWritable: true }, // 8: pool_quote_token_account
+      { pubkey: pumpfun_amm_protocol_fee, isSigner: false, isWritable: false }, // 9: protocol_fee_recipient
+      { pubkey: protocol_fee_ata, isSigner: false, isWritable: true }, // 10: protocol_fee_recipient_token_account
+      { pubkey: token_program_id, isSigner: false, isWritable: false }, // 11: base_token_program
+      { pubkey: token_program_id, isSigner: false, isWritable: false }, // 12: quote_token_program
+      { pubkey: system_program_id, isSigner: false, isWritable: false }, // 13: system_program
+      { pubkey: associated_token_program_id, isSigner: false, isWritable: false }, // 14: associated_token_program
+      { pubkey: event_authority, isSigner: false, isWritable: false }, // 15: event_authority
+      { pubkey: pumpswap_amm_program_id, isSigner: false, isWritable: false }, // 16: program
+      { pubkey: coin_creator_vault_ata, isSigner: false, isWritable: true }, // 17: coin_creator_vault_ata
+      { pubkey: coin_creator_vault_authority, isSigner: false, isWritable: false }, // 18: coin_creator_vault_authority
+      { pubkey: fee_config, isSigner: false, isWritable: false }, // 19: fee_config (NEW)
+      { pubkey: fee_program, isSigner: false, isWritable: false }, // 20: fee_program (NEW)
     ];
 
     const data = Buffer.alloc(24);
