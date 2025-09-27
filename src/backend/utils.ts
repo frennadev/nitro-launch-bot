@@ -967,7 +967,7 @@ export async function archiveAddress(
 export const getCurrentSolPrice = async (): Promise<number> => {
   try {
     // Try Helius DAS API first (consistent with our market cap services)
-    const heliusRpcUrl = process.env.HELIUS_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e';
+    const heliusRpcUrl = process.env.HELIUS_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7';
     const SOL_MINT = 'So11111111111111111111111111111111111111112';
     
     const heliusResponse = await axios.post(heliusRpcUrl, {

@@ -36,10 +36,10 @@ export const env = cleanEnv(process.env, {
   PINATA_API_URL: validStr(),
   HELIUS_RPC_URL: validStr(),
   HELIUS_MIXER_RPC_URL: str({
-    default: "https://mainnet.helius-rpc.com/?api-key=74feaea1-f5ce-4ef6-a124-49dd51e76f67",
+    default: "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
   }),
   HELIUS_BACKUP_RPC_URL: str({
-    default: "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
+    default: "https://mainnet.helius-rpc.com/?api-key=74feaea1-f5ce-4ef6-a124-49dd51e76f67",
   }),
   TRADING_HELIUS_RPC: validStr(),
   MIXER_HELIUS_RPC: validStr(),
