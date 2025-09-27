@@ -354,6 +354,19 @@ export default class PumpswapService {
   private async prepareTransactionData(tokenMint: string, userPublicKey: PublicKey, mintPublicKey?: PublicKey): Promise<PreparedTransactionData> {
     const cached = this.cache.getPreparedData(tokenMint);
     if (cached) {
+      // CRITICAL FIX: If a specific mintPublicKey is provided, update the cached data
+      // to use the current PublicKey object to ensure ATA consistency
+      if (mintPublicKey) {
+        console.log(`[PumpswapService] Using cached data but updating mintPublicKey for ATA consistency`);
+        return {
+          ...cached,
+          mintPublicKey: mintPublicKey, // Use the current PublicKey object
+          associatedTokenAccounts: {
+            ...cached.associatedTokenAccounts,
+            tokenAta: getAssociatedTokenAddressSync(mintPublicKey, userPublicKey), // Recalculate with current PublicKey
+          }
+        };
+      }
       return cached;
     }
 
