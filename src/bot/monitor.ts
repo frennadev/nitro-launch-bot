@@ -370,14 +370,22 @@ export const handleViewTokenWallets = async (
       const walletNumber = startIndex + index + 1;
       const typeEmoji =
         wallet.type === "buyer" ? "👝" : wallet.type === "dev" ? "👨‍💻" : "💰";
+      
+      // Create the full callback data
+      const fullCallbackData = `sell_wallet_token_${tokenAddress}_${wallet.pubkey}_${wallet.type}`;
+      
+      // Check if it's too long for Telegram's 64-byte limit
+      let callbackData: string;
+      if (fullCallbackData.length > 64) {
+        // Use the callback ID system for long data
+        const { generateCallbackId } = require("../utils");
+        callbackData = generateCallbackId(fullCallbackData);
+      } else {
+        callbackData = fullCallbackData;
+      }
+      
       keyboard
-        .text(
-          `🔴 Sell ${typeEmoji} #${walletNumber}`,
-          compressCallbackData(
-            CallBackQueries.SELL_WALLET_TOKEN,
-            `${tokenAddress}_${wallet.pubkey}_${wallet.type}`
-          )
-        )
+        .text(`🔴 Sell ${typeEmoji} #${walletNumber}`, callbackData)
         .row();
     });
 

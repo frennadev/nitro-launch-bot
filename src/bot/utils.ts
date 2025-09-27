@@ -222,6 +222,8 @@ const CALLBACK_PREFIXES = {
   SELL_EXTERNAL_TOKEN: "set",
   CTO: "cto",
   CHART: "ch",
+  SELL_WALLET_TOKEN: "swt", // Add support for sell wallet token
+  VIEW_TOKEN_WALLETS: "vtw", // Add support for view token wallets
   // Add the actual enum values for LaunchMessageCallbacks
   refresh_launch_data: "rld",
   refresh_bonk_launch_data: "rbld",
@@ -257,6 +259,21 @@ export function compressCallbackData(
     return `${action}_${cleanedTokenAddress}`;
   }
 
+  // Special handling for SELL_WALLET_TOKEN which has format: tokenAddress_walletAddress_walletType
+  if (action === "SELL_WALLET_TOKEN" || action === "sell_wallet_token") {
+    const parts = cleanedTokenAddress.split("_");
+    if (parts.length >= 3) {
+      const [tokenAddr, walletAddr, walletType] = parts;
+      
+      // Use ultra-short format: first 8 + last 8 chars for addresses, single char for type
+      const shortToken = tokenAddr.slice(0, 8) + tokenAddr.slice(-8);
+      const shortWallet = walletAddr.slice(0, 8) + walletAddr.slice(-8);
+      const shortType = walletType === "buyer" ? "b" : walletType === "dev" ? "d" : "f";
+      
+      return `${prefix}_${shortToken}_${shortWallet}_${shortType}`;
+    }
+  }
+
   // Use base64 encoding for the token address to make it shorter
   const encodedAddress = Buffer.from(cleanedTokenAddress).toString("base64");
   return `${prefix}_${encodedAddress}`;
@@ -266,19 +283,37 @@ export function compressCallbackData(
 export function decompressCallbackData(
   compressedData: string
 ): { action: string; tokenAddress: string } | null {
-  const [prefix, encodedAddress] = compressedData.split("_");
+  const parts = compressedData.split("_");
+  const prefix = parts[0];
 
   // Find the original action from the prefix
   const action = Object.keys(CALLBACK_PREFIXES).find(
     (key) => CALLBACK_PREFIXES[key as keyof typeof CALLBACK_PREFIXES] === prefix
   );
 
-  if (!action || !encodedAddress) {
+  if (!action) {
     return null;
   }
 
   try {
-    // Decode the base64 address
+    // Special handling for SELL_WALLET_TOKEN format: swt_shortToken_shortWallet_shortType
+    if (prefix === "swt" && parts.length === 4) {
+      const [, shortToken, shortWallet, shortType] = parts;
+      
+      // Note: We can't reconstruct full addresses from shortened ones
+      // The handler will need to use the shortened format or look up full addresses
+      const fullType = shortType === "b" ? "buyer" : shortType === "d" ? "dev" : "funding";
+      const tokenAddress = `${shortToken}_${shortWallet}_${fullType}`;
+      
+      return { action, tokenAddress };
+    }
+
+    // Standard base64 decoding for other actions
+    const encodedAddress = parts[1];
+    if (!encodedAddress) {
+      return null;
+    }
+
     const tokenAddress = Buffer.from(encodedAddress, "base64").toString();
     return { action, tokenAddress };
   } catch (error) {
@@ -286,10 +321,34 @@ export function decompressCallbackData(
   }
 }
 
+// Temporary storage for complex callback data (in-memory cache)
+const callbackDataCache = new Map<string, string>();
+let callbackIdCounter = 0;
+
+// Generate a short ID for complex callback data
+export function generateCallbackId(fullData: string): string {
+  const id = `cb${callbackIdCounter++}`;
+  callbackDataCache.set(id, fullData);
+  
+  // Clean up old entries to prevent memory leaks (keep last 1000)
+  if (callbackDataCache.size > 1000) {
+    const entries = Array.from(callbackDataCache.entries());
+    const toDelete = entries.slice(0, entries.length - 1000);
+    toDelete.forEach(([key]) => callbackDataCache.delete(key));
+  }
+  
+  return id;
+}
+
+// Retrieve full data from callback ID
+export function getCallbackData(id: string): string | null {
+  return callbackDataCache.get(id) || null;
+}
+
 // Check if callback data is compressed
 export function isCompressedCallbackData(data: string): boolean {
   const [prefix] = data.split("_");
-  return Object.values(CALLBACK_PREFIXES).includes(prefix);
+  return Object.values(CALLBACK_PREFIXES).includes(prefix) || data.startsWith("cb");
 }
 
 // Validate callback data length (Telegram has 64-byte limit)

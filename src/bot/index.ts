@@ -2096,13 +2096,32 @@ bot.callbackQuery(/^(swt_|sell_wallet_token_)/, async (ctx) => {
   let walletType: string;
   const data = ctx.callbackQuery.data;
 
-  if (isCompressedCallbackData(data)) {
+  // Check if this is a callback ID (short identifier for long data)
+  if (data.startsWith("cb")) {
+    const { getCallbackData } = await import("../utils");
+    const fullData = getCallbackData(data);
+    if (!fullData) {
+      await sendMessage(ctx, "❌ Callback data expired. Please refresh and try again.");
+      return;
+    }
+    
+    // Parse the full data
+    const parts = fullData.split("_");
+    if (parts.length >= 6 && parts[0] === "sell" && parts[1] === "wallet" && parts[2] === "token") {
+      tokenAddress = parts[3];
+      walletAddress = parts[4];
+      walletType = parts[5];
+    } else {
+      await sendMessage(ctx, "❌ Invalid callback data format.");
+      return;
+    }
+  } else if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
       await sendMessage(ctx, "❌ Invalid callback data.");
       return;
     }
-    // For sell wallet token, the format is: tokenAddress_walletAddress_walletType
+    // Handle other compressed formats (not SELL_WALLET_TOKEN)
     const parts = decompressed.tokenAddress.split("_");
     if (parts.length >= 3) {
       tokenAddress = parts[0];
