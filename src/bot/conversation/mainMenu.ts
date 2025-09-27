@@ -59,7 +59,7 @@ export default async function mainMenuConversation(
   }
 
   if (!user) {
-    await sendErrorWithAutoDelete(ctx, "Unrecognized user ❌");
+    await sendErrorWithAutoDelete(ctx, "Please try again ⚡");
     return conversation.halt();
   }
 

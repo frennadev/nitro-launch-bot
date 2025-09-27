@@ -24,7 +24,7 @@ const walletConfigConversation = async (
 
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await sendMessage(ctx, "Unrecognized user ❌");
+    await sendMessage(ctx, "Please try again ⚡");
     return conversation.halt();
   }
 
@@ -114,7 +114,7 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error occurred";
-        await sendMessage(confirmCtx, `❌ Error: ${errorMessage}`);
+        await sendMessage(confirmCtx, "Operation failed. Try again ⚡");
       }
     } else {
       await confirmCtx.answerCallbackQuery();
@@ -160,7 +160,7 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
     if (buyerWallets.length === 0) {
       await sendMessage(
         next,
-        "❌ You need to create buyer wallets first to mix funds.",
+        "Create buyer wallets first ⚡",
         {
           reply_markup: new InlineKeyboard()
             .text(

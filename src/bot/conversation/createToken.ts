@@ -30,7 +30,7 @@ const createTokenConversation = async (
   }
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await sendErrorWithAutoDelete(ctx, "Unrecognized user ❌");
+    await sendErrorWithAutoDelete(ctx, "Please try again ⚡");
     return conversation.halt();
   }
 
@@ -198,7 +198,7 @@ const createTokenConversation = async (
         // Show error and ask again
         await sendMessage(
           ctx,
-          `❌ <b>Link Detection Failed</b>\n\n${detectionResult.message}\n\n` +
+          "Link detection failed. Try again ⚡\n\n" +
           "Please try again with valid links or type 'skip' to continue without links.",
           { parse_mode: "HTML", reply_markup: cancelKeyboard }
         );

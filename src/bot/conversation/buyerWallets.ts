@@ -25,7 +25,7 @@ const manageBuyerWalletsConversation = async (
   await ctx.answerCallbackQuery();
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await sendMessage(ctx, "Unrecognized user ❌");
+    await sendMessage(ctx, "Please try again ⚡");
     return conversation.halt();
   }
 
@@ -142,7 +142,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
           const pageWallets = wallets.slice(startIndex, endIndex);
 
           if (pageWallets.length === 0) {
-            await next.reply("❌ No wallets on current page to export.");
+            await next.reply("Nothing to export. Try again ⚡");
             return await manageBuyerWalletsConversation(conversation, next);
           }
 
@@ -171,7 +171,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
           }
 
           if (walletExports.length === 0) {
-            await next.reply("❌ No wallets could be exported from current page.");
+            await next.reply("Export unavailable. Please try again ⚡");
             return await manageBuyerWalletsConversation(conversation, next);
           }
 
@@ -214,7 +214,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
           return await manageBuyerWalletsConversation(conversation, next);
 
         } catch (error: any) {
-          await next.reply(`❌ Error exporting page wallets: ${error.message}`);
+          await next.reply("Export failed. Please try again ⚡");
           return await manageBuyerWalletsConversation(conversation, next);
         }
       }
@@ -244,7 +244,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
           CallBackQueries.CANCEL_BUYER_WALLET
         ) {
           await quantityInput.answerCallbackQuery();
-          await sendMessage(quantityInput, "Wallet generation cancelled.");
+          await sendMessage(quantityInput, "Cancelled ⚡");
           return conversation.halt();
         }
 
@@ -252,7 +252,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         if (!quantityText) {
           await sendMessage(
             quantityInput,
-            "❌ No quantity provided. Generation cancelled."
+            "Please enter a number ⚡"
           );
           return conversation.halt();
         }
@@ -261,7 +261,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         if (isNaN(quantity) || quantity < 1 || quantity > remainingSlots) {
           await sendMessage(
             quantityInput,
-            `❌ Invalid quantity. Please enter a number between 1 and ${remainingSlots}.`
+            `Enter 1-${remainingSlots} wallets ⚡`
           );
           return conversation.halt();
         }
@@ -314,7 +314,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         if (wallets.length >= MAX_WALLETS) {
           await sendMessage(
             next,
-            `❌ You have reached the maximum limit of ${MAX_WALLETS} buyer wallets. Please delete some wallets before importing new ones.`
+            `Wallet limit reached (${MAX_WALLETS}). Delete some first ⚡`
           );
           return conversation.halt();
         }
@@ -338,7 +338,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
         // Handle callback queries first (like cancel button)
         if (privateKeyInput.callbackQuery?.data === CallBackQueries.CANCEL_BUYER_WALLET) {
           await privateKeyInput.answerCallbackQuery();
-          await sendMessage(privateKeyInput, "Wallet import cancelled.");
+          await sendMessage(privateKeyInput, "Cancelled ⚡");
           return conversation.halt();
         }
 
@@ -347,7 +347,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
           await privateKeyInput.answerCallbackQuery();
           await sendMessage(
             privateKeyInput,
-            "❌ Please send your private key as a text message, not by clicking buttons."
+            "Send as text message ⚡"
           );
           return conversation.halt();
         }
@@ -445,49 +445,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
             parse_mode: "HTML",
           });
         } catch (error: any) {
-          let errorMessage = "❌ <b>Import failed</b>\n\n";
-          
-          if (error.message.includes("Invalid secret key format")) {
-            errorMessage += [
-              "The private key format is invalid.",
-              "",
-              "💡 <b>Common issues:</b>",
-              "• Private key must be Base58 encoded",
-              "• Should be 87-88 characters long",
-              "• Don't include extra characters or spaces",
-              "• Make sure you copied the entire key",
-              "",
-              "💡 <b>How to get your private key:</b>",
-              "1. Open your wallet (Phantom, Solflare, etc.)",
-              "2. Go to Settings → Security → Export Private Key",
-              "3. Copy the full private key string",
-              "",
-              "<i>Please try again with a valid private key.</i>"
-            ].join("\n");
-          } else if (error.message.includes("Invalid secret key: key must be a non-empty string")) {
-            errorMessage += [
-              "No private key was received.",
-              "",
-              "💡 <b>Please make sure to:</b>",
-              "• Type or paste your private key",
-              "• Send it as a text message",
-              "• Don't send as a file or image",
-              "",
-              "<i>Please try the import process again.</i>"
-            ].join("\n");
-          } else {
-            errorMessage += [
-              `Error: ${error.message}`,
-              "",
-              "💡 <b>Need help?</b>",
-              "Make sure your private key is:",
-              "• A valid Solana private key",
-              "• Base58 encoded format",
-              "• Copied correctly without extra characters"
-            ].join("\n");
-          }
-          
-          await sendMessage(privateKeyInput, errorMessage, {
+          await sendMessage(privateKeyInput, "Import failed. Try again ⚡", {
             parse_mode: "HTML"
           });
         }
@@ -558,7 +516,7 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
               });
             }
           } catch (error: any) {
-            await next.reply(`❌ Error: ${error.message}`);
+            await next.reply("Export failed. Try again ⚡");
           }
           break;
 
@@ -574,15 +532,15 @@ You have <b>${wallets.length}/${MAX_WALLETS}</b> buyer wallets.
             // Continue the loop to show updated wallet list
             continue;
           } catch (error: any) {
-            await next.reply(`❌ Error: ${error.message}`);
+            await next.reply("Delete failed. Try again ⚡");
           }
           break;
 
         default:
-          await next.reply("⚠️ Unknown action.", { parse_mode: "HTML" });
+          await next.reply("Please try again ⚡", { parse_mode: "HTML" });
       }
     } catch (error: any) {
-      await next.reply(`❌ An error occurred: ${error.message}`);
+      await next.reply("Something went wrong. Try again ⚡");
     }
 
     return conversation.halt();

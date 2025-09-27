@@ -39,7 +39,7 @@ export const sellIndividualToken = async (
 
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await sendMessage(ctx, "Unrecognized user ❌");
+    await sendMessage(ctx, "Please try again ⚡");
     return conversation.halt();
   }
 
@@ -47,7 +47,7 @@ export const sellIndividualToken = async (
     .sort({ createdAt: -1 })
     .exec();
   if (!token) {
-    await sendMessage(ctx, "Token not found ❌");
+    await sendMessage(ctx, "Token not found. Try again ⚡");
     return conversation.halt();
   }
 
@@ -335,7 +335,7 @@ async function handleWalletSellAction(
   // Find the wallet with matching shortened address
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await sendMessage(ctx, "❌ User not found");
+    await sendMessage(ctx, "Please try again ⚡");
     return;
   }
 
@@ -346,7 +346,7 @@ async function handleWalletSellAction(
   });
 
   if (!targetWallet) {
-    await sendMessage(ctx, "❌ Wallet not found");
+    await sendMessage(ctx, "Wallet not found. Try again ⚡");
     return;
   }
 
@@ -374,7 +374,7 @@ async function handleWalletSellAction(
         sellPercent = 100;
         break;
       default:
-        await sendMessage(ctx, "❌ Invalid sell percentage");
+        await sendMessage(ctx, "Invalid percentage. Try again ⚡");
         return;
     }
 
@@ -406,7 +406,7 @@ async function handleWalletSellAction(
           : Math.floor(tokenBalance * (sellPercent / 100));
 
       if (tokensToSell <= 0) {
-        await sendMessage(ctx, "❌ No tokens to sell");
+        await sendMessage(ctx, "No tokens to sell ⚡");
         return;
       }
 
@@ -437,10 +437,10 @@ async function handleWalletSellAction(
           `✅ Successfully sold ${sellPercent}% of tokens!\n\nTransaction: ${result.signature}\nPlatform: ${result.platform}`
         );
       } else {
-        await sendErrorWithAutoDelete(ctx, `❌ Sell failed: ${result.error}`);
+        await sendErrorWithAutoDelete(ctx, "Sell failed. Try again ⚡");
       }
     } catch (error: any) {
-      await sendErrorWithAutoDelete(ctx, `❌ Error: ${error.message}`);
+      await sendErrorWithAutoDelete(ctx, "Something went wrong. Try again ⚡");
     }
   } else if (action === "wdet") {
     // Show detailed wallet information

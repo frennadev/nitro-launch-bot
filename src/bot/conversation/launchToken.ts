@@ -63,7 +63,7 @@ async function waitForInputOrCancel(
   if (input.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
     await sendMessage(
       ctx,
-      "<b>❌ Process Cancelled</b>\n\n<i>Returning to the beginning.</i>",
+      "Cancelled ⚡",
       { parse_mode: "HTML" }
     );
     await conversation.halt();
@@ -163,7 +163,7 @@ const launchTokenConversation = async (
   if (!user) {
     await sendMessage(
       ctx,
-      "<b>❌ Unrecognized User</b>\n\n<i>Please contact support for assistance.</i>",
+      "Please try again ⚡",
       { parse_mode: "HTML" }
     );
     await conversation.halt();
@@ -240,7 +240,7 @@ const launchTokenConversation = async (
   await safeAnswerCallbackQuery(launchModeChoice);
 
   if (launchModeChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
-    await sendMessage(ctx, "<b>❌ Launch Cancelled</b>", {
+    await sendMessage(ctx, "Cancelled ⚡", {
       parse_mode: "HTML",
     });
     await conversation.halt();
@@ -265,7 +265,7 @@ const launchTokenConversation = async (
     if (buyerWallets.length === 0) {
       await sendMessage(
         ctx,
-        "<b>❌ No Buyer Wallets Found</b>\n\n<i>Please add buyer wallets in Wallet Config first.</i>",
+        "Add buyer wallets first ⚡",
         { parse_mode: "HTML" }
       );
       await conversation.halt();

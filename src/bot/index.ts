@@ -299,9 +299,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
       try {
         await sendMessage(
           ctx,
-          "⚠️ **Button Error Detected**\n\n" +
-            "There was an issue with the message buttons. This has been automatically fixed.\n\n" +
-            "Please use /view_tokens to manage your tokens.",
+          "Please try again ⚡",
           { parse_mode: "Markdown" }
         );
       } catch (replyError: any) {
@@ -332,7 +330,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
     try {
       await sendErrorWithAutoDelete(
         ctx,
-        "❌ An unexpected error occurred. Please try the main menu or contact support."
+        "Something went wrong. Try again ⚡"
       );
     } catch (notifyError: any) {
       logger.error("Failed to send error notification:", notifyError.message);
@@ -3935,7 +3933,7 @@ bot.on("message:text", async (ctx) => {
           );
           await sendMessage(
             ctx,
-            "❌ Error sending token information. Please try again."
+            "Please try again ⚡"
           );
           return;
         }
@@ -3962,7 +3960,7 @@ bot.on("message:text", async (ctx) => {
     try {
       await sendMessage(
         ctx,
-        "❌ Error displaying token information. Please try again or contact support if the issue persists."
+        "Please try again ⚡"
       );
     } catch (replyError) {
       logger.error("Failed to send error message to user:", replyError);
