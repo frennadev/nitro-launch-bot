@@ -7,9 +7,8 @@ import { publicKey, u64 } from "@solana/buffer-layout-utils";
 import { connection } from "../blockchain/common/connection.ts";
 import { LIGHTWEIGHT_MODE, ENABLE_BACKGROUND_PRELOADING, MAX_POOL_CACHE_SIZE } from "../config.ts";
 
-// Define the program ID directly to avoid circular imports
-// Use the correct pumpswap program ID that actually has pools
-const pumpswap_amm_program_id = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+// Import the correct pumpswap program ID from the service
+import { pumpswap_amm_program_id } from "../service/pumpswap-service.ts";
 
 export type PumpSwapPool = {
   discriminator: bigint;
