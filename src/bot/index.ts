@@ -2096,7 +2096,7 @@ bot.callbackQuery(/^(swt_|sell_wallet_token_)/, async (ctx) => {
 
   // Check if this is a callback ID (short identifier for long data)
   if (data.startsWith("cb")) {
-    const { getCallbackData } = await import("../utils");
+    const { getCallbackData } = await import("./utils");
     const fullData = getCallbackData(data);
     if (!fullData) {
       await sendMessage(ctx, "❌ Callback data expired. Please refresh and try again.");

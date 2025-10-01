@@ -378,7 +378,7 @@ export const handleViewTokenWallets = async (
       let callbackData: string;
       if (fullCallbackData.length > 64) {
         // Use the callback ID system for long data
-        const { generateCallbackId } = require("../utils");
+        const { generateCallbackId } = require("./utils");
         callbackData = generateCallbackId(fullCallbackData);
       } else {
         callbackData = fullCallbackData;
