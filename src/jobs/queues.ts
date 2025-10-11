@@ -6,6 +6,7 @@ import type {
   ExecuteTokenLaunchJob,
   SellDevJob,
   SellWalletJob,
+  CreateTokenMetadataJob,
 } from "./types";
 
 export const tokenLaunchQueue = new Queue<LaunchTokenJob>(
@@ -36,3 +37,10 @@ export const devSellQueue = new Queue<SellDevJob>("bundler-dev-sell", {
 export const walletSellQueue = new Queue<SellWalletJob>("bundler-wallet-sell", {
   connection: redisClient,
 });
+
+export const createTokenMetadataQueue = new Queue<CreateTokenMetadataJob>(
+  "bundler-create-token-metadata",
+  {
+    connection: redisClient,
+  }
+);

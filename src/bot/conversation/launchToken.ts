@@ -29,6 +29,13 @@ import { startLoadingState, sendLoadingMessage } from "../loading";
 import { safeAnswerCallbackQuery } from "../utils";
 import { logger } from "../../blockchain/common/logger";
 import { sendMessage } from "../../backend/sender";
+import {
+  emitTokenLaunched,
+  emitMixingStarted,
+  emitMixingCompleted,
+  emitTokenFullyReady,
+  emitLaunchError,
+} from "../../websocket/socketio-server";
 
 enum LaunchCallBackQueries {
   CANCEL = "CANCEL_LAUNCH",
@@ -990,7 +997,7 @@ Please enter a smaller buy amount:`,
     } else if (launchMode == "prefunded") {
       // PREFUNDED MODE: Use all available balance from buyer wallets automatically
       buyAmount = Number(totalBalance.toFixed(4));
-      
+
       await sendMessage(
         ctx,
         `⚡ <b>Prefunded Launch - Auto Amount Detection</b>
@@ -1012,16 +1019,23 @@ Please enter a smaller buy amount:`,
         {
           parse_mode: "HTML",
           reply_markup: new InlineKeyboard()
-            .text("🚀 Continue with Auto-Detected Amount", "CONTINUE_PREFUNDED_AUTO")
+            .text(
+              "🚀 Continue with Auto-Detected Amount",
+              "CONTINUE_PREFUNDED_AUTO"
+            )
             .row()
             .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
         }
       );
 
-      const autoAmountChoice = await conversation.waitFor("callback_query:data");
+      const autoAmountChoice = await conversation.waitFor(
+        "callback_query:data"
+      );
       await autoAmountChoice.answerCallbackQuery();
 
-      if (autoAmountChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
+      if (
+        autoAmountChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL
+      ) {
         await sendMessage(ctx, "<b>❌ Launch Cancelled</b>", {
           parse_mode: "HTML",
         });
@@ -1029,9 +1043,13 @@ Please enter a smaller buy amount:`,
       }
 
       if (autoAmountChoice.callbackQuery?.data !== "CONTINUE_PREFUNDED_AUTO") {
-        await sendMessage(ctx, "<b>❌ Invalid selection. Launch Cancelled</b>", {
-          parse_mode: "HTML",
-        });
+        await sendMessage(
+          ctx,
+          "<b>❌ Invalid selection. Launch Cancelled</b>",
+          {
+            parse_mode: "HTML",
+          }
+        );
         return conversation.halt();
       }
 
@@ -1182,6 +1200,15 @@ Please enter a smaller buy amount:`,
       "🚀 <b>Launching Bonk token...</b>\n\n⏳ Mixing funds and creating token on Raydium Launch Lab..."
     );
 
+    // Emit mixing started event
+    emitMixingStarted(
+      tokenAddress,
+      "bonk",
+      String(user.id),
+      token.name,
+      token.symbol
+    );
+
     // Use backend function to handle mixing and launch
     const { launchBonkToken } = await import("../../backend/functions");
     result = await launchBonkToken(
@@ -1197,6 +1224,41 @@ Please enter a smaller buy amount:`,
         "🎉 <b>Bonk token launched successfully!</b>\n\n✅ Your token is now live on Raydium Launch Lab.\n\n📱 Sending detailed success notification..."
       );
 
+      // Emit successful launch events
+      emitTokenLaunched(
+        tokenAddress,
+        "bonk",
+        String(user.id),
+        token.name,
+        token.symbol,
+        {
+          initialLiquidity: buyAmount,
+          marketCap: result.marketCap,
+          price: result.price,
+        }
+      );
+
+      emitMixingCompleted(
+        tokenAddress,
+        "bonk",
+        String(user.id),
+        token.name,
+        token.symbol,
+        {
+          totalFunds: buyAmount,
+          walletsUsed: result.walletsUsed,
+          completedAt: Date.now(),
+        }
+      );
+
+      emitTokenFullyReady(
+        tokenAddress,
+        "bonk",
+        String(user.id),
+        token.name,
+        token.symbol
+      );
+
       // Send Bonk-specific success notification
       const { sendBonkLaunchSuccessNotification } = await import("../message");
       await sendBonkLaunchSuccessNotification(
@@ -1210,6 +1272,14 @@ Please enter a smaller buy amount:`,
         "❌ <b>Bonk token launch failed</b>\n\nAn error occurred during launch. Please try again."
       );
 
+      // Emit error event for Bonk launch failure
+      emitLaunchError(
+        tokenAddress,
+        String(user.id),
+        result.error || "Bonk token launch failed",
+        "bonk_launch"
+      );
+
       await sendMessage(
         ctx,
         `❌ <b>Bonk token launch failed</b>\n\nError: ${result.error}\n\nPlease try again or contact support if the issue persists.`,
@@ -1220,6 +1290,20 @@ Please enter a smaller buy amount:`,
     // PumpFun tokens use the complex staging process
     await checksLoading.update(
       "🚀 <b>Submitting PumpFun token launch...</b>\n\n⏳ Queuing for staged launch process..."
+    );
+
+    // Emit launch started event for PumpFun
+    emitTokenLaunched(
+      tokenAddress,
+      "pump",
+      String(user.id),
+      token.name,
+      token.symbol,
+      {
+        initialLiquidity: buyAmount,
+        devWallet: fundingWallet.publicKey,
+        buyerWallets: buyerKeys.length,
+      }
     );
 
     result = await enqueuePrepareTokenLaunch(
@@ -1239,6 +1323,15 @@ Please enter a smaller buy amount:`,
       await checksLoading.update(
         "❌ <b>Failed to submit launch</b>\n\nAn error occurred while submitting launch details for execution. Please try again."
       );
+
+      // Emit error event
+      emitLaunchError(
+        tokenAddress,
+        String(user.id),
+        result.error || "Failed to submit launch",
+        "pump_launch_submission"
+      );
+
       await sendMessage(
         ctx,
         "An error occurred while submitting launch details for execution ❌. Please try again.."
@@ -1246,6 +1339,15 @@ Please enter a smaller buy amount:`,
     } else {
       await checksLoading.update(
         "🎉 <b>Launch submitted successfully!</b>\n\n⏳ Your token launch is now in the queue and will be processed shortly.\n\n📱 You'll receive a notification once the launch is completed."
+      );
+
+      // Emit mixing started event (PumpFun mixing happens in background)
+      emitMixingStarted(
+        tokenAddress,
+        "pump",
+        String(user.id),
+        token.name,
+        token.symbol
       );
 
       // Start the loading state for the actual launch process

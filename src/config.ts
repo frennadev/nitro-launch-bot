@@ -50,6 +50,9 @@ export const env = cleanEnv(process.env, {
   // User Access Control
   ALLOWED_USERS: str({ default: "saintlessteel,dyingangels,SuperDevBack" }),
 
+  // WebSocket Configuration
+  WEBSOCKET_PORT: str({ default: "3001" }),
+
   // SolanaTracker API Configuration (Replacing Birdeye)
   SOLANA_TRACKER_API_KEY: str({ default: "" }),
   SOLANA_TRACKER_BASE_URL: str({ default: "https://data.solanatracker.io" }),

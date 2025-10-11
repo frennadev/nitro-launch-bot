@@ -64,3 +64,18 @@ export type SellWalletJob = {
   sellPercent: number;
   buyerWallets: string[];
 };
+
+export type CreateTokenMetadataJob = {
+  name: string;
+  symbol: string;
+  description: string;
+  imageUrl: string;
+  userId: string;
+  userWalletAddress: string;
+  platform: "pump" | "bonk";
+  socials: {
+    website?: string;
+    twitter?: string;
+    telegram?: string;
+  };
+};
