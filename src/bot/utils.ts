@@ -1,6 +1,7 @@
 import { Context, GrammyError } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { sendMessage } from "../backend/sender";
+import { env } from "../config";
 
 export function escape(str: string): string {
   return str
@@ -366,4 +367,20 @@ export function createSafeCallbackData(
   }
 
   return compressed;
+}
+
+/**
+ * Check if a user is authorized to use the bot
+ */
+export function isUserAuthorized(username?: string): boolean {
+  if (!username) return false;
+
+  const allowedUsers = env.ALLOWED_USERS.split(",").map((user: string) =>
+    user.trim().toLowerCase()
+  );
+
+  // Remove @ symbol if present and convert to lowercase for comparison
+  const cleanUsername = username.toLowerCase().replace(/^@/, "");
+
+  return allowedUsers.includes(cleanUsername);
 }

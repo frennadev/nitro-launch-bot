@@ -6,6 +6,7 @@ import type {
   ExecuteTokenLaunchJob,
   SellDevJob,
   SellWalletJob,
+  CreateTokenMetadataJob,
 } from "./types";
 
 export const tokenLaunchQueue = new Queue<LaunchTokenJob>(
@@ -36,3 +37,10 @@ export const devSellQueue = new Queue<SellDevJob>("nitro-dev-sell", {
 export const walletSellQueue = new Queue<SellWalletJob>("nitro-wallet-sell", {
   connection: redisClient,
 });
+
+export const createTokenMetadataQueue = new Queue<CreateTokenMetadataJob>(
+  "nitro-create-token-metadata",
+  {
+    connection: redisClient,
+  }
+);

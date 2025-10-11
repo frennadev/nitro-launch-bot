@@ -36,6 +36,7 @@ import { PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
 import { sendAndConfirmTransaction } from "@solana/web3.js";
 import { getExternalPumpAddressService } from "../service/external-pump-address-service";
 import bs58 from "bs58";
+import { socketIOServer } from "../websocket/socketio-server";
 
 export const getUser = async (telegramId: string) => {
   const user = await UserModel.findOne({
@@ -352,10 +353,10 @@ const createTokenMetadata = async (
         files: [
           {
             uri: ipfsImage,
-            type: "image/png"
-          }
+            type: "image/png",
+          },
         ],
-        category: "image"
+        category: "image",
       },
       // Keep social links in both formats for compatibility
       socials: {
@@ -369,7 +370,7 @@ const createTokenMetadata = async (
       twitter: twitter || "",
       x: twitter || "", // X.com support
       telegram: telegram || "",
-      website: website || ""
+      website: website || "",
     };
 
     const ipfsMetadataResult = await uploadJsonToPinata(
@@ -2545,7 +2546,7 @@ export const getDetailedSellSummary = async (tokenAddress: string) => {
 /**
  * Calculate required wallets for buy amount with new 73 wallet system (85 SOL max)
  * Tier 1 (1-15): 0.15-0.85 SOL each (~9.0 SOL total)
- * Tier 2 (16-25): 0.85-1.45 SOL each (~11.5 SOL total)  
+ * Tier 2 (16-25): 0.85-1.45 SOL each (~11.5 SOL total)
  * Tier 3 (26-39): 1.45-2.25 SOL each (~25.9 SOL total)
  * Tier 4 (40-58): 2.0-3.2 SOL each (~48.4 SOL total) - Large buys start
  * Tier 5 (59-73): 2.8-4.5 SOL each (~52.5 SOL total) - Whale territory
@@ -2636,7 +2637,7 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
 /**
  * Calculate the maximum buy amount supported by the 73 wallet system (85 SOL max)
  * Tier 1 (1-15): 0.15-0.85 SOL each = ~9.0 SOL max
- * Tier 2 (16-25): 0.85-1.45 SOL each = ~11.5 SOL max  
+ * Tier 2 (16-25): 0.85-1.45 SOL each = ~11.5 SOL max
  * Tier 3 (26-39): 1.45-2.25 SOL each = ~25.9 SOL max
  * Tier 4 (40-58): 2.0-3.2 SOL each = ~48.4 SOL max - Large buys start
  * Tier 5 (59-73): 2.8-4.5 SOL each = ~52.5 SOL max - Whale territory
@@ -2703,7 +2704,7 @@ export const calculateMaxBuyAmountWithWallets = (
 /**
  * 🎲 Generate randomized buy distribution for 73 wallet system (85 SOL max)
  * Tier 1 (1-15): 0.15-0.85 SOL each (randomized small buys)
- * Tier 2 (16-25): 0.85-1.45 SOL each (randomized medium buys)  
+ * Tier 2 (16-25): 0.85-1.45 SOL each (randomized medium buys)
  * Tier 3 (26-39): 1.45-2.25 SOL each (randomized medium-large buys)
  * Tier 4 (40-58): 2.0-3.2 SOL each (randomized large buys) ⭐ LARGE BUYS START
  * Tier 5 (59-73): 2.8-4.5 SOL each (randomized whale buys) ⭐ WHALE TERRITORY
@@ -2714,7 +2715,7 @@ export const generateBuyDistribution = (
   randomSeed?: number
 ): number[] => {
   const maxWallets = Math.min(availableWallets, 73);
-  
+
   // Set random seed for reproducible results if provided
   let seededRandom = Math.random;
   if (randomSeed !== undefined) {
@@ -2730,34 +2731,42 @@ export const generateBuyDistribution = (
     { wallets: [1, 15], range: [0.15, 0.85], name: "Small Random" },
     { wallets: [16, 25], range: [0.85, 1.45], name: "Medium Random" },
     { wallets: [26, 39], range: [1.45, 2.25], name: "Medium-Large" },
-    { wallets: [40, 58], range: [2.0, 3.2], name: "Large Buys" },    // 🔥 Large buys start here
-    { wallets: [59, 73], range: [2.8, 4.5], name: "Whale Territory" } // 🐋 Whale buys
+    { wallets: [40, 58], range: [2.0, 3.2], name: "Large Buys" }, // 🔥 Large buys start here
+    { wallets: [59, 73], range: [2.8, 4.5], name: "Whale Territory" }, // 🐋 Whale buys
   ];
 
   /**
    * Generate randomized amount within tier bounds with anti-pattern logic
    */
-  const generateTierAmount = (minAmount: number, maxAmount: number, avoidPatterns: number[] = []): number => {
+  const generateTierAmount = (
+    minAmount: number,
+    maxAmount: number,
+    avoidPatterns: number[] = []
+  ): number => {
     const random = seededRandom();
-    let amount = minAmount + (random * (maxAmount - minAmount));
-    
+    let amount = minAmount + random * (maxAmount - minAmount);
+
     // Add precision variance (2-3 decimal places randomly)
     const precision = Math.floor(seededRandom() * 2) + 2; // 2 or 3 decimal places
     const precisionFactor = Math.pow(10, precision);
     amount = Math.round(amount * precisionFactor) / precisionFactor;
-    
+
     // Anti-pattern: avoid obvious round numbers and recent similar amounts
     const roundNumbers = [1.0, 2.0, 3.0, 4.0, 5.0, 1.5, 2.5, 3.5, 4.5];
-    const isRoundNumber = roundNumbers.some(round => Math.abs(amount - round) < 0.001);
-    const isTooSimilar = avoidPatterns.some(prev => Math.abs(amount - prev) < 0.05);
-    
+    const isRoundNumber = roundNumbers.some(
+      (round) => Math.abs(amount - round) < 0.001
+    );
+    const isTooSimilar = avoidPatterns.some(
+      (prev) => Math.abs(amount - prev) < 0.05
+    );
+
     if ((isRoundNumber || isTooSimilar) && seededRandom() > 0.3) {
       // Add small random variance to break patterns
       const variance = (seededRandom() - 0.5) * 0.2;
       amount = Math.max(minAmount, Math.min(maxAmount, amount + variance));
       amount = Math.round(amount * precisionFactor) / precisionFactor;
     }
-    
+
     return amount;
   };
 
@@ -2767,13 +2776,13 @@ export const generateBuyDistribution = (
   const calculateWalletsNeeded = (amount: number): number => {
     let remaining = amount;
     let walletsUsed = 0;
-    
+
     for (const tier of tiers) {
       const tierWalletCount = tier.wallets[1] - tier.wallets[0] + 1;
       const tierMaxTotal = tierWalletCount * tier.range[1];
-      
+
       if (remaining <= 0) break;
-      
+
       if (remaining <= tierMaxTotal) {
         // This tier can handle the remaining amount
         const avgAmountPerWallet = (tier.range[0] + tier.range[1]) / 2;
@@ -2785,7 +2794,7 @@ export const generateBuyDistribution = (
         remaining -= tierMaxTotal;
       }
     }
-    
+
     return Math.min(walletsUsed, maxWallets);
   };
 
@@ -2798,17 +2807,20 @@ export const generateBuyDistribution = (
   // 🎲 Generate randomized distribution across tiers
   for (const tier of tiers) {
     if (remaining <= 0 || currentWallet > walletsNeeded) break;
-    
+
     const tierStart = tier.wallets[0];
     const tierEnd = Math.min(tier.wallets[1], walletsNeeded);
-    
+
     if (currentWallet > tierEnd) continue;
-    
-    const walletsInThisTier = Math.max(0, tierEnd - Math.max(tierStart, currentWallet) + 1);
-    
+
+    const walletsInThisTier = Math.max(
+      0,
+      tierEnd - Math.max(tierStart, currentWallet) + 1
+    );
+
     for (let i = 0; i < walletsInThisTier && remaining > 0; i++) {
       const isLastWallet = currentWallet === walletsNeeded;
-      
+
       if (isLastWallet) {
         // Last wallet gets all remaining amount
         distribution.push(Number(remaining.toFixed(3)));
@@ -2821,16 +2833,17 @@ export const generateBuyDistribution = (
           tier.range[1],
           remaining - minForRemainingWallets
         );
-        
+
         if (maxThisWallet < tier.range[0]) {
           // If we can't meet minimum for this tier, give it the remaining
           distribution.push(Number(remaining.toFixed(3)));
           remaining = 0;
         } else {
           // 🔥 ENFORCE LARGE BUY RULE: No buys ≥2.0 SOL before wallet 40
-          const effectiveMaxAmount = currentWallet < 40 ? Math.min(maxThisWallet, 1.99) : maxThisWallet;
+          const effectiveMaxAmount =
+            currentWallet < 40 ? Math.min(maxThisWallet, 1.99) : maxThisWallet;
           const effectiveMinAmount = Math.max(tier.range[0], 0.15);
-          
+
           if (effectiveMaxAmount < effectiveMinAmount) {
             // If we can't meet minimum after large buy restriction, give remaining
             distribution.push(Number(remaining.toFixed(3)));
@@ -2841,11 +2854,11 @@ export const generateBuyDistribution = (
               effectiveMaxAmount,
               recentAmounts.slice(-3) // Avoid patterns with last 3 amounts
             );
-            
+
             distribution.push(amount);
             remaining -= amount;
             recentAmounts.push(amount);
-            
+
             // Keep only last 5 amounts for pattern detection
             if (recentAmounts.length > 5) {
               recentAmounts.shift();
@@ -2853,19 +2866,24 @@ export const generateBuyDistribution = (
           }
         }
       }
-      
+
       currentWallet++;
     }
   }
 
   // 🔧 Final adjustment to ensure exact total
-  const totalDistributed = distribution.reduce((sum, amount) => sum + amount, 0);
+  const totalDistributed = distribution.reduce(
+    (sum, amount) => sum + amount,
+    0
+  );
   const difference = buyAmount - totalDistributed;
-  
+
   if (Math.abs(difference) > 0.001 && distribution.length > 0) {
     // Adjust the last wallet to match exact total
     distribution[distribution.length - 1] += difference;
-    distribution[distribution.length - 1] = Number(distribution[distribution.length - 1].toFixed(3));
+    distribution[distribution.length - 1] = Number(
+      distribution[distribution.length - 1].toFixed(3)
+    );
   }
 
   return distribution;
@@ -4311,6 +4329,14 @@ export const launchBonkToken = async (
           destinationAddresses
         );
         logger.info(`[${logId}]: Wallet mixing completed successfully`);
+
+        // Emit mixing completion event
+        socketIOServer.emitMixingProgress(tokenAddress, userId, 100, {
+          name: token.name,
+          symbol: token.symbol,
+          totalFunds: totalAmountToMix,
+          walletsUsed: destinationAddresses.length,
+        });
       } catch (mixerError: any) {
         logger.error(`[${logId}]: Wallet mixing failed: ${mixerError.message}`);
         return {
@@ -4955,7 +4981,7 @@ export const calculateUserTokenSupplyPercentage = async (
 
     logger.info(JSON.stringify(tokenInfo, null, 2));
     logger.info(
-      `[calculateUserTokenSupplyPercentage] Token info for ${tokenAddress}: ${tokenInfo.solanatracker?.totalSupply || 'N/A'} SUPPLY`
+      `[calculateUserTokenSupplyPercentage] Token info for ${tokenAddress}: ${tokenInfo.solanatracker?.totalSupply || "N/A"} SUPPLY`
     );
     // Try different supply sources based on data structure
     if (tokenInfo.supply) {

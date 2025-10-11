@@ -5,6 +5,7 @@ import {
   walletSellQueue,
   prepareLaunchQueue,
   executeLaunchQueue,
+  createTokenMetadataQueue,
 } from "./queues";
 import type {
   LaunchTokenJob,
@@ -12,6 +13,7 @@ import type {
   ExecuteTokenLaunchJob,
   SellDevJob,
   SellWalletJob,
+  CreateTokenMetadataJob,
 } from "./types";
 import { redisClient } from "./db";
 import {
@@ -47,6 +49,10 @@ import {
 } from "../bot/loading";
 import { Keypair } from "@solana/web3.js";
 import { connection } from "../service/config";
+import { createToken } from "../backend/functions";
+import { createBonkToken } from "../blockchain/letsbonk/integrated-token-creator";
+import axios from "axios";
+import { UserModel } from "../backend/models";
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
@@ -697,6 +703,81 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
       count: 10,
     },
     lockDuration: 3 * 60 * 1000, // 3 minutes for preparation
+    lockRenewTime: 30 * 1000,
+  }
+);
+
+export const createTokenMetadataWorker = new Worker<CreateTokenMetadataJob>(
+  createTokenMetadataQueue.name,
+  async (job) => {
+    const data = job.data;
+    const loadingKey = `super-${data.userWalletAddress}-execute_launch-${data.userId}`;
+    const {
+      name,
+      symbol,
+      description,
+      imageUrl,
+      socials: { website, telegram, twitter } = {},
+      userId,
+      userWalletAddress,
+      platform,
+    } = job.data;
+
+    let token;
+    try {
+      logger.info("[jobs]: create Job starting...");
+      logger.info("[jobs-create]: Job Data", data);
+
+      const user = await UserModel.findOne({
+        $or: [{ _id: userId }, { fundingWallet: userWalletAddress }],
+      }).populate("fundingWallet");
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const { data: fileData } = await axios.get<ArrayBuffer>(imageUrl, {
+        responseType: "arraybuffer",
+      });
+      if (platform === "pump") {
+        token = await createToken(
+          user.id,
+          name,
+          symbol,
+          description,
+          fileData,
+          {
+            website: website || "",
+            telegram: telegram || "",
+            twitter: twitter || "",
+          }
+        );
+      } else {
+        token = await createBonkToken(name, symbol, imageUrl, true, user.id, {
+          website,
+          telegram,
+          twitter,
+        });
+      }
+
+      console.log("Created token metadata:", token);
+    } catch (error: any) {
+      logger.error(
+        "[jobs-create]: Error Occurred while creating token metadata",
+        error
+      );
+      throw error;
+    }
+  },
+  {
+    connection: redisClient,
+    concurrency: 10,
+    removeOnFail: {
+      count: 20,
+    },
+    removeOnComplete: {
+      count: 10,
+    },
+    lockDuration: 3 * 60 * 1000, // 3 minutes for execution
     lockRenewTime: 30 * 1000,
   }
 );

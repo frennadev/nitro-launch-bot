@@ -72,9 +72,9 @@ export default async function mainMenuConversation(
   const referralStats = await getUserReferralStats(String(user.id));
 
   const welcomeMsg = `
-👋 Welcome to Nitro Bot! 🚀
+👋 Welcome to Bundler! 🚀
 
-Nitro Bot empowers you to deploy and manage Solana tokens on Pump.fun and LetsBonk.fun — no coding required!
+Bundler empowers you to deploy and manage Solana tokens on Pump.fun and LetsBonk.fun — no coding required!
 
 What you can do:
 • Create & launch tokens instantly on Pump.fun and LetsBonk.fun

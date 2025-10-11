@@ -56,6 +56,7 @@ import {
   decompressCallbackData,
   isCompressedCallbackData,
   formatUSDFull,
+  isUserAuthorized,
 } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
@@ -192,6 +193,36 @@ async function detectPlatformInBackground(
 }
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
+
+// Authentication middleware - must be first to check user access
+bot.use(async (ctx, next) => {
+  // Check if user is authorized
+  const username = ctx.from?.username;
+  if (!isUserAuthorized(username)) {
+    // If it's a start command, show a specific unauthorized message
+    if (ctx.message?.text === "/start") {
+      await sendMessage(
+        ctx,
+        "🚫 **Access Denied**\n\n" +
+          "This bot is currently restricted to authorized users only.\n\n" +
+          `❌ **Username:** @${username || "undefined"}\n` +
+          "Contact the bot administrator if you believe this is an error.",
+        { parse_mode: "Markdown" }
+      );
+    } else {
+      await sendMessage(
+        ctx,
+        "🚫 **Access Denied**\n\n" +
+          "This bot is currently restricted to authorized users only.\n\n" +
+          "Contact the bot administrator if you believe this is an error.",
+        { parse_mode: "Markdown" }
+      );
+    }
+    return; // Don't call next() - stop processing
+  }
+
+  return next();
+});
 
 // Apply rate limiting middleware globally
 // bot.use(rateLimitCommands()); // Rate limit all commands
@@ -919,7 +950,7 @@ bot.command("tokens", async (ctx) => {
 bot.command("commands", async (ctx) => {
   try {
     const commandsList = [
-      "🤖 <b>Nitro Bot Commands</b>",
+      "🤖 <b>Bundler Commands</b>",
       "",
       "<b>🚀 Main Commands:</b>",
       "• <code>/start</code> - Start the bot and main menu",
@@ -2634,12 +2665,12 @@ bot.callbackQuery(
       let supplyPercentage = 0;
       let supplyPercentageText = "";
 
-    if (tokenInfo.solanatracker?.totalSupply && totalSupply > 0) {
-      // Convert supply to number (it might be a string)
-      const totalTokenSupply =
-        typeof tokenInfo.solanatracker.totalSupply === "string"
-          ? parseFloat(tokenInfo.solanatracker.totalSupply)
-          : tokenInfo.solanatracker.totalSupply;
+      if (tokenInfo.solanatracker?.totalSupply && totalSupply > 0) {
+        // Convert supply to number (it might be a string)
+        const totalTokenSupply =
+          typeof tokenInfo.solanatracker.totalSupply === "string"
+            ? parseFloat(tokenInfo.solanatracker.totalSupply)
+            : tokenInfo.solanatracker.totalSupply;
 
         // Calculate percentage held
         console.log(
@@ -3419,6 +3450,7 @@ bot.callbackQuery(/^generate_pnl_(.+)$/, async (ctx) => {
       pnlCardResult.status === "fulfilled" ? pnlCardResult.value : null;
 
     if (pnlCardBuffer) {
+      return;
       const pnlKeyboard = new InlineKeyboard()
         .text("🔄 Refresh PNL", `generate_pnl_${tokenAddress}`)
         .text(
