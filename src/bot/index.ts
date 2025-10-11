@@ -330,9 +330,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
       try {
         await sendMessage(
           ctx,
-          "⚠️ **Button Error Detected**\n\n" +
-            "There was an issue with the message buttons. This has been automatically fixed.\n\n" +
-            "Please use /view_tokens to manage your tokens.",
+          "Please try again ⚡",
           { parse_mode: "Markdown" }
         );
       } catch (replyError: any) {
@@ -363,7 +361,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
     try {
       await sendErrorWithAutoDelete(
         ctx,
-        "❌ An unexpected error occurred. Please try the main menu or contact support."
+        "Something went wrong. Try again ⚡"
       );
     } catch (notifyError: any) {
       logger.error("Failed to send error notification:", notifyError.message);
@@ -2127,13 +2125,32 @@ bot.callbackQuery(/^(swt_|sell_wallet_token_)/, async (ctx) => {
   let walletType: string;
   const data = ctx.callbackQuery.data;
 
-  if (isCompressedCallbackData(data)) {
+  // Check if this is a callback ID (short identifier for long data)
+  if (data.startsWith("cb")) {
+    const { getCallbackData } = await import("./utils");
+    const fullData = getCallbackData(data);
+    if (!fullData) {
+      await sendMessage(ctx, "❌ Callback data expired. Please refresh and try again.");
+      return;
+    }
+    
+    // Parse the full data
+    const parts = fullData.split("_");
+    if (parts.length >= 6 && parts[0] === "sell" && parts[1] === "wallet" && parts[2] === "token") {
+      tokenAddress = parts[3];
+      walletAddress = parts[4];
+      walletType = parts[5];
+    } else {
+      await sendMessage(ctx, "❌ Invalid callback data format.");
+      return;
+    }
+  } else if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
       await sendMessage(ctx, "❌ Invalid callback data.");
       return;
     }
-    // For sell wallet token, the format is: tokenAddress_walletAddress_walletType
+    // Handle other compressed formats (not SELL_WALLET_TOKEN)
     const parts = decompressed.tokenAddress.split("_");
     if (parts.length >= 3) {
       tokenAddress = parts[0];
@@ -2727,8 +2744,8 @@ bot.callbackQuery(
           ).toFixed(2) + "%";
       }
 
-      const marketCap = formatUSD(tokenInfo.marketCap);
-      const price = tokenInfo.priceUsd;
+      const marketCap = formatUSD(tokenInfo.marketCap || 0);
+      const price = tokenInfo.priceUsd || 0;
       const botUsername = bot.botInfo.username;
       const referralLink = await generateReferralLink(user.id, botUsername);
 
@@ -2799,7 +2816,7 @@ bot.callbackQuery(
 └─ 📈 Total P&L: <b>${pnLFormatted}</b>
 
 💹 <b>Market Information</b>
-├─ 💵 Current Price: <code>$${Number(price).toFixed(5)}</code>
+├─ 💵 Current Price: <code>$${Number(price || 0).toFixed(8)}</code>
 └─ 🏦 Market Cap: <code>${marketCap}</code>
 
 🕐 Last Update: <code>${new Date().toLocaleTimeString("en-US", {
@@ -3159,7 +3176,7 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
 └─ 📈 Total P&L: <b>${pnLFormatted}</b>
 
 💹 <b>Market Information</b>
-├─ 💵 Current Price: <code>$${Number(price).toFixed(5)}</code>
+├─ 💵 Current Price: <code>$${Number(price || 0).toFixed(8)}</code>
 └─ 🏦 Market Cap: <code>${marketCap}</code>
 
 🕐 Last Update: <code>${new Date().toLocaleTimeString("en-US", {
@@ -3948,7 +3965,7 @@ bot.on("message:text", async (ctx) => {
           );
           await sendMessage(
             ctx,
-            "❌ Error sending token information. Please try again."
+            "Please try again ⚡"
           );
           return;
         }
@@ -3975,7 +3992,7 @@ bot.on("message:text", async (ctx) => {
     try {
       await sendMessage(
         ctx,
-        "❌ Error displaying token information. Please try again or contact support if the issue persists."
+        "Please try again ⚡"
       );
     } catch (replyError) {
       logger.error("Failed to send error message to user:", replyError);

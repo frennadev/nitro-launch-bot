@@ -70,7 +70,7 @@ async function waitForInputOrCancel(
   if (input.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
     await sendMessage(
       ctx,
-      "<b>❌ Process Cancelled</b>\n\n<i>Returning to the beginning.</i>",
+      "Cancelled ⚡",
       { parse_mode: "HTML" }
     );
     await conversation.halt();
@@ -170,7 +170,7 @@ const launchTokenConversation = async (
   if (!user) {
     await sendMessage(
       ctx,
-      "<b>❌ Unrecognized User</b>\n\n<i>Please contact support for assistance.</i>",
+      "Please try again ⚡",
       { parse_mode: "HTML" }
     );
     await conversation.halt();
@@ -224,6 +224,9 @@ const launchTokenConversation = async (
 <code>${tokenAddress}</code>
 
 <b>⏳ Status:</b> <i>Initializing launch process...</i>
+
+⚠️ <b>PRIVACY REMINDER:</b> For maximum anonymity, ensure you've used <b>🔀 Mix Funds</b> before launching!
+
 <b>🚀 Choose Your Launch Mode</b>
 
 <b>🎯 Normal Launch:</b>
@@ -244,7 +247,7 @@ const launchTokenConversation = async (
   await safeAnswerCallbackQuery(launchModeChoice);
 
   if (launchModeChoice.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
-    await sendMessage(ctx, "<b>❌ Launch Cancelled</b>", {
+    await sendMessage(ctx, "Cancelled ⚡", {
       parse_mode: "HTML",
     });
     await conversation.halt();
@@ -269,7 +272,7 @@ const launchTokenConversation = async (
     if (buyerWallets.length === 0) {
       await sendMessage(
         ctx,
-        "<b>❌ No Buyer Wallets Found</b>\n\n<i>Please add buyer wallets in Wallet Config first.</i>",
+        "Add buyer wallets first ⚡",
         { parse_mode: "HTML" }
       );
       await conversation.halt();
@@ -1080,7 +1083,6 @@ Please enter a smaller buy amount:`,
       {
         parse_mode: "HTML",
         reply_markup: new InlineKeyboard()
-          .text("⏭️ Skip (0 SOL)", "DEV_BUY_0")
           .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
       }
     );

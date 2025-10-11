@@ -1077,7 +1077,7 @@ export const ctoConversation = async (
       try {
         await sendMessage(
           confirmation,
-          `❌ <b>CTO Operation Error</b>\n\n${error.message || "Unknown error occurred"} 🚨`,
+          "Operation failed. Try again ⚡",
           { parse_mode: "HTML" }
         );
       } catch (msgError: any) {

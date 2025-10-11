@@ -30,7 +30,7 @@ const createTokenConversation = async (
   }
   const user = await getUser(ctx.chat!.id.toString());
   if (!user) {
-    await sendErrorWithAutoDelete(ctx, "Unrecognized user ❌");
+    await sendErrorWithAutoDelete(ctx, "Please try again ⚡");
     return conversation.halt();
   }
 
@@ -78,16 +78,30 @@ const createTokenConversation = async (
   const devWalletAddress = await getDefaultDevWallet(user.id);
   const fundingWalletAddress = await getOrCreateFundingWallet(user.id);
 
+  // Check if user has buyer wallets (indicates they've mixed funds)
+  const { getAllBuyerWallets } = await import("../../backend/functions");
+  const buyerWallets = await getAllBuyerWallets(user.id);
+  const hasMixedFunds = buyerWallets.length > 0;
+
+  let privacyWarning = "";
+  if (!hasMixedFunds) {
+    privacyWarning = "🚨 <b>PRIVACY ALERT:</b> You haven't mixed funds yet! Use <b>🔀 Mix Funds</b> from the main menu first for maximum anonymity.\n\n";
+  } else {
+    privacyWarning = "✅ <b>Privacy Ready:</b> You have mixed funds across multiple wallets for better privacy.\n\n";
+  }
+
   await sendMessage(
     ctx,
     "🚀 <b>Token Launch Setup Instructions</b>\n\n" +
+      privacyWarning +
       "📝 Please send your token details as <b>name, symbol, description</b>, separated by commas.\n" +
       "<i>Example: <code>TokenName,TKN,My great token</code></i>\n\n" +
       "<b>Launch Instructions:</b>\n" +
       "🤖 Fund dev wallet with a minimum of <b>0.15 SOL</b> + your desired dev‐buy amount (optional)\n" +
       `<code>${devWalletAddress}</code>\n\n` +
       "💰 Fund your funding wallet with buyer amount + <b>0.1 SOL</b>\n" +
-      `<code>${fundingWalletAddress}</code>\n`,
+      `<code>${fundingWalletAddress}</code>\n\n` +
+      "💡 <i>Mixing funds distributes SOL across multiple wallets for better privacy and security.</i>",
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
 
@@ -132,12 +146,19 @@ const createTokenConversation = async (
   let telegram: string = "";
   let website: string = "";
 
-  // Ask for all socials in a single message
+  // Ask for all socials with smart detection
   await sendMessage(
     ctx,
-    "🌐 (Optional) Send your token's socials as <b>Twitter/X, Telegram, Website</b> links, separated by commas. Type 'skip' to leave any field blank.\n" +
-      "<i>Example: <code>https://twitter.com/example, https://t.me/examplegroup, https://example.com</code></i>\n\n" +
-      "You can also type 'skip' to leave all blank.",
+    "🌐 <b>Smart Link Detection</b> (Optional)\n\n" +
+      "🚀 <b>Just paste your links!</b> I'll automatically detect and organize them:\n" +
+      "• 🐦 Twitter/X links (twitter.com, x.com, @username)\n" +
+      "• 💬 Telegram links (t.me, @channel)\n" +
+      "• 🌐 Website links (any domain)\n\n" +
+      "<i>Examples that work:</i>\n" +
+      "• <code>https://x.com/mytoken @mytelegram mywebsite.com</code>\n" +
+      "• <code>@myhandle, t.me/mychannel, website.io</code>\n" +
+      "• <code>twitter.com/user telegram.me/group https://site.com</code>\n\n" +
+      "Type 'skip' to leave all blank.",
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
 
@@ -150,61 +171,39 @@ const createTokenConversation = async (
     }
     if (upd.message?.text) {
       const text = upd.message.text.trim();
-      if (text.toLowerCase() === "skip" || text === "") {
-        twitter = "";
-        telegram = "";
-        website = "";
+      
+      // Import smart link detector
+      const { SmartLinkDetector } = await import("../../utils/smart-link-detector");
+      
+      // Use smart detection
+      const detectionResult = SmartLinkDetector.detectAndCategorizeLinks(text);
+      
+      if (detectionResult.success || text.toLowerCase() === "skip") {
+        // Assign detected links
+        twitter = detectionResult.links.twitter;
+        telegram = detectionResult.links.telegram;
+        website = detectionResult.links.website;
+        
+        // Show confirmation message
+        if (detectionResult.success) {
+          await sendMessage(
+            ctx,
+            detectionResult.message,
+            { parse_mode: "Markdown", reply_markup: cancelKeyboard }
+          );
+        }
+        
         break;
-      }
-      const parts = text.split(",").map((s) => s.trim());
-      // Fill missing fields with empty string
-      while (parts.length < 3) parts.push("");
-      const [tw, tg, web] = parts;
-
-      // Validate Twitter/X
-      if (
-        tw &&
-        !/^https?:\/\/(twitter\.com|x\.com)\/\S+/.test(tw) &&
-        tw.toLowerCase() !== "skip"
-      ) {
+      } else {
+        // Show error and ask again
         await sendMessage(
           ctx,
-          "Invalid Twitter/X link format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
+          "Link detection failed. Try again ⚡\n\n" +
+          "Please try again with valid links or type 'skip' to continue without links.",
           { parse_mode: "HTML", reply_markup: cancelKeyboard }
         );
         continue;
       }
-      // Validate Telegram
-      if (
-        tg &&
-        !/^https?:\/\/t\.me\/\S+/.test(tg) &&
-        tg.toLowerCase() !== "skip"
-      ) {
-        await sendMessage(
-          ctx,
-          "Invalid Telegram link format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
-          { parse_mode: "HTML", reply_markup: cancelKeyboard }
-        );
-        continue;
-      }
-      // Validate Website (basic)
-      if (
-        web &&
-        !/^https?:\/\/.+\..+/.test(web) &&
-        web.toLowerCase() !== "skip"
-      ) {
-        await sendMessage(
-          ctx,
-          "Invalid website URL format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
-          { parse_mode: "HTML", reply_markup: cancelKeyboard }
-        );
-        continue;
-      }
-
-      twitter = tw.toLowerCase() === "skip" ? "" : tw;
-      telegram = tg.toLowerCase() === "skip" ? "" : tg;
-      website = web.toLowerCase() === "skip" ? "" : web;
-      break;
     }
   }
 

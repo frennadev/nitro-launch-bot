@@ -49,7 +49,7 @@ export class SolanaConnectionPool {
 
   constructor(config?: Partial<ConnectionPoolConfig>) {
     this.config = {
-      endpoints: [env.HELIUS_MIXER_RPC_URL], // Use dedicated mixer RPC for all operations
+      endpoints: [env.HELIUS_MIXER_RPC_URL, env.HELIUS_BACKUP_RPC_URL], // Use multiple RPC endpoints for rate limit distribution
       maxRequestsPerSecond: 195, // Increase from 180 (more aggressive)
       maxTransactionsPerSecond: 48, // Increase from 45 (more aggressive)
       cacheConfig: {
@@ -73,7 +73,7 @@ export class SolanaConnectionPool {
       })
     );
 
-    logger.info(`Initialized optimized connection pool with ${this.connections.length} endpoints using dedicated mixer RPC`);
+    logger.info(`Initialized optimized connection pool with ${this.connections.length} endpoints for rate limit distribution`);
     
     // Start rate limit reset timers
     this.startRateLimitResetTimers();
@@ -480,7 +480,7 @@ export const connectionPool = new SolanaConnectionPool();
  */
 export function createMixerConnectionPool(): SolanaConnectionPool {
   return new SolanaConnectionPool({
-    endpoints: [env.MIXER_HELIUS_RPC],
+    endpoints: [env.HELIUS_MIXER_RPC_URL, env.HELIUS_BACKUP_RPC_URL],
     maxRequestsPerSecond: 195, // Aggressive rate limiting for mixer
     maxTransactionsPerSecond: 48, // Aggressive transaction rate
           cacheConfig: {

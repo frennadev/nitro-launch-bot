@@ -7,8 +7,8 @@ import { publicKey, u64 } from "@solana/buffer-layout-utils";
 import { connection } from "../blockchain/common/connection.ts";
 import { LIGHTWEIGHT_MODE, ENABLE_BACKGROUND_PRELOADING, MAX_POOL_CACHE_SIZE } from "../config.ts";
 
-// Define the program ID directly to avoid circular imports
-const pumpswap_amm_program_id = new PublicKey("D1ZN9Wj1fRSUQfCjhvnu1hqDMT7hzjzBBpi12nVWqQhY");
+// Import the correct pumpswap program ID from the service
+import { pumpswap_amm_program_id } from "../service/pumpswap-service.ts";
 
 export type PumpSwapPool = {
   discriminator: bigint;
@@ -317,19 +317,38 @@ export const getTokenPoolInfo = async (tokenMint: string): Promise<PoolInfo | nu
       ],
     });
 
-    // If no filtered results, fall back to full scan
+    // If no filtered results, try alternative memcmp positions
     if (accounts.length === 0) {
-      console.log(`[getTokenPoolInfo] No filtered results, falling back to full scan...`);
-      const allAccounts = await connection.getProgramAccounts(pumpswap_amm_program_id);
+      console.log(`[getTokenPoolInfo] No filtered results, trying quoteMint position...`);
       
-      for (const { pubkey, account } of allAccounts) {
-        const poolInfo = POOL_LAYOUT.decode(account.data as Buffer);
-        if (poolInfo.baseMint.toBase58() === tokenMint || poolInfo.quoteMint.toBase58() === tokenMint) {
-          console.log("Matched Base Mint:", poolInfo.baseMint.toBase58());
-          decoded = poolInfo;
-          poolPubkey = pubkey;
-          break;
+      // Try filtering by quoteMint position: discriminator(8) + poolBump(1) + index(2) + creator(32) + baseMint(32) = 75
+      const quoteMintAccounts = await connection.getProgramAccounts(pumpswap_amm_program_id, {
+        commitment: 'confirmed',
+        filters: [
+          {
+            memcmp: {
+              offset: 8 + 1 + 2 + 32 + 32, // Skip to quoteMint position
+              bytes: tokenMint,
+            },
+          },
+        ],
+      });
+      
+      console.log(`[getTokenPoolInfo] Found ${quoteMintAccounts.length} accounts filtering by quoteMint`);
+      
+      if (quoteMintAccounts.length > 0) {
+        for (const { pubkey, account } of quoteMintAccounts) {
+          const poolInfo = POOL_LAYOUT.decode(account.data as Buffer);
+          if (poolInfo.baseMint.toBase58() === tokenMint || poolInfo.quoteMint.toBase58() === tokenMint) {
+            console.log("Matched Quote Mint:", poolInfo.quoteMint.toBase58());
+            decoded = poolInfo;
+            poolPubkey = pubkey;
+            break;
+          }
         }
+      } else {
+        console.log(`[getTokenPoolInfo] No pools found with memcmp filters - token may not have pumpswap pool`);
+        return null;
       }
     } else {
       // Process filtered results

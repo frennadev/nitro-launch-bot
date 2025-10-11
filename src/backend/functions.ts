@@ -2822,9 +2822,15 @@ export const generateBuyDistribution = (
       const isLastWallet = currentWallet === walletsNeeded;
 
       if (isLastWallet) {
-        // Last wallet gets all remaining amount
-        distribution.push(Number(remaining.toFixed(3)));
-        remaining = 0;
+        // For last wallet, use tier-appropriate amount instead of dumping all remaining
+        const tierAmount = generateTierAmount(
+          tier.range[0],
+          Math.min(tier.range[1], remaining),
+          recentAmounts.slice(-3)
+        );
+        const finalAmount = Math.min(tierAmount, remaining);
+        distribution.push(Number(finalAmount.toFixed(3)));
+        remaining -= finalAmount;
       } else {
         // Calculate max amount this wallet can take (leave minimum for remaining wallets)
         const walletsLeft = walletsNeeded - currentWallet;
@@ -2871,7 +2877,7 @@ export const generateBuyDistribution = (
     }
   }
 
-  // 🔧 Final adjustment to ensure exact total
+  // 🔧 Final adjustment to ensure exact total - distribute remainder evenly
   const totalDistributed = distribution.reduce(
     (sum, amount) => sum + amount,
     0
@@ -2879,11 +2885,13 @@ export const generateBuyDistribution = (
   const difference = buyAmount - totalDistributed;
 
   if (Math.abs(difference) > 0.001 && distribution.length > 0) {
-    // Adjust the last wallet to match exact total
-    distribution[distribution.length - 1] += difference;
-    distribution[distribution.length - 1] = Number(
-      distribution[distribution.length - 1].toFixed(3)
-    );
+    // Distribute remainder evenly across all wallets instead of dumping on last wallet
+    const adjustmentPerWallet = difference / distribution.length;
+
+    for (let i = 0; i < distribution.length; i++) {
+      distribution[i] += adjustmentPerWallet;
+      distribution[i] = Number(distribution[i].toFixed(3));
+    }
   }
 
   return distribution;
@@ -4793,13 +4801,16 @@ export const launchBonkToken = async (
             buyTx.sign([wallet.keypair]);
 
             // Send transaction using Zero Slot for buy operations (do not wait for confirmation)
-            const { enhancedTransactionSender, TransactionType } = await import("../blockchain/common/enhanced-transaction-sender");
-            const signature = await enhancedTransactionSender.sendSignedTransaction(buyTx, {
-              transactionType: TransactionType.BUY,
-              skipPreflight: false,
-              preflightCommitment: "processed",
-              maxRetries: 3,
-            });
+            const { enhancedTransactionSender, TransactionType } = await import(
+              "../blockchain/common/enhanced-transaction-sender"
+            );
+            const signature =
+              await enhancedTransactionSender.sendSignedTransaction(buyTx, {
+                transactionType: TransactionType.BUY,
+                skipPreflight: false,
+                preflightCommitment: "processed",
+                maxRetries: 3,
+              });
 
             // Record the transaction with actual amounts from blockchain
             const { recordTransactionWithActualAmounts } = await import(
@@ -5263,29 +5274,33 @@ export const fundTokenWallets = async (
     );
 
     // Generate random distribution amounts
-    const distributionAmounts = generateRandomDistribution(
-      totalAmount,
-      walletsToFund.length
-    );
-
-    // Use mixer to distribute funds
-    const { runMixer } = await import("../blockchain/mixer/index");
+    // Use mixer to distribute funds with 73-wallet distribution
+    const { runMixer } = await import("../blockchain/mixer/mixer");
     const destinationAddresses = walletsToFund.map((w) => w.address);
 
+    // Generate 73-wallet distribution for the total amount
+    const distributionAmounts = generateBuyDistribution(
+      totalAmount,
+      destinationAddresses.length
+    );
+
     logger.info(
-      `[${logId}]: Starting mixer: ${totalAmount} SOL to ${destinationAddresses.length} wallets`
+      `[${logId}]: Starting mixer: ${totalAmount} SOL to ${destinationAddresses.length} wallets with 73-wallet distribution`
     );
 
     const mixerResult = await runMixer(
       fundingWallet.privateKey,
       fundingWallet.privateKey, // Use same wallet for fees
       totalAmount,
-      destinationAddresses
+      destinationAddresses,
+      {
+        customAmounts: distributionAmounts, // Use 73-wallet distribution
+      }
     );
 
     // Check mixer results
     const successfulRoutes =
-      mixerResult.results?.filter((result) => result.success) || [];
+      mixerResult.results?.filter((result: any) => result.success) || [];
 
     if (successfulRoutes.length === 0) {
       logger.error(
@@ -5301,7 +5316,7 @@ export const fundTokenWallets = async (
     }
 
     // Calculate actual amounts funded
-    const actualFundedAmounts = successfulRoutes.map((route) => {
+    const actualFundedAmounts = successfulRoutes.map((route: any) => {
       const destinationIndex = destinationAddresses.findIndex(
         (addr) => addr === route.route.destination.toString()
       );
@@ -5313,7 +5328,7 @@ export const fundTokenWallets = async (
     });
 
     const totalFunded = actualFundedAmounts.reduce(
-      (sum, item) => sum + item.solReceived,
+      (sum: number, item: any) => sum + item.solReceived,
       0
     );
 

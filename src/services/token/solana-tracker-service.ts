@@ -63,7 +63,28 @@ export class SolanaTrackerService {
         }
       );
 
+      // Log raw API response for debugging
+      logger.info(`[${logId}] Raw API response structure:`, {
+        hasToken: !!response.data.token,
+        hasPools: !!response.data.pools,
+        poolsLength: response.data.pools?.length || 0,
+        firstPool: response.data.pools?.[0] ? {
+          hasPrice: !!response.data.pools[0].price,
+          hasMarketCap: !!response.data.pools[0].marketCap,
+          priceType: typeof response.data.pools[0].price,
+          marketCapType: typeof response.data.pools[0].marketCap
+        } : null
+      });
+
       const tokenData = this.transformSolanaTrackerResponse(response.data);
+      
+      // Log the transformed data for debugging
+      logger.info(`[${logId}] Transformed data:`, {
+        price: tokenData.price,
+        marketCap: tokenData.marketCap,
+        liquidity: tokenData.liquidity,
+        volume24h: tokenData.volume24h
+      });
       
       // 🎯 SMART CACHE: Cache with appropriate TTL
       const smartTTL = this.getSmartCacheTTL(tokenAddress, tokenData);
@@ -158,23 +179,76 @@ export class SolanaTrackerService {
     const mainPool = pools[0] || {};
     const events = data.events || {};
 
+    // Helper function to safely extract numeric values
+    const safeNumber = (value: any, defaultValue: number = 0): number => {
+      if (typeof value === 'number' && !isNaN(value)) {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const parsed = parseFloat(value);
+        return !isNaN(parsed) ? parsed : defaultValue;
+      }
+      if (typeof value === 'object' && value !== null && typeof value.usd === 'number') {
+        return value.usd;
+      }
+      return defaultValue;
+    };
+
+    // Extract price - check multiple possible locations
+    let price = 0;
+    if (mainPool.price) {
+      price = safeNumber(mainPool.price.usd || mainPool.price);
+    } else if (data.price) {
+      price = safeNumber(data.price.usd || data.price);
+    } else if (token.price) {
+      price = safeNumber(token.price.usd || token.price);
+    }
+
+    // Extract market cap - check multiple possible locations
+    let marketCap = 0;
+    if (mainPool.marketCap) {
+      marketCap = safeNumber(mainPool.marketCap.usd || mainPool.marketCap);
+    } else if (data.marketCap) {
+      marketCap = safeNumber(data.marketCap.usd || data.marketCap);
+    } else if (token.marketCap) {
+      marketCap = safeNumber(token.marketCap.usd || token.marketCap);
+    }
+
+    // Extract liquidity
+    let liquidity = 0;
+    if (mainPool.liquidity) {
+      liquidity = safeNumber(mainPool.liquidity.usd || mainPool.liquidity);
+    } else if (data.liquidity) {
+      liquidity = safeNumber(data.liquidity.usd || data.liquidity);
+    }
+
+    // Extract volume
+    let volume24h = 0;
+    if (mainPool.volume24h) {
+      volume24h = safeNumber(mainPool.volume24h);
+    } else if (mainPool.txns?.volume24h) {
+      volume24h = safeNumber(mainPool.txns.volume24h);
+    } else if (data.volume24h) {
+      volume24h = safeNumber(data.volume24h);
+    }
+
     return {
       name: token.name || "Unknown",
-      symbol: token.symbol || "UNKNOWN",
-      decimals: token.decimals || 6,
-      price: mainPool.price || 0,
-      marketCap: mainPool.marketCap || 0,
-      liquidity: mainPool.liquidity || 0,
-      volume24h: mainPool.volume24h || 0,
-      priceChangePercentage: events["24h"]?.priceChangePercentage || 0,
+      symbol: token.symbol || "UNKNOWN", 
+      decimals: safeNumber(token.decimals, 6),
+      price,
+      marketCap,
+      liquidity,
+      volume24h,
+      priceChangePercentage: safeNumber(events["24h"]?.priceChangePercentage, 0),
       logoURI: token.image || token.logoURI,
       description: token.description,
       website: token.website,
       twitter: token.twitter,
       telegram: token.telegram,
       createdAt: token.createdAt ? new Date(token.createdAt) : undefined,
-      holders: token.holders,
-      supply: token.supply,
+      holders: safeNumber(token.holders, 0),
+      supply: token.supply || token.totalSupply || "0",
     };
   }
 

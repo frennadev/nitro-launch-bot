@@ -792,7 +792,7 @@ export const executeTokenLaunch = async (
     logger.info(
       `[${logIdentifier}]: Waiting for blockchain state propagation after mixer funding...`
     );
-    await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
+    await new Promise((resolve) => setTimeout(resolve, 500)); // 0.5 second delay
     logger.info(
       `[${logIdentifier}]: Proceeding with balance checks using 'confirmed' commitment level`
     );
@@ -1490,7 +1490,7 @@ export const executeTokenLaunch = async (
         }
 
         // Minimal delay between batches to allow for network processing
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 75));
       }
 
       const success = results.filter((res) => res.success);

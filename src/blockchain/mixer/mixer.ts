@@ -23,33 +23,53 @@ const SOLANA_RPC_ENDPOINT = env.HELIUS_MIXER_RPC_URL;
 const MIN_AMOUNT_PER_DESTINATION = 0.01;
 
 /**
- * Generate random amounts for destinations using legacy incremental distribution
- * This is the stable, production-tested distribution method
+ * Generate amounts using 73-wallet distribution system
+ * Replaces legacy equal distribution with sophisticated tiered system
  */
 async function generateRandomAmounts(
   totalSol: number,
   destinationCount: number
 ): Promise<number[]> {
-  const amounts: number[] = [];
-  const totalLamports = Math.floor(totalSol * 1e9);
-  const baseAmount = Math.floor(totalLamports / destinationCount);
-  let remainder = totalLamports - (baseAmount * destinationCount);
+  try {
+    // Use the main 73-wallet distribution system
+    const { generateBuyDistribution } = await import("../../backend/functions");
+    const distributionSOL = generateBuyDistribution(totalSol, destinationCount);
+    const amounts = distributionSOL.map(amount => Math.floor(amount * 1e9)); // Convert to lamports
+    
+    console.log(`✅ Generated ${amounts.length} amounts using 73-wallet distribution system`);
+    console.log(`   Active wallets: ${amounts.filter(a => a > 0).length}/${amounts.length}`);
+    console.log(`   Amount range: ${(Math.min(...amounts.filter(a => a > 0)) / 1e9).toFixed(6)} - ${(Math.max(...amounts) / 1e9).toFixed(6)} SOL`);
+    
+    return amounts;
+  } catch (error) {
+    console.warn(`⚠️ Failed to use 73-wallet distribution, falling back to simple distribution:`, error);
+    
+    // Fallback to simple distribution (but still better than equal)
+    const amounts: number[] = [];
+    const totalLamports = Math.floor(totalSol * 1e9);
+    const baseAmount = Math.floor(totalLamports / destinationCount);
+    let remainder = totalLamports - (baseAmount * destinationCount);
 
-  for (let i = 0; i < destinationCount; i++) {
-    let amount = baseAmount;
-    if (remainder > 0) {
-      amount += 1;
-      remainder--;
+    for (let i = 0; i < destinationCount; i++) {
+      let amount = baseAmount;
+      
+      // Distribute remainder more evenly across wallets instead of front-loading
+      if (remainder > 0) {
+        const remainingWallets = destinationCount - i;
+        const amountToAdd = Math.floor(remainder / remainingWallets);
+        amount += amountToAdd;
+        remainder -= amountToAdd;
+      }
+
+      // Add small random variation (±3% instead of ±5% for more stability)
+      const variation = Math.floor(amount * 0.03 * (Math.random() - 0.5));
+      amount = Math.max(Math.floor(MIN_AMOUNT_PER_DESTINATION * 1e9), amount + variation);
+      amounts.push(amount);
     }
 
-    // Add small random variation (±5%)
-    const variation = Math.floor(amount * 0.05 * (Math.random() - 0.5));
-    amount = Math.max(Math.floor(MIN_AMOUNT_PER_DESTINATION * 1e9), amount + variation);
-    amounts.push(amount);
+    console.log(`✅ Generated ${amounts.length} amounts using improved fallback distribution`);
+    return amounts;
   }
-
-  console.log(`✅ Generated ${amounts.length} amounts using legacy stable distribution`);
-  return amounts;
 }
 
 /**
@@ -109,13 +129,13 @@ export async function runMixer(
     console.log(`\n💼 Funding wallet: ${fundingWallet.publicKey.toString()}`);
     console.log(`💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`);
 
-    // Use custom amounts if provided, otherwise generate random amounts
+    // Use custom amounts if provided, otherwise generate 73-wallet distribution
     let amounts: number[];
     if (options?.customAmounts && options.customAmounts.length === destinationWallets.length) {
       console.log(`🎯 Using custom 73-wallet distribution amounts`);
       amounts = options.customAmounts.map(amount => Math.floor(amount * 1e9)); // Convert SOL to lamports
     } else {
-      console.log(`🔄 Using legacy incremental distribution for production stability`);
+      console.log(`🎲 Generating 73-wallet distribution for optimal mixing`);
       amounts = await generateRandomAmounts(totalAmountSol, destinationWallets.length);
     }
 

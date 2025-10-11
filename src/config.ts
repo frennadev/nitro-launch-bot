@@ -3,10 +3,10 @@ import { cleanEnv, makeValidator, str, num } from "envalid";
 
 config();
 
-const validStr = makeValidator((x, name) => {
+const validStr = makeValidator((x: string) => {
   if (!x) {
     throw new Error(
-      `Environment variable ${name} is required but not set. Please check your .env file or deployment configuration.`
+      `Environment variable is required but not set. Please check your .env file or deployment configuration.`
     );
   }
   return x;
@@ -39,6 +39,10 @@ export const env = cleanEnv(process.env, {
   PINATA_API_URL: validStr(),
   HELIUS_RPC_URL: validStr(),
   HELIUS_MIXER_RPC_URL: str({
+    default:
+      "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
+  }),
+  HELIUS_BACKUP_RPC_URL: str({
     default:
       "https://mainnet.helius-rpc.com/?api-key=74feaea1-f5ce-4ef6-a124-49dd51e76f67",
   }),

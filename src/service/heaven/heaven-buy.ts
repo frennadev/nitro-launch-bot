@@ -102,7 +102,7 @@ export async function buyHeavenUngraduated(
   solAmount: number
 ) {
   const connection = new Connection(
-    "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e",
+    "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
     "confirmed"
   );
   const buyer = Keypair.fromSecretKey(bs58.decode(buyerPrivateKey));

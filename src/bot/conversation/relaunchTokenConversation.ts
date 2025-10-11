@@ -128,12 +128,19 @@ const relaunchTokenConversation = async (
   let telegram: string = "";
   let website: string = "";
 
-  // Ask for all socials in a single message
+  // Ask for all socials with smart detection
   await sendMessage(
     ctx,
-    "🌐 (Optional) Send your token's socials as <b>Twitter/X, Telegram, Website</b> links, separated by commas. Type 'skip' to leave any field blank.\n" +
-      "<i>Example: <code>https://twitter.com/example, https://t.me/examplegroup, https://example.com</code></i>\n\n" +
-      "You can also type 'skip' to leave all blank.",
+    "🌐 <b>Smart Link Detection</b> (Optional)\n\n" +
+      "🚀 <b>Just paste your links!</b> I'll automatically detect and organize them:\n" +
+      "• 🐦 Twitter/X links (twitter.com, x.com, @username)\n" +
+      "• 💬 Telegram links (t.me, @channel)\n" +
+      "• 🌐 Website links (any domain)\n\n" +
+      "<i>Examples that work:</i>\n" +
+      "• <code>https://x.com/mytoken @mytelegram mywebsite.com</code>\n" +
+      "• <code>@myhandle, t.me/mychannel, website.io</code>\n" +
+      "• <code>twitter.com/user telegram.me/group https://site.com</code>\n\n" +
+      "Type 'skip' to leave all blank.",
     { parse_mode: "HTML", reply_markup: cancelKeyboard }
   );
 
@@ -146,61 +153,39 @@ const relaunchTokenConversation = async (
     }
     if (upd.message?.text) {
       const text = upd.message.text.trim();
-      if (text.toLowerCase() === "skip" || text === "") {
-        twitter = "";
-        telegram = "";
-        website = "";
+      
+      // Import smart link detector
+      const { SmartLinkDetector } = await import("../../utils/smart-link-detector");
+      
+      // Use smart detection
+      const detectionResult = SmartLinkDetector.detectAndCategorizeLinks(text);
+      
+      if (detectionResult.success || text.toLowerCase() === "skip") {
+        // Assign detected links
+        twitter = detectionResult.links.twitter;
+        telegram = detectionResult.links.telegram;
+        website = detectionResult.links.website;
+        
+        // Show confirmation message
+        if (detectionResult.success) {
+          await sendMessage(
+            ctx,
+            detectionResult.message,
+            { parse_mode: "Markdown", reply_markup: cancelKeyboard }
+          );
+        }
+        
         break;
-      }
-      const parts = text.split(",").map((s) => s.trim());
-      // Fill missing fields with empty string
-      while (parts.length < 3) parts.push("");
-      const [tw, tg, web] = parts;
-
-      // Validate Twitter/X
-      if (
-        tw &&
-        !/^https?:\/\/(twitter\.com|x\.com)\/\S+/.test(tw) &&
-        tw.toLowerCase() !== "skip"
-      ) {
+      } else {
+        // Show error and ask again
         await sendMessage(
           ctx,
-          "Invalid Twitter/X link format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
+          `❌ <b>Link Detection Failed</b>\n\n${detectionResult.message}\n\n` +
+          "Please try again with valid links or type 'skip' to continue without links.",
           { parse_mode: "HTML", reply_markup: cancelKeyboard }
         );
         continue;
       }
-      // Validate Telegram
-      if (
-        tg &&
-        !/^https?:\/\/t\.me\/\S+/.test(tg) &&
-        tg.toLowerCase() !== "skip"
-      ) {
-        await sendMessage(
-          ctx,
-          "Invalid Telegram link format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
-          { parse_mode: "HTML", reply_markup: cancelKeyboard }
-        );
-        continue;
-      }
-      // Validate Website (basic)
-      if (
-        web &&
-        !/^https?:\/\/.+\..+/.test(web) &&
-        web.toLowerCase() !== "skip"
-      ) {
-        await sendMessage(
-          ctx,
-          "Invalid website URL format. Please send as <b>Twitter,X,Telegram,Website</b> or type 'skip' for any field.",
-          { parse_mode: "HTML", reply_markup: cancelKeyboard }
-        );
-        continue;
-      }
-
-      twitter = tw.toLowerCase() === "skip" ? "" : tw;
-      telegram = tg.toLowerCase() === "skip" ? "" : tg;
-      website = web.toLowerCase() === "skip" ? "" : web;
-      break;
     }
   }
 

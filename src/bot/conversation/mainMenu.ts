@@ -59,7 +59,7 @@ export default async function mainMenuConversation(
   }
 
   if (!user) {
-    await sendErrorWithAutoDelete(ctx, "Unrecognized user ❌");
+    await sendErrorWithAutoDelete(ctx, "Please try again ⚡");
     return conversation.halt();
   }
 
@@ -88,18 +88,22 @@ ${devWallet}
 Useful Links:
 • Pump.fun: https://pump.fun
 • LetsBonk.fun: https://letsbonk.fun
+
+💡 <b>Pro Tip:</b> Mix your funds first for maximum privacy before creating tokens!
+
 Get started below:`;
 
   const keyboard = new InlineKeyboard()
     .text("Create Token", CallBackQueries.CREATE_TOKEN)
     .text("View Tokens", CallBackQueries.VIEW_TOKENS)
     .row()
-    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
+    .text("🔀 Mix Funds", CallBackQueries.MIX_FUNDS)
     .text("Wallet Config", CallBackQueries.WALLET_CONFIG)
     .row()
+    .text("Export Dev Wallet", CallBackQueries.EXPORT_DEV_WALLET)
     .text("🔗 Referrals", CallBackQueries.VIEW_REFERRALS)
-    .text("📊 Predict MC", CallBackQueries.PREDICT_MC)
     .row()
+    .text("📊 Predict MC", CallBackQueries.PREDICT_MC)
     .text("🆘 Help", CallBackQueries.HELP);
 
   await sendFirstMessage(ctx, welcomeMsg, {
