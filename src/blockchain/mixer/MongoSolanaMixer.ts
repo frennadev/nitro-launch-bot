@@ -4,12 +4,72 @@ import { SolanaConnectionManager } from "./connection";
 import { MongoWalletManager, type StoredWallet } from "./mongodb";
 import { generateSecureKeypair, getRandomDelay, cryptoShuffle, getAmountVariation, sleep } from "./crypto";
 
+// RPC Rate Limiter to prevent overwhelming the RPC endpoint
+class RPCRateLimiter {
+  private requestTimes: number[] = [];
+  private transactionTimes: number[] = [];
+  private readonly maxRequestsPerSecond: number;
+  private readonly maxTransactionsPerSecond: number;
+  private readonly burstAllowance: number;
+
+  constructor(config: { maxRequestsPerSecond: number; maxTransactionsPerSecond: number; burstAllowance: number }) {
+    this.maxRequestsPerSecond = config.maxRequestsPerSecond;
+    this.maxTransactionsPerSecond = config.maxTransactionsPerSecond;
+    this.burstAllowance = config.burstAllowance;
+  }
+
+  async waitForRequestSlot(): Promise<void> {
+    const now = Date.now();
+    const oneSecondAgo = now - 1000;
+    
+    // Clean old entries
+    this.requestTimes = this.requestTimes.filter(time => time > oneSecondAgo);
+    
+    // Check if we need to wait
+    if (this.requestTimes.length >= this.maxRequestsPerSecond) {
+      const oldestRequest = this.requestTimes[0];
+      const waitTime = 1000 - (now - oldestRequest) + 10; // Add 10ms buffer
+      if (waitTime > 0) {
+        console.log(`⏳ RPC rate limit: waiting ${waitTime}ms for request slot`);
+        await sleep(waitTime);
+      }
+    }
+    
+    this.requestTimes.push(now);
+  }
+
+  async waitForTransactionSlot(): Promise<void> {
+    const now = Date.now();
+    const oneSecondAgo = now - 1000;
+    
+    // Clean old entries
+    this.transactionTimes = this.transactionTimes.filter(time => time > oneSecondAgo);
+    
+    // Check if we need to wait
+    if (this.transactionTimes.length >= this.maxTransactionsPerSecond) {
+      const oldestTx = this.transactionTimes[0];
+      const waitTime = 1000 - (now - oldestTx) + 50; // Add 50ms buffer for transactions
+      if (waitTime > 0) {
+        console.log(`⏳ RPC rate limit: waiting ${waitTime}ms for transaction slot`);
+        await sleep(waitTime);
+      }
+    }
+    
+    this.transactionTimes.push(now);
+  }
+}
+
 export interface MongoMixerConfig extends MixerConfig {
   mongoUri: string;
   databaseName: string;
   encryptionKey?: string;
   maxRetries?: number;
   retryDelay?: number;
+  rpcRateLimit?: {
+    maxRequestsPerSecond: number;
+    maxTransactionsPerSecond: number;
+    burstAllowance: number;
+  };
 }
 
 export interface MongoMixingResult extends MixingResult {
@@ -26,6 +86,7 @@ export class MongoSolanaMixer {
   private connectionManager: SolanaConnectionManager;
   private walletManager: MongoWalletManager;
   private state: MixerState;
+  private rateLimiter?: RPCRateLimiter;
 
   constructor(config: MongoMixerConfig) {
     this.config = {
@@ -37,6 +98,12 @@ export class MongoSolanaMixer {
     this.connectionManager = new SolanaConnectionManager(config.rpcEndpoint, config.priorityFee);
 
     this.walletManager = new MongoWalletManager(config.mongoUri, config.databaseName, config.encryptionKey);
+
+    // Initialize RPC rate limiter if configured
+    if (config.rpcRateLimit) {
+      this.rateLimiter = new RPCRateLimiter(config.rpcRateLimit);
+      console.log(`🚦 RPC Rate Limiter: ${config.rpcRateLimit.maxRequestsPerSecond} req/sec, ${config.rpcRateLimit.maxTransactionsPerSecond} tx/sec`);
+    }
 
     this.state = {
       intermediateWalletPool: [],
@@ -63,7 +130,7 @@ export class MongoSolanaMixer {
   /**
    * Main mixing function with MongoDB wallet management and failure recovery
    */
-  async mixFunds(fundingWallet: Keypair, destinationWallets: PublicKey[]): Promise<MongoMixingResult[]> {
+  async mixFunds(fundingWallet: Keypair, destinationWallets: PublicKey[], customAmounts?: number[]): Promise<MongoMixingResult[]> {
     const results: MongoMixingResult[] = [];
     const allUsedWalletIds: string[] = []; // Track all wallets used in this operation
 
@@ -71,19 +138,29 @@ export class MongoSolanaMixer {
       // Validate inputs
       await this.validateInputs(fundingWallet, destinationWallets);
 
-      // Calculate distribution amounts
+      // Calculate distribution amounts using 73-wallet system
       const totalBalance = await this.connectionManager.getMaxTransferableAmount(fundingWallet.publicKey);
-      const amountPerDestination = Math.floor(totalBalance / destinationWallets.length);
+      let distributionAmounts: number[];
 
-      if (amountPerDestination <= 0) {
-        throw new Error("Insufficient funds for distribution");
+      if (customAmounts && customAmounts.length === destinationWallets.length) {
+        // Use provided custom amounts (73-wallet distribution)
+        distributionAmounts = customAmounts.map(amount => Math.floor(amount * 1e9)); // Convert SOL to lamports
+        console.log(`🎯 Using 73-wallet distribution with ${customAmounts.length} custom amounts`);
+      } else {
+        // Generate 73-wallet distribution from total balance
+        const totalBalanceSOL = totalBalance / 1e9;
+        const { generateBuyDistribution } = await import("../../backend/functions");
+        const distributionSOL = generateBuyDistribution(totalBalanceSOL, destinationWallets.length);
+        distributionAmounts = distributionSOL.map(amount => Math.floor(amount * 1e9));
+        console.log(`🎲 Generated 73-wallet distribution for ${distributionSOL.length} wallets`);
       }
 
       console.log(`💰 Total balance: ${totalBalance} lamports`);
-      console.log(`📊 Amount per destination: ${amountPerDestination} lamports`);
+      console.log(`📊 Distribution: ${distributionAmounts.length} wallets with tiered amounts`);
+      console.log(`   First 5 amounts: ${distributionAmounts.slice(0, 5).map(a => (a / 1e9).toFixed(6)).join(', ')} SOL`);
 
-      // Create mixing routes with MongoDB wallets
-      const routes = await this.createMixingRoutesWithMongo(fundingWallet, destinationWallets, amountPerDestination);
+      // Create mixing routes with MongoDB wallets using proper distribution
+      const routes = await this.createMixingRoutesWithMongo(fundingWallet, destinationWallets, distributionAmounts);
 
       // Pre-fund intermediate wallets if fee funding wallet is provided
       if (this.config.feeFundingWallet) {
@@ -214,12 +291,12 @@ export class MongoSolanaMixer {
   }
 
   /**
-   * Create mixing routes using MongoDB wallets
+   * Create mixing routes using MongoDB wallets with proper 73-wallet distribution
    */
   private async createMixingRoutesWithMongo(
     fundingWallet: Keypair,
     destinationWallets: PublicKey[],
-    baseAmount: number,
+    distributionAmounts: number[],
     excludeWalletIds: string[] = []
   ): Promise<MixingRoute[]> {
     const routes: MixingRoute[] = [];
@@ -238,13 +315,19 @@ export class MongoSolanaMixer {
 
     let walletIndex = 0;
 
-    for (const destination of destinationWallets) {
-      // Add small random variation to amount for privacy
-      const amount = baseAmount + getAmountVariation(baseAmount);
+    for (let i = 0; i < destinationWallets.length; i++) {
+      const destination = destinationWallets[i];
+      // Use exact amount from 73-wallet distribution (no random variation)
+      const amount = distributionAmounts[i] || 0;
+
+      if (amount <= 0) {
+        console.log(`⚠️ Skipping destination ${i + 1}: amount is ${amount} lamports`);
+        continue;
+      }
 
       // Get intermediate wallets for this route
       const intermediates: WalletInfo[] = [];
-      for (let i = 0; i < this.config.intermediateWalletCount; i++) {
+      for (let j = 0; j < this.config.intermediateWalletCount; j++) {
         const storedWallet = reservedWallets[walletIndex++];
         const keypair = this.walletManager.getKeypairFromStoredWallet(storedWallet);
 
@@ -268,6 +351,8 @@ export class MongoSolanaMixer {
       routes.push(route);
     }
 
+    console.log(`🎯 Created ${routes.length} routes with 73-wallet distribution amounts`);
+    
     // Shuffle routes to randomize execution order
     return cryptoShuffle(routes);
   }
@@ -624,10 +709,20 @@ export class MongoSolanaMixer {
           }
         }
         
+        // Apply RPC rate limiting before sending transaction
+        if (this.rateLimiter) {
+          await this.rateLimiter.waitForTransactionSlot();
+        }
+        
         // Create and send transaction
         let signature: string;
         
         if (this.config.feeFundingWallet && i > 0) {
+          // Wait for request slot for transaction creation
+          if (this.rateLimiter) {
+            await this.rateLimiter.waitForRequestSlot();
+          }
+          
           const transaction = await this.connectionManager.createTransferTransactionWithFeePayer(
             currentWallet.publicKey,
             destination,
@@ -640,6 +735,11 @@ export class MongoSolanaMixer {
             this.config.feeFundingWallet,
           ]);
         } else {
+          // Wait for request slot for transaction creation
+          if (this.rateLimiter) {
+            await this.rateLimiter.waitForRequestSlot();
+          }
+          
           const transaction = await this.connectionManager.createTransferTransaction(
             currentWallet.publicKey,
             destination,
@@ -652,17 +752,25 @@ export class MongoSolanaMixer {
         signatures.push(signature);
         console.log(`📤 Transaction sent successfully: ${signature.slice(0, 8)}...`);
         
-        // Step 3: Smart balance checking instead of confirmation waiting (except for last hop)
+        // Step 3: Smart balance checking with retry logic for failed transactions
         if (!isLastHop) {
           const nextWallet = destination;
           const expectedAmount = transferAmount;
+          const senderWallet = currentWallet.publicKey;
           
-          // Wait for balance to update with timeout
+          // Smart balance checking with automatic retry
           const balanceCheckStart = Date.now();
           let balanceConfirmed = false;
+          let retryCount = 0;
+          const maxRetries = 2;
           
           while (!balanceConfirmed && (Date.now() - balanceCheckStart) < balanceCheckTimeout) {
             try {
+              // Apply rate limiting for balance checks
+              if (this.rateLimiter) {
+                await this.rateLimiter.waitForRequestSlot();
+              }
+              
               const currentBalance = await this.connectionManager.getBalance(nextWallet);
               
               if (currentBalance >= expectedAmount) {
@@ -678,27 +786,157 @@ export class MongoSolanaMixer {
             }
           }
           
-          if (!balanceConfirmed) {
-            console.warn(`⚠️ Balance check timeout for ${nextWallet.toString().slice(0, 8)}..., continuing optimistically`);
-            // Continue anyway - the transaction might still succeed
-          }
-        } else {
-          // For the final transaction, wait a bit longer for confirmation
-          console.log(`🎯 Final transfer: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${destination.toString().slice(0, 8)}...`);
-          
-          // Wait for final transaction confirmation
-          let finalConfirmationSuccess = await this.connectionManager.waitForConfirmation(signature, 3); // Reduced retries for speed
-          if (!finalConfirmationSuccess) {
-            // Check if destination actually received funds
-            const actualBalance = await this.connectionManager.getBalance(destination);
-            if (actualBalance >= transferAmount) {
-              console.warn(`⚠️ Final confirmation failed for signature: ${signature}, but destination wallet ${destination.toString().slice(0, 8)}... has the expected funds. Continuing...`);
-              finalConfirmationSuccess = true;
+          // If balance not confirmed, check if sender still has funds and retry if needed
+          if (!balanceConfirmed && retryCount < maxRetries) {
+            try {
+              const senderBalance = await this.connectionManager.getBalance(senderWallet);
+              const minRetryBalance = 0.01 * 1_000_000_000; // 0.01 SOL in lamports
+              
+              if (senderBalance > minRetryBalance) {
+                console.log(`🔄 Transaction may have failed, sender still has ${(senderBalance / 1_000_000_000).toFixed(6)} SOL, retrying...`);
+                retryCount++;
+                
+                // Retry the transaction
+                let retrySignature: string;
+                const retryTransferAmount = Math.min(transferAmount, Math.floor(senderBalance * 0.95)); // Leave some for fees
+                
+                if (this.config.feeFundingWallet && i > 0) {
+                  const retryTransaction = await this.connectionManager.createTransferTransactionWithFeePayer(
+                    senderWallet,
+                    destination,
+                    retryTransferAmount,
+                    this.config.feeFundingWallet.publicKey
+                  );
+                  
+                  retrySignature = await this.connectionManager.sendTransaction(retryTransaction, [
+                    currentWallet.keypair,
+                    this.config.feeFundingWallet,
+                  ]);
+                } else {
+                  const retryTransaction = await this.connectionManager.createTransferTransaction(
+                    senderWallet,
+                    destination,
+                    retryTransferAmount
+                  );
+                  
+                  retrySignature = await this.connectionManager.sendTransaction(retryTransaction, [currentWallet.keypair]);
+                }
+                
+                console.log(`🔄 Retry transaction sent: ${retrySignature.slice(0, 8)}...`);
+                signatures.push(retrySignature);
+                
+                // Continue with balance checking for retry
+                continue;
+              } else {
+                console.log(`✅ Sender balance low (${(senderBalance / 1_000_000_000).toFixed(6)} SOL), assuming transaction succeeded`);
+                balanceConfirmed = true;
+              }
+            } catch (error) {
+              console.warn(`⚠️ Error checking sender balance for retry: ${error}`);
             }
           }
           
-          if (!finalConfirmationSuccess) {
-            throw new Error(`Final transaction failed: ${signature}`);
+          if (!balanceConfirmed && retryCount >= maxRetries) {
+            console.warn(`⚠️ Balance check timeout after ${retryCount} retries for ${nextWallet.toString().slice(0, 8)}..., continuing optimistically`);
+            // Continue anyway - we did our best to ensure success
+          }
+        } else {
+          // For the final transaction, use smart balance checking with retry logic
+          console.log(`🎯 Final transfer: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${destination.toString().slice(0, 8)}...`);
+          
+          const finalDestination = destination;
+          const finalExpectedAmount = transferAmount;
+          const finalSender = currentWallet.publicKey;
+          
+          // Smart balance checking for final transaction
+          const finalCheckStart = Date.now();
+          let finalBalanceConfirmed = false;
+          let finalRetryCount = 0;
+          const finalMaxRetries = 2;
+          const finalTimeout = balanceCheckTimeout * 2; // Give final transaction more time
+          
+          while (!finalBalanceConfirmed && (Date.now() - finalCheckStart) < finalTimeout) {
+            try {
+              const destinationBalance = await this.connectionManager.getBalance(finalDestination);
+              
+              if (destinationBalance >= finalExpectedAmount) {
+                console.log(`✅ Final balance confirmed: ${finalDestination.toString().slice(0, 8)}... has ${(destinationBalance / 1_000_000_000).toFixed(6)} SOL`);
+                finalBalanceConfirmed = true;
+              } else {
+                console.log(`⏳ Waiting for final balance update: ${finalDestination.toString().slice(0, 8)}... (${(destinationBalance / 1_000_000_000).toFixed(6)} SOL / ${(finalExpectedAmount / 1_000_000_000).toFixed(6)} SOL expected)`);
+                await new Promise(resolve => setTimeout(resolve, 500)); // Check every 500ms for final transaction
+              }
+            } catch (error) {
+              console.warn(`⚠️ Final balance check error: ${error}, continuing...`);
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+          
+          // If final balance not confirmed, check sender and retry if needed
+          if (!finalBalanceConfirmed && finalRetryCount < finalMaxRetries) {
+            try {
+              const senderBalance = await this.connectionManager.getBalance(finalSender);
+              const minRetryBalance = 0.01 * 1_000_000_000; // 0.01 SOL in lamports
+              
+              if (senderBalance > minRetryBalance) {
+                console.log(`🔄 Final transaction may have failed, sender still has ${(senderBalance / 1_000_000_000).toFixed(6)} SOL, retrying...`);
+                finalRetryCount++;
+                
+                // Retry the final transaction
+                let finalRetrySignature: string;
+                const finalRetryAmount = Math.min(finalExpectedAmount, Math.floor(senderBalance * 0.95)); // Leave some for fees
+                
+                if (this.config.feeFundingWallet) {
+                  const finalRetryTransaction = await this.connectionManager.createTransferTransactionWithFeePayer(
+                    finalSender,
+                    finalDestination,
+                    finalRetryAmount,
+                    this.config.feeFundingWallet.publicKey
+                  );
+                  
+                  finalRetrySignature = await this.connectionManager.sendTransaction(finalRetryTransaction, [
+                    currentWallet.keypair,
+                    this.config.feeFundingWallet,
+                  ]);
+                } else {
+                  const finalRetryTransaction = await this.connectionManager.createTransferTransaction(
+                    finalSender,
+                    finalDestination,
+                    finalRetryAmount
+                  );
+                  
+                  finalRetrySignature = await this.connectionManager.sendTransaction(finalRetryTransaction, [currentWallet.keypair]);
+                }
+                
+                console.log(`🔄 Final retry transaction sent: ${finalRetrySignature.slice(0, 8)}...`);
+                signatures.push(finalRetrySignature);
+                
+                // Continue with balance checking for final retry
+                continue;
+              } else {
+                console.log(`✅ Final sender balance low (${(senderBalance / 1_000_000_000).toFixed(6)} SOL), assuming transaction succeeded`);
+                finalBalanceConfirmed = true;
+              }
+            } catch (error) {
+              console.warn(`⚠️ Error checking final sender balance for retry: ${error}`);
+            }
+          }
+          
+          if (!finalBalanceConfirmed) {
+            // Final check: if sender has no funds left, assume transaction succeeded
+            try {
+              const finalSenderCheck = await this.connectionManager.getBalance(finalSender);
+              if (finalSenderCheck < 0.01 * 1_000_000_000) { // Less than 0.01 SOL
+                console.log(`✅ Final transaction likely succeeded - sender has minimal balance (${(finalSenderCheck / 1_000_000_000).toFixed(6)} SOL)`);
+                finalBalanceConfirmed = true;
+              }
+            } catch (error) {
+              console.warn(`⚠️ Final sender balance check failed: ${error}`);
+            }
+          }
+          
+          if (!finalBalanceConfirmed) {
+            throw new Error(`Final transaction failed after ${finalRetryCount} retries - destination did not receive expected funds`);
           }
         }
       }

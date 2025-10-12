@@ -164,10 +164,10 @@ ${platformEmoji} <b>Platform:</b> ${platformName}
         totalNeeded,
         destinationAddresses,
         {
-          parallelMode: false,         // Use traditional mode for maximum reliability
-          maxConcurrentTx: 3,          // Keep concurrent options available
-          balanceCheckTimeout: 5000,   // 5 second timeout for balance checks
-          fastMode: false,             // Disable optimizations for stability
+          parallelMode: true,          // Enable parallel mode with RPC rate limiting
+          maxConcurrentTx: 2,          // Reduced to 2 for RPC safety (5 tx/sec limit)
+          balanceCheckTimeout: 8000,   // Increased timeout for stability
+          fastMode: false,             // Keep conservative for reliability
         }
       );
 

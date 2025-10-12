@@ -6,7 +6,12 @@ import {
   type AccountMeta,
   type Keypair,
 } from "@solana/web3.js";
-import { getBondingCurve, getCreatorVault, getMetadataPDA } from "./utils";
+import {
+  getBondingCurve,
+  getCreatorVault,
+  getMetadataPDA,
+  getFeeConfig,
+} from "./utils";
 import {
   BUY_DISCRIMINATOR,
   CREATE_DISCRIMINATOR,
@@ -84,25 +89,33 @@ export const buyInstruction = (
   const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint);
   const buyerAta = getAssociatedTokenAddressSync(mint, buyer);
   const creatorVault = getCreatorVault(tokenCreator);
+  const feeConfig = getFeeConfig();
 
   const global_volume_accumulator = globalVolumeAccumulator();
   const user_volume_accumulator = userVolumeAccumulator(buyer);
 
+  // Fee program from successful transaction
+  const feeProgram = new PublicKey(
+    "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ"
+  );
+
   const keys: AccountMeta[] = [
-    { pubkey: PUMPFUN_GLOBAL_SETTINGS, isSigner: false, isWritable: false },
-    { pubkey: PUMPFUN_FEE_ACCOUNT, isSigner: false, isWritable: true },
-    { pubkey: mint, isSigner: false, isWritable: false },
-    { pubkey: bondingCurve, isSigner: false, isWritable: true },
-    { pubkey: associatedBondingCurve, isSigner: false, isWritable: true },
-    { pubkey: buyerAta, isSigner: false, isWritable: true },
-    { pubkey: buyer, isSigner: true, isWritable: true },
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: creatorVault, isSigner: false, isWritable: true },
-    { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false },
-    { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false },
-    { pubkey: global_volume_accumulator, isWritable: true, isSigner: false },
-    { pubkey: user_volume_accumulator, isWritable: true, isSigner: false },
+    { pubkey: PUMPFUN_GLOBAL_SETTINGS, isSigner: false, isWritable: false }, // #1: Global
+    { pubkey: PUMPFUN_FEE_ACCOUNT, isSigner: false, isWritable: true }, // #2: Fee Recipient
+    { pubkey: mint, isSigner: false, isWritable: false }, // #3: Mint (moved to match successful tx)
+    { pubkey: bondingCurve, isSigner: false, isWritable: true }, // #4: Bonding Curve
+    { pubkey: associatedBondingCurve, isSigner: false, isWritable: true }, // #5: Associated Bonding Curve
+    { pubkey: buyerAta, isSigner: false, isWritable: true }, // #6: Associated User
+    { pubkey: buyer, isSigner: true, isWritable: true }, // #7: User
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // #8: System Program
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // #9: Token Program
+    { pubkey: creatorVault, isSigner: false, isWritable: true }, // #10: Creator Vault
+    { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false }, // #11: Event Authority
+    { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false }, // #12: Program
+    { pubkey: global_volume_accumulator, isWritable: true, isSigner: false }, // #13: Global Volume Accumulator
+    { pubkey: user_volume_accumulator, isWritable: true, isSigner: false }, // #14: User Volume Accumulator
+    { pubkey: feeConfig, isSigner: false, isWritable: false }, // #15: Fee Config (moved to end to match successful tx)
+    { pubkey: feeProgram, isSigner: false, isWritable: false }, // #16: Fee Program
   ];
   const data = BuyCodec.encode({
     instruction: Buffer.from(BUY_DISCRIMINATOR).readBigUint64LE(),
@@ -126,19 +139,33 @@ export const marketOrderBuyInstruction = (
   const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint);
   const buyerAta = getAssociatedTokenAddressSync(mint, buyer);
   const creatorVault = getCreatorVault(tokenCreator);
+  const feeConfig = getFeeConfig();
+
+  const global_volume_accumulator = globalVolumeAccumulator();
+  const user_volume_accumulator = userVolumeAccumulator(buyer);
+
+  // Fee program from successful transaction
+  const feeProgram = new PublicKey(
+    "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ"
+  );
+
   const keys: AccountMeta[] = [
-    { pubkey: PUMPFUN_GLOBAL_SETTINGS, isSigner: false, isWritable: false },
-    { pubkey: PUMPFUN_FEE_ACCOUNT, isSigner: false, isWritable: true },
-    { pubkey: mint, isSigner: false, isWritable: false },
-    { pubkey: bondingCurve, isSigner: false, isWritable: true },
-    { pubkey: associatedBondingCurve, isSigner: false, isWritable: true },
-    { pubkey: buyerAta, isSigner: false, isWritable: true },
-    { pubkey: buyer, isSigner: true, isWritable: true },
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: creatorVault, isSigner: false, isWritable: true },
-    { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false },
-    { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false },
+    { pubkey: PUMPFUN_GLOBAL_SETTINGS, isSigner: false, isWritable: false }, // #1: Global
+    { pubkey: PUMPFUN_FEE_ACCOUNT, isSigner: false, isWritable: true }, // #2: Fee Recipient
+    { pubkey: mint, isSigner: false, isWritable: false }, // #3: Mint (moved to match successful tx)
+    { pubkey: bondingCurve, isSigner: false, isWritable: true }, // #4: Bonding Curve
+    { pubkey: associatedBondingCurve, isSigner: false, isWritable: true }, // #5: Associated Bonding Curve
+    { pubkey: buyerAta, isSigner: false, isWritable: true }, // #6: Associated User
+    { pubkey: buyer, isSigner: true, isWritable: true }, // #7: User
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // #8: System Program
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // #9: Token Program
+    { pubkey: creatorVault, isSigner: false, isWritable: true }, // #10: Creator Vault
+    { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false }, // #11: Event Authority
+    { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false }, // #12: Program
+    { pubkey: global_volume_accumulator, isWritable: true, isSigner: false }, // #13: Global Volume Accumulator
+    { pubkey: user_volume_accumulator, isWritable: true, isSigner: false }, // #14: User Volume Accumulator
+    { pubkey: feeConfig, isSigner: false, isWritable: false }, // #15: Fee Config (moved to end to match successful tx)
+    { pubkey: feeProgram, isSigner: false, isWritable: false }, // #16: Fee Program
   ];
 
   // Use provided maxTokenAmount or calculate a reasonable amount based on SOL
@@ -168,20 +195,29 @@ export const sellInstruction = (
   const sellerAta = getAssociatedTokenAddressSync(mint, seller);
   console.log("Seller ATA:", sellerAta.toString());
   const creatorVault = getCreatorVault(tokenCreator);
-  console.log("Creator Vault:", creatorVault.toString());
+  const feeConfig = getFeeConfig();
+
+  // Fee program from successful transaction
+  const feeProgram = new PublicKey(
+    "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ"
+  );
+
+  // Official PumpFun sell instruction has exactly 14 accounts (per IDL specification)
   const keys: AccountMeta[] = [
-    { pubkey: PUMPFUN_GLOBAL_SETTINGS, isSigner: false, isWritable: false },
-    { pubkey: PUMPFUN_FEE_ACCOUNT, isSigner: false, isWritable: true },
-    { pubkey: mint, isSigner: false, isWritable: false },
-    { pubkey: bondingCurve, isSigner: false, isWritable: true },
-    { pubkey: associatedBondingCurve, isSigner: false, isWritable: true },
-    { pubkey: sellerAta, isSigner: false, isWritable: true },
-    { pubkey: seller, isSigner: true, isWritable: true },
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    { pubkey: creatorVault, isSigner: false, isWritable: true },
-    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false },
-    { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false },
+    { pubkey: PUMPFUN_GLOBAL_SETTINGS, isSigner: false, isWritable: false }, // #0: global
+    { pubkey: PUMPFUN_FEE_ACCOUNT, isSigner: false, isWritable: true }, // #1: fee_recipient
+    { pubkey: mint, isSigner: false, isWritable: false }, // #2: mint
+    { pubkey: bondingCurve, isSigner: false, isWritable: true }, // #3: bonding_curve
+    { pubkey: associatedBondingCurve, isSigner: false, isWritable: true }, // #4: associated_bonding_curve
+    { pubkey: sellerAta, isSigner: false, isWritable: true }, // #5: associated_user
+    { pubkey: seller, isSigner: true, isWritable: true }, // #6: user
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // #7: system_program
+    { pubkey: creatorVault, isSigner: false, isWritable: true }, // #8: creator_vault
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // #9: token_program
+    { pubkey: PUMPFUN_EVENT_AUTHORITY, isSigner: false, isWritable: false }, // #10: event_authority
+    { pubkey: PUMPFUN_PROGRAM, isSigner: false, isWritable: false }, // #11: program
+    { pubkey: feeConfig, isSigner: false, isWritable: false }, // #12: fee_config
+    { pubkey: feeProgram, isSigner: false, isWritable: false }, // #13: fee_program
   ];
   const data = SellCodec.encode({
     instruction: Buffer.from(SELL_DISCRIMINATOR).readBigUint64LE(),

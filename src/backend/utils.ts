@@ -1,4 +1,4 @@
-import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { LAMPORTS_PER_SOL, PublicKey, Connection } from "@solana/web3.js";
 import { connection } from "../blockchain/common/connection";
 import { logger } from "../blockchain/common/logger";
 import type { Bot, Context } from "grammy";
@@ -18,7 +18,7 @@ import { DexscreenerTokenResponse } from "./types";
 
 export function encryptPrivateKey(privateKey: string): string {
   const SECRET_KEY = crypto.scryptSync(
-    env.ENCRYPTION_SECRET,
+    env.ENCRYPTION_SECRET as string,
     "salt",
     ENCRYPTION_IV_LENGTH * 2
   );
@@ -38,7 +38,7 @@ export function encryptPrivateKey(privateKey: string): string {
 
 export function decryptPrivateKey(encryptedPrivateKey: string): string {
   const SECRET_KEY = crypto.scryptSync(
-    env.ENCRYPTION_SECRET,
+    env.ENCRYPTION_SECRET as string,
     "salt",
     ENCRYPTION_IV_LENGTH * 2
   );
@@ -153,6 +153,16 @@ export async function editMessage(
   }
 }
 
+// Secondary RPC endpoints with lower rate limits (10 RPS each)
+const secondaryRPCs = [
+  "https://mainnet.helius-rpc.com/?api-key=4ffb5d20-a934-4295-ac88-d7c4ac02b617",
+  "https://mainnet.helius-rpc.com/?api-key=27b2dcfa-53bf-4073-8e19-92e3a1396e48", 
+  "https://mainnet.helius-rpc.com/?api-key=8ff87842-d91e-4825-b659-c928f80b1f4f"
+];
+
+// Create connections for secondary RPCs
+const secondaryConnections = secondaryRPCs.map(rpc => new Connection(rpc, "confirmed"));
+
 export async function getTokenBalance(
   tokenAddress: string,
   walletAddress: string
@@ -178,95 +188,136 @@ export async function getTokenBalance(
       `[getTokenBalance] Checking balance for token ${tokenAddress} in wallet ${walletAddress}`
     );
 
-    // Try to get token accounts with better error handling
-    let resp;
-    try {
-      resp = await connection.getParsedTokenAccountsByOwner(owner, {
-        mint,
-      });
-    } catch (rpcError: any) {
-      // Handle specific RPC errors
-      if (rpcError.message?.includes("Token mint could not be unpacked")) {
-        console.warn(
-          `[getTokenBalance] Token mint unpacking failed for ${tokenAddress} - token may not exist or use different program`
-        );
-        return 0;
-      } else if (rpcError.message?.includes("Invalid param")) {
-        console.warn(
-          `[getTokenBalance] Invalid parameters for token ${tokenAddress}`
-        );
-        return 0;
-      } else {
-        console.error(
-          `[getTokenBalance] RPC error for token ${tokenAddress}:`,
-          rpcError
-        );
-        // Try alternative approach for Token-2022 or other programs
+    // Try primary connection first, then fallback to secondary RPCs
+    const connectionsToTry = [connection, ...secondaryConnections];
+    let lastError: any = null;
+
+    for (let i = 0; i < connectionsToTry.length; i++) {
+      const currentConnection = connectionsToTry[i];
+      const isSecondary = i > 0;
+      
+      if (isSecondary) {
+        console.log(`[getTokenBalance] Trying secondary RPC ${i}/${secondaryRPCs.length} for rate limit relief`);
+        // Add small delay for secondary RPCs to respect 10 RPS limit
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+
+      try {
+        // Try to get token accounts with current connection
+        let resp;
         try {
-          const { TOKEN_2022_PROGRAM_ID } = await import("@solana/spl-token");
-          resp = await connection.getParsedTokenAccountsByOwner(owner, {
+          resp = await currentConnection.getParsedTokenAccountsByOwner(owner, {
             mint,
-            programId: TOKEN_2022_PROGRAM_ID,
           });
+        } catch (rpcError: any) {
+          // Handle specific RPC errors
+          if (rpcError.message?.includes("Token mint could not be unpacked")) {
+            console.warn(
+              `[getTokenBalance] Token mint unpacking failed for ${tokenAddress} - token may not exist or use different program`
+            );
+            return 0;
+          } else if (rpcError.message?.includes("Invalid param")) {
+            console.warn(
+              `[getTokenBalance] Invalid parameters for token ${tokenAddress}`
+            );
+            return 0;
+          } else if (rpcError.message?.includes("429") || rpcError.message?.includes("Too Many Requests") || rpcError.message?.includes("max usage reached")) {
+            // Rate limiting error - try next RPC endpoint
+            console.warn(
+              `[getTokenBalance] Rate limit hit on ${isSecondary ? 'secondary' : 'primary'} RPC, trying next endpoint...`
+            );
+            lastError = rpcError;
+            continue; // Try next RPC endpoint
+          } else {
+            console.error(
+              `[getTokenBalance] RPC error for token ${tokenAddress}:`,
+              rpcError
+            );
+            // Try alternative approach for Token-2022 or other programs
+            try {
+              const { TOKEN_2022_PROGRAM_ID } = await import("@solana/spl-token");
+              resp = await currentConnection.getParsedTokenAccountsByOwner(owner, {
+                mint,
+                programId: TOKEN_2022_PROGRAM_ID,
+              });
+              console.log(
+                `[getTokenBalance] Successfully fetched using Token-2022 program on ${isSecondary ? 'secondary' : 'primary'} RPC`
+              );
+            } catch (token2022Error) {
+              console.error(
+                `[getTokenBalance] Token-2022 attempt also failed:`,
+                token2022Error
+              );
+              lastError = token2022Error;
+              continue; // Try next RPC endpoint
+            }
+          }
+        }
+
+        if (!resp || !resp.value) {
           console.log(
-            `[getTokenBalance] Successfully fetched using Token-2022 program`
+            `[getTokenBalance] No response received for token ${tokenAddress} on ${isSecondary ? 'secondary' : 'primary'} RPC`
           );
-        } catch (token2022Error) {
-          console.error(
-            `[getTokenBalance] Token-2022 attempt also failed:`,
-            token2022Error
+          lastError = new Error("No response received");
+          continue; // Try next RPC endpoint
+        }
+
+        console.log(
+          `[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress} on ${isSecondary ? 'secondary' : 'primary'} RPC`
+        );
+
+        if (resp.value.length === 0) {
+          console.log(
+            `[getTokenBalance] No token accounts found for token ${tokenAddress} in wallet ${walletAddress}`
           );
           return 0;
         }
-      }
-    }
 
-    if (!resp || !resp.value) {
-      console.log(
-        `[getTokenBalance] No response received for token ${tokenAddress}`
-      );
-      return 0;
-    }
+        const totalBalance = resp.value.reduce((sum, { account }) => {
+          try {
+            // Use raw amount (not uiAmount) for precise token calculations
+            const rawAmount = account.data.parsed.info.tokenAmount.amount || "0";
+            const amt = parseInt(rawAmount, 10);
+            console.log(
+              `[getTokenBalance] Account balance: ${amt} raw tokens (${account.data.parsed.info.tokenAmount.uiAmount} UI amount)`
+            );
+            return sum + amt;
+          } catch (parseError) {
+            console.warn(
+              `[getTokenBalance] Error parsing account data:`,
+              parseError
+            );
+            return sum;
+          }
+        }, 0);
 
-    console.log(
-      `[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress}`
-    );
-
-    if (resp.value.length === 0) {
-      console.log(
-        `[getTokenBalance] No token accounts found for token ${tokenAddress} in wallet ${walletAddress}`
-      );
-      return 0;
-    }
-
-    const totalBalance = resp.value.reduce((sum, { account }) => {
-      try {
-        // Use raw amount (not uiAmount) for precise token calculations
-        const rawAmount = account.data.parsed.info.tokenAmount.amount || "0";
-        const amt = parseInt(rawAmount, 10);
         console.log(
-          `[getTokenBalance] Account balance: ${amt} raw tokens (${account.data.parsed.info.tokenAmount.uiAmount} UI amount)`
+          `[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens (success on ${isSecondary ? 'secondary' : 'primary'} RPC)`
         );
-        return sum + amt;
-      } catch (parseError) {
-        console.warn(
-          `[getTokenBalance] Error parsing account data:`,
-          parseError
-        );
-        return sum;
-      }
-    }, 0);
+        return totalBalance;
 
-    console.log(
-      `[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens`
+      } catch (connectionError: any) {
+        console.error(
+          `[getTokenBalance] Connection error on ${isSecondary ? 'secondary' : 'primary'} RPC:`,
+          connectionError
+        );
+        lastError = connectionError;
+        continue; // Try next RPC endpoint
+      }
+    }
+
+    // If we get here, all RPC endpoints failed
+    console.error(
+      `[getTokenBalance] All RPC endpoints failed for token ${tokenAddress}. Last error:`,
+      lastError
     );
-    return totalBalance;
+    return 0;
+
   } catch (error) {
     console.error(
-      `[getTokenBalance] Error checking balance for token ${tokenAddress} in wallet ${walletAddress}:`,
+      `[getTokenBalance] Unexpected error for token ${tokenAddress}:`,
       error
     );
-    // Return 0 instead of throwing to prevent cascade failures
     return 0;
   }
 }
@@ -280,320 +331,9 @@ export async function getSolBalance(
   return lamports / LAMPORTS_PER_SOL;
 }
 
-// Birdeye API types
-export interface BirdeyeResponse {
-  data: BirdeyeData;
-  success: boolean;
-}
+// All legacy Birdeye interfaces removed - migrated to SolanaTracker
 
-export interface BirdeyeData {
-  address: string;
-  decimals: number;
-  symbol: string;
-  name: string;
-  marketCap: number;
-  fdv: number;
-  extensions: BirdeyeExtensions;
-  logoURI: string;
-  liquidity: number;
-  lastTradeUnixTime: number;
-  lastTradeHumanTime: Date;
-  price: number;
-  history1mPrice: number;
-  priceChange1mPercent: number;
-  history5mPrice: number;
-  priceChange5mPercent: number;
-  history30mPrice: number;
-  priceChange30mPercent: number;
-  history1hPrice: number;
-  priceChange1hPercent: number;
-  history2hPrice: number;
-  priceChange2hPercent: number;
-  history4hPrice: number;
-  priceChange4hPercent: number;
-  history6hPrice: number;
-  priceChange6hPercent: number;
-  history8hPrice: number;
-  priceChange8hPercent: number;
-  history12hPrice: number;
-  priceChange12hPercent: number;
-  history24hPrice: number;
-  priceChange24hPercent: number;
-  uniqueWallet1m: number;
-  uniqueWalletHistory1m: number;
-  uniqueWallet1mChangePercent: number;
-  uniqueWallet5m: number;
-  uniqueWalletHistory5m: number;
-  uniqueWallet5mChangePercent: number;
-  uniqueWallet30m: number;
-  uniqueWalletHistory30m: number;
-  uniqueWallet30mChangePercent: number;
-  uniqueWallet1h: number;
-  uniqueWalletHistory1h: number;
-  uniqueWallet1hChangePercent: number;
-  uniqueWallet2h: number;
-  uniqueWalletHistory2h: number;
-  uniqueWallet2hChangePercent: number;
-  uniqueWallet4h: number;
-  uniqueWalletHistory4h: number;
-  uniqueWallet4hChangePercent: number;
-  uniqueWallet8h: number;
-  uniqueWalletHistory8h: number;
-  uniqueWallet8hChangePercent: number;
-  uniqueWallet24h: number;
-  uniqueWalletHistory24h: number;
-  uniqueWallet24hChangePercent: number;
-  totalSupply: number;
-  circulatingSupply: number;
-  holder: number;
-  trade1m: number;
-  tradeHistory1m: number;
-  trade1mChangePercent: number;
-  sell1m: number;
-  sellHistory1m: number;
-  sell1mChangePercent: number;
-  buy1m: number;
-  buyHistory1m: number;
-  buy1mChangePercent: number;
-  v1m: number;
-  v1mUSD: number;
-  vHistory1m: number;
-  vHistory1mUSD: number;
-  v1mChangePercent: number;
-  vBuy1m: number;
-  vBuy1mUSD: number;
-  vBuyHistory1m: number;
-  vBuyHistory1mUSD: number;
-  vBuy1mChangePercent: number;
-  vSell1m: number;
-  vSell1mUSD: number;
-  vSellHistory1m: number;
-  vSellHistory1mUSD: number;
-  vSell1mChangePercent: number;
-  trade5m: number;
-  tradeHistory5m: number;
-  trade5mChangePercent: number;
-  sell5m: number;
-  sellHistory5m: number;
-  sell5mChangePercent: number;
-  buy5m: number;
-  buyHistory5m: number;
-  buy5mChangePercent: number;
-  v5m: number;
-  v5mUSD: number;
-  vHistory5m: number;
-  vHistory5mUSD: number;
-  v5mChangePercent: number;
-  vBuy5m: number;
-  vBuy5mUSD: number;
-  vBuyHistory5m: number;
-  vBuyHistory5mUSD: number;
-  vBuy5mChangePercent: number;
-  vSell5m: number;
-  vSell5mUSD: number;
-  vSellHistory5m: number;
-  vSellHistory5mUSD: number;
-  vSell5mChangePercent: number;
-  trade30m: number;
-  tradeHistory30m: number;
-  trade30mChangePercent: number;
-  sell30m: number;
-  sellHistory30m: number;
-  sell30mChangePercent: number;
-  buy30m: number;
-  buyHistory30m: number;
-  buy30mChangePercent: number;
-  v30m: number;
-  v30mUSD: number;
-  vHistory30m: number;
-  vHistory30mUSD: number;
-  v30mChangePercent: number;
-  vBuy30m: number;
-  vBuy30mUSD: number;
-  vBuyHistory30m: number;
-  vBuyHistory30mUSD: number;
-  vBuy30mChangePercent: number;
-  vSell30m: number;
-  vSell30mUSD: number;
-  vSellHistory30m: number;
-  vSellHistory30mUSD: number;
-  vSell30mChangePercent: number;
-  trade1h: number;
-  tradeHistory1h: number;
-  trade1hChangePercent: number;
-  sell1h: number;
-  sellHistory1h: number;
-  sell1hChangePercent: number;
-  buy1h: number;
-  buyHistory1h: number;
-  buy1hChangePercent: number;
-  v1h: number;
-  v1hUSD: number;
-  vHistory1h: number;
-  vHistory1hUSD: number;
-  v1hChangePercent: number;
-  vBuy1h: number;
-  vBuy1hUSD: number;
-  vBuyHistory1h: number;
-  vBuyHistory1hUSD: number;
-  vBuy1hChangePercent: number;
-  vSell1h: number;
-  vSell1hUSD: number;
-  vSellHistory1h: number;
-  vSellHistory1hUSD: number;
-  vSell1hChangePercent: number;
-  trade2h: number;
-  tradeHistory2h: number;
-  trade2hChangePercent: number;
-  sell2h: number;
-  sellHistory2h: number;
-  sell2hChangePercent: number;
-  buy2h: number;
-  buyHistory2h: number;
-  buy2hChangePercent: number;
-  v2h: number;
-  v2hUSD: number;
-  vHistory2h: number;
-  vHistory2hUSD: number;
-  v2hChangePercent: number;
-  vBuy2h: number;
-  vBuy2hUSD: number;
-  vBuyHistory2h: number;
-  vBuyHistory2hUSD: number;
-  vBuy2hChangePercent: number;
-  vSell2h: number;
-  vSell2hUSD: number;
-  vSellHistory2h: number;
-  vSellHistory2hUSD: number;
-  vSell2hChangePercent: number;
-  trade4h: number;
-  tradeHistory4h: number;
-  trade4hChangePercent: number;
-  sell4h: number;
-  sellHistory4h: number;
-  sell4hChangePercent: number;
-  buy4h: number;
-  buyHistory4h: number;
-  buy4hChangePercent: number;
-  v4h: number;
-  v4hUSD: number;
-  vHistory4h: number;
-  vHistory4hUSD: number;
-  v4hChangePercent: number;
-  vBuy4h: number;
-  vBuy4hUSD: number;
-  vBuyHistory4h: number;
-  vBuyHistory4hUSD: number;
-  vBuy4hChangePercent: number;
-  vSell4h: number;
-  vSell4hUSD: number;
-  vSellHistory4h: number;
-  vSellHistory4hUSD: number;
-  vSell4hChangePercent: number;
-  trade8h: number;
-  tradeHistory8h: number;
-  trade8hChangePercent: number;
-  sell8h: number;
-  sellHistory8h: number;
-  sell8hChangePercent: number;
-  buy8h: number;
-  buyHistory8h: number;
-  buy8hChangePercent: number;
-  v8h: number;
-  v8hUSD: number;
-  vHistory8h: number;
-  vHistory8hUSD: number;
-  v8hChangePercent: number;
-  vBuy8h: number;
-  vBuy8hUSD: number;
-  vBuyHistory8h: number;
-  vBuyHistory8hUSD: number;
-  vBuy8hChangePercent: number;
-  vSell8h: number;
-  vSell8hUSD: number;
-  vSellHistory8h: number;
-  vSellHistory8hUSD: number;
-  vSell8hChangePercent: number;
-  trade24h: number;
-  tradeHistory24h: number;
-  trade24hChangePercent: number;
-  sell24h: number;
-  sellHistory24h: number;
-  sell24hChangePercent: number;
-  buy24h: number;
-  buyHistory24h: number;
-  buy24hChangePercent: number;
-  v24h: number;
-  v24hUSD: number;
-  vHistory24h: number;
-  vHistory24hUSD: number;
-  v24hChangePercent: number;
-  vBuy24h: number;
-  vBuy24hUSD: number;
-  vBuyHistory24h: number;
-  vBuyHistory24hUSD: number;
-  vBuy24hChangePercent: number;
-  vSell24h: number;
-  vSell24hUSD: number;
-  vSellHistory24h: number;
-  vSellHistory24hUSD: number;
-  vSell24hChangePercent: number;
-  numberMarkets: number;
-}
-
-export interface BirdeyeExtensions {
-  description: string;
-}
-
-/**
- * Get token information from Birdeye API
- */
-export const getBirdeyeTokenInfo = async (
-  tokenAddress: string
-): Promise<BirdeyeData | null> => {
-  try {
-    const response = await axios.get(
-      "https://public-api.birdeye.so/defi/token_overview?address=" +
-        tokenAddress,
-      {
-        headers: {
-          accept: "application/json",
-          "x-chain": "solana",
-          "X-API-KEY": "e750e17792ae478983170f78486de13c",
-        },
-        timeout: 5000,
-      }
-    );
-
-    const data: BirdeyeResponse = response.data || {};
-
-    if (!data.success || !data.data) {
-      console.log(
-        `[getBirdeyeTokenInfo] Birdeye API returned unsuccessful response for ${tokenAddress}`
-      );
-      return null;
-    }
-
-    console.log(
-      `[getBirdeyeTokenInfo] Successfully fetched data for ${tokenAddress}:`,
-      {
-        name: data.data.name,
-        symbol: data.data.symbol,
-        marketCap: data.data.marketCap,
-        price: data.data.price,
-        liquidity: data.data.liquidity,
-      }
-    );
-
-    return data.data;
-  } catch (error: any) {
-    console.error(
-      `[getBirdeyeTokenInfo] Error fetching token info for ${tokenAddress}:`,
-      error.message
-    );
-    return null;
-  }
-};
+// Birdeye functions removed - migrated to SolanaTracker
 
 export const getTokenInfo = async (tokenAddress: string) => {
   const cacheKey = `${tokenAddress}::data`;
@@ -613,22 +353,24 @@ export const getTokenInfo = async (tokenAddress: string) => {
       // Continue without cache
     }
 
-    // First try Birdeye API
-    console.log(`[getTokenInfo] Fetching from Birdeye API for ${tokenAddress}`);
-    const birdeyeData = await getBirdeyeTokenInfo(tokenAddress);
+    // First try SolanaTracker API
+    console.log(`[getTokenInfo] Fetching from SolanaTracker API for ${tokenAddress}`);
+    const { SolanaTrackerService } = await import('../services/token/solana-tracker-service');
+    const solanaTracker = new SolanaTrackerService();
+    const solanaTrackerData = await solanaTracker.getTokenInfo(tokenAddress);
 
-    if (birdeyeData) {
-      // Convert Birdeye data to DexScreener-compatible format for backward compatibility
+    if (solanaTrackerData) {
+      // Convert SolanaTracker data to DexScreener-compatible format for backward compatibility
       const convertedData = {
         chainId: "solana",
-        dexId: "birdeye",
-        url: `https://birdeye.so/token/${tokenAddress}`,
-        pairAddress: tokenAddress, // Use token address as pair address for Birdeye
+        dexId: "solanatracker",
+        url: `https://solanatracker.io/token/${tokenAddress}`,
+        pairAddress: tokenAddress,
         baseToken: {
           address: tokenAddress,
-          name: birdeyeData.name,
-          symbol: birdeyeData.symbol,
-          decimals: birdeyeData.decimals,
+          name: solanaTrackerData.name || "Unknown",
+          symbol: solanaTrackerData.symbol || "UNKNOWN",
+          decimals: solanaTrackerData.decimals || 9,
         },
         quoteToken: {
           address: "So11111111111111111111111111111111111111112", // WSOL
@@ -636,31 +378,29 @@ export const getTokenInfo = async (tokenAddress: string) => {
           symbol: "SOL",
           decimals: 9,
         },
-        priceNative: birdeyeData.price
-          ? (birdeyeData.price / 240).toString()
+        priceNative: solanaTrackerData.price
+          ? (solanaTrackerData.price / 240).toString()
           : "0", // Rough SOL price estimate
-        priceUsd: birdeyeData.price ? birdeyeData.price.toString() : "0",
-        marketCap: birdeyeData.marketCap || 0,
+        priceUsd: solanaTrackerData.price ? solanaTrackerData.price.toString() : "0",
+        marketCap: Number(solanaTrackerData.marketCap) || 0,
         liquidity: {
-          usd: birdeyeData.liquidity || 0,
+          usd: solanaTrackerData.liquidity || 0,
           base: 0,
           quote: 0,
         },
-        fdv: birdeyeData.fdv || birdeyeData.marketCap || 0,
+        fdv: solanaTrackerData.marketCap || 0,
         pairCreatedAt: Date.now() - 86400000, // Estimate 1 day ago
         info: {
-          imageUrl: birdeyeData.logoURI || null,
-          websites: [`https://birdeye.so/token/${tokenAddress}`],
+          imageUrl: solanaTrackerData.logoURI || null,
+          websites: [`https://solanatracker.io/token/${tokenAddress}`],
           socials: [],
         },
-        // Additional Birdeye-specific data
-        birdeye: {
-          totalSupply: birdeyeData.totalSupply,
-          circulatingSupply: birdeyeData.circulatingSupply,
-          holder: birdeyeData.holder,
-          priceChange24h: birdeyeData.priceChange24hPercent,
-          volume24h: birdeyeData.v24hUSD,
-          trades24h: birdeyeData.trade24h,
+        // Additional SolanaTracker-specific data
+        solanatracker: {
+          totalSupply: solanaTrackerData.supply,
+          holder: solanaTrackerData.holders,
+          priceChange24h: solanaTrackerData.priceChangePercentage,
+          volume24h: solanaTrackerData.volume24h,
         },
       };
 
@@ -680,14 +420,14 @@ export const getTokenInfo = async (tokenAddress: string) => {
       }
 
       console.log(
-        `[getTokenInfo] Birdeye data successfully converted for ${tokenAddress}`
+        `[getTokenInfo] SolanaTracker data successfully converted for ${tokenAddress}`
       );
       return convertedData;
     }
 
-    // If Birdeye fails, try DexScreener as fallback
+    // If SolanaTracker fails, try DexScreener as fallback
     console.log(
-      `[getTokenInfo] Birdeye failed, trying DexScreener fallback for ${tokenAddress}`
+      `[getTokenInfo] SolanaTracker failed, trying DexScreener fallback for ${tokenAddress}`
     );
     const response = await axios.get(
       `https://api.dexscreener.com/tokens/v1/solana/${tokenAddress}`,
@@ -1273,10 +1013,42 @@ export async function archiveAddress(
 }
 
 /**
- * Get current SOL price from CoinGecko API
+ * Get current SOL price from Helius RPC (primary) with CoinGecko fallback
  */
 export const getCurrentSolPrice = async (): Promise<number> => {
   try {
+    // Try Helius DAS API first (consistent with our market cap services)
+    const heliusRpcUrl = process.env.HELIUS_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7';
+    const SOL_MINT = 'So11111111111111111111111111111111111111112';
+    
+    const heliusResponse = await axios.post(heliusRpcUrl, {
+      jsonrpc: '2.0',
+      id: 'sol-price-request',
+      method: 'getAsset',
+      params: {
+        id: SOL_MINT,
+        displayOptions: {
+          showFungible: true
+        }
+      }
+    }, {
+      timeout: 5000,
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    const heliusPrice = heliusResponse.data?.result?.token_info?.price_info?.price_per_token;
+    if (heliusPrice && heliusPrice > 0) {
+      console.log(`[getCurrentSolPrice] Current SOL price (Helius): $${heliusPrice}`);
+      return heliusPrice;
+    }
+  } catch (heliusError: any) {
+    console.warn(`[getCurrentSolPrice] Helius failed: ${heliusError.message}`);
+  }
+
+  try {
+    // Fallback to CoinGecko
     const response = await axios.get(
       "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
       {
@@ -1286,7 +1058,7 @@ export const getCurrentSolPrice = async (): Promise<number> => {
 
     const price = response.data?.solana?.usd;
     if (price && price > 0) {
-      console.log(`[getCurrentSolPrice] Current SOL price: $${price}`);
+      console.log(`[getCurrentSolPrice] Current SOL price (CoinGecko): $${price}`);
       return price;
     }
 
@@ -1296,35 +1068,30 @@ export const getCurrentSolPrice = async (): Promise<number> => {
       `[getCurrentSolPrice] Failed to fetch SOL price from CoinGecko: ${error.message}`
     );
 
-    // Fallback to Birdeye API
+    // Fallback to Jupiter Price API
     try {
-      const birdeyeResponse = await axios.get(
-        "https://public-api.birdeye.so/defi/token_overview?address=So11111111111111111111111111111111111111112",
+      const jupiterResponse = await axios.get(
+        "https://price.jup.ag/v4/price?ids=So11111111111111111111111111111111111111112",
         {
-          headers: {
-            accept: "application/json",
-            "x-chain": "solana",
-            "X-API-KEY": "e750e17792ae478983170f78486de13c",
-          },
           timeout: 5000,
         }
       );
 
-      const price = birdeyeResponse.data?.data?.price;
+      const price = jupiterResponse.data?.data?.So11111111111111111111111111111111111111112?.price;
       if (price && price > 0) {
         console.log(
-          `[getCurrentSolPrice] Current SOL price (Birdeye fallback): $${price}`
+          `[getCurrentSolPrice] Current SOL price (Jupiter fallback): $${price}`
         );
         return price;
       }
-    } catch (birdeyeError: any) {
+    } catch (jupiterError: any) {
       console.warn(
-        `[getCurrentSolPrice] Birdeye fallback also failed: ${birdeyeError.message}`
+        `[getCurrentSolPrice] Jupiter fallback also failed: ${jupiterError.message}`
       );
     }
 
-    // Final fallback to a reasonable estimate
-    console.warn(`[getCurrentSolPrice] Using fallback SOL price: $182`);
-    return 182; // Conservative fallback
+    // Final fallback to a reasonable current estimate
+    console.warn(`[getCurrentSolPrice] Using fallback SOL price: $220`);
+    return 220; // Updated fallback price
   }
 };

@@ -22,9 +22,9 @@ export async function drainAllMixerWallets(
     "294f6d574446132dcb92d050612dea7aa8cdfe918f29adc9681e1cdf75ad42bb"
   );
 
-  // Initialize connection manager
+  // Initialize connection manager with backup RPC
   const connectionManager = new SolanaConnectionManager(
-    "https://mainnet.helius-rpc.com/?api-key=74feaea1-f5ce-4ef6-a124-49dd51e76f67",
+    "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
     2000 // Priority fee
   );
 

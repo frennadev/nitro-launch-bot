@@ -1,179 +1,358 @@
-# Nitro Launch Bot
+# 🚀 PumpFun & BONK Market Cap Service
 
-A Telegram bot specialized in token creation and launch functionality on Solana blockchain using Pump.fun protocol.
+Complete market cap calculation service for **PumpFun** and **BONK** tokens (bonded & graduated) using official IDLs and Helius RPC.
 
-## 🎯 Problem
+## 🎯 Features
 
-The current token launch ecosystem faces several critical challenges:
-- **Complex Technical Barriers**: Token creation requires extensive blockchain knowledge
-- **High Gas Fees**: Expensive transaction costs during launch phases
-- **Lack of Privacy**: Wallet activities are easily traceable, exposing launch strategies
-- **Poor User Experience**: Complicated interfaces deter non-technical users
-- **Limited Launch Tools**: Existing platforms lack comprehensive launch management features
+### PumpFun Support
+- ✅ **Bonded Tokens**: Calculates from bonding curve reserves (25.3 SOL graduation target)
+- ✅ **Graduated Tokens**: Uses PumpFun AMM pools (not Raydium!)
+- ✅ **Live SOL Price**: Auto-updates from CoinGecko API
+- ✅ **Enhanced Metadata**: Helius DAS API integration
 
-## 💡 Solution
+### BONK Support
+- ✅ **Bonded Tokens**: BONK bonding curve calculations
+- ✅ **Graduated Tokens**: Migrated to Raydium/DEX pools
+- ✅ **Main BONK Token**: Full support for DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
 
-Nitro Launch Bot revolutionizes token launching with:
-- **One-Click Token Creation**: Deploy tokens instantly via Telegram commands
-- **Integrated Mixer Technology**: Enhanced privacy for launch strategies
-- **Multi-Wallet Management**: Coordinate dev and buyer wallets seamlessly
-- **Automated Launch Sequences**: Streamlined token deployment process
-- **User-Friendly Interface**: Telegram-based interaction for mass adoption
+### Unified Interface
+- ✅ **Auto-Detection**: Automatically detects PumpFun vs BONK tokens
+- ✅ **Unified API**: Single interface for both token types
+- ✅ **TypeScript**: Full type safety with proper interfaces
+- ✅ **Error Handling**: Graceful fallbacks and comprehensive error messages
 
-## 🏆 Competition
+## 📦 Installation
 
-| Platform | Privacy | Ease of Use | Multi-Wallet | Launch Automation |
-|----------|---------|-------------|--------------|-------------------|
-| **Nitro Launch** | ✅ Mixer | ✅ Telegram | ✅ Integrated | ✅ Full Auto |
-| Pump.fun | ❌ None | ⚠️ Web Only | ❌ Manual | ❌ Limited |
-| Raydium | ❌ None | ❌ Complex | ❌ Manual | ❌ None |
-| DxSale | ❌ None | ⚠️ Moderate | ❌ Manual | ⚠️ Partial |
-
-## 📈 Market
-
-**Total Addressable Market (TAM)**
-- Solana ecosystem: $40B+ market cap
-- Daily token launches: 2,000+ new tokens
-- DEX trading volume: $2B+ daily
-
-**Target Segments**
-- **Meme Coin Creators**: 60% of daily launches
-- **DeFi Projects**: 25% of launches  
-- **NFT Collections**: 10% of launches
-- **Utility Tokens**: 5% of launches
-
-**Market Growth**
-- 300% YoY growth in token launches
-- 150% increase in privacy-focused tools demand
-- 200% growth in Telegram bot adoption
-
-## 💰 Financials
-
-**Revenue Model**
-- **Launch Fees**: 0.1 SOL per token launch (~$20)
-- **Premium Features**: 0.05 SOL for advanced mixing
-- **Transaction Fees**: 0.1% on automated purchases
-- **Referral Program**: 10% revenue share
-
-**Projected Revenue (Year 1)**
-- Monthly launches: 10,000 tokens
-- Average revenue per launch: $25
-- Monthly recurring revenue: $250,000
-- Annual projected revenue: $3,000,000
-
-**Cost Structure**
-- Infrastructure: $5,000/month
-- Development: $20,000/month  
-- Marketing: $10,000/month
-- Total monthly costs: $35,000
-
-**Unit Economics**
-- Customer acquisition cost: $15
-- Average customer lifetime value: $150
-- Payback period: 2 months
-- Gross margin: 85%
-
-## Features
-
-- **Token Creation**: Launch new tokens on Pump.fun
-- **Dev Wallets**: Manage developer wallets for token operations
-- **Buyer Wallets**: Set up and manage buyer wallets for initial token purchases
-- **Mixer Integration**: Privacy-focused wallet mixing for enhanced anonymity
-- **Token Viewing**: View detailed information about launched tokens
-- **Referral System**: Built-in referral tracking and rewards
-
-## Core Functionality
-
-### Token Launch
-- Create new tokens with custom metadata
-- Automatic initial buy setup
-- Dev wallet configuration
-- Launch monitoring and reporting
-
-### Wallet Management
-- Developer wallet setup and management
-- Buyer wallet configuration
-- Wallet fund distribution
-- Secure key management
-
-### Privacy Features
-- Integrated mixer for transaction privacy
-- Multiple wallet coordination
-- Anonymous transaction routing
-
-## Installation
-
-1. Clone the repository:
 ```bash
-git clone https://github.com/Tee-py/nitro-launch-bot
-cd nitro-launch-bot
-```
+# Clone the repository
+git clone https://github.com/frennadev/market-cap-service-for-pump-and-bonk.git
+cd market-cap-service-for-pump-and-bonk
 
-2. Install dependencies:
-```bash
+# Install dependencies
 bun install
-```
 
-3. Configure environment variables:
-```bash
+# Copy environment template
 cp .env.example .env
-# Edit .env with your configuration
+
+# Add your Helius RPC URL to .env
+echo "HELIUS_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_API_KEY" > .env
 ```
 
-4. Build and run:
+## 🚀 Quick Start
+
+### PumpFun Tokens
+```typescript
+import { PumpFunMarketCapService } from './pumpfun-marketcap-service';
+
+const service = new PumpFunMarketCapService('YOUR_HELIUS_RPC_URL');
+const result = await service.calculateMarketCap('BrG3G9J3TQ3PU4LbHMhsXP2njfdzymkiWSvCkCHCpump');
+
+if (result.success) {
+  console.log(`Market Cap: $${result.data.marketCap.toFixed(2)}`);
+  console.log(`Status: ${result.data.isComplete ? 'Graduated' : 'On Curve'}`);
+}
+```
+
+### BONK Tokens
+```typescript
+import { BonkMarketCapService } from './bonk-marketcap-service';
+
+const service = new BonkMarketCapService('YOUR_HELIUS_RPC_URL');
+const result = await service.calculateMarketCap('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263');
+
+if (result.success) {
+  console.log(`BONK Market Cap: $${result.data.marketCap.toFixed(2)}`);
+}
+```
+
+### Unified Service (Recommended)
+```typescript
+import { UnifiedMarketCapService } from './unified-marketcap-service';
+
+const service = new UnifiedMarketCapService('YOUR_HELIUS_RPC_URL');
+const result = await service.calculateMarketCap('ANY_TOKEN_MINT_ADDRESS');
+
+if (result.success) {
+  console.log(`Token Type: ${result.data.tokenType}`);
+  console.log(`Market Cap: $${result.data.marketCap.toFixed(2)}`);
+  console.log(`Detected By: ${result.data.detectedBy}`);
+}
+```
+
+## 🧪 Test Scripts
+
 ```bash
-bun run build:bot
-bun run build/index.js
+# Test PumpFun tokens
+bun run test
+
+# Test BONK tokens  
+bun run test:bonk
+
+# Test unified service (both types)
+bun run test:unified
+
+# Live monitoring demo
+bun run test:live
+
+# Test specific tokens
+bun run test:tokens
+
+# Test graduated tokens
+bun run test:graduated
 ```
 
-## Docker Deployment
+## 📊 Response Format
+
+### Unified Response
+```typescript
+interface UnifiedMarketCapResult {
+  success: boolean;
+  data?: UnifiedTokenInfo & {
+    tokenType: 'PUMPFUN' | 'BONK' | 'UNKNOWN';
+    detectedBy: string;
+  };
+  error?: string;
+}
+```
+
+### Token Info Structure
+```typescript
+interface TokenInfo {
+  mint: string;                // Token mint address
+  marketCap: number;           // USD market cap (fully diluted)
+  price: number;               // USD per token
+  totalSupply: number;         // Total token supply
+  circulatingSupply: number;   // Circulating supply
+  solReserves: number;         // SOL in reserves
+  tokenReserves: number;       // Tokens in reserves
+  isComplete: boolean;         // true = graduated from bonding curve
+  isMigrated: boolean;         // true = migrated to AMM/DEX
+  creator: string;             // Creator wallet address
+  name?: string;               // Token name (from metadata)
+  symbol?: string;             // Token symbol (from metadata)
+  image?: string;              // Token image URL (from metadata)
+  description?: string;        // Token description (from metadata)
+  bondingCurveData?: object;   // Raw bonding curve data
+  // PumpFun specific
+  pumpAmmPoolData?: any;       // AMM pool data (for graduated PumpFun tokens)
+  // BONK specific  
+  raydiumPoolData?: any;       // DEX pool data (for graduated BONK tokens)
+}
+```
+
+## 🎯 Usage Examples
+
+### Batch Processing
+```typescript
+const tokens = [
+  'BrG3G9J3TQ3PU4LbHMhsXP2njfdzymkiWSvCkCHCpump', // PumpFun
+  'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263'  // BONK
+];
+
+const service = new UnifiedMarketCapService(heliusRpcUrl);
+const results = await Promise.all(
+  tokens.map(mint => service.calculateMarketCap(mint))
+);
+
+results.forEach((result, index) => {
+  if (result.success) {
+    console.log(`${result.data.tokenType}: $${result.data.marketCap.toFixed(2)}`);
+  }
+});
+```
+
+### Live Monitoring
+```typescript
+const service = new UnifiedMarketCapService(heliusRpcUrl);
+
+setInterval(async () => {
+  const result = await service.calculateMarketCap('YOUR_TOKEN_MINT');
+  if (result.success) {
+    console.log(`[${result.data.tokenType}] $${result.data.marketCap.toFixed(2)}`);
+  }
+}, 10000); // Every 10 seconds
+```
+
+## 🔧 Configuration
+
+### Environment Variables
 
 ```bash
-docker build -t nitro-launch-bot .
-docker run -d --env-file .env nitro-launch-bot
+# Required: Your Helius RPC endpoint
+HELIUS_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_API_KEY
+
+# Optional: Separate Helius API key for enhanced metadata
+HELIUS_API_KEY=YOUR_HELIUS_API_KEY
 ```
 
-## Environment Variables
+### Service Architecture
 
-- `BOT_TOKEN`: Telegram bot token
-- `MONGODB_URI`: MongoDB connection string
-- `SOLANA_RPC_URL`: Solana RPC endpoint
-- `REDIS_URL`: Redis connection string
-- Additional configuration variables as needed
+```typescript
+UnifiedMarketCapService
+├── PumpFunMarketCapService
+│   ├── Bonded tokens (bonding curve)
+│   └── Graduated tokens (PumpFun AMM)
+└── BonkMarketCapService
+    ├── Bonded tokens (bonding curve)  
+    └── Graduated tokens (Raydium/DEX)
+```
 
-## Usage
+## 📁 Project Structure
 
-1. Start the bot in Telegram
-2. Use `/start` to begin
-3. Follow the menu options to:
-   - Create new tokens
-   - Manage dev wallets
-   - Configure buyer wallets
-   - Launch tokens with mixing
+```
+├── pumpfun-marketcap-service.ts    # 🚀 PumpFun service
+├── bonk-marketcap-service.ts       # 🐕 BONK service
+├── unified-marketcap-service.ts    # 🎯 Unified service (recommended)
+├── helius-pumpfun-service.ts       # 🔗 Enhanced metadata service
+├── pumpfun-idl.json                # 📜 Official PumpFun IDL
+├── test-pumpfun-marketcap.ts       # 🧪 PumpFun tests
+├── test-bonk-marketcap.ts          # 🧪 BONK tests
+├── test-unified-marketcap.ts       # 🧪 Unified tests
+├── test-live-marketcap-monitor.ts  # 📊 Live monitoring demo
+├── test-your-tokens.ts             # 🎯 Specific token testing
+├── test-graduated-tokens.ts        # 🎓 Graduated token testing
+└── README.md                       # 📚 This file
+```
 
-## Architecture
+## 🎮 How It Works
 
-- **Backend**: Node.js/Bun with TypeScript
-- **Database**: MongoDB for data persistence
-- **Blockchain**: Solana web3.js integration
-- **Bot Framework**: Grammy (Telegram Bot API)
-- **Queue System**: BullMQ with Redis
+### Token Detection
+1. **Automatic Detection**: Checks for program-specific bonding curve accounts
+2. **PumpFun Detection**: Looks for PumpFun program bonding curves
+3. **BONK Detection**: Identifies BONK program structures and main token
+4. **Fallback**: Tries both services if detection fails
 
-## Security
+### Market Cap Calculation
 
-- Private keys are encrypted
-- Mixer integration for transaction privacy
-- Secure wallet generation
-- Environment-based configuration
+#### Bonded Tokens (On Curve)
+- **PumpFun**: Uses virtual/real reserves, 25.3 SOL graduation target
+- **BONK**: Uses BONK-specific bonding curve formula
 
-## Contributing
+#### Graduated Tokens (Migrated)
+- **PumpFun**: Fetches from PumpFun AMM (`pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA`)
+- **BONK**: Fetches from Raydium/DEX pools
+
+#### Common Features
+- **Formula**: `totalSupply × priceUSD` (fully diluted market cap)
+- **SOL Price**: Live price from CoinGecko API (cached 60s)
+- **Enhanced Metadata**: Token names, symbols, images via Helius DAS API
+
+## 🚨 Important Notes
+
+- **PumpFun Graduated**: Uses PumpFun AMM, **NOT** Raydium
+- **BONK Graduated**: Uses Raydium/DEX pools
+- **Market Cap**: Fully diluted (total supply × price)
+- **Rate Limits**: Respects RPC rate limits with proper error handling
+- **Auto-Detection**: Automatically routes to correct service based on token type
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## License
+## 📄 License
 
-This project is licensed under the MIT License.
-# Force rebuild - Sat Jul  5 23:33:47 WAT 2025
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- PumpFun team for the official IDL specification
+- BONK community for protocol insights
+- Helius for reliable RPC infrastructure
+- Solana Web3.js for blockchain interactions
+
+---
+
+**Ready to calculate PumpFun & BONK market caps like a pro!** 🚀🐕
+# Required: Your Helius RPC endpoint
+HELIUS_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_API_KEY
+
+# Optional: Separate Helius API key for enhanced metadata
+HELIUS_API_KEY=YOUR_HELIUS_API_KEY
+```
+
+### Service Architecture
+
+```typescript
+UnifiedMarketCapService
+├── PumpFunMarketCapService
+│   ├── Bonded tokens (bonding curve)
+│   └── Graduated tokens (PumpFun AMM)
+└── BonkMarketCapService
+    ├── Bonded tokens (bonding curve)  
+    └── Graduated tokens (Raydium/DEX)
+```
+
+## 📁 Project Structure
+
+```
+├── pumpfun-marketcap-service.ts    # 🚀 PumpFun service
+├── bonk-marketcap-service.ts       # 🐕 BONK service
+├── unified-marketcap-service.ts    # 🎯 Unified service (recommended)
+├── helius-pumpfun-service.ts       # 🔗 Enhanced metadata service
+├── pumpfun-idl.json                # 📜 Official PumpFun IDL
+├── test-pumpfun-marketcap.ts       # 🧪 PumpFun tests
+├── test-bonk-marketcap.ts          # 🧪 BONK tests
+├── test-unified-marketcap.ts       # 🧪 Unified tests
+├── test-live-marketcap-monitor.ts  # 📊 Live monitoring demo
+├── test-your-tokens.ts             # 🎯 Specific token testing
+├── test-graduated-tokens.ts        # 🎓 Graduated token testing
+└── README.md                       # 📚 This file
+```
+
+## 🎮 How It Works
+
+### Token Detection
+1. **Automatic Detection**: Checks for program-specific bonding curve accounts
+2. **PumpFun Detection**: Looks for PumpFun program bonding curves
+3. **BONK Detection**: Identifies BONK program structures and main token
+4. **Fallback**: Tries both services if detection fails
+
+### Market Cap Calculation
+
+#### Bonded Tokens (On Curve)
+- **PumpFun**: Uses virtual/real reserves, 25.3 SOL graduation target
+- **BONK**: Uses BONK-specific bonding curve formula
+
+#### Graduated Tokens (Migrated)
+- **PumpFun**: Fetches from PumpFun AMM (`pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA`)
+- **BONK**: Fetches from Raydium/DEX pools
+
+#### Common Features
+- **Formula**: `totalSupply × priceUSD` (fully diluted market cap)
+- **SOL Price**: Live price from CoinGecko API (cached 60s)
+- **Enhanced Metadata**: Token names, symbols, images via Helius DAS API
+
+## 🚨 Important Notes
+
+- **PumpFun Graduated**: Uses PumpFun AMM, **NOT** Raydium
+- **BONK Graduated**: Uses Raydium/DEX pools
+- **Market Cap**: Fully diluted (total supply × price)
+- **Rate Limits**: Respects RPC rate limits with proper error handling
+- **Auto-Detection**: Automatically routes to correct service based on token type
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- PumpFun team for the official IDL specification
+- BONK community for protocol insights
+- Helius for reliable RPC infrastructure
+- Solana Web3.js for blockchain interactions
+
+---
+
+**Ready to calculate PumpFun & BONK market caps like a pro!** 🚀🐕

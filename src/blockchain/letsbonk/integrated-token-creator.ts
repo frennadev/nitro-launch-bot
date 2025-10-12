@@ -98,6 +98,10 @@ type VestingParams = {
   unlockPeriod: bigint;
 };
 
+type AmmCreatorFeeOn = {
+  creatorFeeOn: number;
+};
+
 // Layouts for token parameters
 const VESTING_PARAM_LAYOUT = struct<VestingParams>([
   u64("totalLockedAmount"),
@@ -111,6 +115,10 @@ const CURVE_PARAM_LAYOUT = struct<CurveParams>([
   u64("totalBaseSell"),
   u64("totalQuoteFundRaising"),
   u8("migrateType"),
+]);
+
+const AMM_CREATOR_FEE_ON_LAYOUT = struct<AmmCreatorFeeOn>([
+  u8("creatorFeeOn"), // boolean as u8 (0 = false, 1 = true)
 ]);
 
 interface InitializeInstructionData {
@@ -150,7 +158,7 @@ function encodeString(str: string) {
   return buffer;
 }
 
-// Create token instruction
+// Create token instruction (Updated with working InitializeV2 implementation)
 const createTokenInstruction = (
   payer: Keypair,
   token: Keypair,
@@ -194,34 +202,30 @@ const createTokenInstruction = (
   console.log("Using name in instruction:", mintParams.name);
 
   const keys = [
-    { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-    { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-    { pubkey: GLOBAL_CONFIG, isSigner: false, isWritable: false },
-    { pubkey: PLATFORM_CONFIG, isSigner: false, isWritable: false },
-    { pubkey: RAY_LAUNCHPAD_AUTHORITY, isSigner: false, isWritable: false },
-    { pubkey: poolPDA, isSigner: false, isWritable: true },
-    { pubkey: token.publicKey, isSigner: true, isWritable: true },
-    { pubkey: WSOL_MINT, isSigner: false, isWritable: false },
-    { pubkey: baseVaultPDA, isSigner: false, isWritable: true },
-    { pubkey: quoteVaultPDA, isSigner: false, isWritable: true },
-    { pubkey: metadataPDA, isSigner: false, isWritable: true },
-    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: METADATA_PROGRAM, isSigner: false, isWritable: false },
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    { pubkey: RENT_PROGRAM, isSigner: false, isWritable: false },
-    { pubkey: EVENT_AUTHORITY, isSigner: false, isWritable: false },
-    {
-      pubkey: RAYDIUM_LAUNCH_LAB_PROGRAM_ID,
-      isSigner: false,
-      isWritable: false,
-    },
+    { pubkey: payer.publicKey, isSigner: true, isWritable: true },        // 0: payer
+    { pubkey: payer.publicKey, isSigner: true, isWritable: false },       // 1: creator (same as payer)
+    { pubkey: GLOBAL_CONFIG, isSigner: false, isWritable: false },        // 2: global_config
+    { pubkey: PLATFORM_CONFIG, isSigner: false, isWritable: false },      // 3: platform_config
+    { pubkey: RAY_LAUNCHPAD_AUTHORITY, isSigner: false, isWritable: false }, // 4: authority
+    { pubkey: poolPDA, isSigner: false, isWritable: true },               // 5: pool_state
+    { pubkey: token.publicKey, isSigner: true, isWritable: true },        // 6: base_mint
+    { pubkey: WSOL_MINT, isSigner: false, isWritable: false },            // 7: quote_mint
+    { pubkey: baseVaultPDA, isSigner: false, isWritable: true },          // 8: base_vault
+    { pubkey: quoteVaultPDA, isSigner: false, isWritable: true },         // 9: quote_vault
+    { pubkey: metadataPDA, isSigner: false, isWritable: true },           // 10: metadata_account
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },     // 11: base_token_program
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },     // 12: quote_token_program
+    { pubkey: METADATA_PROGRAM, isSigner: false, isWritable: false },     // 13: metadata_program
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // 14: system_program
+    { pubkey: RENT_PROGRAM, isSigner: false, isWritable: false },         // 15: rent_program
+    { pubkey: EVENT_AUTHORITY, isSigner: false, isWritable: false },      // 16: event_authority
+    { pubkey: RAYDIUM_LAUNCH_LAB_PROGRAM_ID, isSigner: false, isWritable: false }, // 17: program
   ];
   const instructionBuffer = Buffer.alloc(INITIALIZE_INSTRUCTION_LAYOUT.span);
   INITIALIZE_INSTRUCTION_LAYOUT.encode(
     {
       instruction: Buffer.from([
-        175, 175, 109, 31, 13, 152, 155, 237,
+        67, 153, 175, 39, 218, 16, 38, 32,
       ]).readBigUInt64LE(),
     },
     instructionBuffer
@@ -250,14 +254,20 @@ const createTokenInstruction = (
   const vestingParamBuffer = Buffer.alloc(VESTING_PARAM_LAYOUT.span);
   VESTING_PARAM_LAYOUT.encode({ ...vestingParams }, vestingParamBuffer);
 
+  // AMM Creator Fee On Params
+  const ammCreatorFeeOnParams = { creatorFeeOn: 0 }; // false = 0, true = 1
+  const ammCreatorFeeOnBuffer = Buffer.alloc(AMM_CREATOR_FEE_ON_LAYOUT.span);
+  AMM_CREATOR_FEE_ON_LAYOUT.encode(ammCreatorFeeOnParams, ammCreatorFeeOnBuffer);
+
   // Final Data
   const totalLength =
     instructionBuffer.length +
     mintParamBuffer.length +
     curveParamsBuffer.length +
-    vestingParamBuffer.length;
+    vestingParamBuffer.length +
+    ammCreatorFeeOnBuffer.length;
   const data = Buffer.concat(
-    [instructionBuffer, mintParamBuffer, curveParamsBuffer, vestingParamBuffer],
+    [instructionBuffer, mintParamBuffer, curveParamsBuffer, vestingParamBuffer, ammCreatorFeeOnBuffer],
     totalLength
   );
   return new TransactionInstruction({
@@ -395,6 +405,8 @@ export async function createBonkToken(
       symbol,
       description: `${name} Token`,
       image: imageUri,
+      external_url: socials?.website || "",
+      attributes: [],
       properties: {
         files: [
           {
@@ -404,9 +416,20 @@ export async function createBonkToken(
         ],
         category: "image",
       },
+      // Keep social links in both formats for compatibility
+      socials: {
+        website: socials?.website || "",
+        telegram: socials?.telegram || "",
+        twitter: socials?.twitter || "",
+        x: socials?.twitter || "", // X.com support
+      },
     };
+    // Also add social links as top-level fields (alternative format)
     if (socials) {
-      if (socials.twitter) metadata.twitter = socials.twitter;
+      if (socials.twitter) {
+        metadata.twitter = socials.twitter;
+        metadata.x = socials.twitter; // X.com support
+      }
       if (socials.telegram) metadata.telegram = socials.telegram;
       if (socials.website) metadata.website = socials.website;
     }

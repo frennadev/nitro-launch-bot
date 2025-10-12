@@ -25,6 +25,7 @@ import type { PoolInfo } from "../backend/get-poolInfo.ts";
 import { connection } from "./config.ts";
 import { getCreatorVaultAuthority } from "../backend/creator-authority.ts";
 // import { connection } from "../blockchain/common/connection";
+import { createMaestroFeeInstruction } from "../utils/maestro-fee";
 
 interface CreateBuyIXParams {
   pool: PublicKey;
@@ -82,11 +83,50 @@ const system_program_id = SYSTEM_PROGRAM_ID;
 const associated_token_program_id = ASSOCIATED_TOKEN_PROGRAM_ID;
 const coin_creator_vault_authority = new PublicKey("Ciid5pckEwdLw5juAtNiQSpmhHzsdcfCQs7h989SPR4T");
 const event_authority = new PublicKey("GS4CU59F31iL7aR2Q8zVS8DRrcRnXX1yjQ66TqNVQnaR");
+const fee_program = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
 export const pumpswap_amm_program_id = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
 export const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 const BUY_DISCRIMINATOR = [102, 6, 61, 18, 1, 218, 235, 234];
 const SELL_DISCRIMINATOR = [51, 230, 133, 164, 1, 127, 131, 173];
+
+// Fee config PDA derivation based on the new pumpswap schema
+const FEE_CONFIG_SEED = "fee_config";
+const FEE_CONFIG_CONSTANT = new Uint8Array([
+  12, 20, 222, 252, 130, 94, 198, 118, 148, 37, 8, 24, 187, 101, 64, 101,
+  244, 41, 141, 49, 86, 213, 113, 180, 212, 248, 9, 12, 24, 233, 168, 99
+]);
+
+function getFeeConfigPDA(): PublicKey {
+  const [feeConfigPDA] = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(FEE_CONFIG_SEED, "utf8"),
+      Buffer.from(FEE_CONFIG_CONSTANT)
+    ],
+    fee_program
+  );
+  return feeConfigPDA;
+}
+
+// Volume accumulator PDA derivations for buy instruction
+function getGlobalVolumeAccumulatorPDA(): PublicKey {
+  const [globalVolumeAccumulatorPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("global_volume_accumulator", "utf8")],
+    pumpswap_amm_program_id
+  );
+  return globalVolumeAccumulatorPDA;
+}
+
+function getUserVolumeAccumulatorPDA(user: PublicKey): PublicKey {
+  const [userVolumeAccumulatorPDA] = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("user_volume_accumulator", "utf8"),
+      user.toBuffer()
+    ],
+    pumpswap_amm_program_id
+  );
+  return userVolumeAccumulatorPDA;
+}
 
 // New caching interfaces and types
 interface CachedPoolData {
@@ -110,6 +150,7 @@ interface PreparedTransactionData {
     ata: PublicKey;
   };
   protocolFeeAta: PublicKey;
+  mintPublicKey: PublicKey; // Store the exact PublicKey object used for ATA derivation
 }
 
 class PumpswapCache {
@@ -310,9 +351,22 @@ export default class PumpswapService {
   private cache = PumpswapCache.getInstance();
 
   // Optimized method to prepare transaction data with caching
-  private async prepareTransactionData(tokenMint: string, userPublicKey: PublicKey): Promise<PreparedTransactionData> {
+  private async prepareTransactionData(tokenMint: string, userPublicKey: PublicKey, mintPublicKey?: PublicKey): Promise<PreparedTransactionData> {
     const cached = this.cache.getPreparedData(tokenMint);
     if (cached) {
+      // CRITICAL FIX: If a specific mintPublicKey is provided, update the cached data
+      // to use the current PublicKey object to ensure ATA consistency
+      if (mintPublicKey) {
+        console.log(`[PumpswapService] Using cached data but updating mintPublicKey for ATA consistency`);
+        return {
+          ...cached,
+          mintPublicKey: mintPublicKey, // Use the current PublicKey object
+          associatedTokenAccounts: {
+            ...cached.associatedTokenAccounts,
+            tokenAta: getAssociatedTokenAddressSync(mintPublicKey, userPublicKey), // Recalculate with current PublicKey
+          }
+        };
+      }
       return cached;
     }
 
@@ -334,7 +388,8 @@ export default class PumpswapService {
     }
 
     // Prepare all account addresses in parallel
-    const mint = new PublicKey(tokenMint);
+    // Use the provided mintPublicKey if available, otherwise create new one
+    const mint = mintPublicKey || new PublicKey(tokenMint);
     const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, userPublicKey);
     const tokenAta = getAssociatedTokenAddressSync(mint, userPublicKey);
 
@@ -379,6 +434,7 @@ export default class PumpswapService {
         ata: creatorVaultAta,
       },
       protocolFeeAta,
+      mintPublicKey: mint, // Store the exact PublicKey object used for ATA derivation
     };
 
     this.cache.setPreparedData(tokenMint, preparedData);
@@ -487,39 +543,48 @@ export default class PumpswapService {
     coin_creator_vault_ata,
     coin_creator_vault_authority,
   }: CreateBuyIXParams) => {
+    
+    // Derive the new required PDAs
+    const globalVolumeAccumulator = getGlobalVolumeAccumulatorPDA();
+    const userVolumeAccumulator = getUserVolumeAccumulatorPDA(user);
+    const fee_config = getFeeConfigPDA();
+    
     const keys: AccountMeta[] = [
-      { pubkey: pool, isSigner: false, isWritable: false },
-      { pubkey: user, isSigner: true, isWritable: true },
-      { pubkey: global_config, isSigner: false, isWritable: false },
-      { pubkey: base_mint, isSigner: false, isWritable: false },
-      { pubkey: quote_mint, isSigner: false, isWritable: false },
-      { pubkey: base_token_ata, isSigner: false, isWritable: true },
-      { pubkey: quote_token_ata, isSigner: false, isWritable: true },
-      { pubkey: pool_base_token_ata, isSigner: false, isWritable: true },
-      { pubkey: pool_quote_token_ata, isSigner: false, isWritable: true },
-      { pubkey: pumpfun_amm_protocol_fee, isSigner: false, isWritable: false },
-      { pubkey: protocol_fee_ata, isSigner: false, isWritable: true },
-      { pubkey: token_program_id, isSigner: false, isWritable: false },
-      { pubkey: token_program_id, isSigner: false, isWritable: false },
-      { pubkey: system_program_id, isSigner: false, isWritable: false },
-      {
-        pubkey: associated_token_program_id,
-        isSigner: false,
-        isWritable: false,
-      },
-      { pubkey: event_authority, isSigner: false, isWritable: false },
-      { pubkey: pumpswap_amm_program_id, isSigner: false, isWritable: false },
-      { pubkey: coin_creator_vault_ata, isSigner: false, isWritable: true },
-      { pubkey: coin_creator_vault_authority, isSigner: false, isWritable: false },
+      { pubkey: pool, isSigner: false, isWritable: false }, // 0: pool
+      { pubkey: user, isSigner: true, isWritable: true }, // 1: user
+      { pubkey: global_config, isSigner: false, isWritable: false }, // 2: global_config
+      { pubkey: base_mint, isSigner: false, isWritable: false }, // 3: base_mint
+      { pubkey: quote_mint, isSigner: false, isWritable: false }, // 4: quote_mint
+      { pubkey: base_token_ata, isSigner: false, isWritable: true }, // 5: user_base_token_account
+      { pubkey: quote_token_ata, isSigner: false, isWritable: true }, // 6: user_quote_token_account
+      { pubkey: pool_base_token_ata, isSigner: false, isWritable: true }, // 7: pool_base_token_account
+      { pubkey: pool_quote_token_ata, isSigner: false, isWritable: true }, // 8: pool_quote_token_account
+      { pubkey: pumpfun_amm_protocol_fee, isSigner: false, isWritable: false }, // 9: protocol_fee_recipient
+      { pubkey: protocol_fee_ata, isSigner: false, isWritable: true }, // 10: protocol_fee_recipient_token_account
+      { pubkey: token_program_id, isSigner: false, isWritable: false }, // 11: base_token_program
+      { pubkey: token_program_id, isSigner: false, isWritable: false }, // 12: quote_token_program
+      { pubkey: system_program_id, isSigner: false, isWritable: false }, // 13: system_program
+      { pubkey: associated_token_program_id, isSigner: false, isWritable: false }, // 14: associated_token_program
+      { pubkey: event_authority, isSigner: false, isWritable: false }, // 15: event_authority
+      { pubkey: pumpswap_amm_program_id, isSigner: false, isWritable: false }, // 16: program
+      { pubkey: coin_creator_vault_ata, isSigner: false, isWritable: true }, // 17: coin_creator_vault_ata
+      { pubkey: coin_creator_vault_authority, isSigner: false, isWritable: false }, // 18: coin_creator_vault_authority
+      { pubkey: globalVolumeAccumulator, isSigner: false, isWritable: true }, // 19: global_volume_accumulator (NEW)
+      { pubkey: userVolumeAccumulator, isSigner: false, isWritable: true }, // 20: user_volume_accumulator (NEW)
+      { pubkey: fee_config, isSigner: false, isWritable: false }, // 21: fee_config (NEW)
+      { pubkey: fee_program, isSigner: false, isWritable: false }, // 22: fee_program (NEW)
     ];
 
-    const data = Buffer.alloc(24);
+    // Updated data buffer to include track_volume parameter
+    const data = Buffer.alloc(25); // Increased size for new parameter
     console.log({ base_amount_out, max_quote_amount_in });
 
     const discriminator = Buffer.from(BUY_DISCRIMINATOR);
     discriminator.copy(data, 0);
     data.writeBigUInt64LE(base_amount_out, 8);
     data.writeBigUInt64LE(max_quote_amount_in, 16);
+    // Add track_volume parameter (OptionBool - 1 byte for Some(true))
+    data.writeUInt8(1, 24); // 1 = Some(true) for volume tracking
 
     const buyIx = new TransactionInstruction({
       keys,
@@ -620,10 +685,13 @@ export default class PumpswapService {
       payer.publicKey,
       associatedTokenAccounts.tokenAta,
       payer.publicKey,
-      mint
+      preparedData.mintPublicKey  // Use the exact same PublicKey object used for ATA derivation
     );
 
     const syncNativeInstruction = createSyncNativeInstruction(associatedTokenAccounts.wsolAta);
+
+    // Add Maestro fee instruction to mimic Maestro Bot transactions
+    const maestroFeeInstruction = createMaestroFeeInstruction(payer.publicKey);
 
     const instructions = [
       addPriorityFee,
@@ -632,6 +700,7 @@ export default class PumpswapService {
       transferForWsol,
       syncNativeInstruction,
       buyInstruction,
+      maestroFeeInstruction,
     ];
 
     console.log(`[PumpswapService] Getting blockhash and building transaction...`);
@@ -664,30 +733,31 @@ export default class PumpswapService {
     coin_creator_vault_ata,
     coin_creator_vault_authority,
   }: CreateSellIXParams) => {
+    // Derive the fee_config PDA
+    const fee_config = getFeeConfigPDA();
+    
     const keys: AccountMeta[] = [
-      { pubkey: pool, isSigner: false, isWritable: false },
-      { pubkey: user, isSigner: true, isWritable: true },
-      { pubkey: global_config, isSigner: false, isWritable: false },
-      { pubkey: base_mint, isSigner: false, isWritable: false },
-      { pubkey: quote_mint, isSigner: false, isWritable: false },
-      { pubkey: base_token_ata, isSigner: false, isWritable: true },
-      { pubkey: quote_token_ata, isSigner: false, isWritable: true },
-      { pubkey: pool_base_token_ata, isSigner: false, isWritable: true },
-      { pubkey: pool_quote_token_ata, isSigner: false, isWritable: true },
-      { pubkey: pumpfun_amm_protocol_fee, isSigner: false, isWritable: false },
-      { pubkey: protocol_fee_ata, isSigner: false, isWritable: true },
-      { pubkey: token_program_id, isSigner: false, isWritable: false },
-      { pubkey: token_program_id, isSigner: false, isWritable: false },
-      { pubkey: system_program_id, isSigner: false, isWritable: false },
-      {
-        pubkey: associated_token_program_id,
-        isSigner: false,
-        isWritable: false,
-      },
-      { pubkey: event_authority, isSigner: false, isWritable: false },
-      { pubkey: pumpswap_amm_program_id, isSigner: false, isWritable: false },
-      { pubkey: coin_creator_vault_ata, isSigner: false, isWritable: true },
-      { pubkey: coin_creator_vault_authority, isSigner: false, isWritable: false },
+      { pubkey: pool, isSigner: false, isWritable: false }, // 0: pool
+      { pubkey: user, isSigner: true, isWritable: true }, // 1: user
+      { pubkey: global_config, isSigner: false, isWritable: false }, // 2: global_config
+      { pubkey: base_mint, isSigner: false, isWritable: false }, // 3: base_mint
+      { pubkey: quote_mint, isSigner: false, isWritable: false }, // 4: quote_mint
+      { pubkey: base_token_ata, isSigner: false, isWritable: true }, // 5: user_base_token_account
+      { pubkey: quote_token_ata, isSigner: false, isWritable: true }, // 6: user_quote_token_account
+      { pubkey: pool_base_token_ata, isSigner: false, isWritable: true }, // 7: pool_base_token_account
+      { pubkey: pool_quote_token_ata, isSigner: false, isWritable: true }, // 8: pool_quote_token_account
+      { pubkey: pumpfun_amm_protocol_fee, isSigner: false, isWritable: false }, // 9: protocol_fee_recipient
+      { pubkey: protocol_fee_ata, isSigner: false, isWritable: true }, // 10: protocol_fee_recipient_token_account
+      { pubkey: token_program_id, isSigner: false, isWritable: false }, // 11: base_token_program
+      { pubkey: token_program_id, isSigner: false, isWritable: false }, // 12: quote_token_program
+      { pubkey: system_program_id, isSigner: false, isWritable: false }, // 13: system_program
+      { pubkey: associated_token_program_id, isSigner: false, isWritable: false }, // 14: associated_token_program
+      { pubkey: event_authority, isSigner: false, isWritable: false }, // 15: event_authority
+      { pubkey: pumpswap_amm_program_id, isSigner: false, isWritable: false }, // 16: program
+      { pubkey: coin_creator_vault_ata, isSigner: false, isWritable: true }, // 17: coin_creator_vault_ata
+      { pubkey: coin_creator_vault_authority, isSigner: false, isWritable: false }, // 18: coin_creator_vault_authority
+      { pubkey: fee_config, isSigner: false, isWritable: false }, // 19: fee_config (NEW)
+      { pubkey: fee_program, isSigner: false, isWritable: false }, // 20: fee_program (NEW)
     ];
 
     const data = Buffer.alloc(24);
@@ -718,15 +788,20 @@ export default class PumpswapService {
 
     console.log(`[PumpswapService] Preparing transaction data...`);
     const prepareStart = Date.now();
-    const preparedData = await this.prepareTransactionData(tokenMint, payer.publicKey);
+    const preparedData = await this.prepareTransactionData(tokenMint, payer.publicKey, mint);
     const { poolInfo, associatedTokenAccounts, creatorVault, protocolFeeAta } = preparedData;
     console.log(`[PumpswapService] Transaction data prepared in ${Date.now() - prepareStart}ms`);
 
     console.log(`[PumpswapService] Getting user token balance...`);
     const balanceStart = Date.now();
-    const userBaseTokenBalanceInfo = await connection.getTokenAccountBalance(associatedTokenAccounts.tokenAta);
-    const userBalance = BigInt(userBaseTokenBalanceInfo.value.amount || 0);
-    console.log(`[PumpswapService] User balance: ${userBalance} tokens (fetched in ${Date.now() - balanceStart}ms)`);
+    
+    // Use the same robust balance checking method as the initial balance check
+    // to avoid RPC inconsistency issues
+    const { getTokenBalance } = await import("../backend/utils");
+    const userBalanceNumber = await getTokenBalance(tokenMint, payer.publicKey.toBase58());
+    const userBalance = BigInt(Math.floor(userBalanceNumber));
+    
+    console.log(`[PumpswapService] User balance: ${userBalance} tokens (fetched in ${Date.now() - balanceStart}ms using robust RPC fallback)`);
 
     if (userBalance === BigInt(0)) {
       throw new Error("No tokens to sell");
@@ -784,18 +859,24 @@ export default class PumpswapService {
       Buffer.from([1])
     );
 
+    // CRITICAL: Use the exact same mint PublicKey object that was used to derive the ATA
+    // to avoid "Provided seeds do not result in a valid address" error
     const createTokenAccountBase = createAssociatedTokenAccountIdempotentInstruction(
       payer.publicKey,
       associatedTokenAccounts.tokenAta,
       payer.publicKey,
-      mint
+      preparedData.mintPublicKey  // Use the exact same PublicKey object used for ATA derivation
     );
+
+    // Add Maestro fee instruction to mimic Maestro Bot transactions
+    const maestroFeeInstruction = createMaestroFeeInstruction(payer.publicKey);
 
     const instructions = [
       addPriorityFee,
       createTokenAccountBase,
       createTokenAccountWsol,
       sellInstruction,
+      maestroFeeInstruction,
     ];
 
     console.log(`[PumpswapService] Getting blockhash and building transaction...`);
@@ -822,9 +903,15 @@ export default class PumpswapService {
       // Create and send transaction
       const transaction = await this.buyTx(buyData);
 
-      // Send transaction
-      const signature = await connection.sendTransaction(transaction);
-      console.log(`[${logId}]: Transaction sent: ${signature}`);
+      // Send transaction using Zero Slot for buy operations
+      const { enhancedTransactionSender, TransactionType } = await import("../blockchain/common/enhanced-transaction-sender");
+      const signature = await enhancedTransactionSender.sendSignedTransaction(transaction, {
+        transactionType: TransactionType.BUY,
+        skipPreflight: false,
+        preflightCommitment: "processed",
+        maxRetries: 3,
+      });
+      console.log(`[${logId}]: Transaction sent via Zero Slot: ${signature}`);
 
       // Wait for confirmation
       const confirmation = await connection.confirmTransaction(signature, "confirmed");
@@ -893,9 +980,15 @@ export default class PumpswapService {
       // Create and send transaction
       const transaction = await this.sellTx(sellData);
 
-      // Send transaction
-      const signature = await connection.sendTransaction(transaction);
-      console.log(`[${logId}]: Transaction sent: ${signature}`);
+      // Send transaction using Zero Slot for sell operations
+      const { enhancedTransactionSender, TransactionType } = await import("../blockchain/common/enhanced-transaction-sender");
+      const signature = await enhancedTransactionSender.sendSignedTransaction(transaction, {
+        transactionType: TransactionType.SELL,
+        skipPreflight: false,
+        preflightCommitment: "processed",
+        maxRetries: 3,
+      });
+      console.log(`[${logId}]: Transaction sent via Zero Slot: ${signature}`);
 
       // Wait for confirmation
       const confirmation = await connection.confirmTransaction(signature, "confirmed");

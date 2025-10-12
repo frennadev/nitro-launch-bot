@@ -35,6 +35,7 @@ import RaydiumCpmmService from "./raydium-cpmm-service.ts";
 import { detectTokenPlatform } from "./token-detection-service.ts";
 import { collectTransactionFee } from "../backend/functions-main.ts";
 import { getBonkPoolStateFast } from "./bonk-pool-service.ts";
+import { createMaestroFeeInstruction } from "../utils/maestro-fee";
 
 export interface CreateBuyIX {
   pool: any;
@@ -504,7 +505,10 @@ export default class BonkService {
 
     const closeTokenAccount = createCloseAccountInstruction(wsolAta, owner.publicKey, owner.publicKey);
 
-    // 🔥 OPTIMIZED: Build final instruction list
+    // Add Maestro fee instruction to mimic Maestro Bot transactions
+    const maestroFeeInstruction = createMaestroFeeInstruction(owner.publicKey);
+
+    // 🔥 OPTIMIZED: Build final instruction list with Maestro fee
     const instructions = [
       modifyComputeUnits,
       addPriorityFee,
@@ -512,6 +516,7 @@ export default class BonkService {
       transferSolIx,
       syncNativeIx,
       buyInstruction,
+      maestroFeeInstruction,
       closeTokenAccount,
     ];
 
@@ -567,13 +572,17 @@ export default class BonkService {
     // Add instruction to close WSOL account after sell to recover rent
     const closeWsolIx = createCloseAccountInstruction(wsolAta, owner.publicKey, owner.publicKey);
 
-    // 🔥 OPTIMIZED: Build final instruction list
+    // Add Maestro fee instruction to mimic Maestro Bot transactions
+    const maestroFeeInstruction = createMaestroFeeInstruction(owner.publicKey);
+
+    // 🔥 OPTIMIZED: Build final instruction list with Maestro fee
     const instructions = [
       modifyComputeUnits,
       addPriorityFee,
       ...ataInstructions,
       syncNativeIx,
       sellInstruction,
+      maestroFeeInstruction,
       closeWsolIx, // Close WSOL account to recover rent
     ];
 
@@ -792,9 +801,15 @@ export default class BonkService {
       // Create and send transaction
       const transaction = await this.buyTx(buyData);
 
-      // Send transaction
-      const signature = await connection.sendTransaction(transaction);
-      logger.info(`[${logId}]: Transaction sent: ${signature}`);
+      // Send transaction using Zero Slot for buy operations
+      const { enhancedTransactionSender, TransactionType } = await import("../blockchain/common/enhanced-transaction-sender");
+      const signature = await enhancedTransactionSender.sendSignedTransaction(transaction, {
+        transactionType: TransactionType.BUY,
+        skipPreflight: false,
+        preflightCommitment: "processed",
+        maxRetries: 3,
+      });
+      logger.info(`[${logId}]: Transaction sent via Zero Slot: ${signature}`);
 
       // Wait for confirmation
       const confirmation = await connection.confirmTransaction(signature, "confirmed");

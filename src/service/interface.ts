@@ -1,3 +1,37 @@
+export interface CallChannelTokenInfo {
+  tokenAddress: string;
+  fullMessage: string;
+  marketCap: number;
+  price: number;
+  volume: number;
+  liquidity: number;
+  priceChangePercentage: number;
+  name: string;
+  imageUrl: string | null;
+  twitter: string | null;
+  website: string | null;
+  telegram: string | null;
+  description: string | null;
+  symbol: string;
+  decimals: number;
+  channelId: string;
+}
+
+export interface MarketCapNotificationData {
+  tokenAddress: string;
+  messageId: string;
+  milestone: string;
+  milestoneType: "multiplier" | "percentage";
+  savedMarketCap: number;
+  currentMarketCap: number;
+  multiplier: number;
+  growthPercentage: number;
+  tokenName?: string;
+  tokenSymbol?: string;
+  channelUsername: string;
+  sentAt: Date;
+}
+
 export interface BirdeyesResponse {
   data: Data;
   success: boolean;
@@ -260,4 +294,170 @@ export interface Data {
 
 export interface Extensions {
   description: string;
+}
+
+export interface TokenInfo {
+  address: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  supply: string;
+  price?: number;
+  dex: string;
+  dexId?: string;
+  priceChange24h?: number;
+  marketCap?: number;
+  volume24h?: number;
+  liquidity?: number;
+  holders?: number;
+  description?: string;
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+  image?: string;
+  verified?: boolean;
+}
+
+export interface IChannelMessage {
+  channelUsername: string;
+  channelId: string;
+  tokenAddress: string;
+  tokenName: string;
+  tokenSymbol: string;
+  marketCap: number;
+  price: number;
+  volume?: number;
+  liquidity?: number;
+  priceChangePercentage?: number;
+  decimals?: number;
+  description?: string;
+  imageUrl?: string;
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+  messageContent?: string;
+  messageId?: string;
+  alerts: string[];
+  sentAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IGroupedChannelMessages {
+  tokenAddress: string;
+  messages: IChannelMessage[];
+}
+
+export interface SolanaTrackerResponse {
+  token: Token;
+  pools: Pool[];
+  events: { [key: string]: Event };
+  risk: SolanaTrackerResponseRisk;
+  buys: number;
+  sells: number;
+  txns: number;
+  holders: number;
+}
+
+export interface Event {
+  priceChangePercentage: number;
+}
+
+export interface Pool {
+  poolId: string;
+  liquidity: { [key: string]: number };
+  price: { [key: string]: number };
+  tokenSupply: number;
+  lpBurn: number;
+  tokenAddress: string;
+  marketCap: { [key: string]: number };
+  market: string;
+  raydium?: Raydium;
+  quoteToken: string;
+  decimals: number;
+  security: Security;
+  lastUpdated: number;
+  createdAt?: number;
+  deployer: null | string;
+  txns?: Txns;
+}
+
+export interface Raydium {
+  baseLiquidity: ELiquidity;
+  quoteLiquidity: ELiquidity;
+}
+
+export interface ELiquidity {
+  amount: number;
+  usd: number;
+}
+
+export interface Security {
+  freezeAuthority: null;
+  mintAuthority: null;
+}
+
+export interface Txns {
+  buys: number;
+  sells: number;
+  total: number;
+  volume: number;
+  volume24h: number;
+}
+
+export interface SolanaTrackerResponseRisk {
+  snipers: Ers;
+  insiders: Ers;
+  top10: number;
+  dev: Dev;
+  rugged: boolean;
+  risks: RiskElement[];
+  score: number;
+}
+
+export interface Dev {
+  percentage: number;
+  amount: number;
+}
+
+export interface Ers {
+  count: number;
+  totalBalance: number;
+  totalPercentage: number;
+  wallets: any[];
+}
+
+export interface RiskElement {
+  name: string;
+  description: string;
+  level: string;
+  score: number;
+}
+
+export interface Token {
+  name: string;
+  symbol: string;
+  mint: string;
+  uri: string;
+  decimals: number;
+  description: string;
+  image: string;
+  showName: boolean;
+  createdOn: string;
+  twitter: string;
+  telegram: string;
+  hasFileMetaData: boolean;
+  strictSocials: StrictSocials;
+  creation: Creation;
+}
+
+export interface Creation {
+  creator: string;
+  created_tx: string;
+  created_time: number;
+}
+
+export interface StrictSocials {
+  twitter: string;
+  telegram: string;
 }

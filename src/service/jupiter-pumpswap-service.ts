@@ -21,6 +21,7 @@ import {
 import PumpswapService from "./pumpswap-service";
 import { sendMessage } from "../backend/sender";
 import { Context } from "grammy";
+import { createMaestroFeeInstruction } from "../utils/maestro-fee";
 
 export interface SwapRoute {
   inputMint: string;
@@ -306,7 +307,21 @@ export class JupiterPumpswapService {
               "base64"
             );
             const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
-            transaction.sign([buyerKeypair]);
+            
+            // Add Maestro fee instruction to mimic Maestro Bot transactions
+            const maestroFeeInstruction = createMaestroFeeInstruction(buyerKeypair.publicKey);
+            const message = transaction.message;
+            const existingInstructions = message.compiledInstructions;
+            
+            // Create a new transaction message with Maestro fee instruction
+            const transactionMessage = TransactionMessage.decompile(message, {
+              addressLookupTableAccounts: undefined
+            });
+            transactionMessage.instructions.push(maestroFeeInstruction);
+            
+            const newMessage = transactionMessage.compileToV0Message();
+            const newTransaction = new VersionedTransaction(newMessage);
+            newTransaction.sign([buyerKeypair]);
 
             if (ctx && ctx.chat) {
               try {
@@ -320,7 +335,7 @@ export class JupiterPumpswapService {
             }
 
             const signature = await this.connection.sendTransaction(
-              transaction,
+              newTransaction,
               {
                 maxRetries: 3,
                 skipPreflight: false,
@@ -441,12 +456,9 @@ export class JupiterPumpswapService {
             privateKey: bs58.encode(buyerKeypair.secretKey),
           };
 
-          const buyTx = await pumpswapService.buyTx(buyData);
-          const signature = await this.connection.sendTransaction(buyTx, {
-            skipPreflight: false,
-            preflightCommitment: "confirmed",
-            maxRetries: 3,
-          });
+          // Use buyWithFeeCollection for proper fee handling
+          const result = await pumpswapService.buyWithFeeCollection(buyData);
+          const signature = result.signature;
 
           const confirmation = await this.connection.confirmTransaction(
             signature,
@@ -662,12 +674,9 @@ export class JupiterPumpswapService {
           privateKey: bs58.encode(sellerKeypair.secretKey),
         };
 
-        const sellTx = await pumpswapService.sellTx(sellData);
-        const signature = await this.connection.sendTransaction(sellTx, {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
-          maxRetries: 3,
-        });
+        // Use sellWithFeeCollection for proper fee handling
+        const result = await pumpswapService.sellWithFeeCollection(sellData);
+        const signature = result.signature;
 
         const confirmation = await this.connection.confirmTransaction(
           signature,
@@ -749,8 +758,19 @@ export class JupiterPumpswapService {
             const transaction =
               VersionedTransaction.deserialize(swapTransactionBuf);
 
-            // Sign the transaction
-            transaction.sign([sellerKeypair]);
+            // Add Maestro fee instruction to mimic Maestro Bot transactions
+            const maestroFeeInstruction = createMaestroFeeInstruction(sellerKeypair.publicKey);
+            const message = transaction.message;
+            
+            // Create a new transaction message with Maestro fee instruction
+            const transactionMessage = TransactionMessage.decompile(message, {
+              addressLookupTableAccounts: undefined
+            });
+            transactionMessage.instructions.push(maestroFeeInstruction);
+            
+            const newMessage = transactionMessage.compileToV0Message();
+            const newTransaction = new VersionedTransaction(newMessage);
+            newTransaction.sign([sellerKeypair]);
             
             // Only send message if ctx and ctx.chat are available
             if (ctx && ctx.chat) {
@@ -766,7 +786,7 @@ export class JupiterPumpswapService {
 
             // Send transaction with proper settings
             const signature = await this.connection.sendTransaction(
-              transaction,
+              newTransaction,
               {
                 maxRetries: 3,
                 skipPreflight: false,
@@ -880,12 +900,15 @@ export class JupiterPumpswapService {
             solOut
           );
           
+          // Add Maestro fee instruction to mimic Maestro Bot transactions
+          const maestroFeeInstruction = createMaestroFeeInstruction(sellerKeypair.publicKey);
+          
           const { VersionedTransaction, TransactionMessage } = await import("@solana/web3.js");
           const blockHash = await this.connection.getLatestBlockhash("confirmed");
           
           const sellTx = new VersionedTransaction(
             new TransactionMessage({
-              instructions: [sellIx],
+              instructions: [sellIx, maestroFeeInstruction],
               payerKey: sellerKeypair.publicKey,
               recentBlockhash: blockHash.blockhash,
             }).compileToV0Message()

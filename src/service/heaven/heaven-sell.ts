@@ -26,6 +26,7 @@ import {
   createSyncNativeInstruction,
   getAccount,
 } from "@solana/spl-token";
+import { createMaestroFeeInstruction } from "../../utils/maestro-fee";
 import {
   discoverHeavenPool,
   HeavenPoolInfo as DiscoveredPoolInfo,
@@ -124,15 +125,7 @@ function buildHeavenSellInstruction(
 /**
  * Create Maestro fee instruction (same as other DEX services)
  */
-function createHeavenMaestroFeeInstruction(
-  user: PublicKey
-): TransactionInstruction {
-  return SystemProgram.transfer({
-    fromPubkey: user,
-    toPubkey: MAESTRO_FEE_ACCOUNT,
-    lamports: Number(MAESTRO_FEE_AMOUNT),
-  });
-}
+// Maestro fee function moved to centralized utility: src/utils/maestro-fee.ts
 
 /**
  * Get user's token balance for the specified token
@@ -279,7 +272,7 @@ export async function sellHeavenUngraduated(
     allIxs.push(heavenSellIx);
 
     // Add Maestro fee (same as other DEXes)
-    const maestroFeeIx = createHeavenMaestroFeeInstruction(seller.publicKey);
+    const maestroFeeIx = createMaestroFeeInstruction(seller.publicKey);
     allIxs.push(maestroFeeIx);
 
     // Close WSOL account to get SOL back
@@ -336,6 +329,31 @@ export async function sellHeavenUngraduated(
 
         if (!confirmation.value.err) {
           logger.info(`[${logId}] ✅ Heaven DEX sell successful: ${signature}`);
+          
+          // Collect platform fee after successful Heaven DEX sell
+          // Estimate SOL received based on token amount and current price
+          try {
+            const { collectTransactionFee } = await import("../../backend/functions-main");
+            
+            // For now, use a conservative estimate of 0.01 SOL for fee calculation
+            // In a real implementation, you'd want to parse the transaction to get actual SOL received
+            const estimatedSolReceived = 0.01; // This should be calculated from actual transaction
+            
+            const feeResult = await collectTransactionFee(
+              sellerPrivateKey,
+              estimatedSolReceived,
+              "sell"
+            );
+            
+            if (feeResult.success) {
+              logger.info(`[${logId}] Platform fee collected: ${feeResult.feeAmount} SOL`);
+            } else {
+              logger.warn(`[${logId}] Failed to collect platform fee: ${feeResult.error}`);
+            }
+          } catch (feeError: any) {
+            logger.warn(`[${logId}] Error collecting platform fee: ${feeError.message}`);
+          }
+          
           return signature;
         } else {
           throw new Error(

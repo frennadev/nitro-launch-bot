@@ -56,6 +56,7 @@ import {
   decompressCallbackData,
   isCompressedCallbackData,
   formatUSDFull,
+  isUserAuthorized,
 } from "./utils";
 import launchTokenConversation from "./conversation/launchToken";
 import createTokenConversation from "./conversation/createToken";
@@ -193,6 +194,36 @@ async function detectPlatformInBackground(
 
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
+// Authentication middleware - must be first to check user access
+bot.use(async (ctx, next) => {
+  // Check if user is authorized
+  const username = ctx.from?.username;
+  if (!isUserAuthorized(username)) {
+    // If it's a start command, show a specific unauthorized message
+    if (ctx.message?.text === "/start") {
+      await sendMessage(
+        ctx,
+        "🚫 **Access Denied**\n\n" +
+          "This bot is currently restricted to authorized users only.\n\n" +
+          `❌ **Username:** @${username || "undefined"}\n` +
+          "Contact the bot administrator if you believe this is an error.",
+        { parse_mode: "Markdown" }
+      );
+    } else {
+      await sendMessage(
+        ctx,
+        "🚫 **Access Denied**\n\n" +
+          "This bot is currently restricted to authorized users only.\n\n" +
+          "Contact the bot administrator if you believe this is an error.",
+        { parse_mode: "Markdown" }
+      );
+    }
+    return; // Don't call next() - stop processing
+  }
+
+  return next();
+});
+
 // Apply rate limiting middleware globally
 // bot.use(rateLimitCommands()); // Rate limit all commands
 // bot.use(rateLimitCallbacks()); // Rate limit callback queries
@@ -299,9 +330,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
       try {
         await sendMessage(
           ctx,
-          "⚠️ **Button Error Detected**\n\n" +
-            "There was an issue with the message buttons. This has been automatically fixed.\n\n" +
-            "Please use /view_tokens to manage your tokens.",
+          "Please try again ⚡",
           { parse_mode: "Markdown" }
         );
       } catch (replyError: any) {
@@ -332,7 +361,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
     try {
       await sendErrorWithAutoDelete(
         ctx,
-        "❌ An unexpected error occurred. Please try the main menu or contact support."
+        "Something went wrong. Try again ⚡"
       );
     } catch (notifyError: any) {
       logger.error("Failed to send error notification:", notifyError.message);
@@ -919,7 +948,7 @@ bot.command("tokens", async (ctx) => {
 bot.command("commands", async (ctx) => {
   try {
     const commandsList = [
-      "🤖 <b>Nitro Bot Commands</b>",
+      "🤖 <b>Bundler Commands</b>",
       "",
       "<b>🚀 Main Commands:</b>",
       "• <code>/start</code> - Start the bot and main menu",
@@ -1299,6 +1328,12 @@ bot.callbackQuery(/^confirm_delete_token_(.+)$/, async (ctx) => {
 
 bot.callbackQuery(CallBackQueries.WALLET_CONFIG, async (ctx) => {
   await safeAnswerCallbackQuery(ctx);
+  await ctx.conversation.enter("walletConfigConversation");
+});
+
+// ✅ FIXED: Handle MIX_FUNDS callback to enter wallet config conversation
+bot.callbackQuery(CallBackQueries.MIX_FUNDS, async (ctx) => {
+  await safeAnswerCallbackQuery(ctx, "🔀 Loading mixer...");
   await ctx.conversation.enter("walletConfigConversation");
 });
 
@@ -2090,13 +2125,32 @@ bot.callbackQuery(/^(swt_|sell_wallet_token_)/, async (ctx) => {
   let walletType: string;
   const data = ctx.callbackQuery.data;
 
-  if (isCompressedCallbackData(data)) {
+  // Check if this is a callback ID (short identifier for long data)
+  if (data.startsWith("cb")) {
+    const { getCallbackData } = await import("./utils");
+    const fullData = getCallbackData(data);
+    if (!fullData) {
+      await sendMessage(ctx, "❌ Callback data expired. Please refresh and try again.");
+      return;
+    }
+    
+    // Parse the full data
+    const parts = fullData.split("_");
+    if (parts.length >= 6 && parts[0] === "sell" && parts[1] === "wallet" && parts[2] === "token") {
+      tokenAddress = parts[3];
+      walletAddress = parts[4];
+      walletType = parts[5];
+    } else {
+      await sendMessage(ctx, "❌ Invalid callback data format.");
+      return;
+    }
+  } else if (isCompressedCallbackData(data)) {
     const decompressed = decompressCallbackData(data);
     if (!decompressed) {
       await sendMessage(ctx, "❌ Invalid callback data.");
       return;
     }
-    // For sell wallet token, the format is: tokenAddress_walletAddress_walletType
+    // Handle other compressed formats (not SELL_WALLET_TOKEN)
     const parts = decompressed.tokenAddress.split("_");
     if (parts.length >= 3) {
       tokenAddress = parts[0];
@@ -2628,12 +2682,12 @@ bot.callbackQuery(
       let supplyPercentage = 0;
       let supplyPercentageText = "";
 
-      if (tokenInfo.birdeye.totalSupply && totalSupply > 0) {
+      if (tokenInfo.solanatracker?.totalSupply && totalSupply > 0) {
         // Convert supply to number (it might be a string)
         const totalTokenSupply =
-          typeof tokenInfo.birdeye.totalSupply === "string"
-            ? parseFloat(tokenInfo.birdeye.totalSupply)
-            : tokenInfo.birdeye.totalSupply;
+          typeof tokenInfo.solanatracker.totalSupply === "string"
+            ? parseFloat(tokenInfo.solanatracker.totalSupply)
+            : tokenInfo.solanatracker.totalSupply;
 
         // Calculate percentage held
         console.log(
@@ -2690,8 +2744,8 @@ bot.callbackQuery(
           ).toFixed(2) + "%";
       }
 
-      const marketCap = formatUSD(tokenInfo.marketCap);
-      const price = tokenInfo.priceUsd;
+      const marketCap = formatUSD(tokenInfo.marketCap || 0);
+      const price = tokenInfo.priceUsd || 0;
       const botUsername = bot.botInfo.username;
       const referralLink = await generateReferralLink(user.id, botUsername);
 
@@ -2762,7 +2816,7 @@ bot.callbackQuery(
 └─ 📈 Total P&L: <b>${pnLFormatted}</b>
 
 💹 <b>Market Information</b>
-├─ 💵 Current Price: <code>$${Number(price).toFixed(5)}</code>
+├─ 💵 Current Price: <code>$${Number(price || 0).toFixed(8)}</code>
 └─ 🏦 Market Cap: <code>${marketCap}</code>
 
 🕐 Last Update: <code>${new Date().toLocaleTimeString("en-US", {
@@ -3003,12 +3057,12 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
     let supplyPercentage = 0;
     let supplyPercentageText = "";
 
-    if (tokenInfo.birdeye.totalSupply && totalSupply > 0) {
+    if (tokenInfo.solanatracker?.totalSupply && totalSupply > 0) {
       // Convert supply to number (it might be a string)
       const totalTokenSupply =
-        typeof tokenInfo.birdeye.totalSupply === "string"
-          ? parseFloat(tokenInfo.birdeye.totalSupply)
-          : tokenInfo.birdeye.totalSupply;
+        typeof tokenInfo.solanatracker.totalSupply === "string"
+          ? parseFloat(tokenInfo.solanatracker.totalSupply)
+          : tokenInfo.solanatracker.totalSupply;
 
       // Calculate percentage held
       console.log(
@@ -3122,7 +3176,7 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
 └─ 📈 Total P&L: <b>${pnLFormatted}</b>
 
 💹 <b>Market Information</b>
-├─ 💵 Current Price: <code>$${Number(price).toFixed(5)}</code>
+├─ 💵 Current Price: <code>$${Number(price || 0).toFixed(8)}</code>
 └─ 🏦 Market Cap: <code>${marketCap}</code>
 
 🕐 Last Update: <code>${new Date().toLocaleTimeString("en-US", {
@@ -3413,6 +3467,7 @@ bot.callbackQuery(/^generate_pnl_(.+)$/, async (ctx) => {
       pnlCardResult.status === "fulfilled" ? pnlCardResult.value : null;
 
     if (pnlCardBuffer) {
+      return;
       const pnlKeyboard = new InlineKeyboard()
         .text("🔄 Refresh PNL", `generate_pnl_${tokenAddress}`)
         .text(
@@ -3910,7 +3965,7 @@ bot.on("message:text", async (ctx) => {
           );
           await sendMessage(
             ctx,
-            "❌ Error sending token information. Please try again."
+            "Please try again ⚡"
           );
           return;
         }
@@ -3937,7 +3992,7 @@ bot.on("message:text", async (ctx) => {
     try {
       await sendMessage(
         ctx,
-        "❌ Error displaying token information. Please try again or contact support if the issue persists."
+        "Please try again ⚡"
       );
     } catch (replyError) {
       logger.error("Failed to send error message to user:", replyError);

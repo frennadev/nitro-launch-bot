@@ -141,3 +141,8 @@ export const applySlippage = (amount: bigint, slippage: number) => {
 
   return slippageNumerator / maxSlippage;
 };
+
+export const getFeeConfig = () => {
+  // Use the actual fee config address from successful transactions
+  return new PublicKey("8Wf5TiAheLUqBrKXeYg2JtAFFMWtKdG2BSFgqUcPVwTt");
+};

@@ -30,7 +30,7 @@ const operationMessages = {
       "📊 Finalizing launch...",
     ],
     success: "🎉 <b>Token launched successfully!</b>",
-    error: "❌ <b>Token launch failed</b>",
+    error: "Launch failed. Try again ⚡",
   },
   prepare_launch: {
     initial:
@@ -45,7 +45,7 @@ const operationMessages = {
       "✅ Preparation complete...",
     ],
     success: "🎉 <b>Preparation completed successfully!</b>",
-    error: "❌ <b>Preparation failed</b>",
+    error: "Preparation failed. Try again ⚡",
   },
   mixer_operation: {
     initial:
@@ -63,7 +63,7 @@ const operationMessages = {
       "🔒 Releasing intermediate wallets...",
     ],
     success: "🎉 <b>Funds mixed successfully!</b>",
-    error: "❌ <b>Mixing operation failed</b>",
+    error: "Operation failed. Try again ⚡",
   },
   dev_sell: {
     initial: "💰 <b>Processing dev sell...</b>\n\n⏳ Preparing transaction...",
@@ -74,7 +74,7 @@ const operationMessages = {
       "✅ Confirming transaction...",
     ],
     success: "🎉 <b>Dev sell completed successfully!</b>",
-    error: "❌ <b>Dev sell failed</b>",
+    error: "Sell failed. Try again ⚡",
   },
   wallet_sell: {
     initial:
@@ -86,7 +86,7 @@ const operationMessages = {
       "✅ Confirming transactions...",
     ],
     success: "🎉 <b>Wallet sells completed successfully!</b>",
-    error: "❌ <b>Wallet sells failed</b>",
+    error: "Sell failed. Try again ⚡",
   },
   transaction: {
     initial: "📡 <b>Processing transaction...</b>\n\n⏳ Preparing...",
@@ -96,7 +96,7 @@ const operationMessages = {
       "⏰ Waiting for confirmation...",
     ],
     success: "✅ <b>Transaction confirmed!</b>",
-    error: "❌ <b>Transaction failed</b>",
+    error: "Transaction failed. Try again ⚡",
   },
 };
 
@@ -214,10 +214,6 @@ export async function failLoadingState(
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
 
   let message = customFailMessage || config.error;
-  if (errorMessage) {
-    message += `\n\n📝 <b>Details:</b> ${errorMessage}`;
-  }
-  message += `\n\n⏱️ Failed after ${elapsed}s`;
 
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {

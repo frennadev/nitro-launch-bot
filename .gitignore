@@ -225,3 +225,4 @@ test-pumpswap-new-token.ts
 check-new-token-balance.ts
 sell-new-token.ts
 debug-new-sell.ts
+pumpfun-marketcap/
