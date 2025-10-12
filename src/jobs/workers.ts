@@ -53,6 +53,7 @@ import { createToken } from "../backend/functions";
 import { createBonkToken } from "../blockchain/letsbonk/integrated-token-creator";
 import axios from "axios";
 import { UserModel } from "../backend/models";
+import { safeObjectId } from "../backend/utils";
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
@@ -728,8 +729,19 @@ export const createTokenMetadataWorker = new Worker<CreateTokenMetadataJob>(
       logger.info("[jobs]: create Job starting...");
       logger.info("[jobs-create]: Job Data", data);
 
+      // Build query conditions - only include fundingWallet if userWalletAddress is not empty
+      const queryConditions: Array<
+        { _id?: string } | { fundingWallet?: import("mongoose").Types.ObjectId }
+      > = [{ _id: userId }];
+
+      // Only add fundingWallet condition if userWalletAddress is provided and not empty
+      const safeWalletId = safeObjectId(userWalletAddress);
+      if (safeWalletId) {
+        queryConditions.push({ fundingWallet: safeWalletId });
+      }
+
       const user = await UserModel.findOne({
-        $or: [{ _id: userId }, { fundingWallet: userWalletAddress }],
+        $or: queryConditions,
       }).populate("fundingWallet");
       if (!user) {
         throw new Error("User not found");

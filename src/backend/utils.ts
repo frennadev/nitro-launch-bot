@@ -15,6 +15,7 @@ import {
 } from "./models";
 import { redisClient } from "../jobs/db";
 import { DexscreenerTokenResponse } from "./types";
+import { Types } from "mongoose";
 
 export function encryptPrivateKey(privateKey: string): string {
   const SECRET_KEY = crypto.scryptSync(
@@ -64,15 +65,33 @@ export function decryptPrivateKey(encryptedPrivateKey: string): string {
   }
 }
 
-export async function uploadFileToPinata(file: ArrayBuffer, fileName: string) {
+/**
+ * Safely converts a string to ObjectId, returns null if string is empty or invalid
+ */
+export function safeObjectId(
+  value: string | null | undefined
+): Types.ObjectId | null {
+  if (!value || value.trim() === "") {
+    return null;
+  }
+
   try {
-    const blob = new Blob([file]);
-    const fileObj = new File([blob], fileName);
+    return new Types.ObjectId(value);
+  } catch (error) {
+    // If the string is not a valid ObjectId, return null
+    return null;
+  }
+}
+
+export async function uploadFileToPinata(content: Buffer, name: string) {
+  try {
+    const blob = new Blob([content]);
+    const fileObj = new File([blob], name);
     const formData = new FormData();
     formData.append("file", fileObj);
 
     const metadata = JSON.stringify({
-      name: fileName,
+      name: name,
     });
     formData.append("pinataMetadata", metadata);
 
@@ -156,12 +175,14 @@ export async function editMessage(
 // Secondary RPC endpoints with lower rate limits (10 RPS each)
 const secondaryRPCs = [
   "https://mainnet.helius-rpc.com/?api-key=4ffb5d20-a934-4295-ac88-d7c4ac02b617",
-  "https://mainnet.helius-rpc.com/?api-key=27b2dcfa-53bf-4073-8e19-92e3a1396e48", 
-  "https://mainnet.helius-rpc.com/?api-key=8ff87842-d91e-4825-b659-c928f80b1f4f"
+  "https://mainnet.helius-rpc.com/?api-key=27b2dcfa-53bf-4073-8e19-92e3a1396e48",
+  "https://mainnet.helius-rpc.com/?api-key=8ff87842-d91e-4825-b659-c928f80b1f4f",
 ];
 
 // Create connections for secondary RPCs
-const secondaryConnections = secondaryRPCs.map(rpc => new Connection(rpc, "confirmed"));
+const secondaryConnections = secondaryRPCs.map(
+  (rpc) => new Connection(rpc, "confirmed")
+);
 
 export async function getTokenBalance(
   tokenAddress: string,
@@ -195,11 +216,13 @@ export async function getTokenBalance(
     for (let i = 0; i < connectionsToTry.length; i++) {
       const currentConnection = connectionsToTry[i];
       const isSecondary = i > 0;
-      
+
       if (isSecondary) {
-        console.log(`[getTokenBalance] Trying secondary RPC ${i}/${secondaryRPCs.length} for rate limit relief`);
+        console.log(
+          `[getTokenBalance] Trying secondary RPC ${i}/${secondaryRPCs.length} for rate limit relief`
+        );
         // Add small delay for secondary RPCs to respect 10 RPS limit
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       }
 
       try {
@@ -221,10 +244,14 @@ export async function getTokenBalance(
               `[getTokenBalance] Invalid parameters for token ${tokenAddress}`
             );
             return 0;
-          } else if (rpcError.message?.includes("429") || rpcError.message?.includes("Too Many Requests") || rpcError.message?.includes("max usage reached")) {
+          } else if (
+            rpcError.message?.includes("429") ||
+            rpcError.message?.includes("Too Many Requests") ||
+            rpcError.message?.includes("max usage reached")
+          ) {
             // Rate limiting error - try next RPC endpoint
             console.warn(
-              `[getTokenBalance] Rate limit hit on ${isSecondary ? 'secondary' : 'primary'} RPC, trying next endpoint...`
+              `[getTokenBalance] Rate limit hit on ${isSecondary ? "secondary" : "primary"} RPC, trying next endpoint...`
             );
             lastError = rpcError;
             continue; // Try next RPC endpoint
@@ -235,13 +262,18 @@ export async function getTokenBalance(
             );
             // Try alternative approach for Token-2022 or other programs
             try {
-              const { TOKEN_2022_PROGRAM_ID } = await import("@solana/spl-token");
-              resp = await currentConnection.getParsedTokenAccountsByOwner(owner, {
-                mint,
-                programId: TOKEN_2022_PROGRAM_ID,
-              });
+              const { TOKEN_2022_PROGRAM_ID } = await import(
+                "@solana/spl-token"
+              );
+              resp = await currentConnection.getParsedTokenAccountsByOwner(
+                owner,
+                {
+                  mint,
+                  programId: TOKEN_2022_PROGRAM_ID,
+                }
+              );
               console.log(
-                `[getTokenBalance] Successfully fetched using Token-2022 program on ${isSecondary ? 'secondary' : 'primary'} RPC`
+                `[getTokenBalance] Successfully fetched using Token-2022 program on ${isSecondary ? "secondary" : "primary"} RPC`
               );
             } catch (token2022Error) {
               console.error(
@@ -256,14 +288,14 @@ export async function getTokenBalance(
 
         if (!resp || !resp.value) {
           console.log(
-            `[getTokenBalance] No response received for token ${tokenAddress} on ${isSecondary ? 'secondary' : 'primary'} RPC`
+            `[getTokenBalance] No response received for token ${tokenAddress} on ${isSecondary ? "secondary" : "primary"} RPC`
           );
           lastError = new Error("No response received");
           continue; // Try next RPC endpoint
         }
 
         console.log(
-          `[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress} on ${isSecondary ? 'secondary' : 'primary'} RPC`
+          `[getTokenBalance] Found ${resp.value.length} token accounts for wallet ${walletAddress} on ${isSecondary ? "secondary" : "primary"} RPC`
         );
 
         if (resp.value.length === 0) {
@@ -276,7 +308,8 @@ export async function getTokenBalance(
         const totalBalance = resp.value.reduce((sum, { account }) => {
           try {
             // Use raw amount (not uiAmount) for precise token calculations
-            const rawAmount = account.data.parsed.info.tokenAmount.amount || "0";
+            const rawAmount =
+              account.data.parsed.info.tokenAmount.amount || "0";
             const amt = parseInt(rawAmount, 10);
             console.log(
               `[getTokenBalance] Account balance: ${amt} raw tokens (${account.data.parsed.info.tokenAmount.uiAmount} UI amount)`
@@ -292,13 +325,12 @@ export async function getTokenBalance(
         }, 0);
 
         console.log(
-          `[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens (success on ${isSecondary ? 'secondary' : 'primary'} RPC)`
+          `[getTokenBalance] Total balance for ${walletAddress}: ${totalBalance} tokens (success on ${isSecondary ? "secondary" : "primary"} RPC)`
         );
         return totalBalance;
-
       } catch (connectionError: any) {
         console.error(
-          `[getTokenBalance] Connection error on ${isSecondary ? 'secondary' : 'primary'} RPC:`,
+          `[getTokenBalance] Connection error on ${isSecondary ? "secondary" : "primary"} RPC:`,
           connectionError
         );
         lastError = connectionError;
@@ -312,7 +344,6 @@ export async function getTokenBalance(
       lastError
     );
     return 0;
-
   } catch (error) {
     console.error(
       `[getTokenBalance] Unexpected error for token ${tokenAddress}:`,
@@ -354,8 +385,12 @@ export const getTokenInfo = async (tokenAddress: string) => {
     }
 
     // First try SolanaTracker API
-    console.log(`[getTokenInfo] Fetching from SolanaTracker API for ${tokenAddress}`);
-    const { SolanaTrackerService } = await import('../services/token/solana-tracker-service');
+    console.log(
+      `[getTokenInfo] Fetching from SolanaTracker API for ${tokenAddress}`
+    );
+    const { SolanaTrackerService } = await import(
+      "../services/token/solana-tracker-service"
+    );
     const solanaTracker = new SolanaTrackerService();
     const solanaTrackerData = await solanaTracker.getTokenInfo(tokenAddress);
 
@@ -381,7 +416,9 @@ export const getTokenInfo = async (tokenAddress: string) => {
         priceNative: solanaTrackerData.price
           ? (solanaTrackerData.price / 240).toString()
           : "0", // Rough SOL price estimate
-        priceUsd: solanaTrackerData.price ? solanaTrackerData.price.toString() : "0",
+        priceUsd: solanaTrackerData.price
+          ? solanaTrackerData.price.toString()
+          : "0",
         marketCap: Number(solanaTrackerData.marketCap) || 0,
         liquidity: {
           usd: solanaTrackerData.liquidity || 0,
@@ -1018,29 +1055,38 @@ export async function archiveAddress(
 export const getCurrentSolPrice = async (): Promise<number> => {
   try {
     // Try Helius DAS API first (consistent with our market cap services)
-    const heliusRpcUrl = process.env.HELIUS_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7';
-    const SOL_MINT = 'So11111111111111111111111111111111111111112';
-    
-    const heliusResponse = await axios.post(heliusRpcUrl, {
-      jsonrpc: '2.0',
-      id: 'sol-price-request',
-      method: 'getAsset',
-      params: {
-        id: SOL_MINT,
-        displayOptions: {
-          showFungible: true
-        }
-      }
-    }, {
-      timeout: 5000,
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
+    const heliusRpcUrl =
+      process.env.HELIUS_RPC_URL ||
+      "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7";
+    const SOL_MINT = "So11111111111111111111111111111111111111112";
 
-    const heliusPrice = heliusResponse.data?.result?.token_info?.price_info?.price_per_token;
+    const heliusResponse = await axios.post(
+      heliusRpcUrl,
+      {
+        jsonrpc: "2.0",
+        id: "sol-price-request",
+        method: "getAsset",
+        params: {
+          id: SOL_MINT,
+          displayOptions: {
+            showFungible: true,
+          },
+        },
+      },
+      {
+        timeout: 5000,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const heliusPrice =
+      heliusResponse.data?.result?.token_info?.price_info?.price_per_token;
     if (heliusPrice && heliusPrice > 0) {
-      console.log(`[getCurrentSolPrice] Current SOL price (Helius): $${heliusPrice}`);
+      console.log(
+        `[getCurrentSolPrice] Current SOL price (Helius): $${heliusPrice}`
+      );
       return heliusPrice;
     }
   } catch (heliusError: any) {
@@ -1058,7 +1104,9 @@ export const getCurrentSolPrice = async (): Promise<number> => {
 
     const price = response.data?.solana?.usd;
     if (price && price > 0) {
-      console.log(`[getCurrentSolPrice] Current SOL price (CoinGecko): $${price}`);
+      console.log(
+        `[getCurrentSolPrice] Current SOL price (CoinGecko): $${price}`
+      );
       return price;
     }
 
@@ -1077,7 +1125,9 @@ export const getCurrentSolPrice = async (): Promise<number> => {
         }
       );
 
-      const price = jupiterResponse.data?.data?.So11111111111111111111111111111111111111112?.price;
+      const price =
+        jupiterResponse.data?.data?.So11111111111111111111111111111111111111112
+          ?.price;
       if (price && price > 0) {
         console.log(
           `[getCurrentSolPrice] Current SOL price (Jupiter fallback): $${price}`
