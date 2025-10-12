@@ -142,3 +142,9 @@ export async function fetchTokenMetadata(
     return null;
   }
 }
+
+const tokenMetadata = await fetchTokenMetadata(
+  new PublicKey("92M6JrV1TZYxmW85zin2g2q9fuNaXxsS5YQYfEeyx777")
+);
+
+console.log("Token Metadata:", tokenMetadata);

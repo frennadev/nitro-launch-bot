@@ -18,15 +18,31 @@ import {
   SELL_DISCRIMINATOR,
   TOKEN_METADATA_PROGRAM,
 } from "./constants";
-import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 import { BuyCodec, CreateCodec, SellCodec } from "./codecs";
 
 // Maestro Bot constants
-const MAESTRO_BOT_PROGRAM = new PublicKey("5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB");
-const MAESTRO_FEE_ACCOUNT = new PublicKey("5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB");
+const MAESTRO_BOT_PROGRAM = new PublicKey(
+  "5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB"
+);
+const MAESTRO_FEE_ACCOUNT = new PublicKey(
+  "5L2QKqDn5ukJSWGyqR4RPvFvwnBabKWqAqMzH4heaQNB"
+);
 
-export const tokenCreateInstruction = (mint: Keypair, dev: Keypair, name: string, symbol: string, uri: string) => {
-  const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint.publicKey);
+export const tokenCreateInstruction = (
+  mint: Keypair,
+  dev: Keypair,
+  name: string,
+  symbol: string,
+  uri: string
+) => {
+  const { bondingCurve, associatedBondingCurve } = getBondingCurve(
+    mint.publicKey
+  );
   const metadata = getMetadataPDA(mint.publicKey);
   const keys: AccountMeta[] = [
     { pubkey: mint.publicKey, isWritable: true, isSigner: true },
@@ -150,7 +166,9 @@ export const sellInstruction = (
 ) => {
   const { bondingCurve, associatedBondingCurve } = getBondingCurve(mint);
   const sellerAta = getAssociatedTokenAddressSync(mint, seller);
+  console.log("Seller ATA:", sellerAta.toString());
   const creatorVault = getCreatorVault(tokenCreator);
+  console.log("Creator Vault:", creatorVault.toString());
   const keys: AccountMeta[] = [
     { pubkey: PUMPFUN_GLOBAL_SETTINGS, isSigner: false, isWritable: false },
     { pubkey: PUMPFUN_FEE_ACCOUNT, isSigner: false, isWritable: true },
@@ -215,7 +233,13 @@ export const maestroMarketOrderBuyInstructions = (
   const instructions: TransactionInstruction[] = [];
 
   // 1. Create the main market order buy instruction (same as regular market order buy)
-  const marketBuyIx = marketOrderBuyInstruction(mint, tokenCreator, buyer, exactSolAmount, maxTokenAmount);
+  const marketBuyIx = marketOrderBuyInstruction(
+    mint,
+    tokenCreator,
+    buyer,
+    exactSolAmount,
+    maxTokenAmount
+  );
   instructions.push(marketBuyIx);
 
   // 2. Add Maestro fee transfer to mimic their transaction structure
@@ -233,7 +257,8 @@ export const userVolumeAccumulator = (user: PublicKey) => {
   const [vault, _] = PublicKey.findProgramAddressSync(
     [
       Buffer.from([
-        117, 115, 101, 114, 95, 118, 111, 108, 117, 109, 101, 95, 97, 99, 99, 117, 109, 117, 108, 97, 116, 111, 114,
+        117, 115, 101, 114, 95, 118, 111, 108, 117, 109, 101, 95, 97, 99, 99,
+        117, 109, 117, 108, 97, 116, 111, 114,
       ]),
       user.toBuffer(),
     ],
@@ -246,8 +271,8 @@ export const globalVolumeAccumulator = () => {
   const [vault, _] = PublicKey.findProgramAddressSync(
     [
       Buffer.from([
-        103, 108, 111, 98, 97, 108, 95, 118, 111, 108, 117, 109, 101, 95, 97, 99, 99, 117, 109, 117, 108, 97, 116, 111,
-        114,
+        103, 108, 111, 98, 97, 108, 95, 118, 111, 108, 117, 109, 101, 95, 97,
+        99, 99, 117, 109, 117, 108, 97, 116, 111, 114,
       ]),
     ],
     PUMPFUN_PROGRAM
