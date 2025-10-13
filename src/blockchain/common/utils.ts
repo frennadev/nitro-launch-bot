@@ -9,7 +9,11 @@ import bs58 from "bs58";
 import type { TransactionSetup } from "./types";
 import { connection } from "./connection.ts";
 import { logger } from "./logger.ts";
-import { enhancedTransactionSender, TransactionType } from "./enhanced-transaction-sender";
+import {
+  enhancedTransactionSender,
+  TransactionType,
+} from "./enhanced-transaction-sender";
+import { decryptWalletKey, isEncryptedFormat } from "./wallet-decryption";
 
 export const generateKeypairs = (count: number) => {
   const keys = [];
@@ -23,29 +27,114 @@ export const generateKeypairs = (count: number) => {
   return keys;
 };
 
-export function secretKeyToKeypair(secretKey: string) {
-  if (!secretKey || typeof secretKey !== 'string') {
-    throw new Error('Invalid secret key: key must be a non-empty string');
+/**
+ * Checks if a string is in encrypted format (contains ':' separator)
+ */
+function isEncryptedKey(key: string): boolean {
+  return isEncryptedFormat(key);
+}
+
+/**
+ * Checks if a string is a valid base58 encoded key
+ */
+function isBase58Key(key: string): boolean {
+  try {
+    // Try to decode as base58 - if it fails, it's not base58
+    const decoded = bs58.decode(key);
+    // Solana private keys should be 64 bytes when decoded
+    return decoded.length === 64;
+  } catch {
+    return false;
   }
-  
+}
+
+export async function secretKeyToKeypairAsync(secretKey: string) {
+  if (!secretKey || typeof secretKey !== "string") {
+    throw new Error("Invalid secret key: key must be a non-empty string");
+  }
+
   // Remove any whitespace
   const cleanKey = secretKey.trim();
-  
+
   if (cleanKey.length === 0) {
-    throw new Error('Invalid secret key: key cannot be empty');
+    throw new Error("Invalid secret key: key cannot be empty");
   }
-  
+
+  let finalKey = cleanKey;
+
+  // Check if the key is encrypted and needs decryption
+  if (isEncryptedKey(cleanKey)) {
+    try {
+      // Import decryption function dynamically to avoid circular dependencies
+      const { decryptWalletKey } = await import("./wallet-decryption");
+      finalKey = decryptWalletKey(cleanKey);
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to decrypt private key: ${errorMessage}`);
+    }
+  }
+
+  // Verify the final key is in base58 format
+  if (!isBase58Key(finalKey)) {
+    throw new Error(
+      `Invalid secret key format: Key is not in valid base58 format`
+    );
+  }
+
   try {
-    return Keypair.fromSecretKey(bs58.decode(cleanKey));
-  } catch (error: any) {
-    throw new Error(`Invalid secret key format: ${error.message}`);
+    return Keypair.fromSecretKey(bs58.decode(finalKey));
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid secret key format: ${errorMessage}`);
+  }
+}
+
+export function secretKeyToKeypair(secretKey: string) {
+  if (!secretKey || typeof secretKey !== "string") {
+    throw new Error("Invalid secret key: key must be a non-empty string");
+  }
+
+  // Remove any whitespace
+  const cleanKey = secretKey.trim();
+
+  if (cleanKey.length === 0) {
+    throw new Error("Invalid secret key: key cannot be empty");
+  }
+
+  let finalKey = cleanKey;
+
+  // Check if the key is encrypted and needs decryption
+  if (isEncryptedKey(cleanKey)) {
+    try {
+      // Use the local decryption utility
+      finalKey = decryptWalletKey(cleanKey);
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to decrypt private key: ${errorMessage}`);
+    }
+  }
+
+  // Verify the final key is in base58 format
+  if (!isBase58Key(finalKey)) {
+    throw new Error(
+      `Invalid secret key format: Key is not in valid base58 format`
+    );
+  }
+
+  try {
+    return Keypair.fromSecretKey(bs58.decode(finalKey));
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid secret key format: ${errorMessage}`);
   }
 }
 
 export function randomizeDistribution(
   totalAmount: number,
   length: number,
-  factor: number = 0.5,
+  factor: number = 0.5
 ) {
   const initialValue = totalAmount / length;
   const distribution = Array(length).fill(initialValue);
@@ -85,19 +174,26 @@ export const sendSignedTransaction = async (
   transactionType?: TransactionType
 ) => {
   try {
-    const signature = await enhancedTransactionSender.sendSignedTransaction(txn, {
-      transactionType,
-      maxRetries: 3,
-      skipPreflight: true,
-    });
+    const signature = await enhancedTransactionSender.sendSignedTransaction(
+      txn,
+      {
+        transactionType,
+        maxRetries: 3,
+        skipPreflight: true,
+      }
+    );
     return signature;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorLogs =
+      (error as { getLogs?: () => string[] })?.getLogs?.() ||
+      "No logs available";
     logger.error(
       "[send-signed-tx]; An Error Occurred While Sending Transaction",
       {
-        logs: error.getLogs?.() || "No logs available",
-        message: error.message,
-      },
+        logs: errorLogs,
+        message: errorMessage,
+      }
     );
     throw error;
   }
@@ -107,15 +203,18 @@ export const sendTransaction = async (
   signedTx: VersionedTransaction,
   setup: TransactionSetup,
   isRetry: boolean = false,
-  transactionType?: TransactionType,
+  transactionType?: TransactionType
 ) => {
   try {
     if (isRetry) {
-      const signature = await enhancedTransactionSender.retryTransaction(setup, {
-        transactionType,
-        maxRetries: 3,
-        skipPreflight: true,
-      });
+      const signature = await enhancedTransactionSender.retryTransaction(
+        setup,
+        {
+          transactionType,
+          maxRetries: 3,
+          skipPreflight: true,
+        }
+      );
       return signature;
     } else {
       const signature = await sendSignedTransaction(signedTx, transactionType);
@@ -124,7 +223,7 @@ export const sendTransaction = async (
   } catch (error) {
     logger.error(
       "[send-transaction]: Error occurred while sending transaction",
-      error,
+      error
     );
     return null;
   }
@@ -136,21 +235,21 @@ export const confirmTransaction = async (
   timeout: number = 5000, // Balanced timeout: 5 seconds
   pollInterval: number = 500, // Balanced poll interval: 500ms
   searchTransactionHistory: boolean = false,
-  logIdentifier: string,
+  logIdentifier: string
 ) => {
   const start = Date.now();
 
   while (Date.now() - start < timeout) {
     const { value: statuses } = await connection.getSignatureStatuses(
       [signature],
-      { searchTransactionHistory },
+      { searchTransactionHistory }
     );
 
     if (!statuses || statuses.length === 0) {
       logger.info(`[${logIdentifier}]: Failed to get signature status`);
       if (Date.now() - start > timeout / 2) {
         logger.info(
-          `[${logIdentifier}]: Early termination because signature was not found on chain`,
+          `[${logIdentifier}]: Early termination because signature was not found on chain`
         );
         return false;
       }
@@ -166,7 +265,7 @@ export const confirmTransaction = async (
 
     if (status.err) {
       logger.error(
-        `[${logIdentifier}]: Transaction with signature ${signature} failed with error ${JSON.stringify(status.err)}`,
+        `[${logIdentifier}]: Transaction with signature ${signature} failed with error ${JSON.stringify(status.err)}`
       );
       return false;
     }
@@ -185,7 +284,7 @@ export const confirmTransaction = async (
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
   logger.info(
-    `[${logIdentifier}]: Transaction confirmation timeout after ${timeout}ms`,
+    `[${logIdentifier}]: Transaction confirmation timeout after ${timeout}ms`
   );
   return false;
 };
@@ -206,32 +305,40 @@ export const sendAndConfirmTransactionWithRetry = async (
   let success = false;
   let signature: string | null = null;
   let retryCount = 0;
-  
+
   while (retryCount < maxRetries && !success) {
     let currentTx = signedTx;
-    
+
     // Apply smart priority fees if enabled
     if (options?.useSmartPriorityFees && retryCount > 0) {
-      const { 
-        createSmartPriorityFeeInstruction, 
+      const {
+        createSmartPriorityFeeInstruction,
         getTransactionTypePriorityConfig,
-        logPriorityFeeInfo 
+        logPriorityFeeInfo,
       } = await import("./priority-fees");
-      
-      const config = options.transactionType 
+
+      const config = options.transactionType
         ? getTransactionTypePriorityConfig(options.transactionType)
-        : { baseFee: options.basePriorityFee || 1_000_000, retryMultiplier: 1.5, maxFee: 10_000_000, minFee: 100_000 };
-      
-      const smartPriorityFeeIx = createSmartPriorityFeeInstruction(retryCount, config);
+        : {
+            baseFee: options.basePriorityFee || 1_000_000,
+            retryMultiplier: 1.5,
+            maxFee: 10_000_000,
+            minFee: 100_000,
+          };
+
+      const smartPriorityFeeIx = createSmartPriorityFeeInstruction(
+        retryCount,
+        config
+      );
       const priorityFee = smartPriorityFeeIx.data.readUInt32LE(4); // Extract microLamports from instruction data
-      
+
       logPriorityFeeInfo(
         options.transactionType || "unknown",
         retryCount,
         priorityFee,
         logIdentifier
       );
-      
+
       // Rebuild transaction with new priority fee
       const blockhash = await connection.getLatestBlockhash("confirmed");
       const newInstructions = [smartPriorityFeeIx, ...setup.instructions];
@@ -240,36 +347,36 @@ export const sendAndConfirmTransactionWithRetry = async (
         payerKey: setup.payer,
         recentBlockhash: blockhash.blockhash,
       }).compileToV0Message();
-      
+
       currentTx = new VersionedTransaction(message);
       currentTx.sign(setup.signers);
     }
-    
+
     signature = await sendTransaction(currentTx, setup, retryCount > 0);
     if (!signature) {
       logger.error(`[${logIdentifier}]: Failed to send transaction`);
       break;
     }
-    
+
     success = await confirmTransaction(
       signature,
       "confirmed",
       confirmationTimeout,
       500, // Balanced poll interval: 500ms
       false,
-      logIdentifier,
+      logIdentifier
     );
-    
+
     if (!success) {
       logger.error(
-        `[${logIdentifier}]: transaction confirmation failed❌. Retrying in ${retryInterval} ms...`,
+        `[${logIdentifier}]: transaction confirmation failed❌. Retrying in ${retryInterval} ms...`
       );
       retryCount += 1;
       await randomizedSleep(retryInterval, retryInterval * 1.5);
       continue;
     }
   }
-  
+
   return {
     success,
     signature,
@@ -299,14 +406,14 @@ export function formatMilliseconds(milliseconds: number): string {
   return formattedTime.trim();
 }
 
-
 export const quoteSell = (
   tokenAmountIn: bigint,
   virtualTokenReserves: bigint,
   virtualSolReserves: bigint,
   realTokenReserves: bigint
 ) => {
-  const tokenIn = tokenAmountIn > realTokenReserves ? realTokenReserves : tokenAmountIn;
+  const tokenIn =
+    tokenAmountIn > realTokenReserves ? realTokenReserves : tokenAmountIn;
   const k = virtualSolReserves * virtualTokenReserves;
   const newVirtualTokenReserves = virtualTokenReserves + tokenIn;
   const newVirtualSolReserves = k / newVirtualTokenReserves + BigInt(1);
@@ -319,7 +426,8 @@ export const applySlippage = (amount: bigint, slippage: number) => {
   const SlippageAdjustment = BigInt(1);
   const Big10000 = BigInt(10000);
 
-  let slippageBP = (BigInt(Math.floor(100 * slippage)) + BigInt(25)) * SlippageAdjustment;
+  let slippageBP =
+    (BigInt(Math.floor(100 * slippage)) + BigInt(25)) * SlippageAdjustment;
   const maxSlippage = Big10000 * SlippageAdjustment;
 
   if (slippageBP > maxSlippage) {
