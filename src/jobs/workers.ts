@@ -47,6 +47,8 @@ import {
   completeLoadingState,
   failLoadingState,
   startMixerHeartbeat,
+  createBackgroundLoadingState,
+  hasLoadingState,
 } from "../bot/loading";
 import { Keypair } from "@solana/web3.js";
 import { connection } from "../service/config";
@@ -62,7 +64,7 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `super-${data.userChatId}-token_launch-${data.tokenAddress}`;
+    const loadingKey = `${data.userChatId}-token_launch-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Token Launch Job starting...");
@@ -175,7 +177,7 @@ export const sellDevWorker = new Worker<SellDevJob>(
   devSellQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `super-${data.userChatId}-dev_sell-${data.tokenAddress}`;
+    const loadingKey = `${data.userChatId}-dev_sell-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Sell Dev Job starting...");
@@ -353,7 +355,7 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
   walletSellQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `super-${data.userChatId}-wallet_sell-${data.tokenAddress}`;
+    const loadingKey = `${data.userChatId}-wallet_sell-${data.tokenAddress}`;
     const logIdentifier = `super-jobs-sell-wallet-${data.tokenAddress}`;
 
     try {
@@ -596,11 +598,20 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
   prepareLaunchQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `super-${data.userChatId}-prepare_launch-${data.tokenAddress}`;
+    const loadingKey = `${data.userChatId}-prepare_launch-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Prepare Launch Job starting...");
       logger.info("[jobs-prepare-launch]: Job Data", data);
+
+      // Create loading state if it doesn't exist (for background jobs)
+      if (!hasLoadingState(loadingKey)) {
+        await createBackgroundLoadingState(
+          data.userChatId,
+          "prepare_launch",
+          data.tokenAddress
+        );
+      }
 
       // Update loading state - Phase 0: Validating parameters
       await updateLoadingState(loadingKey, 0);
@@ -813,6 +824,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
     } = job.data;
 
     let actualTokenAddress: string | undefined;
+    let userChatId;
 
     try {
       logger.info("[launchDappToken]: Job starting...", data);
@@ -823,7 +835,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       if (!user) {
         throw new Error("User not found");
       }
-      const userChatId = user?.telegramId;
+      userChatId = user?.telegramId;
       console.log(
         "[launchDappToken]: Found user",
         JSON.stringify(user, null, 2)
@@ -1073,7 +1085,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
           // Execute PumpFun token launch through staging system
           const pumpResult = await enqueuePrepareTokenLaunch(
             user.id,
-            userChatId, // Telegram chat ID for notifications
+            +userChatId, // Telegram chat ID for notifications
             actualTokenAddress,
             fundingWallet.privateKey,
             devWallet.privateKey,
@@ -1126,7 +1138,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       if (userChatId && result.success) {
         try {
           await sendLaunchSuccessNotification(
-            userChatId,
+            +userChatId,
             actualTokenAddress,
             tokenName,
             tokenSymbol
@@ -1161,10 +1173,10 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       logger.error("[launchDappToken]: Error occurred during launch", error);
 
       // Send failure notification if userChatId is available
-      if (data.userChatId) {
+      if (userChatId) {
         try {
           await sendLaunchFailureNotification(
-            data.userChatId,
+            userChatId,
             actualTokenAddress || data.tokenId,
             data.tokenName || "Unknown Token",
             errorMessage
@@ -1198,11 +1210,20 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
   executeLaunchQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `super-${data.userChatId}-execute_launch-${data.tokenAddress}`;
+    const loadingKey = `${data.userChatId}-execute_launch-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Execute Launch Job starting...");
       logger.info("[jobs-execute-launch]: Job Data", data);
+
+      // Create loading state if it doesn't exist (for background jobs)
+      if (!hasLoadingState(loadingKey)) {
+        await createBackgroundLoadingState(
+          data.userChatId,
+          "execute_launch",
+          data.tokenAddress
+        );
+      }
 
       // Update loading state - Phase 0: Starting execution
       await updateLoadingState(loadingKey, 0);

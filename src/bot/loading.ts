@@ -98,6 +98,17 @@ const operationMessages = {
     success: "✅ <b>Transaction confirmed!</b>",
     error: "Transaction failed. Try again ⚡",
   },
+  execute_launch: {
+    initial:
+      "🚀 <b>Executing token launch...</b>\n\n⏳ Starting launch execution...",
+    phases: [
+      "🔍 Starting execution phase...",
+      "💰 Processing transactions...",
+      "🏗️ Finalizing token launch...",
+    ],
+    success: "🎉 <b>Token execution completed successfully!</b>",
+    error: "Execution failed. Try again ⚡",
+  },
 };
 
 /**
@@ -129,6 +140,47 @@ export async function startLoadingState(
   startLoadingAnimation(loadingKey);
 
   return loadingKey;
+}
+
+/**
+ * Create a loading state for background jobs without Telegram context
+ */
+export async function createBackgroundLoadingState(
+  chatId: number,
+  operation: keyof typeof operationMessages,
+  identifier?: string
+): Promise<string> {
+  const loadingKey = identifier
+    ? `super-${chatId}-${operation}-${identifier}`
+    : `super-${chatId}-${operation}`;
+
+  const config = operationMessages[operation];
+
+  // Send initial message to user
+  const message = await bot.api.sendMessage(chatId, config.initial, {
+    parse_mode: "HTML",
+  });
+
+  const loadingState: LoadingState = {
+    chatId,
+    messageId: message.message_id,
+    operation,
+    startTime: Date.now(),
+  };
+
+  activeLoadingStates.set(loadingKey, loadingState);
+
+  // Start animation
+  startLoadingAnimation(loadingKey);
+
+  return loadingKey;
+}
+
+/**
+ * Check if a loading state exists
+ */
+export function hasLoadingState(loadingKey: string): boolean {
+  return activeLoadingStates.has(loadingKey);
 }
 
 /**
