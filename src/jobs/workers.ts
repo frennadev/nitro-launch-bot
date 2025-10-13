@@ -6,6 +6,7 @@ import {
   prepareLaunchQueue,
   executeLaunchQueue,
   createTokenMetadataQueue,
+  launchDappTokenQueue,
 } from "./queues";
 import type {
   LaunchTokenJob,
@@ -14,6 +15,7 @@ import type {
   SellDevJob,
   SellWalletJob,
   CreateTokenMetadataJob,
+  LaunchDappTokenJob,
 } from "./types";
 import { redisClient } from "./db";
 import {
@@ -22,9 +24,9 @@ import {
   updateTokenState,
   handleTokenLaunchFailure,
   enqueueExecuteTokenLaunch,
-  getTransactionFinancialStats,
   getTransactionStats,
   getAccurateSpendingStats,
+  getWalletBalance,
 } from "../backend/functions-main";
 import { TokenState } from "../backend/types";
 import {
@@ -37,14 +39,13 @@ import {
   executeTokenLaunch,
   prepareTokenLaunch,
 } from "../blockchain/pumpfun/launch";
-import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
+// Sell functions available but not used in launchTokenFromDappWorker
+// import { executeDevSell, executeWalletSell } from "../blockchain/pumpfun/sell";
 import { logger } from "./logger";
 import {
   updateLoadingState,
   completeLoadingState,
   failLoadingState,
-  updateMixerProgress,
-  updateMixerStatus,
   startMixerHeartbeat,
 } from "../bot/loading";
 import { Keypair } from "@solana/web3.js";
@@ -52,8 +53,10 @@ import { connection } from "../service/config";
 import { createToken } from "../backend/functions";
 import { createBonkToken } from "../blockchain/letsbonk/integrated-token-creator";
 import axios from "axios";
-import { UserModel } from "../backend/models";
-import { safeObjectId } from "../backend/utils";
+import { UserModel, WalletModel } from "../backend/models";
+import { safeObjectId, decryptPrivateKey } from "../backend/utils";
+import { env } from "../config";
+// import { LaunchDestination } from "../backend/types"; // Available but not used in current implementation
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
   tokenLaunchQueue.name,
@@ -712,7 +715,7 @@ export const createTokenMetadataWorker = new Worker<CreateTokenMetadataJob>(
   createTokenMetadataQueue.name,
   async (job) => {
     const data = job.data;
-    const loadingKey = `super-${data.userWalletAddress}-execute_launch-${data.userId}`;
+    // const loadingKey = `super-${data.userWalletAddress}-execute_launch-${data.userId}`;
     const {
       name,
       symbol,
@@ -777,6 +780,332 @@ export const createTokenMetadataWorker = new Worker<CreateTokenMetadataJob>(
         "[jobs-create]: Error Occurred while creating token metadata",
         error
       );
+      throw error;
+    }
+  },
+  {
+    connection: redisClient,
+    concurrency: 10,
+    removeOnFail: {
+      count: 20,
+    },
+    removeOnComplete: {
+      count: 10,
+    },
+    lockDuration: 3 * 60 * 1000, // 3 minutes for execution
+    lockRenewTime: 30 * 1000,
+  }
+);
+
+export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
+  launchDappTokenQueue.name,
+  async (job) => {
+    const data = job.data;
+    const {
+      buyAmount,
+      devBuy,
+      tokenName,
+      launchMode,
+      platform,
+      tokenId,
+      tokenSymbol,
+      userChatId,
+      userId,
+    } = job.data;
+
+    try {
+      logger.info("[launchDappToken]: Job starting...", data);
+
+      // --------- VALIDATE USER ---------
+      const user = await UserModel.findById(safeObjectId(String(userId)));
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      // -------- GET WALLETS FROM DATABASE BASED ON USERID --------
+      // Get funding wallet
+      const fundingWalletDoc = await WalletModel.findOne({
+        user: user.id,
+        isFunding: true,
+      }).lean();
+
+      if (!fundingWalletDoc) {
+        throw new Error(
+          "No funding wallet found. Please configure funding wallet first."
+        );
+      }
+
+      // Get buyer wallets
+      const buyerWalletDocs = await WalletModel.find({
+        user: user.id,
+        isBuyer: true,
+      }).lean();
+
+      if (buyerWalletDocs.length === 0) {
+        throw new Error(
+          "No buyer wallets found. Please add buyer wallets first."
+        );
+      }
+
+      // Get dev wallet
+      const devWalletDoc = await WalletModel.findOne({
+        user: user.id,
+        isDev: true,
+      }).lean();
+
+      if (!devWalletDoc) {
+        throw new Error(
+          "No dev wallet found. Please configure dev wallet first."
+        );
+      }
+
+      // -------- DECRYPT WALLET PRIVATE KEYS --------
+      const fundingWallet = {
+        publicKey: fundingWalletDoc.publicKey,
+        privateKey: decryptPrivateKey(fundingWalletDoc.privateKey),
+      };
+
+      const devWallet = {
+        publicKey: devWalletDoc.publicKey,
+        privateKey: decryptPrivateKey(devWalletDoc.privateKey),
+      };
+
+      // -------- VALIDATE LAUNCH PARAMETERS --------
+      if (!buyAmount || buyAmount <= 0) {
+        throw new Error("Buy amount must be greater than 0");
+      }
+
+      if (devBuy < 0) {
+        throw new Error("Dev buy amount cannot be negative");
+      }
+
+      if (devBuy > buyAmount) {
+        throw new Error("Dev buy amount cannot exceed total buy amount");
+      }
+
+      // -------- BALANCE CHECKS --------
+      const checkBalance = async (publicKey: string): Promise<number> => {
+        try {
+          return await getWalletBalance(publicKey);
+        } catch (error) {
+          logger.warn(`Could not get balance for ${publicKey}:`, error);
+          return 0;
+        }
+      };
+
+      const devBalance = await checkBalance(devWallet.publicKey);
+      const minDevBalance = (env.LAUNCH_FEE_SOL || 0.01) + 0.1;
+
+      if (devBalance < minDevBalance) {
+        throw new Error(
+          `Insufficient dev wallet balance. Required: ${minDevBalance.toFixed(4)} SOL, Current: ${devBalance.toFixed(4)} SOL`
+        );
+      }
+
+      // Check funding wallet balance for normal mode
+      if (launchMode === "normal") {
+        const fundingBalance = await checkBalance(fundingWallet.publicKey);
+        const walletFees = buyerWalletDocs.length * 0.005;
+        const requiredFundingAmount = buyAmount + devBuy + walletFees + 0.1;
+
+        if (fundingBalance < requiredFundingAmount) {
+          throw new Error(
+            `Insufficient funding wallet balance. Required: ${requiredFundingAmount.toFixed(4)} SOL, Available: ${fundingBalance.toFixed(4)} SOL`
+          );
+        }
+      }
+
+      // -------- DETERMINE PLATFORM --------
+      const isBonkToken = platform === "bonk";
+
+      logger.info("[launchDappToken]: Starting launch process", {
+        tokenAddress: tokenId,
+        platform: platform || "pump",
+        launchMode,
+        buyAmount,
+        devBuy,
+        walletCount: buyerWalletDocs.length,
+      });
+
+      let result: { success: boolean; error?: string; [key: string]: unknown };
+
+      if (isBonkToken) {
+        // -------- BONK TOKEN LAUNCH --------
+        logger.info("[launchDappToken]: Executing Bonk token launch");
+
+        try {
+          // Import Bonk launch function
+          const { launchBonkToken } = await import("../backend/functions");
+
+          // Execute Bonk token launch with mixing and on-chain creation
+          const bonkResult = await launchBonkToken(
+            user.id,
+            tokenId,
+            buyAmount,
+            devBuy,
+            launchMode
+          );
+
+          if (bonkResult.success) {
+            result = {
+              success: true,
+              tokenAddress: tokenId,
+              platform: "bonk",
+              signature: bonkResult.signature,
+              tokenName: bonkResult.tokenName,
+              tokenSymbol: bonkResult.tokenSymbol,
+              message: "Bonk token launched successfully on Raydium Launch Lab",
+            };
+
+            logger.info(
+              "[launchDappToken]: Bonk token launch completed successfully",
+              result
+            );
+          } else {
+            result = {
+              success: false,
+              error: bonkResult.error || "Bonk token launch failed",
+            };
+
+            logger.error(
+              "[launchDappToken]: Bonk token launch failed",
+              bonkResult.error
+            );
+          }
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : "Unknown error during Bonk launch";
+          result = {
+            success: false,
+            error: errorMessage,
+          };
+
+          logger.error("[launchDappToken]: Bonk token launch error", error);
+        }
+      } else {
+        // -------- PUMPFUN TOKEN LAUNCH (DEFAULT) --------
+        logger.info("[launchDappToken]: Executing PumpFun token launch");
+
+        try {
+          // Import PumpFun launch preparation function
+          const { enqueuePrepareTokenLaunch } = await import(
+            "../backend/functions-main"
+          );
+
+          // Prepare buyer keys for launch
+          const buyerKeys = buyerWalletDocs.map((w) =>
+            decryptPrivateKey(w.privateKey)
+          );
+
+          // Execute PumpFun token launch through staging system
+          const pumpResult = await enqueuePrepareTokenLaunch(
+            user.id,
+            userChatId, // Telegram chat ID for notifications
+            tokenId,
+            fundingWallet.privateKey,
+            devWallet.privateKey,
+            buyerKeys,
+            devBuy,
+            buyAmount,
+            launchMode
+          );
+
+          if (pumpResult.success) {
+            result = {
+              success: true,
+              tokenAddress: tokenId,
+              platform: "pump",
+              walletsUsed: buyerWalletDocs.length,
+              message:
+                pumpResult.message ||
+                "PumpFun token launch submitted to queue successfully",
+            };
+
+            logger.info(
+              "[launchDappToken]: PumpFun token launch queued successfully",
+              result
+            );
+          } else {
+            result = {
+              success: false,
+              error: "Failed to submit PumpFun token launch",
+            };
+
+            logger.error(
+              "[launchDappToken]: PumpFun token launch submission failed"
+            );
+          }
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : "Unknown error during PumpFun launch";
+          result = {
+            success: false,
+            error: errorMessage,
+          };
+
+          logger.error("[launchDappToken]: PumpFun token launch error", error);
+        }
+      }
+
+      // -------- NOTIFICATIONS --------
+      if (userChatId && result.success) {
+        try {
+          await sendLaunchSuccessNotification(
+            userChatId,
+            tokenId,
+            tokenName,
+            tokenSymbol
+          );
+        } catch (error) {
+          logger.warn(
+            "[launchDappToken]: Could not send success notification:",
+            error
+          );
+        }
+      }
+
+      logger.info("[launchDappToken]: Job completed successfully", {
+        tokenAddress: tokenId,
+        platform: platform || "pump",
+        success: result.success,
+      });
+
+      return {
+        success: true,
+        tokenAddress: tokenId,
+        platform: platform || "pump",
+        launchMode,
+        buyAmount,
+        devBuy,
+        walletsUsed: buyerWalletDocs.length,
+        result,
+      };
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      logger.error("[launchDappToken]: Error occurred during launch", error);
+
+      // Send failure notification if userChatId is available
+      if (data.userChatId) {
+        try {
+          await sendLaunchFailureNotification(
+            data.userChatId,
+            data.tokenId,
+            data.tokenName || "Unknown Token",
+            errorMessage
+          );
+        } catch (notifError) {
+          logger.warn(
+            "[launchDappToken]: Could not send failure notification:",
+            notifError
+          );
+        }
+      }
+
       throw error;
     }
   },
@@ -896,14 +1225,16 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
         data.tokenName,
         data.tokenSymbol
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(
         "[jobs-execute-launch]: Error Occurred while executing token launch",
         error
       );
 
       // Fail loading state
-      await failLoadingState(loadingKey, error.message);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await failLoadingState(loadingKey, errorMessage);
 
       throw error;
     }

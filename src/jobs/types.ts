@@ -79,3 +79,15 @@ export type CreateTokenMetadataJob = {
     telegram?: string;
   };
 };
+
+export type LaunchDappTokenJob = {
+  userId: string;
+  userChatId: number;
+  tokenId: string;
+  tokenName: string;
+  tokenSymbol: string;
+  devBuy: number;
+  buyAmount: number;
+  platform: "pump" | "bonk";
+  launchMode: "normal" | "prefunded";
+};

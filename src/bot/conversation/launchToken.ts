@@ -68,11 +68,7 @@ async function waitForInputOrCancel(
     "callback_query:data",
   ]);
   if (input.callbackQuery?.data === LaunchCallBackQueries.CANCEL) {
-    await sendMessage(
-      ctx,
-      "Cancelled ⚡",
-      { parse_mode: "HTML" }
-    );
+    await sendMessage(ctx, "Cancelled ⚡", { parse_mode: "HTML" });
     await conversation.halt();
     return null;
   }
@@ -80,7 +76,7 @@ async function waitForInputOrCancel(
 }
 
 // Add market cap calculation function after the imports
-async function calculateExpectedMarketCap(
+export async function calculateExpectedMarketCap(
   buyAmount: number,
   isBonkToken: boolean
 ): Promise<string> {
@@ -168,11 +164,7 @@ const launchTokenConversation = async (
   // --------- VALIDATE USER ---------
   const user = await getUser(ctx.chat!.id!.toString());
   if (!user) {
-    await sendMessage(
-      ctx,
-      "Please try again ⚡",
-      { parse_mode: "HTML" }
-    );
+    await sendMessage(ctx, "Please try again ⚡", { parse_mode: "HTML" });
     await conversation.halt();
     return;
   }
@@ -270,11 +262,9 @@ const launchTokenConversation = async (
     // Get all buyer wallets and their balances
     const buyerWallets = await getAllBuyerWallets(user.id);
     if (buyerWallets.length === 0) {
-      await sendMessage(
-        ctx,
-        "Add buyer wallets first ⚡",
-        { parse_mode: "HTML" }
-      );
+      await sendMessage(ctx, "Add buyer wallets first ⚡", {
+        parse_mode: "HTML",
+      });
       await conversation.halt();
       return;
     }
@@ -1082,8 +1072,10 @@ Please enter a smaller buy amount:`,
 <i>💭 Dev buys show confidence & establish liquidity</i>`,
       {
         parse_mode: "HTML",
-        reply_markup: new InlineKeyboard()
-          .text("❌ Cancel", LaunchCallBackQueries.CANCEL),
+        reply_markup: new InlineKeyboard().text(
+          "❌ Cancel",
+          LaunchCallBackQueries.CANCEL
+        ),
       }
     );
 
