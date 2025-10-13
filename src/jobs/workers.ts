@@ -809,7 +809,6 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       platform,
       tokenId,
       tokenSymbol,
-      userChatId,
       userId,
     } = job.data;
 
@@ -820,9 +819,11 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
 
       // --------- VALIDATE USER ---------
       const user = await UserModel.findById(safeObjectId(String(userId)));
+
       if (!user) {
         throw new Error("User not found");
       }
+      const userChatId = user?.telegramId;
       console.log(
         "[launchDappToken]: Found user",
         JSON.stringify(user, null, 2)
