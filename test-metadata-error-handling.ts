@@ -1,73 +1,50 @@
-import { getMint } from "@solana/spl-token";
+// Direct test of fetchTokenMetadata without initializing the full job system
 import { Connection, PublicKey } from "@solana/web3.js";
-import { config } from "dotenv";
-import { env } from "../config";
+import { getMint } from "@solana/spl-token";
 
-export interface TokenMetadataResponse {
-  metaDataPda: string;
-  name: string;
-  symbol: string;
-  uri: string;
-  image: string;
-  description: string;
-  supply: number;
-  decimals: number;
-  createdOn: string;
-}
-
-config();
-
-const connection = new Connection(env.HELIUS_RPC_URL!);
+// Token Metadata Program ID from Metaplex
 const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
   "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
 );
 
-// Function to parse metadata from account data
-function parseTokenMetadata(data: Buffer) {
+const parseTokenMetadata = (data: Buffer) => {
   try {
-    let offset = 0;
-    offset += 1;
-    offset += 32;
-    offset += 32;
+    const NAME_LENGTH_OFFSET = 69;
+    const SYMBOL_LENGTH_OFFSET = 101;
+    const URI_LENGTH_OFFSET = 115;
 
-    const nameLength = data.readUInt32LE(offset);
-    offset += 4;
+    const nameLength = data.readUInt32LE(NAME_LENGTH_OFFSET);
+    const symbolLength = data.readUInt32LE(SYMBOL_LENGTH_OFFSET);
+    const uriLength = data.readUInt32LE(URI_LENGTH_OFFSET);
+
     const name = data
-      .slice(offset, offset + nameLength)
+      .subarray(73, 73 + nameLength)
       .toString("utf8")
       .replace(/\0/g, "");
-    offset += nameLength;
-
-    const symbolLength = data.readUInt32LE(offset);
-    offset += 4;
     const symbol = data
-      .slice(offset, offset + symbolLength)
+      .subarray(105, 105 + symbolLength)
       .toString("utf8")
       .replace(/\0/g, "");
-    offset += symbolLength;
-
-    const uriLength = data.readUInt32LE(offset);
-    offset += 4;
     const uri = data
-      .slice(offset, offset + uriLength)
+      .subarray(119, 119 + uriLength)
       .toString("utf8")
       .replace(/\0/g, "");
 
-    return {
-      name: name.trim(),
-      symbol: symbol.trim(),
-      uri: uri.trim(),
-    };
+    return { name, symbol, uri };
   } catch (error) {
     console.error("Error parsing metadata:", error);
     return null;
   }
-}
+};
 
-export async function fetchTokenMetadata(
-  mint: PublicKey
-): Promise<TokenMetadataResponse | null> {
+async function fetchTokenMetadata(mint: PublicKey) {
+  const connection = new Connection(
+    process.env.RPC_URL || "https://api.mainnet-beta.solana.com"
+  );
+
   try {
+    console.log(`\nFetching metadata for mint: ${mint.toString()}`);
+
     const [metadataPDA] = PublicKey.findProgramAddressSync(
       [
         Buffer.from("metadata"),
@@ -101,10 +78,6 @@ export async function fetchTokenMetadata(
               description?: string;
               createdOn?: string;
             };
-            console.log(
-              "JSON Metadata:",
-              JSON.stringify(jsonMetadata, null, 2)
-            );
 
             return {
               metaDataPda: metadataPDA.toString(),
@@ -146,37 +119,6 @@ export async function fetchTokenMetadata(
         console.log("Symbol:", metadata.symbol);
         console.log("URI:", metadata.uri);
 
-        // If URI exists, fetch the JSON metadata
-        if (metadata.uri) {
-          console.log("\n=== FETCHING JSON METADATA ===");
-          try {
-            const response = await fetch(metadata.uri);
-            const jsonMetadata = (await response.json()) as {
-              image?: string;
-              description?: string;
-              createdOn?: string;
-            };
-            console.log(
-              "JSON Metadata:",
-              JSON.stringify(jsonMetadata, null, 2)
-            );
-
-            return {
-              metaDataPda: metadataPDA.toString(),
-              name: metadata.name,
-              symbol: metadata.symbol,
-              uri: metadata.uri,
-              image: jsonMetadata?.image || "",
-              supply: Number(mintInfo.supply),
-              decimals: Number(mintInfo.decimals),
-              description: jsonMetadata?.description || "",
-              createdOn: jsonMetadata?.createdOn || "",
-            };
-          } catch (error) {
-            throw new Error("Error fetching JSON metadata: " + error);
-          }
-        }
-
         return {
           metaDataPda: metadataPDA.toString(),
           name: metadata.name,
@@ -188,9 +130,6 @@ export async function fetchTokenMetadata(
           description: "",
           createdOn: "",
         };
-      } else {
-        console.log("Could not parse metadata from account data");
-        return null;
       }
     } else {
       console.log("No metadata account found for this mint");
@@ -202,8 +141,46 @@ export async function fetchTokenMetadata(
   }
 }
 
-// Example usage:
-// const tokenMetadata = await fetchTokenMetadata(
-//   new PublicKey("92M6JrV1TZYxmW85zin2g2q9fuNaXxsS5YQYfEeyx777")
-// );
-// console.log("Token Metadata:", tokenMetadata);
+async function testMetadataErrorHandling() {
+  console.log("Testing metadata error handling...\n");
+
+  // Test 1: Random public key that's not a token
+  try {
+    console.log("1. Testing with a random public key...");
+    const randomKey = new PublicKey(
+      "92M6JrV1TZYxmW85zin2g2q9fuNaXxsS5YQYfEeyx777"
+    );
+    const metadata1 = await fetchTokenMetadata(randomKey);
+    console.log(
+      "✅ Random key handled gracefully:",
+      metadata1?.name || "No metadata found"
+    );
+  } catch (error) {
+    console.log(
+      "❌ Error with random key:",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+
+  // Test 2: Invalid/non-existent token address
+  try {
+    console.log("\n2. Testing with an invalid token address...");
+    const invalidToken = new PublicKey(
+      "11111111111111111111111111111111111111111"
+    ); // Invalid token
+    const metadata2 = await fetchTokenMetadata(invalidToken);
+    console.log(
+      "✅ Invalid token handled gracefully:",
+      metadata2?.name || "No metadata found"
+    );
+  } catch (error) {
+    console.log(
+      "❌ Error with invalid token:",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+
+  console.log("\n✅ Metadata error handling test completed!");
+}
+
+testMetadataErrorHandling().catch(console.error);
