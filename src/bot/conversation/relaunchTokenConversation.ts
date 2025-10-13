@@ -10,7 +10,6 @@ import {
 import { createBonkToken } from "../../blockchain/letsbonk/integrated-token-creator";
 import axios from "axios";
 import { CallBackQueries } from "../types";
-import { env } from "../../config";
 import { sendLoadingMessage } from "../loading";
 import { sendErrorWithAutoDelete } from "../utils";
 import { sendMessage } from "../../backend/sender";

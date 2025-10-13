@@ -1,0 +1,42 @@
+#!/bin/bash
+
+echo "🔧 Nitro Launch Bot - Build Fix Script"
+echo "======================================"
+echo ""
+
+echo "✅ Fixed Issues:"
+echo "- Removed duplicate 'TokenMetadataResponse' import from relaunchTokenConversation.ts"
+echo "- Cleaned up unused 'env' import"
+echo ""
+
+echo "🚨 REQUIRED ACTIONS:"
+echo "1. The source code has been fixed"
+echo "2. You MUST rebuild and redeploy the application"
+echo "3. The current error is from the old compiled JavaScript"
+echo ""
+
+echo "📋 To fix the deployed version:"
+echo ""
+echo "Option 1 - Docker Rebuild:"
+echo "  docker-compose down"
+echo "  docker-compose up --build"
+echo ""
+echo "Option 2 - Manual Build (if you have bun installed):"
+echo "  bun run build"
+echo "  # Then restart your application"
+echo ""
+echo "Option 3 - Force rebuild in production:"
+echo "  # Clear any build caches"
+echo "  rm -rf build/ dist/ .next/"
+echo "  # Rebuild from source"
+echo "  bun run build"
+echo ""
+
+echo "🔍 Verification:"
+echo "After rebuilding, the 'init_relaunchTokenConversation' error should be resolved."
+echo ""
+
+echo "📝 Root Cause:"
+echo "The error was caused by a duplicate import statement that generated"
+echo "invalid JavaScript during the bundling process. This has been fixed"
+echo "in the source code, but the deployed build needs to be regenerated."
