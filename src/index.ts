@@ -11,6 +11,7 @@ import {
   cleanupExternalPumpAddressService,
 } from "./service/external-pump-address-service";
 import { socketIOServer } from "./websocket/socketio-server";
+import { startWebServer } from "./web-server";
 
 let bot: any = null; // Will be initialized only with valid token
 let dbConnected = false;
@@ -64,16 +65,17 @@ const nitroLaunchRunner = async () => {
     }
   }
 
-  // Initialize Socket.IO server for real-time events
+  // Initialize Express server with Socket.IO for web deployment
   try {
-    botLogger.info("Initializing Socket.IO server...");
-    await socketIOServer.initialize();
-    botLogger.info("✅ Socket.IO server initialized successfully");
-  } catch (error: any) {
-    botLogger.warn("⚠️  Socket.IO server initialization failed:", {
-      error: error.message,
+    botLogger.info("Initializing Express server with Socket.IO...");
+    await startWebServer();
+    botLogger.info("✅ Express server with Socket.IO initialized successfully");
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    botLogger.warn("⚠️  Express server initialization failed:", {
+      error: errorMessage,
     });
-    botLogger.info("📌 Continuing without real-time events");
+    botLogger.info("📌 Continuing without web server");
   }
 
   // Initialize external pump address service
@@ -167,12 +169,12 @@ nitroLaunchRunner().catch((err) => {
 });
 
 const onCloseSignal = async () => {
-  // Shutdown Socket.IO server
+  // Shutdown Express server and Socket.IO server
   try {
-    botLogger.info("Shutting down Socket.IO server...");
+    botLogger.info("Shutting down Express server and Socket.IO...");
     await socketIOServer.shutdown();
   } catch (error) {
-    botLogger.warn("Error shutting down Socket.IO server:", error);
+    botLogger.warn("Error shutting down servers:", error);
   }
 
   if (externalServiceInitialized) {

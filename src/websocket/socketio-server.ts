@@ -218,6 +218,61 @@ class SocketIOServer {
     }
   }
 
+  async initializeWithHttpServer(httpServer: HttpServer): Promise<void> {
+    if (this.isInitialized) {
+      botLogger.warn("Socket.IO server already initialized");
+      return;
+    }
+
+    try {
+      // Use the provided HTTP server instead of creating our own
+      this.httpServer = httpServer;
+
+      // Initialize Socket.IO with production-ready CORS
+      this.io = new Server(this.httpServer, {
+        cors: {
+          origin: [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "https://your-frontend-domain.com",
+            // Add your production frontend domains
+            "https://*.vercel.app",
+            "https://*.netlify.app",
+            // Allow any origin in development
+            ...(process.env.NODE_ENV === "development" ? ["*"] : []),
+          ],
+          methods: ["GET", "POST"],
+          credentials: true,
+        },
+        transports: ["websocket", "polling"],
+        // Add production optimizations
+        pingTimeout: 60000,
+        pingInterval: 25000,
+      });
+
+      // Set up event handlers
+      this.setupEventHandlers();
+
+      this.isInitialized = true;
+      botLogger.info(
+        "🔌 Socket.IO server initialized with Express HTTP server",
+        {
+          NODE_ENV: process.env.NODE_ENV,
+          cors: this.io?.engine.opts.cors,
+        }
+      );
+    } catch (error) {
+      botLogger.error(
+        "Failed to initialize Socket.IO server with HTTP server:",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          NODE_ENV: process.env.NODE_ENV,
+        }
+      );
+      throw error;
+    }
+  }
+
   private setupEventHandlers(): void {
     if (!this.io) return;
 

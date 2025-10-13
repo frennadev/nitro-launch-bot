@@ -10,7 +10,7 @@ services:
       - fromGroup: nitro-launch
       - key: NODE_ENV
         value: production
-    
+
   - type: worker
     name: nitro-bot
     runtime: docker
@@ -19,7 +19,7 @@ services:
     dockerfilePath: ./Dockerfile.bot
     envVars:
       - fromGroup: nitro-launch
-  
+
   - type: worker
     name: nitro-jobs
     runtime: docker
