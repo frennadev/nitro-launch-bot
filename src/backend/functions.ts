@@ -892,7 +892,7 @@ export const preLaunchChecks = async (
 ) => {
   let success = true;
   const funderKeypair = secretKeyToKeypair(funderWallet);
-  const devKeypair = secretKeyToKeypair(decryptPrivateKey(devWallet));
+  const devKeypair = secretKeyToKeypair(devWallet);
 
   // expectations - Updated to match actual fee requirements
   // Each wallet needs: buy amount portion + 0.005 SOL for fees (increased from 0.003 to 0.005 for safety buffer)
@@ -1032,7 +1032,7 @@ export const enqueueTokenLaunch = async (
           buyAmount,
           buyerWallets: buyWallets,
           devBuy,
-          devWallet: decryptPrivateKey(devWallet),
+          devWallet: devWallet,
           funderWallet: funderWallet,
           buyDistribution: generateBuyDistribution(
             buyAmount,
@@ -1945,7 +1945,7 @@ export const enqueuePrepareTokenLaunch = async (
           buyAmount,
           buyerWallets: buyWallets,
           devBuy,
-          devWallet: decryptPrivateKey(devWallet),
+          devWallet: devWallet,
           funderWallet: funderWallet,
           mode,
         }
