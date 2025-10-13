@@ -154,7 +154,8 @@ class SocketIOServer {
           origin: [
             "http://localhost:3000",
             "http://localhost:3001",
-            "https://your-frontend-domain.com",
+            "https://launchbot-ui.vercel.app",
+            "https://launchbot-ui.vercel.app/",
             // Add your production frontend domains
             "https://*.vercel.app",
             "https://*.netlify.app",
@@ -234,7 +235,8 @@ class SocketIOServer {
           origin: [
             "http://localhost:3000",
             "http://localhost:3001",
-            "https://your-frontend-domain.com",
+            "https://launchbot-ui.vercel.app",
+            "https://launchbot-ui.vercel.app/",
             // Add your production frontend domains
             "https://*.vercel.app",
             "https://*.netlify.app",

@@ -16,10 +16,24 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) => {
   const parsedUrl = parse(req.url || "", true);
   const pathname = parsedUrl.pathname;
 
-  // Set CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // Set CORS headers - allow specific origins in production
+  const allowedOrigins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://launchbot-ui.vercel.app",
+    "https://launchbot-ui.vercel.app/",
+  ];
+
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else if (process.env.NODE_ENV === "development") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
 
   if (req.method === "OPTIONS") {
     res.writeHead(200);
