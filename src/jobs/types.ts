@@ -46,6 +46,7 @@ export type ExecuteTokenLaunchJob = {
   buyerWallets: string[];
   launchStage: number;
   mode: "normal" | "prefunded";
+  socketUserId?: string;
 };
 
 export type SellDevJob = {
@@ -78,6 +79,7 @@ export type CreateTokenMetadataJob = {
     twitter?: string;
     telegram?: string;
   };
+  socketUserId?: string;
 };
 
 export type LaunchDappTokenJob = {
@@ -90,4 +92,5 @@ export type LaunchDappTokenJob = {
   buyAmount: number;
   platform: "pump" | "bonk";
   launchMode: "normal" | "prefunded";
+  socketUserId?: string;
 };

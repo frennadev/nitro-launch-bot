@@ -26,6 +26,52 @@ interface MixingDetails {
   totalFunds?: number;
 }
 
+export interface WorkerProgressEvent {
+  jobId: string;
+  workerType:
+    | "launch_token"
+    | "prepare_launch"
+    | "execute_launch"
+    | "dev_sell"
+    | "wallet_sell"
+    | "create_token_metadata"
+    | "launch_token_from_dapp";
+  tokenAddress: string;
+  userId: string;
+  userChatId: number;
+  phase: number;
+  totalPhases: number;
+  phaseTitle: string;
+  phaseDescription: string;
+  progress: number; // 0-100
+  status: "started" | "in_progress" | "completed" | "failed";
+  timestamp: number;
+  details?: {
+    tokenName?: string;
+    tokenSymbol?: string;
+    buyAmount?: number;
+    devBuy?: number;
+    sellPercent?: number;
+    walletsCount?: number;
+    error?: string;
+    signature?: string;
+    [key: string]: any;
+  };
+}
+
+export interface WorkerStepEvent {
+  jobId: string;
+  workerType: string;
+  tokenAddress: string;
+  userId: string;
+  step: string;
+  stepNumber: number;
+  totalSteps: number;
+  message: string;
+  timestamp: number;
+  data?: any;
+}
+
 export interface TokenLaunchEvent {
   tokenAddress: string;
   platform: "pump" | "bonk";
@@ -298,6 +344,54 @@ class SocketIOServer {
     this.emitTokenLaunchEvent(mixingEvent);
   }
 
+  // Emit worker progress updates
+  emitWorkerProgress(event: WorkerProgressEvent): void {
+    if (!this.io || !this.isInitialized) {
+      botLogger.warn(
+        "Socket.IO server not initialized, cannot emit worker progress"
+      );
+      return;
+    }
+
+    try {
+      // Emit to user-specific room
+      this.io.to(`user_${event.userId}`).emit("worker_progress", event);
+
+      // Emit to admin room
+      this.io.to("admin_launches").emit("worker_progress", event);
+
+      botLogger.info(
+        `📊 Emitted ${event.workerType} progress for token ${event.tokenAddress.slice(0, 8)}... - Phase ${event.phase}/${event.totalPhases}: ${event.phaseTitle}`
+      );
+    } catch (error) {
+      botLogger.error("Failed to emit worker progress:", error);
+    }
+  }
+
+  // Emit worker step updates
+  emitWorkerStep(event: WorkerStepEvent): void {
+    if (!this.io || !this.isInitialized) {
+      botLogger.warn(
+        "Socket.IO server not initialized, cannot emit worker step"
+      );
+      return;
+    }
+
+    try {
+      // Emit to user-specific room
+      this.io.to(`user_${event.userId}`).emit("worker_step", event);
+
+      // Emit to admin room
+      this.io.to("admin_launches").emit("worker_step", event);
+
+      botLogger.info(
+        `📝 Emitted ${event.workerType} step for token ${event.tokenAddress.slice(0, 8)}... - Step ${event.stepNumber}/${event.totalSteps}: ${event.step}`
+      );
+    } catch (error) {
+      botLogger.error("Failed to emit worker step:", error);
+    }
+  }
+
   // Emit error events
   emitLaunchError(
     tokenAddress: string,
@@ -470,4 +564,61 @@ export const emitLaunchError = (
   stage: string
 ) => {
   socketIOServer.emitLaunchError(tokenAddress, userId, error, stage);
+};
+
+// Worker progress tracking helpers
+export const emitWorkerProgress = (
+  jobId: string,
+  workerType: WorkerProgressEvent["workerType"],
+  tokenAddress: string,
+  userId: string,
+  userChatId: number,
+  phase: number,
+  totalPhases: number,
+  phaseTitle: string,
+  phaseDescription: string,
+  progress: number,
+  status: WorkerProgressEvent["status"],
+  details?: WorkerProgressEvent["details"]
+) => {
+  socketIOServer.emitWorkerProgress({
+    jobId,
+    workerType,
+    tokenAddress,
+    userId,
+    userChatId,
+    phase,
+    totalPhases,
+    phaseTitle,
+    phaseDescription,
+    progress,
+    status,
+    timestamp: Date.now(),
+    details,
+  });
+};
+
+export const emitWorkerStep = (
+  jobId: string,
+  workerType: string,
+  tokenAddress: string,
+  userId: string,
+  step: string,
+  stepNumber: number,
+  totalSteps: number,
+  message: string,
+  data?: unknown
+) => {
+  socketIOServer.emitWorkerStep({
+    jobId,
+    workerType,
+    tokenAddress,
+    userId,
+    step,
+    stepNumber,
+    totalSteps,
+    message,
+    timestamp: Date.now(),
+    data,
+  });
 };

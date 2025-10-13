@@ -58,6 +58,8 @@ import axios from "axios";
 import { UserModel, WalletModel } from "../backend/models";
 import { safeObjectId } from "../backend/utils";
 import { env } from "../config";
+import { emitWorkerProgress } from "./progress-service";
+
 // import { LaunchDestination } from "../backend/types"; // Available but not used in current implementation
 
 export const launchTokenWorker = new Worker<LaunchTokenJob>(
@@ -65,19 +67,95 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
   async (job) => {
     const data = job.data;
     const loadingKey = `${data.userChatId}-token_launch-${data.tokenAddress}`;
+    const jobId = job.id?.toString() || "unknown";
 
     try {
       logger.info("[jobs]: Token Launch Job starting...");
       logger.info("[jobs-launch-token]: Job Data", data);
 
-      // Update loading state - Phase 0: Validating parameters
+      // Emit job started
+      emitWorkerProgress(
+        jobId,
+        "launch_token",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        0,
+        6,
+        "Job Started",
+        "Token launch job has been initiated",
+        0,
+        "started",
+        {
+          tokenName: data.tokenName,
+          tokenSymbol: data.tokenSymbol,
+          buyAmount: data.buyAmount,
+          devBuy: data.devBuy,
+        }
+      );
+
+      // Phase 1: Validating parameters
+      emitWorkerProgress(
+        jobId,
+        "launch_token",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        1,
+        6,
+        "Validating Parameters",
+        "Checking token parameters and validating launch data",
+        15,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 0);
 
-      // Update loading state - Phase 1: Checking balances
+      // Phase 2: Checking balances
+      emitWorkerProgress(
+        jobId,
+        "launch_token",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        2,
+        6,
+        "Checking Balances",
+        "Verifying wallet balances and fund availability",
+        30,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 1);
 
-      // Update loading state - Phase 2: Creating token
+      // Phase 3: Creating token
+      emitWorkerProgress(
+        jobId,
+        "launch_token",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        3,
+        6,
+        "Creating Token",
+        "Deploying token contract and setting up initial configuration",
+        45,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 2);
+
+      // Phase 4: Executing launch
+      emitWorkerProgress(
+        jobId,
+        "launch_token",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        4,
+        6,
+        "Executing Launch",
+        "Running token launch sequence with dev buy and buyer wallet transactions",
+        60,
+        "in_progress"
+      );
 
       await executeTokenLaunch(
         data.tokenPrivateKey,
@@ -94,7 +172,20 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         data.mode || "normal"
       );
 
-      // Update loading state - Phase 5: Finalizing
+      // Phase 5: Finalizing
+      emitWorkerProgress(
+        jobId,
+        "launch_token",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        5,
+        6,
+        "Finalizing Launch",
+        "Updating token state and completing launch process",
+        85,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 5);
 
       await updateTokenState(
@@ -106,6 +197,26 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
       // Pump addresses are never released - they remain permanently allocated to the user
       logger.info(
         `Pump address ${data.tokenAddress} remains permanently allocated to user ${data.userId}`
+      );
+
+      // Phase 6: Completed
+      emitWorkerProgress(
+        jobId,
+        "launch_token",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        6,
+        6,
+        "Launch Completed",
+        "Token launch has been completed successfully",
+        100,
+        "completed",
+        {
+          tokenName: data.tokenName,
+          tokenSymbol: data.tokenSymbol,
+          tokenAddress: data.tokenAddress,
+        }
       );
 
       // Complete loading state
@@ -146,14 +257,36 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
         );
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
       logger.error(
         "[jobs-launch-token]: Error Occurred while launching token",
         error
       );
 
+      // Emit error progress
+      emitWorkerProgress(
+        jobId,
+        "launch_token",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        0,
+        6,
+        "Launch Failed",
+        "Token launch encountered an error",
+        0,
+        "failed",
+        {
+          error: errorMessage,
+          tokenName: data.tokenName,
+          tokenSymbol: data.tokenSymbol,
+        }
+      );
+
       // Fail loading state
-      await failLoadingState(loadingKey, error.message);
+      await failLoadingState(loadingKey, errorMessage);
 
       throw error;
     }
@@ -178,18 +311,76 @@ export const sellDevWorker = new Worker<SellDevJob>(
   async (job) => {
     const data = job.data;
     const loadingKey = `${data.userChatId}-dev_sell-${data.tokenAddress}`;
+    const jobId = job.id?.toString() || "unknown";
 
     try {
       logger.info("[jobs]: Sell Dev Job starting...");
       logger.info("[jobs-sell-dev]: Job Data", data);
 
-      // Update loading state - Phase 0: Validating parameters
+      // Phase 1: Job Started
+      emitWorkerProgress(
+        jobId,
+        "dev_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        1,
+        5,
+        "Dev Sell Started",
+        "Initiating developer token sell process",
+        10,
+        "started",
+        {
+          sellPercent: data.sellPercent,
+        }
+      );
+
+      // Phase 2: Validating parameters
+      emitWorkerProgress(
+        jobId,
+        "dev_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        2,
+        5,
+        "Validating Parameters",
+        "Checking sell parameters and token holdings",
+        25,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 0);
 
-      // Update loading state - Phase 1: Calculating amounts
+      // Phase 3: Calculating amounts
+      emitWorkerProgress(
+        jobId,
+        "dev_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        3,
+        5,
+        "Calculating Amounts",
+        "Computing sell amounts and transaction parameters",
+        45,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 1);
 
-      // Update loading state - Phase 2: Executing transaction
+      // Phase 4: Executing transaction
+      emitWorkerProgress(
+        jobId,
+        "dev_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        4,
+        5,
+        "Executing Transaction",
+        "Broadcasting sell transaction to blockchain",
+        70,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 2);
 
       // Check token type to determine which sell mechanism to use
@@ -298,6 +489,28 @@ export const sellDevWorker = new Worker<SellDevJob>(
         maximumFractionDigits: 2,
       });
 
+      // Phase 5: Dev Sell Completed
+      emitWorkerProgress(
+        jobId,
+        "dev_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        5,
+        5,
+        "Dev Sell Completed",
+        "Developer token sell has been completed successfully",
+        100,
+        "completed",
+        {
+          sellPercent: data.sellPercent,
+          solReceived: sellSummary.solReceived,
+          tokensSold: tokensSoldFormatted,
+          profitLoss: sellSummary.netProfitLoss,
+          signature: result.signature,
+        }
+      );
+
       // Complete loading state with detailed information
       await completeLoadingState(
         loadingKey,
@@ -357,18 +570,77 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
     const data = job.data;
     const loadingKey = `${data.userChatId}-wallet_sell-${data.tokenAddress}`;
     const logIdentifier = `super-jobs-sell-wallet-${data.tokenAddress}`;
+    const jobId = job.id?.toString() || "unknown";
 
     try {
       logger.info("[jobs]: Wallet Sell Job starting...");
       logger.info("[jobs-sell-wallet]: Job Data", data);
 
-      // Update loading state - Phase 0: Validating holdings
+      // Phase 1: Job Started
+      emitWorkerProgress(
+        jobId,
+        "wallet_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        1,
+        5,
+        "Wallet Sell Started",
+        "Initiating wallet token sell process",
+        5,
+        "started",
+        {
+          sellPercent: data.sellPercent,
+          walletsCount: data.buyerWallets?.length || 0,
+        }
+      );
+
+      // Phase 2: Validating holdings
+      emitWorkerProgress(
+        jobId,
+        "wallet_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        2,
+        5,
+        "Validating Holdings",
+        "Checking wallet token holdings and balances",
+        20,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 0);
 
-      // Update loading state - Phase 1: Calculating amounts
+      // Phase 3: Calculating amounts
+      emitWorkerProgress(
+        jobId,
+        "wallet_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        3,
+        5,
+        "Calculating Amounts",
+        "Computing sell amounts for all wallets",
+        40,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 1);
 
-      // Update loading state - Phase 2: Executing transactions
+      // Phase 4: Executing transactions
+      emitWorkerProgress(
+        jobId,
+        "wallet_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        4,
+        5,
+        "Executing Transactions",
+        "Broadcasting sell transactions for all wallets",
+        65,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 2);
 
       // Check token type to determine which sell mechanism to use
@@ -568,16 +840,57 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         await sendNotification(bot, data.userChatId, finalMessage);
       }
 
+      // Phase 5: Wallet Sell Completed
+      emitWorkerProgress(
+        jobId,
+        "wallet_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        5,
+        5,
+        "Wallet Sell Completed",
+        "All wallet token sells have been completed successfully",
+        100,
+        "completed",
+        {
+          walletsCount: data.buyerWallets?.length || 0,
+          sellPercent: data.sellPercent,
+        }
+      );
+
       // Complete the loading state without additional message
       await completeLoadingState(loadingKey, undefined, "");
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
       logger.error(
         "[jobs-sell-wallet]: Error Occurred while selling wallet supply",
         error
       );
 
+      // Emit error progress
+      emitWorkerProgress(
+        jobId,
+        "wallet_sell",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        0,
+        5,
+        "Wallet Sell Failed",
+        "Wallet token sell encountered an error",
+        0,
+        "failed",
+        {
+          error: errorMessage,
+          sellPercent: data.sellPercent,
+          walletsCount: data.buyerWallets?.length || 0,
+        }
+      );
+
       // Fail loading state
-      await failLoadingState(loadingKey, error.message);
+      await failLoadingState(loadingKey, errorMessage);
 
       throw error;
     }
@@ -599,6 +912,7 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
   async (job) => {
     const data = job.data;
     const loadingKey = `${data.userChatId}-prepare_launch-${data.tokenAddress}`;
+    const jobId = job.id?.toString() || "unknown";
 
     try {
       logger.info("[jobs]: Prepare Launch Job starting...");
@@ -613,15 +927,74 @@ export const prepareLaunchWorker = new Worker<PrepareTokenLaunchJob>(
         );
       }
 
-      // Update loading state - Phase 0: Validating parameters
+      // Phase 1: Job Started
+      emitWorkerProgress(
+        jobId,
+        "prepare_launch",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        1,
+        7,
+        "Preparation Started",
+        "Token launch preparation has been initiated",
+        5,
+        "started",
+        {
+          buyAmount: data.buyAmount,
+          devBuy: data.devBuy,
+          mode: data.mode,
+        }
+      );
+
+      // Phase 2: Validating parameters
+      emitWorkerProgress(
+        jobId,
+        "prepare_launch",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        2,
+        7,
+        "Validating Parameters",
+        "Checking launch parameters and wallet configurations",
+        15,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 0);
 
-      // Update loading state - Phase 1: Collecting platform fee
+      // Phase 3: Collecting platform fee
+      emitWorkerProgress(
+        jobId,
+        "prepare_launch",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        3,
+        7,
+        "Collecting Platform Fee",
+        "Processing platform fees and preparing funding",
+        25,
+        "in_progress"
+      );
       await updateLoadingState(loadingKey, 1);
       let heartbeatInterval: NodeJS.Timeout | null = null;
 
       if (data.mode === "normal") {
-        // Update loading state - Phase 2: Initializing mixer
+        // Phase 4: Initializing mixer
+        emitWorkerProgress(
+          jobId,
+          "prepare_launch",
+          data.tokenAddress,
+          data.userId,
+          data.userChatId,
+          4,
+          7,
+          "Initializing Mixer",
+          "Setting up privacy mixer for fund distribution",
+          40,
+          "in_progress"
+        );
         await updateLoadingState(loadingKey, 2);
 
         // Start heartbeat for long mixing operations (with safety wrapper)
@@ -726,7 +1099,7 @@ export const createTokenMetadataWorker = new Worker<CreateTokenMetadataJob>(
   createTokenMetadataQueue.name,
   async (job) => {
     const data = job.data;
-    // const loadingKey = `super-${data.userWalletAddress}-execute_launch-${data.userId}`;
+    const jobId = job.id?.toString() || "unknown";
     const {
       name,
       symbol,
@@ -742,6 +1115,26 @@ export const createTokenMetadataWorker = new Worker<CreateTokenMetadataJob>(
     try {
       logger.info("[jobs]: create Job starting...");
       logger.info("[jobs-create]: Job Data", data);
+
+      // Phase 1: Token Creation Started
+      emitWorkerProgress(
+        jobId,
+        "create_token_metadata",
+        "pending", // No token address yet
+        userId,
+        0, // No userChatId available
+        1,
+        4,
+        "Token Creation Started",
+        "Initiating token metadata creation process",
+        10,
+        "started",
+        {
+          tokenName: name,
+          tokenSymbol: symbol,
+          platform: platform,
+        }
+      );
 
       // Build query conditions - only include fundingWallet if userWalletAddress is not empty
       const queryConditions: Array<
@@ -761,9 +1154,40 @@ export const createTokenMetadataWorker = new Worker<CreateTokenMetadataJob>(
         throw new Error("User not found");
       }
 
+      // Phase 2: Downloading Image
+      emitWorkerProgress(
+        jobId,
+        "create_token_metadata",
+        "pending",
+        userId,
+        0,
+        2,
+        4,
+        "Downloading Image",
+        "Fetching and processing token image",
+        30,
+        "in_progress"
+      );
+
       const { data: fileData } = await axios.get<ArrayBuffer>(imageUrl, {
         responseType: "arraybuffer",
       });
+
+      // Phase 3: Creating Token
+      emitWorkerProgress(
+        jobId,
+        "create_token_metadata",
+        "pending",
+        userId,
+        0,
+        3,
+        4,
+        "Creating Token",
+        `Creating token on ${platform} platform`,
+        60,
+        "in_progress"
+      );
+
       if (platform === "pump") {
         token = await createToken(
           user.id,
@@ -785,12 +1209,52 @@ export const createTokenMetadataWorker = new Worker<CreateTokenMetadataJob>(
         });
       }
 
+      // Phase 4: Token Creation Completed
+      emitWorkerProgress(
+        jobId,
+        "create_token_metadata",
+        token?.tokenAddress || "unknown",
+        userId,
+        0,
+        4,
+        4,
+        "Token Creation Completed",
+        "Token metadata has been created successfully",
+        100,
+        "completed",
+        {
+          tokenName: name,
+          tokenSymbol: symbol,
+          tokenAddress: token?.tokenAddress,
+          platform: platform,
+        }
+      );
+
       console.log("Created token metadata:", token);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(
         "[jobs-create]: Error Occurred while creating token metadata",
         error
       );
+
+      // Emit error progress
+      if (job.data.socketUserId) {
+        emitWorkerProgress(
+          jobId,
+          "create_token_metadata",
+          "unknown", // tokenAddress not available yet
+          userId,
+          0, // userChatId not available in this job
+          0, // phase
+          4, // totalPhases
+          "Error",
+          `Token creation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+          0, // progress
+          "failed",
+          { error: error instanceof Error ? error.message : "Unknown error" }
+        );
+      }
+
       throw error;
     }
   },
@@ -812,6 +1276,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
   launchDappTokenQueue.name,
   async (job) => {
     const data = job.data;
+    const jobId = job.id?.toString() || "unknown";
     const {
       buyAmount,
       devBuy,
@@ -821,13 +1286,29 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       tokenId,
       tokenSymbol,
       userId,
+      userChatId: userChatIdFromJob,
     } = job.data;
 
     let actualTokenAddress: string | undefined;
-    let userChatId;
+    let userChatId = userChatIdFromJob;
 
     try {
       logger.info("[launchDappToken]: Job starting...", data);
+
+      // Phase 1: Validating User (10%)
+      emitWorkerProgress(
+        jobId,
+        "launch_token_from_dapp",
+        tokenId,
+        userId,
+        userChatId,
+        1,
+        6,
+        "Validating User",
+        "Verifying user credentials and permissions",
+        10,
+        "in_progress"
+      );
 
       // --------- VALIDATE USER ---------
       const user = await UserModel.findById(safeObjectId(String(userId)));
@@ -835,10 +1316,25 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       if (!user) {
         throw new Error("User not found");
       }
-      userChatId = user?.telegramId;
+      userChatId = Number(user?.telegramId) || userChatId;
       console.log(
         "[launchDappToken]: Found user",
         JSON.stringify(user, null, 2)
+      );
+
+      // Phase 2: Fetching Token Data (25%)
+      emitWorkerProgress(
+        jobId,
+        "launch_token_from_dapp",
+        tokenId,
+        userId,
+        userChatId,
+        2,
+        6,
+        "Fetching Token Data",
+        "Retrieving token information from database",
+        25,
+        "in_progress"
       );
 
       // --------- GET TOKEN FROM DATABASE ---------
@@ -864,6 +1360,21 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
         tokenName: tokenDoc.name,
         tokenSymbol: tokenDoc.symbol,
       });
+
+      // Phase 3: Preparing Wallets (40%)
+      emitWorkerProgress(
+        jobId,
+        "launch_token_from_dapp",
+        actualTokenAddress,
+        userId,
+        userChatId,
+        3,
+        6,
+        "Preparing Wallets",
+        "Setting up funding and buyer wallets",
+        40,
+        "in_progress"
+      );
 
       // -------- GET WALLETS FROM DATABASE BASED ON USERID --------
       // Get funding wallet
@@ -993,6 +1504,21 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
         devBuy,
         walletCount: buyerWalletDocs.length,
       });
+
+      // Phase 4: Executing Launch (60%)
+      emitWorkerProgress(
+        jobId,
+        "launch_token_from_dapp",
+        actualTokenAddress,
+        userId,
+        userChatId,
+        4,
+        6,
+        "Executing Launch",
+        `Launching token on ${platform || "pump"} platform`,
+        60,
+        "in_progress"
+      );
 
       let result: { success: boolean; error?: string; [key: string]: unknown };
 
@@ -1134,6 +1660,21 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
         }
       }
 
+      // Phase 5: Sending Notifications (80%)
+      emitWorkerProgress(
+        jobId,
+        "launch_token_from_dapp",
+        actualTokenAddress || tokenId,
+        userId,
+        userChatId,
+        5,
+        6,
+        "Sending Notifications",
+        "Notifying user of launch results",
+        80,
+        "in_progress"
+      );
+
       // -------- NOTIFICATIONS --------
       if (userChatId && result.success) {
         try {
@@ -1150,6 +1691,23 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
           );
         }
       }
+
+      // Phase 6: Launch Complete (100%)
+      emitWorkerProgress(
+        jobId,
+        "launch_token_from_dapp",
+        actualTokenAddress || tokenId,
+        userId,
+        userChatId,
+        6,
+        6,
+        "Launch Complete",
+        result.success
+          ? "Token launch completed successfully"
+          : "Token launch completed with issues",
+        100,
+        result.success ? "completed" : "failed"
+      );
 
       logger.info("[launchDappToken]: Job completed successfully", {
         tokenAddress: actualTokenAddress,
@@ -1172,11 +1730,27 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
         error instanceof Error ? error.message : "Unknown error occurred";
       logger.error("[launchDappToken]: Error occurred during launch", error);
 
+      // Emit error progress
+      emitWorkerProgress(
+        jobId,
+        "launch_token_from_dapp",
+        actualTokenAddress || tokenId,
+        userId,
+        userChatId,
+        0,
+        6,
+        "Error",
+        `Launch failed: ${errorMessage}`,
+        0,
+        "failed",
+        { error: errorMessage }
+      );
+
       // Send failure notification if userChatId is available
       if (userChatId) {
         try {
           await sendLaunchFailureNotification(
-            userChatId,
+            +userChatId,
             actualTokenAddress || data.tokenId,
             data.tokenName || "Unknown Token",
             errorMessage
@@ -1210,11 +1784,27 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
   executeLaunchQueue.name,
   async (job) => {
     const data = job.data;
+    const jobId = job.id?.toString() || "unknown";
     const loadingKey = `${data.userChatId}-execute_launch-${data.tokenAddress}`;
 
     try {
       logger.info("[jobs]: Execute Launch Job starting...");
       logger.info("[jobs-execute-launch]: Job Data", data);
+
+      // Phase 1: Initializing Launch (15%)
+      emitWorkerProgress(
+        jobId,
+        "execute_launch",
+        data.tokenAddress,
+        data.userId || "unknown",
+        data.userChatId,
+        1,
+        5,
+        "Initializing Launch",
+        "Setting up execution environment",
+        15,
+        "in_progress"
+      );
 
       // Create loading state if it doesn't exist (for background jobs)
       if (!hasLoadingState(loadingKey)) {
@@ -1228,8 +1818,38 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
       // Update loading state - Phase 0: Starting execution
       await updateLoadingState(loadingKey, 0);
 
+      // Phase 2: Creating Token on Chain (35%)
+      emitWorkerProgress(
+        jobId,
+        "execute_launch",
+        data.tokenAddress,
+        data.userId || "unknown",
+        data.userChatId,
+        2,
+        5,
+        "Creating Token",
+        "Deploying token to blockchain",
+        35,
+        "in_progress"
+      );
+
       // Update loading state - Phase 1: Creating token
       await updateLoadingState(loadingKey, 1);
+
+      // Phase 3: Executing Buys (60%)
+      emitWorkerProgress(
+        jobId,
+        "execute_launch",
+        data.tokenAddress,
+        data.userId || "unknown",
+        data.userChatId,
+        3,
+        5,
+        "Executing Buys",
+        "Processing token purchases",
+        60,
+        "in_progress"
+      );
 
       // Update loading state - Phase 2: Executing buys
       await updateLoadingState(loadingKey, 2);
@@ -1271,6 +1891,21 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
         data.devBuy,
         data.launchStage,
         data.mode
+      );
+
+      // Phase 4: Finalizing Launch (85%)
+      emitWorkerProgress(
+        jobId,
+        "execute_launch",
+        data.tokenAddress,
+        data.userId || "unknown",
+        data.userChatId,
+        4,
+        5,
+        "Finalizing Launch",
+        "Updating token state and completing setup",
+        85,
+        "in_progress"
       );
 
       // Update loading state - Phase 3: Finalizing
@@ -1317,15 +1952,47 @@ export const executeLaunchWorker = new Worker<ExecuteTokenLaunchJob>(
         data.tokenName,
         data.tokenSymbol
       );
+
+      // Phase 5: Execution Complete (100%)
+      emitWorkerProgress(
+        jobId,
+        "execute_launch",
+        data.tokenAddress,
+        data.userId || "unknown",
+        data.userChatId,
+        5,
+        5,
+        "Execution Complete",
+        "Token launch completed successfully",
+        100,
+        "completed"
+      );
     } catch (error: unknown) {
       logger.error(
         "[jobs-execute-launch]: Error Occurred while executing token launch",
         error
       );
 
-      // Fail loading state
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+
+      // Emit error progress
+      emitWorkerProgress(
+        jobId,
+        "execute_launch",
+        data.tokenAddress,
+        data.userId || "unknown",
+        data.userChatId,
+        0,
+        5,
+        "Error",
+        `Launch execution failed: ${errorMessage}`,
+        0,
+        "failed",
+        { error: errorMessage }
+      );
+
+      // Fail loading state
       await failLoadingState(loadingKey, errorMessage);
 
       throw error;
