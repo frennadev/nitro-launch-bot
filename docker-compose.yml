@@ -1,6 +1,21 @@
-name: nitro
+name: nitro-launch
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: nitro-redis
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   bot:
     build:
       context: .
@@ -8,7 +23,15 @@ services:
     container_name: nitro-bot
     environment:
       NODE_ENV: "production"
+      LIGHTWEIGHT_MODE: "true"
+      ENABLE_BACKGROUND_PRELOADING: "false"
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: always
+    ports:
+      - "3000:3000"
 
   jobs:
     build:
@@ -17,4 +40,13 @@ services:
     container_name: nitro-jobs
     environment:
       NODE_ENV: "production"
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+      bot:
+        condition: service_started
     restart: always
+
+volumes:
+  redis_data:

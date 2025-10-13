@@ -1,23 +1,22 @@
 {
-    "compilerOptions": {
-      "target": "ES2020",
-      "module": "commonjs",
-      "lib": ["ES2020"],
-      "outDir": "./dist",
-      "rootDir": "./src",
-      "strict": true,
-      "moduleResolution": "node",
-      "esModuleInterop": true,
-      "skipLibCheck": true,
-      "forceConsistentCasingInFileNames": true,
-      "resolveJsonModule": true,
-      "allowImportingTsExtensions": true,
-      "noEmit": true
-    },
-    "include": ["src/**/*"],
-    "exclude": ["node_modules", "dist"]
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }
-
 
 // {
 //   "compilerOptions": {
@@ -29,7 +28,7 @@
 //     "jsx": "react-jsx",
 //     "allowJs": true,
 
-//     // Bundler mode
+//     // Module bundler compatibility mode
 //     "moduleResolution": "node",
 //     "allowImportingTsExtensions": true,
 //     "verbatimModuleSyntax": true,
@@ -47,4 +46,5 @@
 //       "esModuleInterop": true,
 
 //   }
+
 // }

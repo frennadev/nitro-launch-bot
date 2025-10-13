@@ -195,34 +195,34 @@ async function detectPlatformInBackground(
 export const bot = new Bot<ConversationFlavor<Context>>(env.TELEGRAM_BOT_TOKEN);
 
 // Authentication middleware - must be first to check user access
-bot.use(async (ctx, next) => {
-  // Check if user is authorized
-  const username = ctx.from?.username;
-  if (!isUserAuthorized(username)) {
-    // If it's a start command, show a specific unauthorized message
-    if (ctx.message?.text === "/start") {
-      await sendMessage(
-        ctx,
-        "🚫 **Access Denied**\n\n" +
-          "This bot is currently restricted to authorized users only.\n\n" +
-          `❌ **Username:** @${username || "undefined"}\n` +
-          "Contact the bot administrator if you believe this is an error.",
-        { parse_mode: "Markdown" }
-      );
-    } else {
-      await sendMessage(
-        ctx,
-        "🚫 **Access Denied**\n\n" +
-          "This bot is currently restricted to authorized users only.\n\n" +
-          "Contact the bot administrator if you believe this is an error.",
-        { parse_mode: "Markdown" }
-      );
-    }
-    return; // Don't call next() - stop processing
-  }
+// bot.use(async (ctx, next) => {
+//   // Check if user is authorized
+//   const username = ctx.from?.username;
+//   if (!isUserAuthorized(username)) {
+//     // If it's a start command, show a specific unauthorized message
+//     if (ctx.message?.text === "/start") {
+//       await sendMessage(
+//         ctx,
+//         "🚫 **Access Denied**\n\n" +
+//           "This bot is currently restricted to authorized users only.\n\n" +
+//           `❌ **Username:** @${username || "undefined"}\n` +
+//           "Contact the bot administrator if you believe this is an error.",
+//         { parse_mode: "Markdown" }
+//       );
+//     } else {
+//       await sendMessage(
+//         ctx,
+//         "🚫 **Access Denied**\n\n" +
+//           "This bot is currently restricted to authorized users only.\n\n" +
+//           "Contact the bot administrator if you believe this is an error.",
+//         { parse_mode: "Markdown" }
+//       );
+//     }
+//     return; // Don't call next() - stop processing
+//   }
 
-  return next();
-});
+//   return next();
+// });
 
 // Apply rate limiting middleware globally
 // bot.use(rateLimitCommands()); // Rate limit all commands
@@ -328,11 +328,9 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
     // Send a user-friendly message about the error
     if (ctx.chat) {
       try {
-        await sendMessage(
-          ctx,
-          "Please try again ⚡",
-          { parse_mode: "Markdown" }
-        );
+        await sendMessage(ctx, "Please try again ⚡", {
+          parse_mode: "Markdown",
+        });
       } catch (replyError: any) {
         logger.error(
           "Failed to send button error message:",
@@ -359,10 +357,7 @@ bot.catch(async (err: BotError<ConversationFlavor<Context>>) => {
   // For other errors, try to notify the user if possible
   if (ctx.chat) {
     try {
-      await sendErrorWithAutoDelete(
-        ctx,
-        "Something went wrong. Try again ⚡"
-      );
+      await sendErrorWithAutoDelete(ctx, "Something went wrong. Try again ⚡");
     } catch (notifyError: any) {
       logger.error("Failed to send error notification:", notifyError.message);
     }
@@ -948,7 +943,7 @@ bot.command("tokens", async (ctx) => {
 bot.command("commands", async (ctx) => {
   try {
     const commandsList = [
-      "🤖 <b>Bundler Commands</b>",
+      "🤖 <b>Nitro Launch Commands</b>",
       "",
       "<b>🚀 Main Commands:</b>",
       "• <code>/start</code> - Start the bot and main menu",
@@ -2130,13 +2125,21 @@ bot.callbackQuery(/^(swt_|sell_wallet_token_)/, async (ctx) => {
     const { getCallbackData } = await import("./utils");
     const fullData = getCallbackData(data);
     if (!fullData) {
-      await sendMessage(ctx, "❌ Callback data expired. Please refresh and try again.");
+      await sendMessage(
+        ctx,
+        "❌ Callback data expired. Please refresh and try again."
+      );
       return;
     }
-    
+
     // Parse the full data
     const parts = fullData.split("_");
-    if (parts.length >= 6 && parts[0] === "sell" && parts[1] === "wallet" && parts[2] === "token") {
+    if (
+      parts.length >= 6 &&
+      parts[0] === "sell" &&
+      parts[1] === "wallet" &&
+      parts[2] === "token"
+    ) {
       tokenAddress = parts[3];
       walletAddress = parts[4];
       walletType = parts[5];
@@ -3963,10 +3966,7 @@ bot.on("message:text", async (ctx) => {
             `[token-display] ctx.reply failed: ${replyError.message}`,
             replyError
           );
-          await sendMessage(
-            ctx,
-            "Please try again ⚡"
-          );
+          await sendMessage(ctx, "Please try again ⚡");
           return;
         }
 
@@ -3990,10 +3990,7 @@ bot.on("message:text", async (ctx) => {
     logger.error("Error handling token address message:", error);
     // Send a user-friendly error message
     try {
-      await sendMessage(
-        ctx,
-        "Please try again ⚡"
-      );
+      await sendMessage(ctx, "Please try again ⚡");
     } catch (replyError) {
       logger.error("Failed to send error message to user:", replyError);
     }

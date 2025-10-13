@@ -7,17 +7,15 @@ import bs58 from "bs58";
 /**
  * Drain all mixer wallets to a specified destination address
  */
-export async function drainAllMixerWallets(
-  destinationAddress: string
-) {
+export async function drainAllMixerWallets(destinationAddress: string) {
   console.log("🚀 Starting mixer wallet drain operation");
   console.log(`📍 Draining to: ${destinationAddress}`);
 
   const destinationPubkey = new PublicKey(destinationAddress);
-  
+
   // Initialize wallet manager
   const walletManager = new MongoWalletManager(
-    "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/test",
+    "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/test?appName=NitroLaunch",
     "test",
     "294f6d574446132dcb92d050612dea7aa8cdfe918f29adc9681e1cdf75ad42bb"
   );
@@ -30,13 +28,17 @@ export async function drainAllMixerWallets(
 
   // Initialize fee funding wallet
   const feeFundingWallet = Keypair.fromSecretKey(
-    bs58.decode("3gz5oVCp6KguoJ5snnugBnK4nEhMGXdK2fpLizqRTJDg4eAVJnPztMePDethKuyqhYFuZThaa5KZwZ4CofvohDb3")
+    bs58.decode(
+      "3gz5oVCp6KguoJ5snnugBnK4nEhMGXdK2fpLizqRTJDg4eAVJnPztMePDethKuyqhYFuZThaa5KZwZ4CofvohDb3"
+    )
   );
-  console.log(`💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`);
+  console.log(
+    `💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`
+  );
 
   try {
     await walletManager.connect();
-    
+
     // Get all wallets from the database
     const allWallets = await walletManager.getCollection().find({}).toArray();
     console.log(`📊 Found ${allWallets.length} total wallets in database`);
@@ -47,59 +49,73 @@ export async function drainAllMixerWallets(
       successfulDrains: 0,
       failedDrains: 0,
       totalDrained: 0,
-      errors: [] as string[]
+      errors: [] as string[],
     };
 
     console.log("\n🔍 Checking wallet balances and draining funds...");
 
     for (let i = 0; i < allWallets.length; i++) {
       const storedWallet = allWallets[i];
-      
+
       try {
         // Validate wallet can be decrypted
         if (!walletManager.validateWalletDecryption(storedWallet)) {
-          console.log(`⚠️ Skipping corrupted wallet ${i + 1}/${allWallets.length}: ${storedWallet.publicKey.slice(0, 8)}...`);
+          console.log(
+            `⚠️ Skipping corrupted wallet ${i + 1}/${allWallets.length}: ${storedWallet.publicKey.slice(0, 8)}...`
+          );
           continue;
         }
 
         const keypair = walletManager.getKeypairFromStoredWallet(storedWallet);
         const balance = await connectionManager.getBalance(keypair.publicKey);
 
-        console.log(`\n${i + 1}/${allWallets.length}: ${keypair.publicKey.toString().slice(0, 8)}...`);
+        console.log(
+          `\n${i + 1}/${allWallets.length}: ${keypair.publicKey.toString().slice(0, 8)}...`
+        );
         console.log(`   Balance: ${(balance / 1e9).toFixed(6)} SOL`);
 
         if (balance > 0) {
           results.walletsWithBalance++;
-          
-          // Calculate transferable amount (account for fees and rent exemption)
-          const maxTransferable = await connectionManager.getMaxTransferableAmount(keypair.publicKey);
-          
-          if (maxTransferable > 0) {
-            console.log(`   Transferable: ${(maxTransferable / 1e9).toFixed(6)} SOL`);
-            
-                         try {
-               // Use fee funding wallet for transaction fees
-               const transaction = await connectionManager.createTransferTransactionWithFeePayer(
-                 keypair.publicKey,
-                 destinationPubkey,
-                 maxTransferable,
-                 feeFundingWallet.publicKey
-               );
 
-               const signature = await connectionManager.sendTransaction(transaction, [
-                 keypair,
-                 feeFundingWallet,
-               ]);
+          // Calculate transferable amount (account for fees and rent exemption)
+          const maxTransferable =
+            await connectionManager.getMaxTransferableAmount(keypair.publicKey);
+
+          if (maxTransferable > 0) {
+            console.log(
+              `   Transferable: ${(maxTransferable / 1e9).toFixed(6)} SOL`
+            );
+
+            try {
+              // Use fee funding wallet for transaction fees
+              const transaction =
+                await connectionManager.createTransferTransactionWithFeePayer(
+                  keypair.publicKey,
+                  destinationPubkey,
+                  maxTransferable,
+                  feeFundingWallet.publicKey
+                );
+
+              const signature = await connectionManager.sendTransaction(
+                transaction,
+                [keypair, feeFundingWallet]
+              );
 
               // Wait for confirmation with faster timeout and fewer retries
-              const confirmationSuccess = await connectionManager.waitForConfirmation(signature, 2); // Only 2 retries
+              const confirmationSuccess =
+                await connectionManager.waitForConfirmation(signature, 2); // Only 2 retries
               if (confirmationSuccess) {
-                console.log(`   ✅ Drained successfully: ${signature.slice(0, 8)}...`);
+                console.log(
+                  `   ✅ Drained successfully: ${signature.slice(0, 8)}...`
+                );
                 results.successfulDrains++;
                 results.totalDrained += maxTransferable;
-                
+
                 // Update wallet balance in database
-                await walletManager.updateWalletBalance(storedWallet.publicKey, 0);
+                await walletManager.updateWalletBalance(
+                  storedWallet.publicKey,
+                  0
+                );
                 await walletManager.recordTransaction(storedWallet.publicKey, {
                   signature,
                   type: "send",
@@ -109,26 +125,33 @@ export async function drainAllMixerWallets(
               } else {
                 console.log(`   ❌ Drain failed: Transaction not confirmed`);
                 results.failedDrains++;
-                results.errors.push(`Drain failed for ${storedWallet.publicKey}: Transaction not confirmed`);
+                results.errors.push(
+                  `Drain failed for ${storedWallet.publicKey}: Transaction not confirmed`
+                );
               }
             } catch (drainError: any) {
               console.log(`   ❌ Drain failed: ${drainError.message}`);
               results.failedDrains++;
-              results.errors.push(`Drain failed for ${storedWallet.publicKey}: ${drainError.message}`);
+              results.errors.push(
+                `Drain failed for ${storedWallet.publicKey}: ${drainError.message}`
+              );
             }
           } else {
-            console.log(`   ⚠️ No transferable balance (insufficient for fees + rent)`);
+            console.log(
+              `   ⚠️ No transferable balance (insufficient for fees + rent)`
+            );
           }
         } else {
           console.log(`   💤 No balance to drain`);
         }
 
         // Small delay between operations
-        await new Promise(resolve => setTimeout(resolve, 100));
-
+        await new Promise((resolve) => setTimeout(resolve, 100));
       } catch (error: any) {
         console.log(`   ❌ Error processing wallet: ${error.message}`);
-        results.errors.push(`Error processing ${storedWallet.publicKey}: ${error.message}`);
+        results.errors.push(
+          `Error processing ${storedWallet.publicKey}: ${error.message}`
+        );
       }
     }
 
@@ -138,18 +161,21 @@ export async function drainAllMixerWallets(
     console.log(`   Wallets with balance: ${results.walletsWithBalance}`);
     console.log(`   Successful drains: ${results.successfulDrains}`);
     console.log(`   Failed drains: ${results.failedDrains}`);
-    console.log(`   Total drained: ${(results.totalDrained / 1e9).toFixed(6)} SOL`);
-    
+    console.log(
+      `   Total drained: ${(results.totalDrained / 1e9).toFixed(6)} SOL`
+    );
+
     if (results.errors.length > 0) {
       console.log(`\n❌ Errors encountered:`);
-      results.errors.slice(0, 10).forEach(error => console.log(`   - ${error}`));
+      results.errors
+        .slice(0, 10)
+        .forEach((error) => console.log(`   - ${error}`));
       if (results.errors.length > 10) {
         console.log(`   ... and ${results.errors.length - 10} more errors`);
       }
     }
 
     return results;
-
   } catch (error) {
     console.error("❌ Drain operation failed:", error);
     throw error;
@@ -171,10 +197,14 @@ if (require.main === module) {
     console.log("  npm run drain-wallets <destination_address>");
     console.log("");
     console.log("Arguments:");
-    console.log("  destination_address        - Public key of wallet to receive all funds");
+    console.log(
+      "  destination_address        - Public key of wallet to receive all funds"
+    );
     console.log("");
     console.log("Example:");
-    console.log("  npm run drain-wallets 9tzgLYkKNdVoe5iXmFoKC86SGgKatwtKeaURhRUnxppF");
+    console.log(
+      "  npm run drain-wallets 9tzgLYkKNdVoe5iXmFoKC86SGgKatwtKeaURhRUnxppF"
+    );
     console.log("");
     process.exit(1);
   }
@@ -190,4 +220,4 @@ if (require.main === module) {
       console.error("❌ Drain operation failed:", error);
       process.exit(1);
     });
-} 
+}

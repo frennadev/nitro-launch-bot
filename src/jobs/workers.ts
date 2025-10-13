@@ -813,6 +813,8 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       userId,
     } = job.data;
 
+    let actualTokenAddress: string | undefined;
+
     try {
       logger.info("[launchDappToken]: Job starting...", data);
 
@@ -821,6 +823,28 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       if (!user) {
         throw new Error("User not found");
       }
+
+      // --------- GET TOKEN FROM DATABASE ---------
+      const { TokenModel } = await import("../backend/models");
+      const tokenDoc = await TokenModel.findById(
+        safeObjectId(String(tokenId))
+      ).lean();
+      if (!tokenDoc) {
+        throw new Error(`Token not found with ID: ${tokenId}`);
+      }
+
+      // Use the actual token address from the database
+      actualTokenAddress = tokenDoc.tokenAddress;
+      if (!actualTokenAddress) {
+        throw new Error(`Token ${tokenId} does not have a valid token address`);
+      }
+
+      logger.info("[launchDappToken]: Found token", {
+        tokenId,
+        tokenAddress: actualTokenAddress,
+        tokenName: tokenDoc.name,
+        tokenSymbol: tokenDoc.symbol,
+      });
 
       // -------- GET WALLETS FROM DATABASE BASED ON USERID --------
       // Get funding wallet
@@ -919,7 +943,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       const isBonkToken = platform === "bonk";
 
       logger.info("[launchDappToken]: Starting launch process", {
-        tokenAddress: tokenId,
+        tokenAddress: actualTokenAddress,
         platform: platform || "pump",
         launchMode,
         buyAmount,
@@ -940,7 +964,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
           // Execute Bonk token launch with mixing and on-chain creation
           const bonkResult = await launchBonkToken(
             user.id,
-            tokenId,
+            actualTokenAddress,
             buyAmount,
             devBuy,
             launchMode
@@ -949,7 +973,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
           if (bonkResult.success) {
             result = {
               success: true,
-              tokenAddress: tokenId,
+              tokenAddress: actualTokenAddress,
               platform: "bonk",
               signature: bonkResult.signature,
               tokenName: bonkResult.tokenName,
@@ -1003,7 +1027,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
           const pumpResult = await enqueuePrepareTokenLaunch(
             user.id,
             userChatId, // Telegram chat ID for notifications
-            tokenId,
+            actualTokenAddress,
             fundingWallet.privateKey,
             devWallet.privateKey,
             buyerKeys,
@@ -1015,7 +1039,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
           if (pumpResult.success) {
             result = {
               success: true,
-              tokenAddress: tokenId,
+              tokenAddress: actualTokenAddress,
               platform: "pump",
               walletsUsed: buyerWalletDocs.length,
               message:
@@ -1056,7 +1080,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
         try {
           await sendLaunchSuccessNotification(
             userChatId,
-            tokenId,
+            actualTokenAddress,
             tokenName,
             tokenSymbol
           );
@@ -1069,14 +1093,14 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       }
 
       logger.info("[launchDappToken]: Job completed successfully", {
-        tokenAddress: tokenId,
+        tokenAddress: actualTokenAddress,
         platform: platform || "pump",
         success: result.success,
       });
 
       return {
         success: true,
-        tokenAddress: tokenId,
+        tokenAddress: actualTokenAddress,
         platform: platform || "pump",
         launchMode,
         buyAmount,
@@ -1094,7 +1118,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
         try {
           await sendLaunchFailureNotification(
             data.userChatId,
-            data.tokenId,
+            actualTokenAddress || data.tokenId,
             data.tokenName || "Unknown Token",
             errorMessage
           );

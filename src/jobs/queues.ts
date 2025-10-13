@@ -40,14 +40,14 @@ export const walletSellQueue = new Queue<SellWalletJob>("nitro-wallet-sell", {
 });
 
 export const createTokenMetadataQueue = new Queue<CreateTokenMetadataJob>(
-  "bundler-create-token-metadata",
+  "nitro-create-token-metadata",
   {
     connection: redisClient,
   }
 );
 
 export const launchDappTokenQueue = new Queue<LaunchDappTokenJob>(
-  "bundler-launch-dapp-token",
+  "nitro-launch-dapp-token",
   {
     connection: redisClient,
   }

@@ -16,11 +16,11 @@ export default async function helpConversation(
 
   const helpSections = {
     main: {
-      title: "🆘 Bundler Help Center",
+      title: "🆘 Nitro Launch Help Center",
       content: [
-        "Welcome to the *Bundler Help Center*! 🌟",
+        "Welcome to the *Nitro Launch Help Center*! 🌟",
         "",
-        "Bundler is your complete solution for launching and managing Solana tokens on Pump.fun with ease.",
+        "Nitro Launch is your complete solution for launching and managing Solana tokens on Pump.fun with ease.",
         "",
         "*Choose a help section below:*",
       ].join("\n"),
@@ -111,7 +111,7 @@ export default async function helpConversation(
     wallet_management: {
       title: "💳 Wallet Management Guide",
       content: [
-        "*Wallet Types in Bundler*",
+        "*Wallet Types in Nitro Launch*",
         "",
         "🔐 *Dev Wallet*: Your main wallet for token creation and management",
         "💰 *Funding Wallet*: Main trading wallet for buying/selling external tokens",
@@ -248,7 +248,7 @@ export default async function helpConversation(
         "",
         "*Best Practices:*",
         "• Share in crypto communities and social media",
-        "• Explain Bundler's benefits",
+        "• Explain Nitro Launch's benefits",
         "• Help new users get started",
         "• Build long-term relationships",
         "",

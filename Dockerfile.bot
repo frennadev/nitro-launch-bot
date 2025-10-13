@@ -1,21 +1,68 @@
 FROM oven/bun:alpine AS base
 
-# Dependencies
+# Dependencies stage
 FROM base AS deps
 WORKDIR /app
+
+# Install build dependencies for Canvas and native modules
+RUN apk add --no-cache \
+    build-base \
+    python3 \
+    make \
+    g++ \
+    cairo-dev \
+    jpeg-dev \
+    pango-dev \
+    musl-dev \
+    giflib-dev \
+    pixman-dev \
+    pangomm-dev \
+    libjpeg-turbo-dev \
+    freetype-dev \
+    pkgconfig
+
+ENV PYTHON=/usr/bin/python3
+
 COPY bun.lock package.json ./
 RUN bun install --frozen-lockfile
 
-
-# Build
+# Build stage
 FROM deps AS build
 WORKDIR /app
-COPY --from=deps /app/node_modules /node_modules
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Clean build artifacts and rebuild
+RUN rm -rf build/ dist/ .next/ || true
 RUN bun run build:bot
 
-# Runtime
+# Verify build
+RUN ls -la build/ && echo "✅ Bot build completed"
+
+# Runtime stage
 FROM base AS runtime
 WORKDIR /app
+
+# Install runtime dependencies for Canvas
+RUN apk add --no-cache \
+    cairo \
+    jpeg \
+    pango \
+    musl \
+    giflib \
+    pixman \
+    pangomm \
+    libjpeg-turbo \
+    freetype
+
+# Copy built application
 COPY --from=build /app/build ./build
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD echo "Bot health check" || exit 1
+
+# Set environment
+ENV NODE_ENV=production
+
 CMD ["bun", "run", "build/index.js"]

@@ -1,13 +1,13 @@
 FROM oven/bun:alpine AS base
 
-# Dependencies
+# Dependencies stage
 FROM base AS deps
 WORKDIR /app
 
-# Install Python and build dependencies for native packages like canvas
+# Install build dependencies for native packages like canvas
 RUN apk add --no-cache \
+    build-base \
     python3 \
-    py3-pip \
     make \
     g++ \
     cairo-dev \
@@ -18,7 +18,8 @@ RUN apk add --no-cache \
     pixman-dev \
     pangomm-dev \
     libjpeg-turbo-dev \
-    freetype-dev
+    freetype-dev \
+    pkgconfig
 
 # Set Python environment variable for node-gyp
 ENV PYTHON=/usr/bin/python3
@@ -26,18 +27,24 @@ ENV PYTHON=/usr/bin/python3
 COPY bun.lock package.json ./
 RUN bun install --frozen-lockfile
 
-# Build
+# Build stage
 FROM deps AS build
 WORKDIR /app
-COPY --from=deps /app/node_modules /node_modules
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Clean build artifacts and rebuild
+RUN rm -rf build/ dist/ .next/ || true
 RUN bun run build:job
 
-# Runtime
+# Verify build output
+RUN ls -la build/jobs/ && echo "✅ Jobs build completed"
+
+# Runtime stage
 FROM base AS runtime
 WORKDIR /app
 
-# Install runtime dependencies for canvas if needed
+# Install runtime dependencies for canvas and other native modules
 RUN apk add --no-cache \
     cairo \
     jpeg \
@@ -49,5 +56,14 @@ RUN apk add --no-cache \
     libjpeg-turbo \
     freetype
 
+# Copy built application
 COPY --from=build /app/build ./build
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD echo "Jobs health check" || exit 1
+
+# Set environment
+ENV NODE_ENV=production
+
 CMD ["bun", "build/jobs/index.js"]

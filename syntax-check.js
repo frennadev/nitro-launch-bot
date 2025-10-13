@@ -36,7 +36,7 @@ exec(
               '- Duplicate "TokenMetadataResponse" import in relaunchTokenConversation.ts'
             );
             console.log(
-              "- This caused the bundler to generate invalid JavaScript"
+              "- This caused the build system to generate invalid JavaScript"
             );
             console.log("- Fixed by removing the duplicate import");
           }
