@@ -1383,6 +1383,28 @@ prepareLaunchWorker.on("closed", () => {
   logger.info("Prepare Launch worker closed successfully");
 });
 
+launchTokenFromDappWorker.on("ready", () => {
+  logger.info("Launch Token From Dapp worker ready");
+});
+launchTokenFromDappWorker.on("active", async () => {
+  logger.info("Launch Token From Dapp worker active");
+});
+launchTokenFromDappWorker.on("error", async (error) => {
+  logger.error("Launch Token From Dapp Worker Error", error);
+});
+launchTokenFromDappWorker.on("failed", async (job) => {
+  const token = job!.data;
+  await sendLaunchFailureNotification(
+    job!.data.userChatId,
+    token.tokenId,
+    token.tokenName,
+    job?.failedReason || "Launch failed"
+  );
+});
+launchTokenFromDappWorker.on("closed", () => {
+  logger.info("Launch Token From Dapp worker closed successfully");
+});
+
 executeLaunchWorker.on("ready", () => {
   logger.info("Execute launch worker ready");
 });
