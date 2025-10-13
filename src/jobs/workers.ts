@@ -1332,7 +1332,7 @@ sellDevWorker.on("failed", async (job) => {
   );
 });
 sellDevWorker.on("closed", () => {
-  logger.error("Dev Sell Worker closed successfully");
+  logger.info("Dev Sell Worker closed successfully");
 });
 
 sellWalletWorker.on("ready", () => {

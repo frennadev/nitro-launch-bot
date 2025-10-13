@@ -13,14 +13,14 @@ export async function connectDB() {
     logger.info("🚀  MongoDB connected");
     return;
   }
-  
+
   if (isConnecting) {
     logger.info("MongoDB connection already in progress...");
     return;
   }
-  
+
   isConnecting = true;
-  
+
   try {
     const options: ConnectOptions = {
       maxPoolSize: 10,
@@ -28,7 +28,7 @@ export async function connectDB() {
       socketTimeoutMS: 45000,
       bufferCommands: false,
     };
-    
+
     await mongoose.connect(env.MONGODB_URI, options);
     logger.info("🚀  MongoDB connected");
     connectionRetries = 0;
@@ -66,25 +66,25 @@ export const redisClient = new Redis(env.REDIS_URI, {
   },
 });
 
-let redisConnectionState = 'disconnected';
+let redisConnectionState = "disconnected";
 
 redisClient.on("connect", () => {
   logger.info("Redis: Connecting...");
-  redisConnectionState = 'connecting';
+  redisConnectionState = "connecting";
 });
 
 redisClient.on("ready", () => {
   logger.info("Redis: Connection ready");
-  redisConnectionState = 'ready';
+  redisConnectionState = "ready";
   connectionRetries = 0;
 });
 
 redisClient.on("error", (error: any) => {
   logger.error(`Redis connection error: ${error.message}`, error);
-  redisConnectionState = 'error';
-  
+  redisConnectionState = "error";
+
   // Don't auto-disconnect on every error, let Redis handle reconnection
-  if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+  if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
     connectionRetries++;
     if (connectionRetries >= MAX_RETRIES) {
       logger.error(`Redis: Max retries (${MAX_RETRIES}) reached, giving up`);
@@ -94,26 +94,28 @@ redisClient.on("error", (error: any) => {
 });
 
 redisClient.on("reconnecting", (delay: number) => {
-  logger.info(`Redis: Reconnecting in ${delay}ms... (attempt ${connectionRetries + 1})`);
-  redisConnectionState = 'reconnecting';
+  logger.info(
+    `Redis: Reconnecting in ${delay}ms... (attempt ${connectionRetries + 1})`
+  );
+  redisConnectionState = "reconnecting";
 });
 
 redisClient.on("close", () => {
   logger.info("Redis: Connection closed");
-  redisConnectionState = 'closed';
+  redisConnectionState = "closed";
 });
 
 redisClient.on("end", () => {
   logger.info("Redis: Connection ended");
-  redisConnectionState = 'disconnected';
+  redisConnectionState = "disconnected";
 });
 
 // Graceful Redis connection management
 export const connectRedis = async (): Promise<void> => {
-  if (redisConnectionState === 'ready') {
+  if (redisConnectionState === "ready") {
     return;
   }
-  
+
   try {
     await redisClient.connect();
     logger.info("Redis: Connected successfully");
@@ -125,7 +127,7 @@ export const connectRedis = async (): Promise<void> => {
 
 export const closeRedis = async (): Promise<void> => {
   try {
-    if (redisClient && redisConnectionState !== 'disconnected') {
+    if (redisClient && redisConnectionState !== "disconnected") {
       await redisClient.quit();
       logger.info("Redis: Connection closed gracefully");
     }
@@ -151,12 +153,9 @@ export const getRedisStatus = () => {
 // Graceful shutdown handler
 export const gracefulShutdown = async (): Promise<void> => {
   logger.info("Initiating graceful shutdown...");
-  
+
   try {
-    await Promise.all([
-      closeRedis(),
-      disconnectDB(),
-    ]);
+    await Promise.all([closeRedis(), disconnectDB()]);
     logger.info("Graceful shutdown completed");
   } catch (error) {
     logger.error("Error during graceful shutdown:", error);
@@ -164,25 +163,5 @@ export const gracefulShutdown = async (): Promise<void> => {
   }
 };
 
-// Handle process termination
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully');
-  try {
-    await gracefulShutdown();
-    process.exit(0);
-  } catch (error) {
-    logger.error('Error during shutdown:', error);
-    process.exit(1);
-  }
-});
-
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully');
-  try {
-    await gracefulShutdown();
-    process.exit(0);
-  } catch (error) {
-    logger.error('Error during shutdown:', error);
-    process.exit(1);
-  }
-});
+// Note: SIGTERM/SIGINT handlers are managed by the main process (src/jobs/index.ts)
+// The gracefulShutdown function above is called by the main handler

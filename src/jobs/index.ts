@@ -16,7 +16,7 @@ import {
   launchTokenFromDappWorker,
   executeLaunchWorker,
 } from "./workers";
-import { closeRedis, connectDB, disconnectDB } from "./db";
+import { connectDB, gracefulShutdown } from "./db";
 import { logger } from "./logger";
 
 connectDB()
@@ -36,30 +36,48 @@ connectDB()
   });
 
 const onCloseSignal = async () => {
-  logger.info("Closing mongo db connection...");
-  await disconnectDB();
+  logger.info("Initiating graceful shutdown...");
 
-  logger.info("Closing workers...");
-  await launchTokenWorker.close();
-  await sellDevWorker.close();
-  await sellWalletWorker.close();
-  await prepareLaunchWorker.close();
-  await createTokenMetadataWorker.close();
-  await launchTokenFromDappWorker.close();
-  await executeLaunchWorker.close();
+  try {
+    logger.info("Closing workers...");
+    await Promise.all([
+      launchTokenWorker.close(),
+      sellDevWorker.close(),
+      sellWalletWorker.close(),
+      prepareLaunchWorker.close(),
+      createTokenMetadataWorker.close(),
+      launchTokenFromDappWorker.close(),
+      executeLaunchWorker.close(),
+    ]);
 
-  logger.info("Closing redis connection");
-  await closeRedis();
+    logger.info("Closing queues...");
+    await Promise.all([
+      tokenLaunchQueue.close(),
+      devSellQueue.close(),
+      walletSellQueue.close(),
+      prepareLaunchQueue.close(),
+      executeLaunchQueue.close(),
+      createTokenMetadataQueue.close(),
+      launchDappTokenQueue.close(),
+    ]);
 
-  logger.info("Closing queues...");
-  await tokenLaunchQueue.close();
-  await devSellQueue.close();
-  await walletSellQueue.close();
-  await prepareLaunchQueue.close();
-  await executeLaunchQueue.close();
-  await createTokenMetadataQueue.close();
-  await launchDappTokenQueue.close();
+    // Use the graceful shutdown for DB and Redis connections
+    await gracefulShutdown();
+
+    logger.info("Graceful shutdown completed");
+    process.exit(0);
+  } catch (error) {
+    logger.error("Error during shutdown:", error);
+    process.exit(1);
+  }
 };
 
-process.on("SIGINT", onCloseSignal);
-process.on("SIGTERM", onCloseSignal);
+process.on("SIGINT", async () => {
+  logger.info("SIGINT received, shutting down gracefully");
+  await onCloseSignal();
+});
+
+process.on("SIGTERM", async () => {
+  logger.info("SIGTERM received, shutting down gracefully");
+  await onCloseSignal();
+});
