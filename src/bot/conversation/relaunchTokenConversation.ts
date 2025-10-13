@@ -14,11 +14,7 @@ import { env } from "../../config";
 import { sendLoadingMessage } from "../loading";
 import { sendErrorWithAutoDelete } from "../utils";
 import { sendMessage } from "../../backend/sender";
-import {
-  fetchTokenMetadata,
-  TokenMetadataResponse,
-  TokenMetadataResponse,
-} from "../token-metadata";
+import { fetchTokenMetadata, TokenMetadataResponse } from "../token-metadata";
 import { PublicKey } from "@solana/web3.js";
 
 const cancelKeyboard = new InlineKeyboard().text(
@@ -153,35 +149,36 @@ const relaunchTokenConversation = async (
     }
     if (upd.message?.text) {
       const text = upd.message.text.trim();
-      
+
       // Import smart link detector
-      const { SmartLinkDetector } = await import("../../utils/smart-link-detector");
-      
+      const { SmartLinkDetector } = await import(
+        "../../utils/smart-link-detector"
+      );
+
       // Use smart detection
       const detectionResult = SmartLinkDetector.detectAndCategorizeLinks(text);
-      
+
       if (detectionResult.success || text.toLowerCase() === "skip") {
         // Assign detected links
         twitter = detectionResult.links.twitter;
         telegram = detectionResult.links.telegram;
         website = detectionResult.links.website;
-        
+
         // Show confirmation message
         if (detectionResult.success) {
-          await sendMessage(
-            ctx,
-            detectionResult.message,
-            { parse_mode: "Markdown", reply_markup: cancelKeyboard }
-          );
+          await sendMessage(ctx, detectionResult.message, {
+            parse_mode: "Markdown",
+            reply_markup: cancelKeyboard,
+          });
         }
-        
+
         break;
       } else {
         // Show error and ask again
         await sendMessage(
           ctx,
           `❌ <b>Link Detection Failed</b>\n\n${detectionResult.message}\n\n` +
-          "Please try again with valid links or type 'skip' to continue without links.",
+            "Please try again with valid links or type 'skip' to continue without links.",
           { parse_mode: "HTML", reply_markup: cancelKeyboard }
         );
         continue;
