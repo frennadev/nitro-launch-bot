@@ -38,6 +38,17 @@ export function encryptPrivateKey(privateKey: string): string {
 }
 
 export function decryptPrivateKey(encryptedPrivateKey: string): string {
+  // Input validation
+  if (!encryptedPrivateKey) {
+    throw new Error("Encrypted private key is null or undefined");
+  }
+
+  if (typeof encryptedPrivateKey !== "string") {
+    throw new Error(
+      `Expected string, got ${typeof encryptedPrivateKey}: ${JSON.stringify(encryptedPrivateKey)}`
+    );
+  }
+
   const SECRET_KEY = crypto.scryptSync(
     env.ENCRYPTION_SECRET as string,
     "salt",
@@ -48,7 +59,9 @@ export function decryptPrivateKey(encryptedPrivateKey: string): string {
     const [ivHex, encryptedData] = encryptedPrivateKey.split(":");
 
     if (!ivHex || !encryptedData) {
-      throw new Error("Invalid encrypted data format");
+      throw new Error(
+        `Invalid encrypted data format - expected "iv:data", got: "${encryptedPrivateKey}"`
+      );
     }
     const iv = Buffer.from(ivHex, "hex");
     const decipher = crypto.createDecipheriv(

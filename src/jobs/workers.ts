@@ -54,7 +54,7 @@ import { createToken } from "../backend/functions";
 import { createBonkToken } from "../blockchain/letsbonk/integrated-token-creator";
 import axios from "axios";
 import { UserModel, WalletModel } from "../backend/models";
-import { safeObjectId, decryptPrivateKey } from "../backend/utils";
+import { safeObjectId } from "../backend/utils";
 import { env } from "../config";
 // import { LaunchDestination } from "../backend/types"; // Available but not used in current implementation
 
@@ -890,17 +890,41 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       }
 
       // -------- DECRYPT WALLET PRIVATE KEYS --------
+      const { safeDecryptPrivateKey } = await import(
+        "../backend/wallet-decryption"
+      );
+
+      // Decrypt funding wallet
+      const fundingDecryptResult = await safeDecryptPrivateKey(
+        fundingWalletDoc.privateKey,
+        fundingWalletDoc._id.toString()
+      );
+
+      if (!fundingDecryptResult.success) {
+        throw new Error(
+          `Invalid funding wallet data: ${fundingDecryptResult.error}`
+        );
+      }
+
       const fundingWallet = {
         publicKey: fundingWalletDoc.publicKey,
-        privateKey: decryptPrivateKey(fundingWalletDoc.privateKey),
+        privateKey: fundingDecryptResult.privateKey!,
       };
+
+      // Decrypt dev wallet
+      const devDecryptResult = await safeDecryptPrivateKey(
+        devWalletDoc.privateKey,
+        devWalletDoc._id.toString()
+      );
+
+      if (!devDecryptResult.success) {
+        throw new Error(`Invalid dev wallet data: ${devDecryptResult.error}`);
+      }
 
       const devWallet = {
         publicKey: devWalletDoc.publicKey,
-        privateKey: decryptPrivateKey(devWalletDoc.privateKey),
-      };
-
-      // -------- VALIDATE LAUNCH PARAMETERS --------
+        privateKey: devDecryptResult.privateKey!,
+      }; // -------- VALIDATE LAUNCH PARAMETERS --------
       if (!buyAmount || buyAmount <= 0) {
         throw new Error("Buy amount must be greater than 0");
       }
@@ -1024,10 +1048,26 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
             "../backend/functions-main"
           );
 
-          // Prepare buyer keys for launch
-          const buyerKeys = buyerWalletDocs.map((w) =>
-            decryptPrivateKey(w.privateKey)
+          // Prepare buyer keys for launch with resilient decryption
+          const { safeDecryptWalletBatch } = await import(
+            "../backend/wallet-decryption"
           );
+          const buyerDecryptResult = await safeDecryptWalletBatch(
+            buyerWalletDocs.map((w) => ({
+              _id: w._id.toString(),
+              privateKey: w.privateKey,
+            })),
+            "buyer wallet"
+          );
+
+          if (!buyerDecryptResult.success) {
+            const errorDetails = buyerDecryptResult.errors
+              .map((e) => `${e.walletId}: ${e.error}`)
+              .join(", ");
+            throw new Error(`Failed to decrypt buyer wallets: ${errorDetails}`);
+          }
+
+          const buyerKeys = buyerDecryptResult.privateKeys;
 
           // Execute PumpFun token launch through staging system
           const pumpResult = await enqueuePrepareTokenLaunch(
