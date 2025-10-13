@@ -1,4 +1,16 @@
 services:
+  - type: web
+    name: nitro-launch-bot-service
+    runtime: node
+    plan: starter
+    region: frankfurt
+    buildCommand: bun install && bun run build
+    startCommand: bun run start:render
+    envVars:
+      - fromGroup: nitro-launch
+      - key: NODE_ENV
+        value: production
+    
   - type: worker
     name: nitro-bot
     runtime: docker

@@ -33,6 +33,8 @@ NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
 
 ### 3. Socket.IO Client Configuration
 
+````typescript
+### 3. Socket.IO Client Configuration
 ```typescript
 // lib/socket.ts
 import { io, Socket } from "socket.io-client";
@@ -50,6 +52,22 @@ export const initializeSocket = (): Socket => {
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      // Add these for production debugging
+      forceNew: true,
+      upgrade: true,
+    });
+
+    // Add connection debugging
+    socket.on('connect', () => {
+      console.log('✅ Socket.IO connected:', socket?.id);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket.IO connection error:', error);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('🔌 Socket.IO disconnected:', reason);
     });
   }
   return socket;
@@ -62,6 +80,148 @@ export const disconnectSocket = (): void => {
     socket.disconnect();
     socket = null;
   }
+};
+````
+
+## 🔧 **Troubleshooting Connection Issues**
+
+### Common Issues & Solutions
+
+#### **1. 500 Internal Server Error**
+
+```
+Error: Unexpected server response: 500
+Request URL: https://your-domain.com/socket.io/?EIO=4&transport=websocket
+```
+
+**Causes & Solutions:**
+
+- **Server not properly initialized**: Ensure Socket.IO server is running
+- **Port conflicts**: Check if the server is listening on the correct port
+- **CORS issues**: Verify CORS configuration includes your domain
+
+**Debug Steps:**
+
+```typescript
+// 1. Test server health endpoint
+fetch("https://your-domain.com/health")
+  .then((res) => res.json())
+  .then((data) => console.log("Server health:", data));
+
+// 2. Check Socket.IO with polling first
+const socket = io("https://your-domain.com", {
+  transports: ["polling"], // Force polling first
+  upgrade: false,
+});
+```
+
+#### **2. CORS Policy Errors**
+
+```
+Access to XMLHttpRequest blocked by CORS policy
+```
+
+**Solution**: Update server CORS configuration:
+
+```typescript
+// Server-side configuration needed
+cors: {
+  origin: [
+    "https://your-frontend-domain.com",
+    "http://localhost:3000" // for development
+  ],
+  methods: ["GET", "POST"],
+  credentials: true
+}
+```
+
+#### **3. Connection Timeout**
+
+```
+Error: xhr poll error
+```
+
+**Solutions:**
+
+```typescript
+// Increase timeout values
+const socket = io(SOCKET_URL, {
+  timeout: 60000, // Increase timeout
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 2000,
+  transports: ["polling", "websocket"], // Try polling first
+});
+```
+
+#### **4. Production vs Development URLs**
+
+```typescript
+// Environment-specific configuration
+const getSocketURL = () => {
+  if (process.env.NODE_ENV === "production") {
+    return "https://nitro-launch-bot-service.onrender.com";
+  }
+  return "http://localhost:3001";
+};
+
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || getSocketURL();
+```
+
+### **Production Deployment Checklist**
+
+✅ **Server Configuration:**
+
+- [ ] Socket.IO server listening on `process.env.PORT`
+- [ ] CORS configured for production domain
+- [ ] Health check endpoint responding
+- [ ] Server binding to `0.0.0.0` not `localhost`
+
+✅ **Client Configuration:**
+
+- [ ] Correct production URL in environment variables
+- [ ] HTTPS URL for production (not HTTP)
+- [ ] Proper error handling for connection failures
+- [ ] Fallback to polling transport
+
+✅ **Network & Infrastructure:**
+
+- [ ] Firewall/proxy allows WebSocket connections
+- [ ] Load balancer configured for WebSocket upgrade
+- [ ] CDN (if used) passes through WebSocket connections
+
+### **Testing Connection**
+
+```typescript
+// Debug connection step by step
+const testConnection = async () => {
+  // 1. Test basic HTTP connectivity
+  try {
+    const response = await fetch(
+      "https://nitro-launch-bot-service.onrender.com/health"
+    );
+    console.log("Health check:", await response.json());
+  } catch (error) {
+    console.error("Health check failed:", error);
+    return;
+  }
+
+  // 2. Test Socket.IO with polling only
+  const socket = io("https://nitro-launch-bot-service.onrender.com", {
+    transports: ["polling"],
+    timeout: 30000,
+  });
+
+  socket.on("connect", () => {
+    console.log("✅ Polling connection successful");
+
+    // 3. Try upgrading to WebSocket
+    socket.io.opts.transports = ["polling", "websocket"];
+  });
+
+  socket.on("connect_error", (error) => {
+    console.error("❌ Connection failed:", error);
+  });
 };
 ```
 

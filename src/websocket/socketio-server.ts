@@ -131,8 +131,11 @@ class SocketIOServer {
   // Track launch progress for each token
   private launchProgress = new Map<string, LaunchProgress>();
 
-  constructor(port: number = 3001) {
-    this.port = port;
+  constructor(port?: number) {
+    // Use PORT environment variable for production (Render, Heroku, etc.)
+    this.port =
+      port ||
+      parseInt(process.env.PORT || process.env.WEBSOCKET_PORT || "3001");
   }
 
   async initialize(): Promise<void> {
@@ -145,30 +148,72 @@ class SocketIOServer {
       // Create HTTP server
       this.httpServer = createServer();
 
-      // Initialize Socket.IO
+      // Initialize Socket.IO with production-ready CORS
       this.io = new Server(this.httpServer, {
         cors: {
           origin: [
             "http://localhost:3000",
             "http://localhost:3001",
             "https://your-frontend-domain.com",
+            // Add your production frontend domains
+            "https://*.vercel.app",
+            "https://*.netlify.app",
+            // Allow any origin in development
+            ...(process.env.NODE_ENV === "development" ? ["*"] : []),
           ],
           methods: ["GET", "POST"],
           credentials: true,
         },
         transports: ["websocket", "polling"],
+        // Add production optimizations
+        pingTimeout: 60000,
+        pingInterval: 25000,
       });
 
       // Set up event handlers
       this.setupEventHandlers();
 
-      // Start the server
-      this.httpServer.listen(this.port, () => {
-        botLogger.info(`🔌 Socket.IO server running on port ${this.port}`);
+      // Start the server with better error handling
+      this.httpServer.on("error", (error: Error & { code?: string }) => {
+        botLogger.error(`Socket.IO server error on port ${this.port}:`, {
+          error: error.message,
+          code: error.code,
+          port: this.port,
+          NODE_ENV: process.env.NODE_ENV,
+        });
+      });
+
+      this.httpServer.listen(this.port, "0.0.0.0", () => {
+        botLogger.info(`🔌 Socket.IO server running on port ${this.port}`, {
+          port: this.port,
+          NODE_ENV: process.env.NODE_ENV,
+          cors: this.io?.engine.opts.cors,
+        });
         this.isInitialized = true;
+
+        // Add a health check endpoint
+        if (this.httpServer) {
+          this.httpServer.on("request", (req, res) => {
+            if (req.url === "/health" && req.method === "GET") {
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  status: "OK",
+                  socketIO: "running",
+                  port: this.port,
+                  timestamp: new Date().toISOString(),
+                })
+              );
+            }
+          });
+        }
       });
     } catch (error) {
-      botLogger.error("Failed to initialize Socket.IO server:", error);
+      botLogger.error("Failed to initialize Socket.IO server:", {
+        error: error instanceof Error ? error.message : String(error),
+        port: this.port,
+        NODE_ENV: process.env.NODE_ENV,
+      });
       throw error;
     }
   }
