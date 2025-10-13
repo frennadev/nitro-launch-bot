@@ -250,7 +250,110 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 };
 ```
 
+## 🔒 **Security & User Authentication**
+
+**⚠️ CRITICAL SECURITY NOTICE**: The Socket.IO system relies on proper user authentication and room isolation to prevent data leaks between users.
+
+### **Authentication Requirements**
+
+```typescript
+// You MUST authenticate users before subscribing to their rooms
+const authenticatedUserId = await getUserFromSession(); // Your auth system
+if (!authenticatedUserId) {
+  throw new Error("User must be authenticated to access Socket.IO events");
+}
+
+// Only subscribe to the authenticated user's room
+socket.emit("subscribe_user_launches", authenticatedUserId);
+```
+
+### **Security Best Practices**
+
+1. **Never hardcode user IDs** - Always get userId from authenticated session
+2. **Validate user permissions** - Ensure user can only access their own data
+3. **Admin access control** - Only allow verified admins to use `subscribe_all_launches`
+4. **Session validation** - Verify user session before Socket.IO subscription
+5. **Room validation** - The server should validate userId matches the authenticated user
+
+### **Example with Next.js Auth**
+
+```typescript
+// hooks/useAuthenticatedSocket.ts
+import { useSession } from "next-auth/react";
+import { useSocket } from "@/context/SocketContext";
+
+export const useAuthenticatedSocket = () => {
+  const { data: session } = useSession();
+  const { socket, isConnected } = useSocket();
+
+  const subscribeToUserEvents = useCallback(() => {
+    if (!session?.user?.id) {
+      console.warn("Cannot subscribe: User not authenticated");
+      return;
+    }
+
+    if (socket && isConnected) {
+      socket.emit("subscribe_user_launches", session.user.id);
+    }
+  }, [socket, isConnected, session?.user?.id]);
+
+  return {
+    userId: session?.user?.id,
+    isAuthenticated: !!session?.user?.id,
+    subscribeToUserEvents,
+  };
+};
+```
+
 ## Event Listeners & Handlers
+
+### All Available Events
+
+#### 1. **Outgoing Events (Client → Server)**
+
+````typescript
+## Event Listeners & Handlers
+
+### 🔐 **User-Specific Room System**
+
+**CRITICAL**: The Socket.IO server uses a room-based isolation system where each user only receives events for their own operations. This ensures privacy and prevents users from seeing other users' data.
+
+#### **How Room Isolation Works:**
+```typescript
+// When you subscribe to user launches:
+socket.emit('subscribe_user_launches', 'user_123');
+
+// The server adds your socket to room: `user_user_123`
+// All events for user_123 are only sent to sockets in that room
+````
+
+#### **Room Structure:**
+
+- **User Rooms**: `user_${userId}` - Only receives events for that specific user
+- **Admin Room**: `admin_launches` - Receives ALL events from ALL users (admin only)
+
+#### **Event Privacy:**
+
+- `worker_progress` events are only sent to `user_${event.userId}` room
+- `token_launch_event` events are only sent to `user_${event.userId}` room
+- `launch_progress_update` events are only sent to `user_${event.userId}` room
+- Users CANNOT see other users' operations unless they have admin access
+
+#### **Privacy Example:**
+
+```typescript
+// User A (user_123) launches a token
+// Server emits to room: user_user_123
+socket.to("user_user_123").emit("worker_progress", {
+  userId: "user_123",
+  tokenAddress: "0xABC...",
+  // ... other data
+});
+
+// User B (user_456) will NEVER receive this event
+// Even if they're connected, they're in room: user_user_456
+// Complete isolation guaranteed by Socket.IO rooms
+```
 
 ### All Available Events
 
@@ -260,9 +363,11 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 // Events you can emit to the server
 
 socket.emit('subscribe_user_launches', userId: string);
-socket.emit('subscribe_all_launches'); // Admin only
+socket.emit('subscribe_all_launches'); // Admin only - subscribes to ALL users
 socket.emit('unsubscribe', room: string);
 ```
+
+````
 
 #### 2. **Incoming Events (Server → Client)**
 
@@ -301,6 +406,43 @@ socket.on("disconnect", () => {
 socket.on("connect_error", (error: Error) => {
   // Connection failed
 });
+````
+
+### 🎯 **Event Filtering & What You'll Receive**
+
+**IMPORTANT**: When you subscribe to `user_${userId}`, you will ONLY receive events where `event.userId` matches your subscribed userId.
+
+#### **Events You WILL Receive:**
+
+```typescript
+// All worker progress for YOUR tokens only
+socket.on("worker_progress", (event: WorkerProgressEvent) => {
+  // event.userId === 'your_user_id'
+  // event.tokenAddress = tokens YOU created/launched
+});
+
+// All launch events for YOUR tokens only
+socket.on("token_launch_event", (event: TokenLaunchEvent) => {
+  // event.userId === 'your_user_id'
+  // event.tokenAddress = tokens YOU created/launched
+});
+```
+
+#### **Events You Will NOT Receive:**
+
+- Worker progress for other users' tokens
+- Launch events for other users' tokens
+- Any data from other users (unless you're an admin)
+
+#### **Server-Side Room Filtering:**
+
+```typescript
+// Server code (for reference):
+// Events are sent ONLY to your specific room
+this.io.to(`user_${event.userId}`).emit("worker_progress", event);
+this.io.to(`user_${event.userId}`).emit("token_launch_event", event);
+
+// This ensures complete privacy and isolation between users
 ```
 
 ## React Hooks
@@ -323,9 +465,19 @@ export const useWorkerProgress = (userId?: string) => {
   );
 
   const subscribeToUserProgress = useCallback(() => {
-    if (socket && isConnected && userId) {
+    if (!userId) {
+      console.warn(
+        "🚨 SECURITY: Cannot subscribe without authenticated userId"
+      );
+      return;
+    }
+
+    if (socket && isConnected) {
+      // CRITICAL: Only subscribe to the authenticated user's room
       socket.emit("subscribe_user_launches", userId);
-      console.log(`📡 Subscribed to progress for user: ${userId}`);
+      console.log(
+        `📡 Subscribed to progress for authenticated user: ${userId}`
+      );
     }
   }, [socket, isConnected, userId]);
 
@@ -947,26 +1099,43 @@ import LaunchDashboard from '@/components/LaunchDashboard';
 import ToastNotifications from '@/components/ToastNotifications';
 
 const DashboardPage = () => {
-  // Replace with your auth system
-  const userId = 'user_123'; // Get from your auth context
+  // CRITICAL: Get authenticated user ID from your auth system
+  const { data: session } = useSession();
+  const authenticatedUserId = session?.user?.id;
+
+  // Prevent access without authentication
+  if (!authenticatedUserId) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Authentication Required</h1>
+          <p className="text-gray-600">Please log in to view your dashboard</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-6xl mx-auto px-6 py-4">
-          <h1 className="text-2xl font-bold">Nitro Launch Dashboard</h1>
+          <h1 className="text-2xl font-bold">
+            Nitro Launch Dashboard - User: {authenticatedUserId}
+          </h1>
+          <p className="text-sm text-gray-600 mt-1">
+            🔒 Showing only YOUR token operations and progress
+          </p>
         </div>
       </header>
 
       <main>
-        <LaunchDashboard userId={userId} />
-        <ToastNotifications userId={userId} />
+        {/* Pass authenticated user ID - will only show their data */}
+        <LaunchDashboard userId={authenticatedUserId} />
+        <ToastNotifications userId={authenticatedUserId} />
       </main>
     </div>
   );
-};
-
-export default DashboardPage;
+};export default DashboardPage;
 ```
 
 ### 3. Admin Dashboard
@@ -1221,9 +1390,17 @@ This comprehensive guide provides:
 
 **Incoming (Server → Client):**
 
-- `worker_progress` - Detailed worker progress with phases
-- `worker_step` - Individual step updates
-- `token_launch_event` - High-level launch lifecycle events
-- `launch_progress_update` - Overall launch progress tracking
+- `worker_progress` - Detailed worker progress with phases (user-specific)
+- `worker_step` - Individual step updates (user-specific)
+- `token_launch_event` - High-level launch lifecycle events (user-specific)
+- `launch_progress_update` - Overall launch progress tracking (user-specific)
 
-This integration provides real-time visibility into all 7 workers with their detailed progress phases, making it perfect for creating responsive, user-friendly frontends that keep users informed throughout the entire token launch process! 🚀
+### 🔐 **Security & Privacy Features**
+
+- **User-Specific Rooms**: Each user only receives events for their own operations
+- **Complete Isolation**: Users cannot see other users' data or progress
+- **Admin Monitoring**: Separate admin room for monitoring all users (admin only)
+- **Authentication Required**: All subscriptions require authenticated user IDs
+- **Server-Side Filtering**: Events are filtered at the server level, not client level
+
+This integration provides **secure, real-time visibility** into all 7 workers with their detailed progress phases, ensuring users only see their own data while maintaining complete privacy and security! 🚀🔒
