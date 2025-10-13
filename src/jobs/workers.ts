@@ -823,6 +823,10 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       if (!user) {
         throw new Error("User not found");
       }
+      console.log(
+        "[launchDappToken]: Found user",
+        JSON.stringify(user, null, 2)
+      );
 
       // --------- GET TOKEN FROM DATABASE ---------
       const { TokenModel } = await import("../backend/models");
@@ -832,6 +836,8 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       if (!tokenDoc) {
         throw new Error(`Token not found with ID: ${tokenId}`);
       }
+
+      console.log("[launchDappToken]: Found token document", tokenDoc);
 
       // Use the actual token address from the database
       actualTokenAddress = tokenDoc.tokenAddress;
