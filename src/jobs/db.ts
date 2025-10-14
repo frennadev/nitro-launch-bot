@@ -9,14 +9,27 @@ const MAX_RETRIES = 5;
 const RETRY_DELAY = 2000;
 
 export async function connectDB() {
+  // readyState: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
   if (mongoose.connection.readyState === 1) {
-    logger.info("🚀  MongoDB connected");
+    logger.info("🚀  MongoDB already connected");
     return;
   }
 
   if (isConnecting) {
     logger.info("MongoDB connection already in progress...");
-    return;
+    // Wait for the connection to complete
+    let waitCount = 0;
+    while (
+      isConnecting &&
+      mongoose.connection.readyState !== 1 &&
+      waitCount < 100
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      waitCount++;
+    }
+    if (mongoose.connection.readyState === 1) {
+      return;
+    }
   }
 
   isConnecting = true;
@@ -24,16 +37,35 @@ export async function connectDB() {
   try {
     const options: ConnectOptions = {
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 10000, // Increased timeout
       socketTimeoutMS: 45000,
-      bufferCommands: false,
+      bufferCommands: false, // Keep this for performance, but ensure connection is ready
+      connectTimeoutMS: 10000,
     };
 
+    logger.info("Connecting to MongoDB...");
     await mongoose.connect(env.MONGODB_URI, options);
-    logger.info("🚀  MongoDB connected");
+
+    // Wait for the connection to be fully ready
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error("Connection not fully established");
+    }
+
+    logger.info("🚀  MongoDB connected successfully");
     connectionRetries = 0;
   } catch (error) {
     logger.error("MongoDB connection failed:", error);
+    connectionRetries++;
+
+    if (connectionRetries < MAX_RETRIES) {
+      logger.info(
+        `Retrying connection in ${RETRY_DELAY}ms... (attempt ${connectionRetries}/${MAX_RETRIES})`
+      );
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+      isConnecting = false;
+      return await connectDB(); // Retry
+    }
+
     throw error;
   } finally {
     isConnecting = false;
@@ -48,8 +80,25 @@ export async function disconnectDB() {
     }
   } catch (error) {
     logger.error("Error disconnecting MongoDB:", error);
-    throw error;
   }
+}
+
+/**
+ * Ensure database connection is ready before performing operations
+ * This is crucial when bufferCommands = false
+ */
+export async function ensureDBConnection(): Promise<void> {
+  if (mongoose.connection.readyState !== 1) {
+    logger.info("Database not connected, attempting to connect...");
+    await connectDB();
+  }
+}
+
+/**
+ * Check if database is connected
+ */
+export function isDBConnected(): boolean {
+  return mongoose.connection.readyState === 1;
 }
 
 // Redis connection with improved error handling and reconnection logic
@@ -79,7 +128,7 @@ redisClient.on("ready", () => {
   connectionRetries = 0;
 });
 
-redisClient.on("error", (error: any) => {
+redisClient.on("error", (error: Error & { code?: string }) => {
   logger.error(`Redis connection error: ${error.message}`, error);
   redisConnectionState = "error";
 

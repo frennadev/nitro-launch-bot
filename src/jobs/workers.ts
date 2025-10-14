@@ -248,9 +248,13 @@ export const launchTokenWorker = new Worker<LaunchTokenJob>(
 
       // After Bonk dev buy/launch, wait 2 seconds before sniping (PumpFun-style best practice)
       const { TokenModel } = await import("../backend/models");
-      const tokenRecord = await TokenModel.findOne({
-        tokenAddress: data.tokenAddress,
-      });
+      const { safeTokenOperation } = await import("./safe-db-operations");
+
+      const tokenRecord = await safeTokenOperation(() =>
+        TokenModel.findOne({
+          tokenAddress: data.tokenAddress,
+        })
+      );
       if (tokenRecord?.launchData?.destination === "letsbonk") {
         logger.info(
           "[jobs]: Waiting 2 seconds after Bonk dev buy/launch before starting pool polling/snipes..."
@@ -385,9 +389,13 @@ export const sellDevWorker = new Worker<SellDevJob>(
 
       // Check token type to determine which sell mechanism to use
       const { TokenModel } = await import("../backend/models");
-      const token = await TokenModel.findOne({
-        tokenAddress: data.tokenAddress,
-      });
+      const { safeTokenOperation } = await import("./safe-db-operations");
+
+      const token = await safeTokenOperation(() =>
+        TokenModel.findOne({
+          tokenAddress: data.tokenAddress,
+        })
+      );
 
       let result;
       if (token?.launchData?.destination === "letsbonk") {
@@ -645,9 +653,13 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
 
       // Check token type to determine which sell mechanism to use
       const { TokenModel } = await import("../backend/models");
-      const token = await TokenModel.findOne({
-        tokenAddress: data.tokenAddress,
-      });
+      const { safeTokenOperation } = await import("./safe-db-operations");
+
+      const token = await safeTokenOperation(() =>
+        TokenModel.findOne({
+          tokenAddress: data.tokenAddress,
+        })
+      );
 
       let results;
       if (token?.launchData?.destination === "letsbonk") {
@@ -1147,9 +1159,13 @@ export const createTokenMetadataWorker = new Worker<CreateTokenMetadataJob>(
         queryConditions.push({ fundingWallet: safeWalletId });
       }
 
-      const user = await UserModel.findOne({
-        $or: queryConditions,
-      }).populate("fundingWallet");
+      const { safeUserOperation } = await import("./safe-db-operations");
+
+      const user = await safeUserOperation(() =>
+        UserModel.findOne({
+          $or: queryConditions,
+        }).populate("fundingWallet")
+      );
       if (!user) {
         throw new Error("User not found");
       }
@@ -1378,10 +1394,14 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
 
       // -------- GET WALLETS FROM DATABASE BASED ON USERID --------
       // Get funding wallet
-      const fundingWalletDoc = await WalletModel.findOne({
-        user: user.id,
-        isFunding: true,
-      }).lean();
+      const { safeWalletOperation } = await import("./safe-db-operations");
+
+      const fundingWalletDoc = await safeWalletOperation(() =>
+        WalletModel.findOne({
+          user: user.id,
+          isFunding: true,
+        }).lean()
+      );
 
       if (!fundingWalletDoc) {
         throw new Error(
@@ -1402,10 +1422,12 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
       }
 
       // Get dev wallet
-      const devWalletDoc = await WalletModel.findOne({
-        user: user.id,
-        isDev: true,
-      }).lean();
+      const devWalletDoc = await safeWalletOperation(() =>
+        WalletModel.findOne({
+          user: user.id,
+          isDev: true,
+        }).lean()
+      );
 
       if (!devWalletDoc) {
         throw new Error(

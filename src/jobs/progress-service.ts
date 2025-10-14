@@ -80,24 +80,43 @@ const emitViaSocketIO = (event: WorkerProgressEvent): void => {
   try {
     // Use dynamic import to avoid requiring socket.io in distributed mode
     const socketModule = eval('require("../websocket/socketio-server")');
-    socketModule.emitWorkerProgress(
-      event.jobId,
-      event.workerType,
-      event.tokenAddress,
-      event.userId,
-      event.userChatId,
-      event.phase,
-      event.totalPhases,
-      event.phaseTitle,
-      event.phaseDescription,
-      event.progress,
-      event.status,
-      event.details
-    );
-  } catch {
-    console.log(
-      "Socket.IO progress emission unavailable - running in distributed mode"
-    );
+
+    // Check if the socket server is initialized
+    if (
+      socketModule.socketIOServer &&
+      typeof socketModule.socketIOServer.emitWorkerProgress === "function"
+    ) {
+      socketModule.socketIOServer.emitWorkerProgress(
+        event.jobId,
+        event.workerType,
+        event.tokenAddress,
+        event.userId,
+        event.userChatId,
+        event.phase,
+        event.totalPhases,
+        event.phaseTitle,
+        event.phaseDescription,
+        event.progress,
+        event.status,
+        event.details
+      );
+    } else {
+      // Socket.IO server not initialized, this is normal in distributed mode
+      // Use debug level instead of console.log to reduce noise
+      if (process.env.DEBUG_PROGRESS === "true") {
+        console.log(
+          "Socket.IO server not initialized - running in distributed mode"
+        );
+      }
+    }
+  } catch (error) {
+    // Only log if debug mode is enabled to reduce log noise
+    if (process.env.DEBUG_PROGRESS === "true") {
+      console.log(
+        "Socket.IO progress emission unavailable:",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
   }
 };
 
