@@ -2,7 +2,6 @@ import { Keypair, PublicKey } from "@solana/web3.js";
 import { Context } from "grammy";
 import { connection } from "../../service/config";
 import { logger } from "../common/logger";
-import { getSolBalance } from "../../backend/utils";
 import { JupiterPumpswapService } from "../../service/jupiter-pumpswap-service";
 import bs58 from "bs58";
 import { collectTransactionFee } from "../../backend/functions-main";
@@ -67,8 +66,6 @@ export async function executeExternalBuyNoConfirmation(
     logger.info(
       `[${logId}] Starting external token buy (no confirmation) for ${solAmount} SOL`
     );
-    const solBalance = await getSolBalance(buyerKeypair.publicKey.toString());
-    const solBuyAmount = 0.95 * solBalance; // this is 95% of wallet sol balance
 
     // First, detect the platform to use the appropriate buy logic
     const { detectTokenPlatformWithCache } = await import(
@@ -124,62 +121,13 @@ export async function executeExternalBuyNoConfirmation(
         `[${logId}] Using unified Jupiter-PumpSwap service for ${platform} platform (no confirmation, fees in background)`
       );
 
-      // CRITICAL FIX: Check wallet balance and reserve SOL for transaction costs
-      const walletBalance = await connection.getBalance(
-        buyerKeypair.publicKey,
-        "confirmed"
-      );
-      const walletBalanceSOL = walletBalance / 1_000_000_000;
-
-      // Reserve fees for buy transaction AND account creation costs
-      const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
-      const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
-      const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
-      const availableForTrade = walletBalanceSOL - totalFeeReserve;
-
-      logger.info(
-        `[${logId}] Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`
-      );
-      logger.info(
-        `[${logId}] Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`
-      );
-      logger.info(
-        `[${logId}] Account creation reserve: ${accountCreationReserve.toFixed(6)} SOL`
-      );
-      logger.info(
-        `[${logId}] Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`
-      );
-      logger.info(
-        `[${logId}] Available for trade: ${availableForTrade.toFixed(6)} SOL`
-      );
-
-      // Validate we have enough balance
-      if (availableForTrade <= 0) {
-        const errorMsg = `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees`;
-        logger.error(`[${logId}] ${errorMsg}`);
-        return {
-          success: false,
-          signature: "",
-          error: errorMsg,
-        };
-      }
-
-      // Use the minimum of requested amount or available balance
-      const actualTradeAmount = Math.min(solAmount, availableForTrade);
-
-      if (actualTradeAmount < solAmount) {
-        logger.warn(
-          `[${logId}] Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations`
-        );
-      }
-
       // Use the unified Jupiter-Pumpswap service for PumpFun/PumpSwap/Jupiter tokens
       const jupiterPumpswapService = new JupiterPumpswapService();
 
       const result = await jupiterPumpswapService.executeBuy(
         tokenAddress,
         buyerKeypair,
-        actualTradeAmount, // Use adjusted amount instead of solBuyAmount
+        solAmount, // Use the exact requested amount
         3 // 3% slippage
       );
 
@@ -191,7 +139,7 @@ export async function executeExternalBuyNoConfirmation(
           success: true,
           signature: result.signature,
           platform: result.platform,
-          solReceived: result.actualSolSpent || actualTradeAmount.toString(),
+          solReceived: result.actualSolSpent || solAmount.toString(),
         };
       } else {
         logger.error(`[${logId}] External buy failed to send: ${result.error}`);
@@ -310,14 +258,14 @@ async function executeBonkBuyNoConfirmation(
         platform: "bonk",
         solReceived: actualTradeAmount.toString(), // Return the actual amount that was traded
       };
-  } catch (error: any) {
-    logger.error(`[${logId}] Bonk buy error: ${error.message}`);
-    return {
-      success: false,
-      signature: "",
-      error: `Bonk buy failed: ${error.message}`,
-    };
-  }
+    } catch (error: any) {
+      logger.error(`[${logId}] Bonk buy error: ${error.message}`);
+      return {
+        success: false,
+        signature: "",
+        error: `Bonk buy failed: ${error.message}`,
+      };
+    }
   } catch (error: any) {
     logger.error(`[${logId}] Bonk buy outer error: ${error.message}`);
     return {
@@ -433,14 +381,14 @@ async function executeCpmmBuyNoConfirmation(
         platform: "cpmm",
         solReceived: actualTradeAmount.toString(), // Return the actual amount that was traded
       };
-  } catch (error: any) {
-    logger.error(`[${logId}] CPMM buy error: ${error.message}`);
-    return {
-      success: false,
-      signature: "",
-      error: `CPMM buy failed: ${error.message}`,
-    };
-  }
+    } catch (error: any) {
+      logger.error(`[${logId}] CPMM buy error: ${error.message}`);
+      return {
+        success: false,
+        signature: "",
+        error: `CPMM buy failed: ${error.message}`,
+      };
+    }
   } catch (error: any) {
     logger.error(`[${logId}] CPMM buy outer error: ${error.message}`);
     return {
@@ -714,7 +662,9 @@ async function executeHeavenBuyNoConfirmation(
         "buy",
         logId
       ).catch((feeError) => {
-        logger.warn(`[${logId}] Fee collection promise failed: ${feeError.message}`);
+        logger.warn(
+          `[${logId}] Fee collection promise failed: ${feeError.message}`
+        );
       });
 
       return {

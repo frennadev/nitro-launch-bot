@@ -173,13 +173,11 @@ export class JupiterPumpswapService {
       );
       const walletBalanceSOL = walletBalance / 1_000_000_000;
 
-      // Reserve fees for buy transaction AND future sell transactions
+      // Reserve fees for buy transaction
       const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
       const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
-      const sellFeeReserve = 0.01; // Reserve 0.01 SOL for future sell transaction fees
-      // NOTE: Don't pre-reserve the 1% buy fee - it will be collected after the transaction from remaining balance
-      const totalFeeReserve =
-        transactionFeeReserve + accountCreationReserve + sellFeeReserve;
+      // NOTE: Don't pre-reserve sell fees or 1% buy fee - they will be handled separately
+      const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
       const availableForTrade = walletBalanceSOL - totalFeeReserve;
 
       logger.info(
@@ -190,9 +188,6 @@ export class JupiterPumpswapService {
       );
       logger.info(
         `[${logId}] Account creation reserve: ${accountCreationReserve.toFixed(6)} SOL`
-      );
-      logger.info(
-        `[${logId}] Sell fee reserve: ${sellFeeReserve.toFixed(6)} SOL (for future sells)`
       );
       logger.info(
         `[${logId}] Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`
@@ -207,7 +202,7 @@ export class JupiterPumpswapService {
         return {
           success: false,
           signature: "",
-          error: `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need ${requiredBalance.toFixed(6)} SOL for ${solAmount} SOL trade + ${totalFeeReserve.toFixed(6)} SOL fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${accountCreationReserve.toFixed(6)} SOL account creation + ${sellFeeReserve.toFixed(6)} SOL sell reserve)`,
+          error: `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need ${requiredBalance.toFixed(6)} SOL for ${solAmount} SOL trade + ${totalFeeReserve.toFixed(6)} SOL fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${accountCreationReserve.toFixed(6)} SOL account creation)`,
         };
       }
 
