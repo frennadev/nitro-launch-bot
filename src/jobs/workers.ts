@@ -61,6 +61,7 @@ import { UserModel, WalletModel } from "../backend/models";
 import { safeObjectId } from "../backend/utils";
 import { env } from "../config";
 import { emitWorkerProgress } from "./progress-service";
+import { emitCTOProgress, recordCTOResult } from "./cto-progress-tracker";
 
 // import { LaunchDestination } from "../backend/types"; // Available but not used in current implementation
 
@@ -2196,14 +2197,15 @@ export const ctoWorker = new Worker<CTOJob>(
     const data = job.data;
     const jobId = job.id?.toString() || "unknown";
 
+    const startTime = Date.now();
+
     try {
       logger.info("[jobs]: CTO Job starting...");
       logger.info("[jobs-cto]: Job Data", data);
 
-      // Phase 1: Job Started
-      emitWorkerProgress(
+      // Phase 1: Job Started - Use enhanced CTO progress tracking
+      emitCTOProgress(
         jobId,
-        "cto_operation",
         data.tokenAddress,
         data.userId,
         data.userChatId,
@@ -2213,18 +2215,19 @@ export const ctoWorker = new Worker<CTOJob>(
         `Initiating ${data.mode} CTO operation`,
         10,
         "started",
+        data.mode,
+        data.platform,
+        data.buyAmount,
+        data.socketUserId,
         {
-          tokenAddress: data.tokenAddress,
-          buyAmount: data.buyAmount,
-          mode: data.mode,
-          platform: data.platform,
+          currentOperation: "Initializing operation",
+          estimatedTimeRemaining: data.mode === "prefunded" ? 30000 : 60000, // 30s or 60s
         }
       );
 
       // Phase 2: Validating parameters
-      emitWorkerProgress(
+      emitCTOProgress(
         jobId,
-        "cto_operation",
         data.tokenAddress,
         data.userId,
         data.userChatId,
@@ -2233,7 +2236,15 @@ export const ctoWorker = new Worker<CTOJob>(
         "Validating Parameters",
         "Checking wallet balances and operation parameters",
         25,
-        "in_progress"
+        "in_progress",
+        data.mode,
+        data.platform,
+        data.buyAmount,
+        data.socketUserId,
+        {
+          currentOperation: "Validating user and wallet setup",
+          estimatedTimeRemaining: data.mode === "prefunded" ? 25000 : 50000,
+        }
       );
 
       // Validate user and wallets
@@ -2259,9 +2270,8 @@ export const ctoWorker = new Worker<CTOJob>(
       }
 
       // Phase 3: Platform Detection & Preparation
-      emitWorkerProgress(
+      emitCTOProgress(
         jobId,
-        "cto_operation",
         data.tokenAddress,
         data.userId,
         data.userChatId,
@@ -2270,13 +2280,20 @@ export const ctoWorker = new Worker<CTOJob>(
         "Platform Detection",
         `Optimizing for ${data.platform} platform`,
         45,
-        "in_progress"
+        "in_progress",
+        data.mode,
+        data.platform,
+        data.buyAmount,
+        data.socketUserId,
+        {
+          currentOperation: `Preparing ${data.platform} platform execution`,
+          estimatedTimeRemaining: data.mode === "prefunded" ? 20000 : 40000,
+        }
       );
 
       // Phase 4: Executing CTO Operation
-      emitWorkerProgress(
+      emitCTOProgress(
         jobId,
-        "cto_operation",
         data.tokenAddress,
         data.userId,
         data.userChatId,
@@ -2285,7 +2302,18 @@ export const ctoWorker = new Worker<CTOJob>(
         "Executing Operation",
         `Executing ${data.mode} CTO with ${data.buyAmount.toFixed(6)} SOL`,
         70,
-        "in_progress"
+        "in_progress",
+        data.mode,
+        data.platform,
+        data.buyAmount,
+        data.socketUserId,
+        {
+          currentOperation:
+            data.mode === "prefunded"
+              ? "Direct wallet execution"
+              : "Mixer distribution and buys",
+          estimatedTimeRemaining: data.mode === "prefunded" ? 15000 : 30000,
+        }
       );
 
       let result;
@@ -2315,9 +2343,8 @@ export const ctoWorker = new Worker<CTOJob>(
 
       // Phase 5: Operation Completed
       if (result.success) {
-        emitWorkerProgress(
+        emitCTOProgress(
           jobId,
-          "cto_operation",
           data.tokenAddress,
           data.userId,
           data.userChatId,
@@ -2327,11 +2354,29 @@ export const ctoWorker = new Worker<CTOJob>(
           `Successfully executed ${result.successfulBuys || 0} buy transactions`,
           100,
           "completed",
+          data.mode,
+          data.platform,
+          data.buyAmount,
+          data.socketUserId,
           {
             successfulBuys: result.successfulBuys || 0,
             failedBuys: result.failedBuys || 0,
             totalSpent: data.buyAmount,
+            currentOperation: "Operation completed successfully",
+            estimatedTimeRemaining: 0,
           }
+        );
+
+        // Record final result
+        recordCTOResult(
+          jobId,
+          true,
+          result.successfulBuys || 0,
+          result.failedBuys || 0,
+          data.buyAmount,
+          [], // Transaction signatures would come from result if available
+          undefined,
+          startTime
         );
 
         logger.info(
@@ -2342,9 +2387,8 @@ export const ctoWorker = new Worker<CTOJob>(
         const isPartialSuccess =
           result.successfulBuys && result.successfulBuys > 0;
 
-        emitWorkerProgress(
+        emitCTOProgress(
           jobId,
-          "cto_operation",
           data.tokenAddress,
           data.userId,
           data.userChatId,
@@ -2356,11 +2400,31 @@ export const ctoWorker = new Worker<CTOJob>(
             : `Operation failed: ${result.error || "Unknown error"}`,
           isPartialSuccess ? 80 : 0,
           isPartialSuccess ? "completed" : "failed",
+          data.mode,
+          data.platform,
+          data.buyAmount,
+          data.socketUserId,
           {
             successfulBuys: result.successfulBuys || 0,
             failedBuys: result.failedBuys || 0,
             error: result.error,
+            currentOperation: isPartialSuccess
+              ? "Partially completed"
+              : "Failed",
+            estimatedTimeRemaining: 0,
           }
+        );
+
+        // Record final result
+        recordCTOResult(
+          jobId,
+          isPartialSuccess,
+          result.successfulBuys || 0,
+          result.failedBuys || 0,
+          data.buyAmount,
+          [], // Transaction signatures would come from result if available
+          result.error,
+          startTime
         );
 
         if (!isPartialSuccess) {
@@ -2379,9 +2443,8 @@ export const ctoWorker = new Worker<CTOJob>(
         errorMessage
       );
 
-      emitWorkerProgress(
+      emitCTOProgress(
         jobId,
-        "cto_operation",
         data.tokenAddress,
         data.userId,
         data.userChatId,
@@ -2391,10 +2454,19 @@ export const ctoWorker = new Worker<CTOJob>(
         `Operation failed: ${errorMessage}`,
         0,
         "failed",
+        data.mode,
+        data.platform,
+        data.buyAmount,
+        data.socketUserId,
         {
           error: errorMessage,
+          currentOperation: "Failed with error",
+          estimatedTimeRemaining: 0,
         }
       );
+
+      // Record failed result
+      recordCTOResult(jobId, false, 0, 0, 0, [], errorMessage, startTime);
 
       throw error;
     }

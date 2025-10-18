@@ -61,24 +61,33 @@ export const enqueueCTOOperation = async (
  * @returns Promise with job status information
  */
 export const getCTOJobStatus = async (jobId: string) => {
-  const job = await ctoQueue.getJob(jobId);
+  // Try to get enhanced status first
+  try {
+    const { getCTOJobStatusWithProgress } = await import(
+      "./cto-progress-tracker"
+    );
+    return await getCTOJobStatusWithProgress(jobId);
+  } catch {
+    // Fallback to basic status
+    const job = await ctoQueue.getJob(jobId);
 
-  if (!job) {
-    return { status: "not_found", error: "Job not found" };
+    if (!job) {
+      return { status: "not_found", error: "Job not found" };
+    }
+
+    const state = await job.getState();
+    const progress = job.progress;
+
+    return {
+      jobId: job.id,
+      status: state,
+      progress,
+      data: job.data,
+      finishedOn: job.finishedOn,
+      processedOn: job.processedOn,
+      failedReason: job.failedReason,
+    };
   }
-
-  const state = await job.getState();
-  const progress = job.progress;
-
-  return {
-    jobId: job.id,
-    status: state,
-    progress,
-    data: job.data,
-    finishedOn: job.finishedOn,
-    processedOn: job.processedOn,
-    failedReason: job.failedReason,
-  };
 };
 
 /**
@@ -103,6 +112,76 @@ export const cancelCTOJob = async (jobId: string) => {
   await job.remove();
 
   return { success: true, message: "Job cancelled successfully" };
+};
+
+// Import types for progress tracking
+type CTOProgressEvent = {
+  jobId: string;
+  tokenAddress: string;
+  phase: number;
+  totalPhases: number;
+  phaseTitle: string;
+  phaseDescription: string;
+  progress: number;
+  status: "started" | "in_progress" | "completed" | "failed";
+  mode: "standard" | "prefunded";
+  platform: string;
+  details?: Record<string, unknown>;
+};
+
+type CTOOperationResult = {
+  jobId: string;
+  success: boolean;
+  successfulBuys: number;
+  failedBuys: number;
+  totalSpent: number;
+  error?: string;
+};
+
+/**
+ * Subscribe to real-time progress updates for a CTO job
+ *
+ * @param jobId - The job ID to track
+ * @param onProgress - Callback for progress updates
+ * @param onCompleted - Optional callback for completion
+ * @returns Unsubscribe function
+ */
+export const subscribeToProgress = async (
+  jobId: string,
+  onProgress: (event: CTOProgressEvent) => void,
+  onCompleted?: (result: CTOOperationResult) => void
+) => {
+  try {
+    const { subscribeToCTOProgress } = await import("./cto-progress-tracker");
+    return subscribeToCTOProgress(jobId, onProgress, onCompleted);
+  } catch (error) {
+    console.warn("Progress tracking not available:", error);
+    return () => {}; // Return no-op unsubscribe function
+  }
+};
+
+/**
+ * Get progress statistics for multiple CTO jobs
+ *
+ * @param jobIds - Array of job IDs to analyze
+ * @returns Progress statistics
+ */
+export const getCTOProgressStats = async (jobIds: string[]) => {
+  try {
+    const { getCTOProgressStats } = await import("./cto-progress-tracker");
+    return getCTOProgressStats(jobIds);
+  } catch (error) {
+    console.warn("Progress stats not available:", error);
+    return {
+      total: jobIds.length,
+      queued: jobIds.length,
+      active: 0,
+      completed: 0,
+      failed: 0,
+      totalProgress: 0,
+      averageProgress: 0,
+    };
+  }
 };
 
 // Export the queue and types for advanced usage
