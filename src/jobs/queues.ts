@@ -9,6 +9,7 @@ import type {
   CreateTokenMetadataJob,
   LaunchDappTokenJob,
   CTOJob,
+  ExternalBuyJob,
 } from "./types";
 
 export const tokenLaunchQueue = new Queue<LaunchTokenJob>(
@@ -57,3 +58,10 @@ export const launchDappTokenQueue = new Queue<LaunchDappTokenJob>(
 export const ctoQueue = new Queue<CTOJob>("nitro-cto-operation", {
   connection: redisClient,
 });
+
+export const externalBuyQueue = new Queue<ExternalBuyJob>(
+  "nitro-external-buy",
+  {
+    connection: redisClient,
+  }
+);

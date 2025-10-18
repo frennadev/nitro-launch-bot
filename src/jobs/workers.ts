@@ -8,6 +8,7 @@ import {
   createTokenMetadataQueue,
   launchDappTokenQueue,
   ctoQueue,
+  externalBuyQueue,
 } from "./queues";
 import type {
   LaunchTokenJob,
@@ -18,6 +19,7 @@ import type {
   CreateTokenMetadataJob,
   LaunchDappTokenJob,
   CTOJob,
+  ExternalBuyJob,
 } from "./types";
 import { redisClient } from "./db";
 import {
@@ -61,7 +63,12 @@ import { UserModel, WalletModel } from "../backend/models";
 import { safeObjectId } from "../backend/utils";
 import { env } from "../config";
 import { emitWorkerProgress } from "./progress-service";
-import { emitCTOProgress, recordCTOResult } from "./cto-progress-tracker";
+import {
+  emitCTOProgress,
+  recordCTOResult,
+  emitExternalBuyProgress,
+  recordExternalBuyResult,
+} from "./cto-progress-tracker";
 
 // import { LaunchDestination } from "../backend/types"; // Available but not used in current implementation
 
@@ -2487,4 +2494,209 @@ ctoWorker.on("failed", (job, err) => {
 
 ctoWorker.on("closed", () => {
   logger.info("CTO worker closed successfully");
+});
+
+// External Buy Worker
+export const externalBuyWorker = new Worker<ExternalBuyJob>(
+  externalBuyQueue.name,
+  async (job) => {
+    const data = job.data;
+    const jobId = job.id?.toString() || "unknown";
+
+    const startTime = Date.now();
+
+    try {
+      logger.info("[jobs]: External Buy Job starting...");
+      logger.info("[jobs-external-buy]: Job Data", {
+        userId: data.userId,
+        tokenAddress: data.tokenAddress.slice(0, 8) + "...",
+        buyAmount: data.buyAmount,
+        slippage: data.slippage,
+        priorityFee: data.priorityFee,
+        platform: data.platform,
+      });
+
+      // Phase 1: Job Started
+      emitExternalBuyProgress(
+        jobId,
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        1,
+        4,
+        "Buy Operation Started",
+        `Initiating external token purchase`,
+        10,
+        "started",
+        data.buyAmount,
+        data.socketUserId,
+        {
+          currentOperation: "Initializing buy operation",
+          estimatedTimeRemaining: 20000, // 20 seconds
+        }
+      );
+
+      // Phase 2: Preparing wallet and validation
+      emitExternalBuyProgress(
+        jobId,
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        2,
+        4,
+        "Preparing Wallet",
+        "Setting up wallet and validating parameters",
+        35,
+        "in_progress",
+        data.buyAmount,
+        data.socketUserId,
+        {
+          currentOperation: "Validating wallet and balance",
+          estimatedTimeRemaining: 15000,
+        }
+      );
+
+      // Import necessary functions
+      const { secretKeyToKeypair } = await import("../blockchain/common/utils");
+      const { executeExternalBuy } = await import(
+        "../blockchain/pumpfun/externalBuy"
+      );
+
+      // Create keypair from private key
+      const buyerKeypair = secretKeyToKeypair(data.walletPrivateKey);
+
+      // Phase 3: Executing purchase
+      emitExternalBuyProgress(
+        jobId,
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        3,
+        4,
+        "Executing Purchase",
+        `Purchasing tokens with ${data.buyAmount.toFixed(6)} SOL`,
+        70,
+        "in_progress",
+        data.buyAmount,
+        data.socketUserId,
+        {
+          currentOperation: "Executing buy transaction on platform",
+          estimatedTimeRemaining: 10000,
+        }
+      );
+
+      // Execute the external buy
+      const result = await executeExternalBuy(
+        data.tokenAddress,
+        buyerKeypair,
+        data.buyAmount,
+        data.slippage || 3,
+        data.priorityFee || 0.002,
+        undefined as any // We don't have a Telegram context here
+      );
+
+      // Phase 4: Operation Completed
+      if (result.success) {
+        emitExternalBuyProgress(
+          jobId,
+          data.tokenAddress,
+          data.userId,
+          data.userChatId,
+          4,
+          4,
+          "Purchase Successful",
+          `Successfully purchased tokens via ${result.platform}`,
+          100,
+          "completed",
+          data.buyAmount,
+          data.socketUserId,
+          {
+            currentOperation: "Purchase completed successfully",
+            transactionSignature: result.signature,
+            platform: result.platform,
+            actualSolSpent: result.solReceived,
+          }
+        );
+
+        // Record successful result
+        recordExternalBuyResult(
+          jobId,
+          true,
+          data.buyAmount,
+          parseFloat(result.solReceived || "0"),
+          result.signature,
+          result.platform || "unknown",
+          null,
+          startTime
+        );
+
+        logger.info(`[jobs-external-buy]: Job ${jobId} completed successfully`);
+        return {
+          success: true,
+          signature: result.signature,
+          platform: result.platform,
+          solSpent: result.solReceived,
+          message: "External token purchase completed successfully",
+        };
+      } else {
+        throw new Error(result.error || "External buy failed");
+      }
+    } catch (error: any) {
+      const errorMessage = error.message || "Unknown error occurred";
+
+      logger.error(`[jobs-external-buy]: Job ${jobId} failed:`, error);
+
+      // Emit failure progress
+      emitExternalBuyProgress(
+        jobId,
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        4,
+        4,
+        "Purchase Failed",
+        errorMessage,
+        100,
+        "failed",
+        data.buyAmount,
+        data.socketUserId,
+        {
+          currentOperation: "Purchase failed",
+          error: errorMessage,
+        }
+      );
+
+      // Record failed result
+      recordExternalBuyResult(
+        jobId,
+        false,
+        data.buyAmount,
+        0,
+        "",
+        data.platform || "unknown",
+        errorMessage,
+        startTime
+      );
+
+      throw error;
+    }
+  },
+  {
+    connection: redisClient,
+    concurrency: 3, // Allow multiple external buys in parallel
+  }
+);
+
+externalBuyWorker.on("completed", (job) => {
+  logger.info(
+    `[jobs-external-buy]: External buy job ${job.id} completed successfully`
+  );
+});
+
+externalBuyWorker.on("failed", (job, err) => {
+  logger.error(`[jobs-external-buy]: External buy job ${job?.id} failed:`, err);
+});
+
+externalBuyWorker.on("closed", () => {
+  logger.info("External buy worker closed successfully");
 });

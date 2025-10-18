@@ -360,3 +360,145 @@ setInterval(
   },
   60 * 60 * 1000
 );
+
+// External Buy Progress Tracking Types
+export interface ExternalBuyProgressEvent {
+  jobId: string;
+  tokenAddress: string;
+  userId: string;
+  userChatId: number;
+  socketUserId?: string;
+  phase: number;
+  totalPhases: number;
+  phaseTitle: string;
+  phaseDescription: string;
+  progress: number;
+  status: "started" | "in_progress" | "completed" | "failed";
+  timestamp: number;
+  buyAmount: number;
+  details?: {
+    currentOperation?: string;
+    estimatedTimeRemaining?: number;
+    error?: string;
+    transactionSignature?: string;
+    platform?: string;
+    actualSolSpent?: string;
+  };
+}
+
+export interface ExternalBuyOperationResult {
+  jobId: string;
+  success: boolean;
+  buyAmount: number;
+  actualSolSpent: number;
+  transactionSignature: string;
+  platform: string;
+  error?: string;
+  completedAt: number;
+  duration: number;
+}
+
+/**
+ * External buy progress emitter for frontend tracking
+ */
+export const emitExternalBuyProgress = (
+  jobId: string,
+  tokenAddress: string,
+  userId: string,
+  userChatId: number,
+  phase: number,
+  totalPhases: number,
+  phaseTitle: string,
+  phaseDescription: string,
+  progress: number,
+  status: ExternalBuyProgressEvent["status"],
+  buyAmount: number,
+  socketUserId?: string,
+  details?: ExternalBuyProgressEvent["details"]
+): void => {
+  const progressEvent: ExternalBuyProgressEvent = {
+    jobId,
+    tokenAddress,
+    userId,
+    userChatId,
+    socketUserId,
+    phase,
+    totalPhases,
+    phaseTitle,
+    phaseDescription,
+    progress,
+    status,
+    timestamp: Date.now(),
+    buyAmount,
+    details: details || {},
+  };
+
+  // Store in progress store
+  ctoProgressStore.addProgressEvent(progressEvent as any);
+
+  // Emit via Socket.IO if available
+  if (typeof global !== "undefined" && (global as any).socketIO) {
+    const io = (global as any).socketIO;
+
+    // Emit to specific user room if socketUserId is provided
+    if (socketUserId) {
+      io.to(socketUserId).emit("external_buy_progress", progressEvent);
+    }
+
+    // Also emit to user's chat room for backward compatibility
+    io.to(`user_${userId}`).emit("external_buy_progress", progressEvent);
+
+    // Emit general progress event
+    io.emit("external_buy_progress", progressEvent);
+  }
+
+  // Log progress for debugging
+  console.log(`[external-buy-progress] ${jobId}: ${phaseTitle} (${progress}%)`);
+};
+
+/**
+ * Record external buy operation result for frontend tracking
+ */
+export const recordExternalBuyResult = (
+  jobId: string,
+  success: boolean,
+  buyAmount: number,
+  actualSolSpent: number,
+  transactionSignature: string,
+  platform: string,
+  error?: string,
+  startTime?: number
+): void => {
+  const now = Date.now();
+  const duration = startTime ? now - startTime : 0;
+
+  const result: ExternalBuyOperationResult = {
+    jobId,
+    success,
+    buyAmount,
+    actualSolSpent,
+    transactionSignature,
+    platform,
+    error,
+    completedAt: now,
+    duration,
+  };
+
+  // Store in progress store
+  ctoProgressStore.addOperationResult(result as any);
+
+  // Emit via Socket.IO if available
+  if (typeof global !== "undefined" && (global as any).socketIO) {
+    const io = (global as any).socketIO;
+    io.emit("external_buy_result", result);
+  }
+
+  // Log result for debugging
+  if (success) {
+    console.log(
+      `[external-buy-result] ${jobId}: SUCCESS - ${actualSolSpent} SOL spent via ${platform}`
+    );
+  } else {
+    console.log(`[external-buy-result] ${jobId}: FAILED - ${error}`);
+  }
+};

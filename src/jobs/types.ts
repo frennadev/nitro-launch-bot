@@ -104,3 +104,15 @@ export type CTOJob = {
   platform: string;
   socketUserId?: string;
 };
+
+export type ExternalBuyJob = {
+  userId: string;
+  userChatId: number;
+  tokenAddress: string;
+  buyAmount: number;
+  walletPrivateKey: string;
+  slippage?: number;
+  priorityFee?: number;
+  platform?: string;
+  socketUserId?: string;
+};

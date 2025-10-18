@@ -284,6 +284,175 @@ app.post("/api/cto/job/:jobId/cancel", async (req, res) => {
   }
 });
 
+// External Buy API Routes
+
+/**
+ * POST /api/external-buy/start
+ * Start a new external token buy operation
+ */
+app.post("/api/external-buy/start", async (req, res) => {
+  try {
+    const {
+      userId,
+      tokenAddress,
+      buyAmount,
+      walletPrivateKey,
+      slippage = 3,
+      priorityFee = 0.002,
+      platform = "auto",
+    } = req.body;
+
+    // Validate required fields
+    if (!userId || !tokenAddress || !buyAmount || !walletPrivateKey) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Missing required fields: userId, tokenAddress, buyAmount, walletPrivateKey",
+      });
+    }
+
+    console.log("🚀 Starting external buy operation:", {
+      userId,
+      tokenAddress: tokenAddress.slice(0, 8) + "...",
+      buyAmount,
+      slippage,
+      priorityFee,
+      platform,
+    });
+
+    // Enqueue the external buy operation
+    const { enqueueExternalBuy } = await import("../src/jobs/external-buy-api");
+    const result = await enqueueExternalBuy({
+      userId: userId,
+      userChatId: parseInt(userId) || Math.floor(Math.random() * 1000000),
+      tokenAddress,
+      buyAmount: parseFloat(buyAmount),
+      walletPrivateKey,
+      slippage: parseFloat(slippage),
+      priorityFee: parseFloat(priorityFee),
+      platform,
+      socketUserId: `user_${userId}`,
+    });
+
+    if (result.success) {
+      // Send success response
+      res.json({
+        success: true,
+        jobId: result.jobId,
+        message: result.message,
+        data: {
+          userId,
+          tokenAddress,
+          buyAmount,
+          slippage,
+          priorityFee,
+          platform,
+          status: "queued",
+          createdAt: new Date().toISOString(),
+        },
+      });
+
+      // Notify the user via Socket.IO that their job was created
+      io.to(`user_${userId}`).emit("external_buy_job_created", {
+        jobId: result.jobId,
+        tokenAddress,
+        buyAmount,
+        slippage,
+        priorityFee,
+        platform,
+        status: "queued",
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.error,
+        message: result.message,
+      });
+    }
+  } catch (error: any) {
+    console.error("❌ Error starting external buy operation:", error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to start external buy operation",
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+});
+
+/**
+ * GET /api/external-buy/job/:jobId/status
+ * Get detailed status of an external buy job
+ */
+app.get("/api/external-buy/job/:jobId/status", async (req, res) => {
+  try {
+    const { jobId } = req.params;
+
+    console.log("📊 Getting status for external buy job:", jobId);
+
+    const { getExternalBuyJobStatus } = await import(
+      "../src/jobs/external-buy-api"
+    );
+    const status = await getExternalBuyJobStatus(jobId);
+
+    if (status.status === "not_found") {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+        jobId,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: status,
+      jobId,
+    });
+  } catch (error: any) {
+    console.error("❌ Error getting external buy job status:", error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to get job status",
+      jobId: req.params.jobId,
+    });
+  }
+});
+
+/**
+ * POST /api/external-buy/job/:jobId/cancel
+ * Cancel a pending external buy job
+ */
+app.post("/api/external-buy/job/:jobId/cancel", async (req, res) => {
+  try {
+    const { jobId } = req.params;
+
+    const { cancelExternalBuy } = await import("../src/jobs/external-buy-api");
+    const result = await cancelExternalBuy(jobId);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: result.message,
+        jobId,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.error,
+        jobId,
+      });
+    }
+  } catch (error: any) {
+    console.error("❌ Error cancelling external buy job:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      jobId: req.params.jobId,
+    });
+  }
+});
+
 /**
  * GET /api/cto/health
  * Health check endpoint

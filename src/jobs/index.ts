@@ -7,6 +7,7 @@ import {
   createTokenMetadataQueue,
   launchDappTokenQueue,
   ctoQueue,
+  externalBuyQueue,
 } from "./queues";
 import {
   launchTokenWorker,
@@ -17,13 +18,14 @@ import {
   launchTokenFromDappWorker,
   executeLaunchWorker,
   ctoWorker,
+  externalBuyWorker,
 } from "./workers";
 import { connectDB, gracefulShutdown } from "./db";
 import { logger } from "./logger";
 
 connectDB()
   .then(() => {
-    logger.info("🚀  Jobs service online — all 8 workers registered:");
+    logger.info("🚀  Jobs service online — all 9 workers registered:");
     logger.info("   ✅ launchTokenWorker");
     logger.info("   ✅ sellDevWorker");
     logger.info("   ✅ sellWalletWorker");
@@ -32,6 +34,7 @@ connectDB()
     logger.info("   ✅ launchTokenFromDappWorker");
     logger.info("   ✅ executeLaunchWorker");
     logger.info("   ✅ ctoWorker");
+    logger.info("   ✅ externalBuyWorker");
   })
   .catch(async (e) => {
     await onCloseSignal();
@@ -52,6 +55,7 @@ const onCloseSignal = async () => {
       launchTokenFromDappWorker.close(),
       executeLaunchWorker.close(),
       ctoWorker.close(),
+      externalBuyWorker.close(),
     ]);
 
     logger.info("Closing queues...");
@@ -64,6 +68,7 @@ const onCloseSignal = async () => {
       createTokenMetadataQueue.close(),
       launchDappTokenQueue.close(),
       ctoQueue.close(),
+      externalBuyQueue.close(),
     ]);
 
     // Use the graceful shutdown for DB and Redis connections
