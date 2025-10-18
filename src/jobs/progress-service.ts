@@ -12,7 +12,8 @@ export interface WorkerProgressEvent {
     | "dev_sell"
     | "wallet_sell"
     | "create_token_metadata"
-    | "launch_token_from_dapp";
+    | "launch_token_from_dapp"
+    | "cto_operation";
   tokenAddress: string;
   userId: string;
   userChatId: number;

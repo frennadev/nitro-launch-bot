@@ -94,3 +94,13 @@ export type LaunchDappTokenJob = {
   launchMode: "normal" | "prefunded";
   socketUserId?: string;
 };
+
+export type CTOJob = {
+  userId: string;
+  userChatId: number;
+  tokenAddress: string;
+  buyAmount: number;
+  mode: "standard" | "prefunded";
+  platform: string;
+  socketUserId?: string;
+};

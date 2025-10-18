@@ -7,6 +7,7 @@ import {
   executeLaunchQueue,
   createTokenMetadataQueue,
   launchDappTokenQueue,
+  ctoQueue,
 } from "./queues";
 import type {
   LaunchTokenJob,
@@ -16,6 +17,7 @@ import type {
   SellWalletJob,
   CreateTokenMetadataJob,
   LaunchDappTokenJob,
+  CTOJob,
 } from "./types";
 import { redisClient } from "./db";
 import {
@@ -2185,4 +2187,232 @@ executeLaunchWorker.on("failed", async (job) => {
 });
 executeLaunchWorker.on("closed", () => {
   logger.info("Execute launch worker closed successfully");
+});
+
+// CTO Worker
+export const ctoWorker = new Worker<CTOJob>(
+  ctoQueue.name,
+  async (job) => {
+    const data = job.data;
+    const jobId = job.id?.toString() || "unknown";
+
+    try {
+      logger.info("[jobs]: CTO Job starting...");
+      logger.info("[jobs-cto]: Job Data", data);
+
+      // Phase 1: Job Started
+      emitWorkerProgress(
+        jobId,
+        "cto_operation",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        1,
+        5,
+        "CTO Operation Started",
+        `Initiating ${data.mode} CTO operation`,
+        10,
+        "started",
+        {
+          tokenAddress: data.tokenAddress,
+          buyAmount: data.buyAmount,
+          mode: data.mode,
+          platform: data.platform,
+        }
+      );
+
+      // Phase 2: Validating parameters
+      emitWorkerProgress(
+        jobId,
+        "cto_operation",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        2,
+        5,
+        "Validating Parameters",
+        "Checking wallet balances and operation parameters",
+        25,
+        "in_progress"
+      );
+
+      // Validate user and wallets
+      const { getUser, getFundingWallet, getAllBuyerWallets } = await import(
+        "../backend/functions"
+      );
+
+      const user = await getUser(data.userChatId.toString());
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      if (data.mode === "prefunded") {
+        const buyerWallets = await getAllBuyerWallets(user.id);
+        if (buyerWallets.length === 0) {
+          throw new Error("No buyer wallets found for prefunded mode");
+        }
+      } else {
+        const fundingWallet = await getFundingWallet(user.id);
+        if (!fundingWallet) {
+          throw new Error("No funding wallet found for standard mode");
+        }
+      }
+
+      // Phase 3: Platform Detection & Preparation
+      emitWorkerProgress(
+        jobId,
+        "cto_operation",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        3,
+        5,
+        "Platform Detection",
+        `Optimizing for ${data.platform} platform`,
+        45,
+        "in_progress"
+      );
+
+      // Phase 4: Executing CTO Operation
+      emitWorkerProgress(
+        jobId,
+        "cto_operation",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        4,
+        5,
+        "Executing Operation",
+        `Executing ${data.mode} CTO with ${data.buyAmount.toFixed(6)} SOL`,
+        70,
+        "in_progress"
+      );
+
+      let result;
+      if (data.mode === "prefunded") {
+        // Use prefunded execution that bypasses mixer
+        const { executePrefundedCTOOperation } = await import(
+          "../bot/conversation/ctoConversation"
+        );
+        result = await executePrefundedCTOOperation(
+          data.tokenAddress,
+          data.userId,
+          data.buyAmount,
+          data.platform
+        );
+      } else {
+        // Use standard execution with mixer
+        const { executeCTOOperation } = await import(
+          "../blockchain/pumpfun/ctoOperation"
+        );
+        result = await executeCTOOperation(
+          data.tokenAddress,
+          data.userId,
+          data.buyAmount,
+          data.platform
+        );
+      }
+
+      // Phase 5: Operation Completed
+      if (result.success) {
+        emitWorkerProgress(
+          jobId,
+          "cto_operation",
+          data.tokenAddress,
+          data.userId,
+          data.userChatId,
+          5,
+          5,
+          "CTO Operation Completed",
+          `Successfully executed ${result.successfulBuys || 0} buy transactions`,
+          100,
+          "completed",
+          {
+            successfulBuys: result.successfulBuys || 0,
+            failedBuys: result.failedBuys || 0,
+            totalSpent: data.buyAmount,
+          }
+        );
+
+        logger.info(
+          `[jobs-cto]: CTO operation completed successfully for token ${data.tokenAddress}`
+        );
+      } else {
+        // Handle partial success or complete failure
+        const isPartialSuccess =
+          result.successfulBuys && result.successfulBuys > 0;
+
+        emitWorkerProgress(
+          jobId,
+          "cto_operation",
+          data.tokenAddress,
+          data.userId,
+          data.userChatId,
+          5,
+          5,
+          isPartialSuccess ? "CTO Partially Completed" : "CTO Operation Failed",
+          isPartialSuccess
+            ? `Partial success: ${result.successfulBuys} buys completed`
+            : `Operation failed: ${result.error || "Unknown error"}`,
+          isPartialSuccess ? 80 : 0,
+          isPartialSuccess ? "completed" : "failed",
+          {
+            successfulBuys: result.successfulBuys || 0,
+            failedBuys: result.failedBuys || 0,
+            error: result.error,
+          }
+        );
+
+        if (!isPartialSuccess) {
+          throw new Error(result.error || "CTO operation failed");
+        }
+
+        logger.warn(
+          `[jobs-cto]: CTO operation partially completed for token ${data.tokenAddress}`
+        );
+      }
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(
+        `[jobs-cto]: CTO operation failed for token ${data.tokenAddress}:`,
+        errorMessage
+      );
+
+      emitWorkerProgress(
+        jobId,
+        "cto_operation",
+        data.tokenAddress,
+        data.userId,
+        data.userChatId,
+        5,
+        5,
+        "CTO Operation Failed",
+        `Operation failed: ${errorMessage}`,
+        0,
+        "failed",
+        {
+          error: errorMessage,
+        }
+      );
+
+      throw error;
+    }
+  },
+  {
+    connection: redisClient,
+    concurrency: 1, // Process CTO operations one at a time to avoid conflicts
+  }
+);
+
+ctoWorker.on("completed", (job) => {
+  logger.info(`[jobs-cto]: CTO job ${job.id} completed successfully`);
+});
+
+ctoWorker.on("failed", (job, err) => {
+  logger.error(`[jobs-cto]: CTO job ${job?.id} failed:`, err);
+});
+
+ctoWorker.on("closed", () => {
+  logger.info("CTO worker closed successfully");
 });

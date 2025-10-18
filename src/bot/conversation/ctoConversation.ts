@@ -89,7 +89,7 @@ async function calculateExpectedMarketCap(
 }
 
 // Prefunded CTO operation function that bypasses the mixer
-async function executePrefundedCTOOperation(
+export async function executePrefundedCTOOperation(
   tokenAddress: string,
   userId: string,
   totalAmount: number,
@@ -1075,11 +1075,9 @@ export const ctoConversation = async (
 
       // Use safe error message sending with timeout handling
       try {
-        await sendMessage(
-          confirmation,
-          "Operation failed. Try again ⚡",
-          { parse_mode: "HTML" }
-        );
+        await sendMessage(confirmation, "Operation failed. Try again ⚡", {
+          parse_mode: "HTML",
+        });
       } catch (msgError: any) {
         logger.warn("Failed to send error message:", msgError.message);
       }
