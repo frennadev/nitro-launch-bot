@@ -2768,6 +2768,55 @@ export const premixFundsWorker = new Worker<PremixFundsJob>(
         throw new Error("No buyer wallets found. Create buyer wallets first.");
       }
 
+      logger.info(
+        `[jobs-premix-funds]: Found ${buyerWallets.length} total buyer wallets`
+      );
+
+      // ✅ FIX: Filter wallets to only those needing funding (< 0.1 SOL)
+      // This prevents double-funding wallets that already have SOL
+      const { getWalletBalance } = await import("../backend/functions-main");
+      const BALANCE_THRESHOLD = 0.1; // Only fund wallets with less than 0.1 SOL
+      const walletsNeedingFunding = [];
+
+      logger.info(
+        `[jobs-premix-funds]: Checking balances to filter wallets needing funding...`
+      );
+
+      for (const wallet of buyerWallets) {
+        try {
+          const balance = await getWalletBalance(wallet.publicKey);
+          if (balance < BALANCE_THRESHOLD) {
+            walletsNeedingFunding.push({
+              ...wallet,
+              currentBalance: balance,
+            });
+          } else {
+            logger.info(
+              `[jobs-premix-funds]: Skipping wallet ${wallet.publicKey.slice(0, 8)}... (already has ${balance.toFixed(6)} SOL)`
+            );
+          }
+        } catch (error) {
+          logger.warn(
+            `[jobs-premix-funds]: Failed to check balance for ${wallet.publicKey.slice(0, 8)}..., including in funding list`
+          );
+          walletsNeedingFunding.push({
+            ...wallet,
+            currentBalance: 0,
+          });
+        }
+      }
+
+      logger.info(
+        `[jobs-premix-funds]: ${walletsNeedingFunding.length} wallets need funding (< ${BALANCE_THRESHOLD} SOL), ${buyerWallets.length - walletsNeedingFunding.length} already funded`
+      );
+
+      // Validate we have wallets that need funding
+      if (walletsNeedingFunding.length === 0) {
+        throw new Error(
+          `All ${buyerWallets.length} buyer wallets already have ≥${BALANCE_THRESHOLD} SOL. No wallets need funding.`
+        );
+      }
+
       // Phase 3: Calculating distribution
       emitWorkerProgress(
         jobId,
@@ -2778,15 +2827,16 @@ export const premixFundsWorker = new Worker<PremixFundsJob>(
         3,
         6,
         "Calculating Distribution",
-        "Computing optimal wallet distribution using 73-wallet system",
+        `Distributing to ${walletsNeedingFunding.length} empty wallets`,
         35,
         "in_progress"
       );
 
       // Calculate how many wallets we actually need for this amount
+      // Use filtered wallets instead of all wallets
       const walletsNeeded =
         data.maxWallets || calculateRequiredWallets(data.mixAmount);
-      const actualWalletsToUse = Math.min(walletsNeeded, buyerWallets.length);
+      const actualWalletsToUse = Math.min(walletsNeeded, walletsNeedingFunding.length);
 
       // Generate the proper 73-wallet distribution
       const distributionAmounts = generateBuyDistribution(
@@ -2795,13 +2845,13 @@ export const premixFundsWorker = new Worker<PremixFundsJob>(
         0.01 // randomSeed
       );
 
-      // Get destination addresses (only the wallets we'll actually use)
-      const destinationAddresses = buyerWallets
+      // Get destination addresses (only the wallets that need funding)
+      const destinationAddresses = walletsNeedingFunding
         .slice(0, actualWalletsToUse)
         .map((wallet) => wallet.publicKey);
 
       logger.info(
-        `[jobs-premix-funds]: Mixing ${data.mixAmount} SOL to ${actualWalletsToUse}/${buyerWallets.length} buyer wallets`
+        `[jobs-premix-funds]: Mixing ${data.mixAmount} SOL to ${actualWalletsToUse} empty wallets (${walletsNeedingFunding.length} available, ${buyerWallets.length} total)`
       );
 
       // Phase 4: Checking balances
@@ -2819,7 +2869,7 @@ export const premixFundsWorker = new Worker<PremixFundsJob>(
         "in_progress"
       );
 
-      const { getWalletBalance } = await import("../backend/functions-main");
+      // getWalletBalance already imported above for filtering
       const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
 
       if (fundingBalance < data.mixAmount + 0.01) {
@@ -2891,15 +2941,18 @@ export const premixFundsWorker = new Worker<PremixFundsJob>(
       await completeLoadingState(loadingKey);
 
       // Send success notification
+      const alreadyFundedCount = buyerWallets.length - walletsNeedingFunding.length;
       await sendNotification(
         bot,
         data.userChatId,
         `✅ <b>Premix Complete!</b>\n\n` +
-          `Mixed ${data.mixAmount.toFixed(6)} SOL using ${data.mode === "fast" ? "fast" : "standard"} mode.\n\n` +
+          `Mixed ${data.mixAmount.toFixed(6)} SOL using ${data.mode === "fast" ? "⚡ Fast" : "🔒 Standard"} mode.\n\n` +
           `<b>Distribution:</b>\n` +
-          `• Used: ${actualWalletsToUse} of ${buyerWallets.length} buyer wallets\n` +
+          `• Funded: ${actualWalletsToUse} wallets\n` +
           `• Success: ${mixerResult?.successCount || 0}/${mixerResult?.totalRoutes || actualWalletsToUse} transfers\n` +
-          `• Mode: ${data.mode === "fast" ? "⚡ Fast" : "🔒 Standard"}\n\n` +
+          `• Available: ${walletsNeedingFunding.length} empty wallets\n` +
+          `• Already funded: ${alreadyFundedCount} wallets (skipped)\n` +
+          `• Total wallets: ${buyerWallets.length}\n\n` +
           `<i>Your buyer wallets are now ready for token launches!</i>`
       );
 
