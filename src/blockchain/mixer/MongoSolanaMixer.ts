@@ -442,6 +442,28 @@ export class MongoSolanaMixer {
           throw new Error(`Invalid transfer amount calculated: ${transferAmount} (original remainingAmount: ${remainingAmount})`);
         }
 
+        // ✅ CRITICAL FIX: Detect dust transfers - abort if only moving tiny amounts
+        const DUST_THRESHOLD = 100_000; // 0.0001 SOL
+        const expectedMinimumForRoute = Math.floor(route.amount * 0.85); // Should have at least 85% of original amount
+        
+        if (i > 0 && transferAmount < DUST_THRESHOLD && route.amount > 10_000_000) {
+          // After first hop, if we're only transferring dust but route expects significant amount
+          throw new Error(
+            `DUST TRANSFER DETECTED at hop ${i + 1}/${route.intermediates.length}: ` +
+            `Only ${(transferAmount / 1e9).toFixed(9)} SOL available but route expects ${(route.amount / 1e9).toFixed(6)} SOL. ` +
+            `Previous transfer likely failed. ABORTING to prevent fund loss.`
+          );
+        }
+        
+        if (i > 0 && transferAmount < expectedMinimumForRoute) {
+          // We've lost too much of the original amount
+          throw new Error(
+            `INSUFFICIENT FUNDS at hop ${i + 1}/${route.intermediates.length}: ` +
+            `Only ${(transferAmount / 1e9).toFixed(6)} SOL available but need at least ${(expectedMinimumForRoute / 1e9).toFixed(6)} SOL. ` +
+            `Expected ${(route.amount / 1e9).toFixed(6)} SOL. Previous transfer may have failed. ABORTING.`
+          );
+        }
+
         let signature: string;
 
         if (this.config.feeFundingWallet && currentWallet !== route.source) {
@@ -489,20 +511,45 @@ export class MongoSolanaMixer {
         try {
           finalBalance = await this.connectionManager.getBalance(nextWallet.publicKey);
           
-          if (finalBalance >= transferAmount) {
+          // ✅ CRITICAL FIX: Strict validation especially for first transfer
+          const minExpectedBalance = Math.floor(transferAmount * 0.95); // Allow 5% variance for fees
+          
+          if (finalBalance >= minExpectedBalance) {
             if (!confirmationSuccess) {
               console.log(`✅ Secondary verification: Wallet ${nextWallet.publicKey.toString().slice(0, 8)}... has expected funds (${(finalBalance / 1_000_000_000).toFixed(6)} SOL)`);
             }
             confirmationSuccess = true;
           } else {
-            console.error(`❌ Balance verification failed: Expected ${(transferAmount / 1_000_000_000).toFixed(6)} SOL, got ${(finalBalance / 1_000_000_000).toFixed(6)} SOL`);
+            console.error(
+              `❌ CRITICAL BALANCE MISMATCH at hop ${i + 1}:\n` +
+              `   Expected: ${(transferAmount / 1e9).toFixed(6)} SOL (min: ${(minExpectedBalance / 1e9).toFixed(6)} SOL)\n` +
+              `   Actual: ${(finalBalance / 1e9).toFixed(6)} SOL\n` +
+              `   Missing: ${((transferAmount - finalBalance) / 1e9).toFixed(6)} SOL`
+            );
+            
+            // If this is first transfer (critical), abort immediately with clear error
+            if (i === 0) {
+              throw new Error(
+                `FIRST TRANSFER FAILED: Source → FirstHop transfer did not complete successfully. ` +
+                `Expected ${(transferAmount / 1e9).toFixed(6)} SOL but wallet only has ${(finalBalance / 1e9).toFixed(6)} SOL. ` +
+                `Funds may be stuck at source wallet. DO NOT CONTINUE ROUTE. Transaction: ${signature.slice(0, 8)}...`
+              );
+            }
           }
         } catch (balanceError) {
           console.error(`❌ Balance check failed: ${balanceError}`);
+          if (i === 0) {
+            throw new Error(`FIRST TRANSFER FAILED: Unable to verify balance after first hop. ABORTING: ${balanceError}`);
+          }
         }
         
         if (!confirmationSuccess) {
-          throw new Error(`FAILED: Transaction ${signature.slice(0, 8)}... - Confirmation failed AND balance verification failed. Expected: ${(transferAmount / 1_000_000_000).toFixed(6)} SOL, Actual: ${(finalBalance / 1_000_000_000).toFixed(6)} SOL`);
+          throw new Error(
+            `FAILED at hop ${i + 1}: Transaction ${signature.slice(0, 8)}... - ` +
+            `Confirmation failed AND balance verification failed. ` +
+            `Expected: ${(transferAmount / 1e9).toFixed(6)} SOL, Actual: ${(finalBalance / 1e9).toFixed(6)} SOL. ` +
+            `${i === 0 ? 'FIRST TRANSFER FAILED - funds stuck at source!' : 'Route aborted.'}`
+          );
         }
 
         // Balance verification completed above - wallet confirmed to have funds
@@ -536,6 +583,17 @@ export class MongoSolanaMixer {
         if (i < route.intermediates.length - 1 && optimizedDelayPerTx > 0) {
           await sleep(optimizedDelayPerTx);
         }
+      }
+
+      // ✅ CRITICAL FIX: Validate we have substantial funds before final transfer
+      const expectedMinimumBeforeFinal = Math.floor(route.amount * 0.80); // Should have at least 80% of original
+      if (remainingAmount < expectedMinimumBeforeFinal) {
+        throw new Error(
+          `INSUFFICIENT FUNDS before final transfer: ` +
+          `Only ${(remainingAmount / 1e9).toFixed(6)} SOL remaining but expected ${(route.amount / 1e9).toFixed(6)} SOL. ` +
+          `Need at least ${(expectedMinimumBeforeFinal / 1e9).toFixed(6)} SOL (80% of route amount). ` +
+          `Route has lost too much value - likely due to failed intermediate transfers. ABORTING to prevent sending dust to destination.`
+        );
       }
 
       // Final transfer to destination with minimal delay
