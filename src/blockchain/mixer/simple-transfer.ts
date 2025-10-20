@@ -30,7 +30,7 @@ export async function simpleDirectTransfer(
   log(`📍 Distributing to ${destinationAddresses.length} wallets`);
 
   const connection = new Connection(
-    process.env.MIXER_HELIUS_RPC || "https://api.mainnet-beta.solana.com",
+    process.env.MIXER_HELIUS_RPC || "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e",
     "confirmed"
   );
 
