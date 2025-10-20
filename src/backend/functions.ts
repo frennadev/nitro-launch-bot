@@ -29,6 +29,7 @@ import {
   walletSellQueue,
   prepareLaunchQueue,
   executeLaunchQueue,
+  premixFundsQueue,
 } from "../jobs/queues";
 import { logger } from "../blockchain/common/logger";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
@@ -1237,6 +1238,70 @@ export const enqueueWalletSell = async (
     };
   } finally {
     await session.endSession();
+  }
+};
+
+export const enqueuePremixFunds = async (
+  userId: string,
+  userChatId: number,
+  mixAmount: number,
+  options?: {
+    maxWallets?: number;
+    mode?: "standard" | "fast";
+    socketUserId?: string;
+  }
+) => {
+  try {
+    // Validate mix amount
+    if (mixAmount <= 0) {
+      throw new Error("Mix amount must be greater than 0");
+    }
+
+    // Check if user has funding wallet
+    const fundingWallet = await getFundingWallet(userId);
+    if (!fundingWallet) {
+      throw new Error(
+        "Funding wallet not found. Create a funding wallet first."
+      );
+    }
+
+    // Check if user has buyer wallets
+    const buyerWallets = await getAllBuyerWallets(userId);
+    if (buyerWallets.length === 0) {
+      throw new Error("No buyer wallets found. Create buyer wallets first.");
+    }
+
+    // Check funding wallet balance
+    const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
+    if (fundingBalance < mixAmount + 0.01) {
+      // Add buffer for fees
+      throw new Error(
+        `Insufficient funding wallet balance. Have: ${fundingBalance.toFixed(6)} SOL, Need: ${(mixAmount + 0.01).toFixed(6)} SOL`
+      );
+    }
+
+    // Add job to queue
+    await premixFundsQueue.add(`premix-${userId}-${Date.now()}`, {
+      userId,
+      userChatId,
+      mixAmount,
+      maxWallets: options?.maxWallets,
+      mode: options?.mode || "standard",
+      socketUserId: options?.socketUserId,
+    });
+
+    return {
+      success: true,
+      message: `Premix funds job queued successfully. Mixing ${mixAmount.toFixed(6)} SOL to ${buyerWallets.length} buyer wallets.`,
+    };
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    logger.error("An error occurred during premix funds enqueue", error);
+    return {
+      success: false,
+      message: `An error occurred during premix funds enqueue: ${errorMessage}`,
+    };
   }
 };
 

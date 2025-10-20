@@ -9,6 +9,7 @@ import {
   launchDappTokenQueue,
   ctoQueue,
   externalBuyQueue,
+  premixFundsQueue,
 } from "./queues";
 import type {
   LaunchTokenJob,
@@ -20,6 +21,7 @@ import type {
   LaunchDappTokenJob,
   CTOJob,
   ExternalBuyJob,
+  PremixFundsJob,
 } from "./types";
 import { redisClient } from "./db";
 import {
@@ -2699,4 +2701,266 @@ externalBuyWorker.on("failed", (job, err) => {
 
 externalBuyWorker.on("closed", () => {
   logger.info("External buy worker closed successfully");
+});
+
+// ============ PREMIX FUNDS WORKER ============
+
+export const premixFundsWorker = new Worker<PremixFundsJob>(
+  premixFundsQueue.name,
+  async (job) => {
+    const data = job.data;
+    const loadingKey = `${data.userChatId}-premix_funds-${Date.now()}`;
+    const jobId = job.id?.toString() || "unknown";
+
+    try {
+      logger.info("[jobs]: Premix Funds Job starting...");
+      logger.info("[jobs-premix-funds]: Job Data", data);
+
+      // Phase 1: Job Started
+      emitWorkerProgress(
+        jobId,
+        "premix_funds",
+        "funding_wallet",
+        data.userId,
+        data.userChatId,
+        1,
+        6,
+        "Premix Started",
+        "Initiating funds premixing from funding wallet",
+        10,
+        "started",
+        {
+          mixAmount: data.mixAmount,
+          mode: data.mode || "standard",
+        }
+      );
+
+      // Phase 2: Validating parameters and fetching wallet data
+      emitWorkerProgress(
+        jobId,
+        "premix_funds",
+        "funding_wallet",
+        data.userId,
+        data.userChatId,
+        2,
+        6,
+        "Validating Parameters",
+        "Checking user wallets and mix parameters",
+        20,
+        "in_progress"
+      );
+
+      // Get user wallet data
+      const {
+        getFundingWallet,
+        getAllBuyerWallets,
+        calculateRequiredWallets,
+        generateBuyDistribution,
+      } = await import("../backend/functions");
+
+      const fundingWallet = await getFundingWallet(data.userId);
+      if (!fundingWallet) {
+        throw new Error("Funding wallet not found");
+      }
+
+      const buyerWallets = await getAllBuyerWallets(data.userId);
+      if (buyerWallets.length === 0) {
+        throw new Error("No buyer wallets found. Create buyer wallets first.");
+      }
+
+      // Phase 3: Calculating distribution
+      emitWorkerProgress(
+        jobId,
+        "premix_funds",
+        "funding_wallet",
+        data.userId,
+        data.userChatId,
+        3,
+        6,
+        "Calculating Distribution",
+        "Computing optimal wallet distribution using 73-wallet system",
+        35,
+        "in_progress"
+      );
+
+      // Calculate how many wallets we actually need for this amount
+      const walletsNeeded =
+        data.maxWallets || calculateRequiredWallets(data.mixAmount);
+      const actualWalletsToUse = Math.min(walletsNeeded, buyerWallets.length);
+
+      // Generate the proper 73-wallet distribution
+      const distributionAmounts = generateBuyDistribution(
+        data.mixAmount,
+        actualWalletsToUse,
+        0.01 // randomSeed
+      );
+
+      // Get destination addresses (only the wallets we'll actually use)
+      const destinationAddresses = buyerWallets
+        .slice(0, actualWalletsToUse)
+        .map((wallet) => wallet.publicKey);
+
+      logger.info(
+        `[jobs-premix-funds]: Mixing ${data.mixAmount} SOL to ${actualWalletsToUse}/${buyerWallets.length} buyer wallets`
+      );
+
+      // Phase 4: Checking balances
+      emitWorkerProgress(
+        jobId,
+        "premix_funds",
+        "funding_wallet",
+        data.userId,
+        data.userChatId,
+        4,
+        6,
+        "Checking Balances",
+        "Verifying funding wallet balance and calculating fees",
+        50,
+        "in_progress"
+      );
+
+      const { getWalletBalance } = await import("../backend/functions-main");
+      const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
+
+      if (fundingBalance < data.mixAmount + 0.01) {
+        // Add buffer for fees
+        throw new Error(
+          `Insufficient funding wallet balance. Have: ${fundingBalance.toFixed(6)} SOL, Need: ${(data.mixAmount + 0.01).toFixed(6)} SOL`
+        );
+      }
+
+      // Phase 5: Initializing mixer
+      emitWorkerProgress(
+        jobId,
+        "premix_funds",
+        "funding_wallet",
+        data.userId,
+        data.userChatId,
+        5,
+        6,
+        "Initializing Mixer",
+        `Preparing ${data.mode === "fast" ? "fast" : "standard"} mixing operation`,
+        70,
+        "in_progress"
+      );
+
+      // Use the appropriate mixer based on mode
+      const { initializeMixerWithCustomAmounts, initializeFastMixer } =
+        await import("../blockchain/mixer/init-mixer");
+
+      let mixerResult;
+      if (data.mode === "fast") {
+        mixerResult = await initializeFastMixer(
+          fundingWallet.privateKey,
+          fundingWallet.privateKey,
+          data.mixAmount,
+          destinationAddresses,
+          loadingKey
+        );
+      } else {
+        mixerResult = await initializeMixerWithCustomAmounts(
+          fundingWallet.privateKey,
+          fundingWallet.privateKey,
+          destinationAddresses,
+          distributionAmounts,
+          loadingKey
+        );
+      }
+
+      // Phase 6: Completing operation
+      emitWorkerProgress(
+        jobId,
+        "premix_funds",
+        "funding_wallet",
+        data.userId,
+        data.userChatId,
+        6,
+        6,
+        "Premix Complete",
+        "Funds successfully distributed to buyer wallets",
+        100,
+        "completed",
+        {
+          successCount: mixerResult?.successCount || 0,
+          totalRoutes: mixerResult?.totalRoutes || actualWalletsToUse,
+          walletsUsed: actualWalletsToUse,
+          totalWallets: buyerWallets.length,
+        }
+      );
+
+      await completeLoadingState(loadingKey);
+
+      // Send success notification
+      await sendNotification(
+        bot,
+        data.userChatId,
+        `✅ <b>Premix Complete!</b>\n\n` +
+          `Mixed ${data.mixAmount.toFixed(6)} SOL using ${data.mode === "fast" ? "fast" : "standard"} mode.\n\n` +
+          `<b>Distribution:</b>\n` +
+          `• Used: ${actualWalletsToUse} of ${buyerWallets.length} buyer wallets\n` +
+          `• Success: ${mixerResult?.successCount || 0}/${mixerResult?.totalRoutes || actualWalletsToUse} transfers\n` +
+          `• Mode: ${data.mode === "fast" ? "⚡ Fast" : "🔒 Standard"}\n\n` +
+          `<i>Your buyer wallets are now ready for token launches!</i>`
+      );
+
+      logger.info(
+        `[jobs-premix-funds]: Premix completed successfully for user ${data.userId}`
+      );
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      logger.error(
+        `[jobs-premix-funds]: Premix failed for user ${data.userId}:`,
+        error
+      );
+
+      await failLoadingState(loadingKey, errorMessage);
+
+      // Send failure notification
+      await sendNotification(
+        bot,
+        data.userChatId,
+        `❌ <b>Premix Failed</b>\n\n` +
+          `Error: ${errorMessage}\n\n` +
+          `<i>Please try again or check your wallet balance.</i>`
+      );
+
+      emitWorkerProgress(
+        jobId,
+        "premix_funds",
+        "funding_wallet",
+        data.userId,
+        data.userChatId,
+        6,
+        6,
+        "Premix Failed",
+        errorMessage,
+        0,
+        "failed",
+        {
+          error: errorMessage,
+        }
+      );
+
+      throw error;
+    }
+  },
+  {
+    connection: redisClient,
+    concurrency: 1, // Process one premix at a time per worker
+  }
+);
+
+premixFundsWorker.on("completed", (job) => {
+  logger.info(
+    `[jobs-premix-funds]: Premix funds job ${job.id} completed successfully`
+  );
+});
+
+premixFundsWorker.on("failed", (job, err) => {
+  logger.error(`[jobs-premix-funds]: Premix funds job ${job?.id} failed:`, err);
+});
+
+premixFundsWorker.on("closed", () => {
+  logger.info("Premix funds worker closed successfully");
 });

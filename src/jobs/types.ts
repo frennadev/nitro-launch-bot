@@ -116,3 +116,12 @@ export type ExternalBuyJob = {
   platform?: string;
   socketUserId?: string;
 };
+
+export type PremixFundsJob = {
+  userId: string;
+  userChatId: number;
+  mixAmount: number; // Amount to mix from funding wallet (in SOL)
+  maxWallets?: number; // Maximum number of buyer wallets to use (default: use smart calculation)
+  mode?: "standard" | "fast"; // Mixing mode (default: standard)
+  socketUserId?: string;
+};
