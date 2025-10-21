@@ -182,10 +182,12 @@ async function executeBonkBuyNoConfirmation(
     );
     const walletBalanceSOL = walletBalance / 1_000_000_000;
 
-    // Use same fee reserves as BonkService
-    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    // Use same fee reserves as BonkService with safety buffer
+    const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
     const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
-    const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+    const safetyBuffer = 0.005; // Additional safety buffer for gas price variations
+    const totalFeeReserve =
+      transactionFeeReserve + accountCreationReserve + safetyBuffer;
     const availableForTrade = walletBalanceSOL - totalFeeReserve;
 
     logger.info(

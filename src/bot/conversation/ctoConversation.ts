@@ -173,16 +173,19 @@ export async function executePrefundedCTOOperation(
       const wallet = buyerWallets[i];
       const walletBalance = walletBalances[i].balance;
 
-      // Calculate maximum spendable amount (reserve fees)
-      const transactionFeeReserve = 0.01; // Priority fees + base fees
+      // Calculate maximum spendable amount (reserve fees with safety buffer)
+      const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
       const accountCreationReserve = 0.008; // ATA creation costs
-      const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+      const safetyBuffer = 0.005; // Additional safety buffer for gas price variations
+      const totalFeeReserve =
+        transactionFeeReserve + accountCreationReserve + safetyBuffer;
       const availableForSpend = walletBalance - totalFeeReserve;
 
       // Skip wallets with insufficient balance for any meaningful buy
-      if (availableForSpend <= 0.001) {
+      if (availableForSpend <= 0.005) {
+        // Increased minimum trade amount
         logger.warn(
-          `[CTO-Prefunded] Skipping wallet ${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-4)} - insufficient balance: ${walletBalance.toFixed(6)} SOL (need > ${totalFeeReserve + 0.001} SOL)`
+          `[CTO-Prefunded] Skipping wallet ${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-4)} - insufficient balance: ${walletBalance.toFixed(6)} SOL (need > ${(totalFeeReserve + 0.005).toFixed(6)} SOL for meaningful trade)`
         );
         failedBuys++;
         continue;

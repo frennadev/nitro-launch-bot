@@ -173,11 +173,13 @@ export class JupiterPumpswapService {
       );
       const walletBalanceSOL = walletBalance / 1_000_000_000;
 
-      // Reserve fees for buy transaction
-      const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+      // Reserve fees for buy transaction with safety buffer
+      const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
       const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
+      const safetyBuffer = 0.005; // Additional safety buffer for gas price variations
       // NOTE: Don't pre-reserve sell fees or 1% buy fee - they will be handled separately
-      const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+      const totalFeeReserve =
+        transactionFeeReserve + accountCreationReserve + safetyBuffer;
       const availableForTrade = walletBalanceSOL - totalFeeReserve;
 
       logger.info(
