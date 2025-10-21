@@ -39,7 +39,7 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
     const walletBalanceSOL = walletBalance / LAMPORTS_PER_SOL;
     
     // Reserve fees for buy transaction AND future sell transactions
-    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
     const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
     const sellFeeReserve = 0.01; // Reserve 0.01 SOL for future sell transaction fees
     const buyFeePercent = 0.01; // 1% buy fee
@@ -196,7 +196,7 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
     const walletBalanceSOL = walletBalance / LAMPORTS_PER_SOL;
     
     // Reserve fees for buy transaction AND future sell transactions
-    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
     const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
     const sellFeeReserve = 0.01; // Reserve 0.01 SOL for future sell transaction fees
     const buyFeePercent = 0.01; // 1% buy fee

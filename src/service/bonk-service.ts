@@ -662,9 +662,10 @@ export default class BonkService {
     const walletBalanceSOL = walletBalance / 1_000_000_000;
 
     // Reserve fees for buy transaction AND account creation costs
-    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
     const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts) - increased from 0.005
-    const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+    const safetyBuffer = 0.005; // Additional safety buffer for gas price variations
+    const totalFeeReserve = transactionFeeReserve + accountCreationReserve + safetyBuffer;
     const availableForTrade = walletBalanceSOL - totalFeeReserve;
 
     logger.info(`[bonk-service]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);

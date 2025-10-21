@@ -119,9 +119,10 @@ async function executeBonkBuy(
     const walletBalanceSOL = walletBalance / 1_000_000_000;
 
     // Reserve fees for buy transaction AND account creation costs
-    const transactionFeeReserve = 0.01; // Priority fees + base fees for current buy
+    const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
     const accountCreationReserve = 0.005; // ATA creation costs (WSOL + token accounts)
-    const totalFeeReserve = transactionFeeReserve + accountCreationReserve;
+    const safetyBuffer = 0.005; // Additional safety buffer for gas price variations
+    const totalFeeReserve = transactionFeeReserve + accountCreationReserve + safetyBuffer;
     const availableForTrade = walletBalanceSOL - totalFeeReserve;
 
     logger.info(
