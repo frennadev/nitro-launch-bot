@@ -3633,8 +3633,8 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             throw buyError;
           }
 
-          // Wait between buy and sell
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          // Wait between buy and sell - increased delay to ensure tokens are available
+          await new Promise((resolve) => setTimeout(resolve, 8000));
 
           // Stage 3: First Sell (50% of tokens)
           emitWorkerProgress(
@@ -3797,8 +3797,8 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             throw buyError;
           }
 
-          // Wait between buy and sell
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          // Wait between buy and sell - increased delay to ensure tokens are available
+          await new Promise((resolve) => setTimeout(resolve, 8000));
 
           // Stage 5: Second Sell (remaining tokens)
           emitWorkerProgress(
