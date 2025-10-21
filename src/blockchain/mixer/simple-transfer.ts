@@ -30,7 +30,8 @@ export async function simpleDirectTransfer(
   log(`📍 Distributing to ${destinationAddresses.length} wallets`);
 
   const connection = new Connection(
-    process.env.MIXER_HELIUS_RPC || "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e",
+    process.env.MIXER_HELIUS_RPC ||
+      "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e",
     "confirmed"
   );
 
@@ -198,30 +199,37 @@ export async function generateDistributionAmounts(
   try {
     // Import the main distribution function
     const { generateBuyDistribution } = await import("../../backend/functions");
-    
+
     // Convert available amount back to SOL for the function
     const availableSol = availableForDistribution / 1e9;
-    
+
     // Generate distribution using the 73-wallet system
-    const solDistribution = generateBuyDistribution(availableSol, destinationCount);
-    
-    // Convert back to lamports and add overhead
-    const amounts = solDistribution.map(solAmount => 
-      Math.floor(solAmount * 1e9) + OVERHEAD_PER_WALLET
+    const solDistribution = generateBuyDistribution(
+      availableSol,
+      destinationCount
     );
-    
+
+    // Convert back to lamports and add overhead
+    const amounts = solDistribution.map(
+      (solAmount) => Math.floor(solAmount * 1e9) + OVERHEAD_PER_WALLET
+    );
+
     // Pad remaining destinations with minimum overhead (for unused wallets)
     while (amounts.length < destinationCount) {
       amounts.push(OVERHEAD_PER_WALLET);
     }
-    
-    console.log(`🎲 Using 73-wallet randomized distribution: ${solDistribution.filter(x => x > 0).length} active wallets`);
-    
+
+    console.log(
+      `🎲 Using 73-wallet randomized distribution: ${solDistribution.filter((x) => x > 0).length} active wallets`
+    );
+
     return amounts;
-    
   } catch (error) {
-    console.warn("Failed to use 73-wallet distribution, falling back to legacy system:", error);
-    
+    console.warn(
+      "Failed to use 73-wallet distribution, falling back to legacy system:",
+      error
+    );
+
     // FALLBACK: Legacy incremental sequence
     const incrementalSequence = [
       0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1,
@@ -285,7 +293,7 @@ export async function generateDistributionAmounts(
     while (amounts.length < destinationCount) {
       amounts.push(OVERHEAD_PER_WALLET);
     }
-    
+
     return amounts;
   }
 }
