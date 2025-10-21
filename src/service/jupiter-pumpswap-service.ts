@@ -59,7 +59,7 @@ export class JupiterPumpswapService {
 
   constructor() {
     this.connection = connection;
-    this.baseUrl = "https://jupiter-swap-api.quiknode.pro/963B1921E747";
+    this.baseUrl = "https://quote-api.jup.ag/v6";
   }
 
   async getPrice(mint: string): Promise<number> {
