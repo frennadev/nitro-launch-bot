@@ -3342,6 +3342,9 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
       const { initializeMixerWithCustomAmounts } = await import(
         "../blockchain/mixer/init-mixer"
       );
+      const { safeDecryptPrivateKey } = await import(
+        "../backend/wallet-decryption"
+      );
       const { WalletModel } = await import("../backend/models");
       const { detectTokenPlatformWithCache } = await import(
         "../service/token-detection-service"
@@ -3554,9 +3557,19 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             throw fundingError;
           }
 
+          // Decrypt wallet private key
+          const walletDecryptResult = await safeDecryptPrivateKey(
+            wallet.privateKey,
+            wallet.publicKey
+          );
+          
+          if (!walletDecryptResult.success) {
+            throw new Error(`Failed to decrypt wallet private key: ${walletDecryptResult.error}`);
+          }
+
           // Create keypair for wallet
           const walletKeypair = Keypair.fromSecretKey(
-            bs58.default.decode(wallet.privateKey)
+            bs58.default.decode(walletDecryptResult.privateKey!)
           );
 
           // Stage 2: First Buy
@@ -3902,8 +3915,8 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
 
             if (returnAmount > 0.001) {
               await initializeMixerWithCustomAmounts(
-                wallet.privateKey,
-                wallet.privateKey,
+                walletDecryptResult.privateKey!,
+                walletDecryptResult.privateKey!,
                 [fundingWallet.publicKey],
                 [returnAmount],
                 loadingKey
