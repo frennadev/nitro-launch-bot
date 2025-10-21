@@ -152,8 +152,47 @@ export async function executePrefundedCTOOperation(
     // Execute direct buys from buyer wallets using each wallet's full available balance
     // This maximizes buying power by using ALL available SOL from each wallet
 
+    // Pre-execution analysis: Count wallets by funding status
+    const minRequiredBalance = 0.025 + 0.005; // Fees + minimum trade
+    let fundedWallets = 0;
+    let underfundedWallets = 0;
+    let totalPotentialSpend = 0;
+
+    for (const { balance } of walletBalances) {
+      const availableForSpend = balance - 0.025; // Reserve for fees
+      if (availableForSpend > 0.005) {
+        fundedWallets++;
+        totalPotentialSpend += availableForSpend;
+      } else {
+        underfundedWallets++;
+      }
+    }
+
     logger.info(
-      `[CTO-Prefunded] Executing maximum balance buys across ${buyerWallets.length} wallets`
+      `[CTO-Prefunded] Pre-execution analysis: ${fundedWallets} funded wallets, ${underfundedWallets} underfunded wallets`
+    );
+    logger.info(
+      `[CTO-Prefunded] Total potential spend: ${totalPotentialSpend.toFixed(6)} SOL from ${fundedWallets} wallets`
+    );
+
+    if (fundedWallets === 0) {
+      return {
+        success: false,
+        error: `No wallets have sufficient balance. All ${underfundedWallets} wallets need at least ${minRequiredBalance.toFixed(6)} SOL but have insufficient funds.`,
+        successfulBuys: 0,
+        failedBuys: underfundedWallets,
+        totalSpent: 0,
+      };
+    }
+
+    if (underfundedWallets > fundedWallets) {
+      logger.warn(
+        `[CTO-Prefunded] Warning: ${underfundedWallets} wallets lack sufficient funding. Consider funding wallets before CTO operations.`
+      );
+    }
+
+    logger.info(
+      `[CTO-Prefunded] Executing maximum balance buys across ${fundedWallets} funded wallets (skipping ${underfundedWallets} underfunded)`
     );
 
     let successfulBuys = 0;
@@ -253,12 +292,22 @@ export async function executePrefundedCTOOperation(
       `[CTO-Prefunded] CTO operation completed. Successful: ${successfulBuys}, Failed: ${failedBuys}, Total Spent: ${totalSpent.toFixed(6)} SOL`
     );
 
+    // Provide detailed error analysis for complete failures
+    let errorMessage: string | undefined;
+    if (successfulBuys === 0) {
+      if (fundedWallets === 0) {
+        errorMessage = `No wallets had sufficient balance. All ${underfundedWallets} wallets need at least 0.030 SOL for fees + trade amount. Please fund your wallets and try again.`;
+      } else {
+        errorMessage = `All ${fundedWallets} funded wallets failed to execute trades. This could be due to network issues, token trading problems, or recent token graduation from PumpFun to Raydium.`;
+      }
+    }
+
     return {
       success: successfulBuys > 0,
       successfulBuys,
       failedBuys,
       totalSpent,
-      error: successfulBuys === 0 ? "All buy operations failed" : undefined,
+      error: errorMessage,
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);

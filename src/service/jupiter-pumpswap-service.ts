@@ -48,6 +48,7 @@ export interface JupiterPumpswapResult {
   solReceived?: string;
   actualSolSpent?: string;
   priceImpact?: number;
+  graduated?: boolean; // Indicates if token has graduated from PumpFun to Raydium
 }
 
 const WSOL = "So11111111111111111111111111111111111111112";
@@ -232,6 +233,26 @@ export class JupiterPumpswapService {
         );
         if (pumpfunResult.success) {
           return pumpfunResult;
+        }
+
+        // Check if token has graduated during our attempt
+        if (
+          pumpfunResult.error === "BONDING_CURVE_COMPLETE" ||
+          pumpfunResult.graduated
+        ) {
+          logger.info(
+            `[${logId}] Token graduated during execution - switching to Raydium-optimized approach`
+          );
+          // Try PumpSwap first for graduated tokens (better for Raydium liquidity)
+          const pumpswapResult = await this.tryPumpSwapBuy(
+            tokenAddress,
+            buyerKeypair,
+            actualTradeAmount,
+            logId
+          );
+          if (pumpswapResult.success) {
+            return pumpswapResult;
+          }
         }
 
         logger.info(`[${logId}] PumpFun failed, trying Jupiter fallback...`);
@@ -677,6 +698,23 @@ export class JupiterPumpswapService {
           logger.warn(
             `[${logId}] PumpFun attempt ${attempt} failed: ${errorMsg}`
           );
+
+          // Check if error indicates bonding curve completion (graduated to Raydium)
+          if (
+            errorMsg.includes('Custom":6005') ||
+            errorMsg.includes("BondingCurveComplete")
+          ) {
+            logger.info(
+              `[${logId}] Token has graduated from PumpFun to Raydium, will fallback to Jupiter`
+            );
+            return {
+              success: false,
+              signature: "",
+              error: "BONDING_CURVE_COMPLETE", // Special error code for fallback logic
+              graduated: true,
+            };
+          }
+
           if (attempt < maxRetries) {
             logger.info(`[${logId}] Retrying PumpFun in 1 second...`);
             await new Promise((resolve) => setTimeout(resolve, 1000));

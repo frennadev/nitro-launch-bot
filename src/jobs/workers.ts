@@ -2604,7 +2604,24 @@ export const ctoWorker = new Worker<CTOJob>(
         );
 
         if (!isPartialSuccess) {
-          throw new Error(result.error || "CTO operation failed");
+          // Provide more specific error messages based on failure type
+          let enhancedError = result.error || "CTO operation failed";
+
+          if (result.error?.includes("insufficient balance")) {
+            enhancedError =
+              "Insufficient wallet balances. Most wallets need funding before CTO operations can succeed.";
+          } else if (
+            result.error?.includes("BONDING_CURVE_COMPLETE") ||
+            result.error?.includes('Custom":6005')
+          ) {
+            enhancedError =
+              "Token has graduated from PumpFun to Raydium. The system should automatically handle this, but if issues persist, try again.";
+          } else if (result.error?.includes("All buy methods failed")) {
+            enhancedError =
+              "All trading methods failed. This could be due to network issues, token liquidity problems, or wallet funding issues.";
+          }
+
+          throw new Error(enhancedError);
         }
 
         logger.warn(
