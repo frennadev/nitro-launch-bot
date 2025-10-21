@@ -713,27 +713,27 @@ export class MongoSolanaMixer {
       console.log(`🎯 Route (PARALLEL): ${route.source.publicKey.toString().slice(0, 8)}... → ${route.destination.toString().slice(0, 8)}...`);
       console.log(`💰 Amount: ${(route.amount / 1_000_000_000).toFixed(6)} SOL`);
       
-      // Get intermediate wallets from database
-      const neededWallets = route.intermediates.length;
-      const intermediateWallets = await this.walletManager.getAvailableWallets(neededWallets);
+      // Use pre-reserved intermediate wallets from route (already allocated atomically)
+      // This ensures each route uses unique wallets, preventing wallet reuse across routes
+      const intermediateWallets = route.intermediates;
       
-      if (intermediateWallets.length < neededWallets) {
-        throw new Error(`Failed to get enough intermediate wallets. Needed: ${neededWallets}, Got: ${intermediateWallets.length}`);
+      if (intermediateWallets.length === 0) {
+        throw new Error(`Route has no intermediate wallets assigned`);
       }
       
-      // Mark wallets as in use
-      usedWalletIds.push(...intermediateWallets.map(w => w.publicKey));
+      // Track wallets used in this route for cleanup
+      usedWalletIds.push(...intermediateWallets.map(w => w.publicKey.toString()));
       
       // Step 1: Prepare all transaction data
       const allWallets = [
         { publicKey: route.source.publicKey, keypair: route.source.keypair },
         ...intermediateWallets.map(w => ({ 
-          publicKey: new PublicKey(w.publicKey), 
-          keypair: this.walletManager.getKeypairFromStoredWallet(w) 
+          publicKey: w.publicKey, 
+          keypair: w.keypair
         }))
       ];
       const allDestinations = [
-        ...intermediateWallets.map(w => new PublicKey(w.publicKey)),
+        ...intermediateWallets.map(w => w.publicKey),
         route.destination
       ];
       
