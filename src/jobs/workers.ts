@@ -3569,6 +3569,17 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             bs58.default.decode(walletDecryptResult.privateKey!)
           );
 
+          // Verify wallet addresses match
+          logger.info(
+            `[jobs-wallet-warming]: Wallet verification - DB: ${wallet.publicKey}, Keypair: ${walletKeypair.publicKey.toBase58()}`
+          );
+
+          if (wallet.publicKey !== walletKeypair.publicKey.toBase58()) {
+            throw new Error(
+              `Wallet address mismatch! DB: ${wallet.publicKey}, Keypair: ${walletKeypair.publicKey.toBase58()}`
+            );
+          }
+
           // Stage 2: First Buy
           emitWorkerProgress(
             jobId,
@@ -3591,6 +3602,10 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
           const stage2StartTime = Date.now();
 
           try {
+            logger.info(
+              `[jobs-wallet-warming]: Executing first buy for wallet ${walletKeypair.publicKey.toBase58()}, token ${data.warmingTokenAddress}, amount ${BUY_AMOUNT} SOL`
+            );
+
             const firstBuyResult = await executeExternalBuy(
               data.warmingTokenAddress,
               walletKeypair,
@@ -3669,7 +3684,7 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
               logger.info(
-                `[jobs-wallet-warming]: Checking token balance (attempt ${attempt}/3)...`
+                `[jobs-wallet-warming]: Checking token balance (attempt ${attempt}/3) for wallet ${walletKeypair.publicKey.toBase58()} and token ${data.warmingTokenAddress}...`
               );
 
               tokenBalance = await jupiterService.checkTokenBalance(
@@ -3678,7 +3693,7 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
               );
 
               logger.info(
-                `[jobs-wallet-warming]: Token balance found: ${tokenBalance}`
+                `[jobs-wallet-warming]: Token balance found for wallet ${walletKeypair.publicKey.toBase58()}: ${tokenBalance} tokens`
               );
 
               if (tokenBalance > 0) {
@@ -3719,6 +3734,10 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
           let firstSellSignature: string | undefined;
 
           try {
+            logger.info(
+              `[jobs-wallet-warming]: Executing first sell for wallet ${walletKeypair.publicKey.toBase58()}, token ${data.warmingTokenAddress}, amount ${firstSellAmount} tokens`
+            );
+
             const firstSellResult = await executeExternalSell(
               data.warmingTokenAddress,
               walletKeypair,
@@ -3865,7 +3884,7 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
               logger.info(
-                `[jobs-wallet-warming]: Checking remaining token balance (attempt ${attempt}/3)...`
+                `[jobs-wallet-warming]: Checking remaining token balance (attempt ${attempt}/3) for wallet ${walletKeypair.publicKey.toBase58()} and token ${data.warmingTokenAddress}...`
               );
 
               remainingTokens = await jupiterService.checkTokenBalance(
@@ -3874,7 +3893,7 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
               );
 
               logger.info(
-                `[jobs-wallet-warming]: Remaining token balance: ${remainingTokens}`
+                `[jobs-wallet-warming]: Remaining token balance found for wallet ${walletKeypair.publicKey.toBase58()}: ${remainingTokens} tokens`
               );
 
               if (remainingTokens > 0) {
