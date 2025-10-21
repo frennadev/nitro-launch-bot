@@ -3562,9 +3562,11 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             wallet.privateKey,
             wallet.publicKey
           );
-          
+
           if (!walletDecryptResult.success) {
-            throw new Error(`Failed to decrypt wallet private key: ${walletDecryptResult.error}`);
+            throw new Error(
+              `Failed to decrypt wallet private key: ${walletDecryptResult.error}`
+            );
           }
 
           // Create keypair for wallet
