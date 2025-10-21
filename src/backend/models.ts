@@ -25,6 +25,70 @@ const walletSchema = new Schema(
     isBuyer: { type: Boolean, required: true, default: false },
     isFunding: { type: Boolean, required: true, default: false },
     isDefault: { type: Boolean, default: false },
+
+    // Wallet warming stages (optional)
+    warming: {
+      isWarming: { type: Boolean, default: false }, // Indicates if wallet is in warming process
+      stage: { type: Number, default: 0 }, // Current warming stage (0-6)
+      isFunded: { type: Boolean, default: false }, // Stage 1: Wallet has been funded
+      firstBuyCompleted: { type: Boolean, default: false }, // Stage 2: First token buy completed
+      firstSellCompleted: { type: Boolean, default: false }, // Stage 3: First token sell completed
+      secondBuyCompleted: { type: Boolean, default: false }, // Stage 4: Second token buy completed
+      secondSellCompleted: { type: Boolean, default: false }, // Stage 5: Second token sell completed
+      fundsReturned: { type: Boolean, default: false }, // Stage 6: Funds returned to funding wallet
+      warmingStartedAt: { type: Date }, // When warming process started
+      warmingCompletedAt: { type: Date }, // When warming process completed
+      fundingTransactionSignature: { type: String }, // Transaction signature for initial funding
+      returnTransactionSignature: { type: String }, // Transaction signature for returning funds
+
+      // Current warming token information
+      currentWarmingToken: {
+        address: { type: String }, // Token address being used for warming
+        name: { type: String }, // Token name for reference
+        symbol: { type: String }, // Token symbol for reference
+        assignedAt: { type: Date }, // When this token was assigned for warming
+      },
+
+      // Transaction tracking
+      firstBuySignature: { type: String }, // First buy transaction signature
+      firstSellSignature: { type: String }, // First sell transaction signature
+      secondBuySignature: { type: String }, // Second buy transaction signature
+      secondSellSignature: { type: String }, // Second sell transaction signature
+
+      // Error tracking and state
+      hasError: { type: Boolean, default: false }, // Indicates if warming process encountered errors
+      errorStage: { type: Number }, // Stage where error occurred (1-6)
+      errorMessage: { type: String }, // Last error message encountered
+      errorOccurredAt: { type: Date }, // When the error occurred
+      errorDetails: {
+        errorType: { type: String }, // Type of error (funding, buy, sell, platform, etc.)
+        originalError: { type: String }, // Original error message from system
+        retryAttempt: { type: Number, default: 0 }, // Number of retry attempts made
+        canRetry: { type: Boolean, default: true }, // Whether this error can be retried
+        platform: { type: String }, // Platform where error occurred
+        transactionData: { type: String }, // Relevant transaction data for debugging
+      },
+
+      // Retry and recovery tracking
+      retryCount: { type: Number, default: 0 }, // Total number of retry attempts
+      lastRetryAt: { type: Date }, // When last retry was attempted
+      maxRetries: { type: Number, default: 3 }, // Maximum retries allowed
+      recoveredFromError: { type: Boolean, default: false }, // Whether wallet recovered from previous error
+
+      // Performance and timing metrics
+      totalWarmingDuration: { type: Number }, // Total time spent warming (in seconds)
+      stageTimings: {
+        fundingDuration: { type: Number }, // Time spent on funding stage
+        firstBuyDuration: { type: Number }, // Time spent on first buy
+        firstSellDuration: { type: Number }, // Time spent on first sell
+        secondBuyDuration: { type: Number }, // Time spent on second buy
+        secondSellDuration: { type: Number }, // Time spent on second sell
+        returnDuration: { type: Number }, // Time spent returning funds
+      },
+
+      // Legacy field (kept for backward compatibility)
+      warmingTokenAddress: { type: String }, // Deprecated: use currentWarmingToken.address instead
+    },
   },
   { timestamps: true }
 );
@@ -106,7 +170,11 @@ const retryDataSchema = new Schema(
   {
     user: { type: Schema.ObjectId, ref: "User", required: true },
     telegramId: { type: String, required: true },
-    conversationType: { type: String, enum: ["launch_token", "quick_launch"], required: true },
+    conversationType: {
+      type: String,
+      enum: ["launch_token", "quick_launch"],
+      required: true,
+    },
 
     // Launch Token retry data
     tokenAddress: { type: String }, // For launch token retries
@@ -133,7 +201,15 @@ const transactionRecordSchema = new Schema(
     walletPublicKey: { type: String, required: true },
     transactionType: {
       type: String,
-      enum: ["token_creation", "dev_buy", "snipe_buy", "dev_sell", "wallet_sell", "external_sell", "external_buy"],
+      enum: [
+        "token_creation",
+        "dev_buy",
+        "snipe_buy",
+        "dev_sell",
+        "wallet_sell",
+        "external_sell",
+        "external_buy",
+      ],
       required: true,
     },
     signature: { type: String, required: true },
@@ -206,16 +282,28 @@ export const UserModel = model<User>("User", userSchema);
 export type Wallet = InferSchemaType<typeof walletSchema>;
 export const WalletModel = model<Wallet>("Wallet", walletSchema);
 export type WalletPool = InferSchemaType<typeof walletPoolSchema>;
-export const WalletPoolModel = model<WalletPool>("WalletPool", walletPoolSchema);
+export const WalletPoolModel = model<WalletPool>(
+  "WalletPool",
+  walletPoolSchema
+);
 export type PumpAddress = InferSchemaType<typeof pumpAddressSchema>;
-export const PumpAddressModel = model<PumpAddress>("PumpAddress", pumpAddressSchema, "pump_addresses");
+export const PumpAddressModel = model<PumpAddress>(
+  "PumpAddress",
+  pumpAddressSchema,
+  "pump_addresses"
+);
 export type Token = InferSchemaType<typeof tokenSchema>;
 export const TokenModel = model<Token>("Token", tokenSchema);
 export type RetryData = InferSchemaType<typeof retryDataSchema>;
 export const RetryDataModel = model<RetryData>("RetryData", retryDataSchema);
-export const TransactionRecordModel = model<InferSchemaType<typeof transactionRecordSchema>>(
-  "TransactionRecord",
-  transactionRecordSchema
+export const TransactionRecordModel = model<
+  InferSchemaType<typeof transactionRecordSchema>
+>("TransactionRecord", transactionRecordSchema);
+export const BonkAddressModel = model<IBonkAddress>(
+  "BonkAddress",
+  BonkAddressSchema
 );
-export const BonkAddressModel = model<IBonkAddress>("BonkAddress", BonkAddressSchema);
-export const UsedBonkAddressModel = model<IUsedBonkAddress>("UsedBonkAddress", UsedBonkAddressSchema);
+export const UsedBonkAddressModel = model<IUsedBonkAddress>(
+  "UsedBonkAddress",
+  UsedBonkAddressSchema
+);

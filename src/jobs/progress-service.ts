@@ -14,7 +14,8 @@ export interface WorkerProgressEvent {
     | "create_token_metadata"
     | "launch_token_from_dapp"
     | "cto_operation"
-    | "premix_funds";
+    | "premix_funds"
+    | "wallet_warming";
   tokenAddress: string;
   userId: string;
   userChatId: number;

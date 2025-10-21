@@ -1,4 +1,5 @@
 import { Worker } from "bullmq";
+import type { Context } from "grammy";
 import {
   tokenLaunchQueue,
   devSellQueue,
@@ -3208,6 +3209,121 @@ premixFundsWorker.on("closed", () => {
 
 // ============ WALLET WARMING WORKER ============
 
+// Helper function to track warming errors
+async function trackWarmingError(
+  walletId: string,
+  stage: number,
+  error: Error | string,
+  errorType: string,
+  platform?: string,
+  transactionData?: string,
+  retryAttempt: number = 0
+) {
+  const { WalletModel } = await import("../backend/models");
+  const errorMessage = error instanceof Error ? error.message : error;
+
+  await WalletModel.updateOne(
+    { _id: walletId },
+    {
+      $set: {
+        "warming.hasError": true,
+        "warming.errorStage": stage,
+        "warming.errorMessage": errorMessage,
+        "warming.errorOccurredAt": new Date(),
+        "warming.errorDetails.errorType": errorType,
+        "warming.errorDetails.originalError": errorMessage,
+        "warming.errorDetails.retryAttempt": retryAttempt,
+        "warming.errorDetails.platform": platform,
+        "warming.errorDetails.transactionData": transactionData,
+        "warming.retryCount": retryAttempt,
+        "warming.lastRetryAt": retryAttempt > 0 ? new Date() : undefined,
+      },
+    }
+  );
+
+  logger.error(
+    `[jobs-wallet-warming]: Error tracked for wallet ${walletId} at stage ${stage}: ${errorMessage}`
+  );
+}
+
+// Helper function to track stage timing
+async function trackStageCompletion(
+  walletId: string,
+  stage: number,
+  startTime: number,
+  signature?: string
+) {
+  const { WalletModel } = await import("../backend/models");
+  const duration = (Date.now() - startTime) / 1000; // Convert to seconds
+
+  const updateFields: Record<string, any> = {};
+
+  // Track stage-specific timings
+  switch (stage) {
+    case 1:
+      updateFields["warming.stageTimings.fundingDuration"] = duration;
+      updateFields["warming.isFunded"] = true;
+      break;
+    case 2:
+      updateFields["warming.stageTimings.firstBuyDuration"] = duration;
+      updateFields["warming.firstBuyCompleted"] = true;
+      updateFields["warming.firstBuySignature"] = signature;
+      break;
+    case 3:
+      updateFields["warming.stageTimings.firstSellDuration"] = duration;
+      updateFields["warming.firstSellCompleted"] = true;
+      updateFields["warming.firstSellSignature"] = signature;
+      break;
+    case 4:
+      updateFields["warming.stageTimings.secondBuyDuration"] = duration;
+      updateFields["warming.secondBuyCompleted"] = true;
+      updateFields["warming.secondBuySignature"] = signature;
+      break;
+    case 5:
+      updateFields["warming.stageTimings.secondSellDuration"] = duration;
+      updateFields["warming.secondSellCompleted"] = true;
+      updateFields["warming.secondSellSignature"] = signature;
+      break;
+    case 6:
+      updateFields["warming.stageTimings.returnDuration"] = duration;
+      updateFields["warming.fundsReturned"] = true;
+      break;
+  }
+
+  updateFields["warming.stage"] = stage + 1;
+
+  await WalletModel.updateOne({ _id: walletId }, { $set: updateFields });
+
+  logger.info(
+    `[jobs-wallet-warming]: Stage ${stage} completed for wallet ${walletId} in ${duration.toFixed(2)}s`
+  );
+}
+
+// Helper function to clear error state on successful retry
+async function clearWarmingError(walletId: string) {
+  const { WalletModel } = await import("../backend/models");
+
+  await WalletModel.updateOne(
+    { _id: walletId },
+    {
+      $set: {
+        "warming.hasError": false,
+        "warming.recoveredFromError": true,
+      },
+      $unset: {
+        "warming.errorStage": "",
+        "warming.errorMessage": "",
+        "warming.errorOccurredAt": "",
+        "warming.errorDetails": "",
+      },
+    }
+  );
+
+  logger.info(
+    `[jobs-wallet-warming]: Error state cleared for wallet ${walletId} - recovery successful`
+  );
+}
+
 export const walletWarmingWorker = new Worker<WalletWarmingJob>(
   walletWarmingQueue.name,
   async (job) => {
@@ -3216,7 +3332,7 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
     const jobId = job.id?.toString() || "unknown";
 
     try {
-      logger.info("[jobs]: Wallet Warming Job starting...");
+      logger.info("[jobs]: Comprehensive Wallet Warming Job starting...");
       logger.info("[jobs-wallet-warming]: Job Data", data);
 
       const { getFundingWallet, getWalletBalance } = await import(
@@ -3227,6 +3343,17 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
         "../blockchain/mixer/init-mixer"
       );
       const { WalletModel } = await import("../backend/models");
+      const { detectTokenPlatformWithCache } = await import(
+        "../service/token-detection-service"
+      );
+      const { executeExternalBuy } = await import(
+        "../blockchain/pumpfun/externalBuy"
+      );
+      const { executeExternalSell } = await import(
+        "../blockchain/pumpfun/externalSell"
+      );
+      const { Keypair } = await import("@solana/web3.js");
+      const bs58 = await import("bs58");
 
       // Validate funding wallet
       const fundingWallet = await getFundingWallet(data.userId);
@@ -3234,7 +3361,9 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
         throw new Error("Funding wallet not found");
       }
 
+      // Constants for wallet warming
       const WARMING_AMOUNT = 0.05; // Fixed amount per wallet
+      const BUY_AMOUNT = 0.01; // SOL amount for each buy
       const totalRequired = data.walletIds.length * WARMING_AMOUNT + 0.05; // + buffer for fees
 
       const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
@@ -3244,6 +3373,17 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
         );
       }
 
+      // Detect the warming token platform
+      logger.info(
+        `[jobs-wallet-warming]: Detecting platform for warming token: ${data.warmingTokenAddress}`
+      );
+      const platform = await detectTokenPlatformWithCache(
+        data.warmingTokenAddress
+      );
+      logger.info(
+        `[jobs-wallet-warming]: Token platform detected as: ${platform}`
+      );
+
       emitWorkerProgress(
         jobId,
         "wallet_warming",
@@ -3251,10 +3391,10 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
         data.userId,
         data.userChatId,
         1,
-        data.walletIds.length + 2,
+        data.walletIds.length * 6 + 2, // 6 stages per wallet + setup/cleanup
         "Warming Started",
-        `Preparing to warm ${data.walletIds.length} wallets`,
-        5,
+        `Preparing to warm ${data.walletIds.length} wallets using ${platform} token`,
+        1,
         "started"
       );
 
@@ -3273,34 +3413,23 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
 
       let successCount = 0;
       let failedCount = 0;
+      let currentStep = 2;
       const results: Array<{
         walletId: string;
         success: boolean;
         error?: string;
+        completedStages: number;
       }> = [];
 
-      // Process each wallet
+      // Process each wallet through complete warming cycle
       for (let i = 0; i < wallets.length; i++) {
         const wallet = wallets[i];
         const walletNum = i + 1;
+        let completedStages = 0;
 
         try {
           logger.info(
             `[jobs-wallet-warming]: Processing wallet ${walletNum}/${wallets.length}: ${wallet.publicKey.slice(0, 8)}...`
-          );
-
-          emitWorkerProgress(
-            jobId,
-            "wallet_warming",
-            "warming",
-            data.userId,
-            data.userChatId,
-            walletNum + 1,
-            wallets.length + 2,
-            `Warming Wallet ${walletNum}/${wallets.length}`,
-            `Checking ${wallet.publicKey.slice(0, 8)}... status`,
-            Math.floor((walletNum / wallets.length) * 80) + 10,
-            "in_progress"
           );
 
           // Check if already warmed
@@ -3310,47 +3439,488 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
               `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... already warmed, skipping`
             );
             successCount++;
-            results.push({ walletId: wallet._id.toString(), success: true });
+            results.push({
+              walletId: wallet._id.toString(),
+              success: true,
+              completedStages: 6,
+            });
+            currentStep += 6;
             continue;
           }
 
-          // Step 1: Fund wallet with 0.05 SOL using mixer
+          // Initialize warming state in database
+          await WalletModel.updateOne(
+            { _id: wallet._id },
+            {
+              $set: {
+                "warming.isWarming": true,
+                "warming.stage": 1,
+                "warming.warmingStartedAt": new Date(),
+                "warming.currentWarmingToken.address": data.warmingTokenAddress,
+                "warming.currentWarmingToken.assignedAt": new Date(),
+              },
+            }
+          );
+
+          // Stage 1: Fund wallet with 0.05 SOL using custom mixer
+          emitWorkerProgress(
+            jobId,
+            "wallet_warming",
+            "warming",
+            data.userId,
+            data.userChatId,
+            currentStep,
+            data.walletIds.length * 6 + 2,
+            `Funding Wallet ${walletNum}/${wallets.length}`,
+            `Sending ${WARMING_AMOUNT} SOL to ${wallet.publicKey.slice(0, 8)}...`,
+            Math.floor((currentStep / (data.walletIds.length * 6 + 2)) * 100),
+            "in_progress"
+          );
+
           logger.info(
-            `[jobs-wallet-warming]: Funding wallet with ${WARMING_AMOUNT} SOL`
+            `[jobs-wallet-warming]: Stage 1 - Funding wallet with ${WARMING_AMOUNT} SOL`
           );
 
-          await initializeMixerWithCustomAmounts(
-            fundingWallet.privateKey,
-            fundingWallet.privateKey,
-            [wallet.publicKey],
-            [WARMING_AMOUNT],
-            loadingKey
+          const stage1StartTime = Date.now();
+
+          try {
+            await initializeMixerWithCustomAmounts(
+              fundingWallet.privateKey,
+              fundingWallet.privateKey,
+              [wallet.publicKey],
+              [WARMING_AMOUNT],
+              loadingKey
+            );
+
+            // Wait for balance to settle
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+
+            // Verify funding
+            const balance = await getWalletBalance(wallet.publicKey);
+            if (balance < WARMING_AMOUNT * 0.9) {
+              throw new Error(
+                `Funding failed: wallet only has ${balance.toFixed(6)} SOL, expected at least ${(WARMING_AMOUNT * 0.9).toFixed(6)} SOL`
+              );
+            }
+
+            // Track successful stage completion
+            await trackStageCompletion(
+              wallet._id.toString(),
+              1,
+              stage1StartTime
+            );
+            completedStages = 1;
+            currentStep++;
+
+            logger.info(
+              `[jobs-wallet-warming]: Stage 1 complete - Wallet funded with ${balance.toFixed(6)} SOL`
+            );
+          } catch (fundingError) {
+            await trackWarmingError(
+              wallet._id.toString(),
+              1,
+              fundingError instanceof Error
+                ? fundingError
+                : new Error(String(fundingError)),
+              "funding",
+              "mixer",
+              `WARMING_AMOUNT: ${WARMING_AMOUNT}, fundingWallet: ${fundingWallet.publicKey}`
+            );
+            throw fundingError;
+          }
+
+          // Create keypair for wallet
+          const walletKeypair = Keypair.fromSecretKey(
+            bs58.default.decode(wallet.privateKey)
           );
 
-          // Wait a bit for balance to settle
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          // Stage 2: First Buy
+          emitWorkerProgress(
+            jobId,
+            "wallet_warming",
+            "warming",
+            data.userId,
+            data.userChatId,
+            currentStep,
+            data.walletIds.length * 6 + 2,
+            `First Buy ${walletNum}/${wallets.length}`,
+            `Buying ${BUY_AMOUNT} SOL worth of tokens`,
+            Math.floor((currentStep / (data.walletIds.length * 6 + 2)) * 100),
+            "in_progress"
+          );
 
-          // Verify funding
-          const balance = await getWalletBalance(wallet.publicKey);
-          if (balance < WARMING_AMOUNT * 0.9) {
-            throw new Error(
-              `Funding failed: wallet only has ${balance.toFixed(6)} SOL`
+          logger.info(
+            `[jobs-wallet-warming]: Stage 2 - First buy of ${BUY_AMOUNT} SOL`
+          );
+
+          const stage2StartTime = Date.now();
+
+          try {
+            const firstBuyResult = await executeExternalBuy(
+              data.warmingTokenAddress,
+              walletKeypair,
+              BUY_AMOUNT,
+              3, // 3% slippage
+              0.001, // priority fee
+              { chat: { id: data.userChatId } } as Context // minimal context for logging
+            );
+
+            if (!firstBuyResult.success) {
+              throw new Error(
+                `First buy failed: ${firstBuyResult.error || "Unknown buy error"}`
+              );
+            }
+
+            // Track successful stage completion
+            await trackStageCompletion(
+              wallet._id.toString(),
+              2,
+              stage2StartTime,
+              firstBuyResult.signature
+            );
+            completedStages = 2;
+            currentStep++;
+
+            logger.info(
+              `[jobs-wallet-warming]: Stage 2 complete - First buy: ${firstBuyResult.signature}`
+            );
+          } catch (buyError) {
+            await trackWarmingError(
+              wallet._id.toString(),
+              2,
+              buyError instanceof Error
+                ? buyError
+                : new Error(String(buyError)),
+              "buy",
+              platform,
+              `BUY_AMOUNT: ${BUY_AMOUNT}, token: ${data.warmingTokenAddress}, wallet: ${wallet.publicKey}`
+            );
+            throw buyError;
+          }
+
+          // Wait between buy and sell
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          // Stage 3: First Sell (50% of tokens)
+          emitWorkerProgress(
+            jobId,
+            "wallet_warming",
+            "warming",
+            data.userId,
+            data.userChatId,
+            currentStep,
+            data.walletIds.length * 6 + 2,
+            `First Sell ${walletNum}/${wallets.length}`,
+            `Selling 50% of tokens`,
+            Math.floor((currentStep / (data.walletIds.length * 6 + 2)) * 100),
+            "in_progress"
+          );
+
+          logger.info(
+            `[jobs-wallet-warming]: Stage 3 - First sell (50% of tokens)`
+          );
+
+          // Get actual token balance for selling
+          const JupiterPumpswapService = (
+            await import("../service/jupiter-pumpswap-service")
+          ).default;
+          const jupiterService = new JupiterPumpswapService();
+          let tokenBalance = 0;
+
+          try {
+            tokenBalance = await jupiterService.checkTokenBalance(
+              data.warmingTokenAddress,
+              walletKeypair
+            );
+            logger.info(
+              `[jobs-wallet-warming]: Wallet token balance: ${tokenBalance}`
+            );
+          } catch {
+            // Fallback: Use estimated amount based on recent buy
+            tokenBalance = 50000; // Conservative estimate for 0.01 SOL buy
+            logger.warn(
+              `[jobs-wallet-warming]: Could not get exact token balance, using estimate: ${tokenBalance}`
             );
           }
 
+          const firstSellAmount = Math.floor(tokenBalance * 0.5); // Sell 50% of tokens
+          const stage3StartTime = Date.now();
+          let firstSellSignature: string | undefined;
+
+          try {
+            const firstSellResult = await executeExternalSell(
+              data.warmingTokenAddress,
+              walletKeypair,
+              firstSellAmount,
+              { chat: { id: data.userChatId } } as Context // minimal context for logging
+            );
+
+            if (!firstSellResult.success) {
+              throw new Error(
+                `First sell failed: ${firstSellResult.error || "Unknown sell error"}`
+              );
+            }
+
+            firstSellSignature = firstSellResult.signature;
+
+            // Track successful stage completion
+            await trackStageCompletion(
+              wallet._id.toString(),
+              3,
+              stage3StartTime,
+              firstSellSignature
+            );
+            completedStages = 3;
+            currentStep++;
+
+            logger.info(
+              `[jobs-wallet-warming]: Stage 3 complete - First sell: ${firstSellSignature}`
+            );
+          } catch (sellError) {
+            await trackWarmingError(
+              wallet._id.toString(),
+              3,
+              sellError instanceof Error
+                ? sellError
+                : new Error(String(sellError)),
+              "sell",
+              platform,
+              `sellAmount: ${firstSellAmount}, tokenBalance: ${tokenBalance}, token: ${data.warmingTokenAddress}`
+            );
+            throw sellError;
+          }
+
           logger.info(
-            `[jobs-wallet-warming]: Wallet funded successfully with ${balance.toFixed(6)} SOL`
+            `[jobs-wallet-warming]: Stage 3 complete - First sell: ${firstSellSignature}`
+          ); // Wait between transactions
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          // Stage 4: Second Buy
+          emitWorkerProgress(
+            jobId,
+            "wallet_warming",
+            "warming",
+            data.userId,
+            data.userChatId,
+            currentStep,
+            data.walletIds.length * 6 + 2,
+            `Second Buy ${walletNum}/${wallets.length}`,
+            `Buying ${BUY_AMOUNT} SOL worth of tokens again`,
+            Math.floor((currentStep / (data.walletIds.length * 6 + 2)) * 100),
+            "in_progress"
           );
 
-          // Step 2: Execute 2 buy/sell cycles
-          // Note: For now, we'll skip the actual trading and just mark as warmed
-          // In a full implementation, you would call buy/sell functions here
           logger.info(
-            `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... warming complete`
+            `[jobs-wallet-warming]: Stage 4 - Second buy of ${BUY_AMOUNT} SOL`
           );
+
+          const stage4StartTime = Date.now();
+          let secondBuySignature: string | undefined;
+
+          try {
+            const secondBuyResult = await executeExternalBuy(
+              data.warmingTokenAddress,
+              walletKeypair,
+              BUY_AMOUNT,
+              3, // 3% slippage
+              0.001, // priority fee
+              { chat: { id: data.userChatId } } as Context // minimal context for logging
+            );
+
+            if (!secondBuyResult.success) {
+              throw new Error(
+                `Second buy failed: ${secondBuyResult.error || "Unknown buy error"}`
+              );
+            }
+
+            secondBuySignature = secondBuyResult.signature;
+
+            // Track successful stage completion
+            await trackStageCompletion(
+              wallet._id.toString(),
+              4,
+              stage4StartTime,
+              secondBuySignature
+            );
+            completedStages = 4;
+            currentStep++;
+
+            logger.info(
+              `[jobs-wallet-warming]: Stage 4 complete - Second buy: ${secondBuySignature}`
+            );
+          } catch (buyError) {
+            await trackWarmingError(
+              wallet._id.toString(),
+              4,
+              buyError instanceof Error
+                ? buyError
+                : new Error(String(buyError)),
+              "buy",
+              platform,
+              `buyAmount: ${BUY_AMOUNT} SOL, slippage: 3%, priorityFee: 0.001, token: ${data.warmingTokenAddress}`
+            );
+            throw buyError;
+          }
+
+          // Wait between buy and sell
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          // Stage 5: Second Sell (remaining tokens)
+          emitWorkerProgress(
+            jobId,
+            "wallet_warming",
+            "warming",
+            data.userId,
+            data.userChatId,
+            currentStep,
+            data.walletIds.length * 6 + 2,
+            `Second Sell ${walletNum}/${wallets.length}`,
+            `Selling remaining tokens`,
+            Math.floor((currentStep / (data.walletIds.length * 6 + 2)) * 100),
+            "in_progress"
+          );
+
+          logger.info(
+            `[jobs-wallet-warming]: Stage 5 - Second sell (remaining tokens)`
+          );
+
+          // Get current token balance for final sell (sell all remaining tokens)
+          let remainingTokens = 0;
+          try {
+            remainingTokens = await jupiterService.checkTokenBalance(
+              data.warmingTokenAddress,
+              walletKeypair
+            );
+            logger.info(
+              `[jobs-wallet-warming]: Current token balance for final sell: ${remainingTokens}`
+            );
+          } catch {
+            // Fallback: Estimate remaining tokens (original balance + second buy - first sell)
+            remainingTokens = Math.floor(tokenBalance * 0.5) + 50000; // Remaining 50% + estimated second buy
+            logger.warn(
+              `[jobs-wallet-warming]: Could not get exact remaining balance, using estimate: ${remainingTokens}`
+            );
+          }
+
+          const stage5StartTime = Date.now();
+          let secondSellSignature: string | undefined;
+
+          try {
+            const secondSellResult = await executeExternalSell(
+              data.warmingTokenAddress,
+              walletKeypair,
+              remainingTokens,
+              { chat: { id: data.userChatId } } as Context // minimal context for logging
+            );
+
+            if (!secondSellResult.success) {
+              throw new Error(
+                `Second sell failed: ${secondSellResult.error || "Unknown sell error"}`
+              );
+            }
+
+            secondSellSignature = secondSellResult.signature;
+
+            // Track successful stage completion
+            await trackStageCompletion(
+              wallet._id.toString(),
+              5,
+              stage5StartTime,
+              secondSellSignature
+            );
+            completedStages = 5;
+            currentStep++;
+
+            logger.info(
+              `[jobs-wallet-warming]: Stage 5 complete - Second sell: ${secondSellSignature}`
+            );
+          } catch (sellError) {
+            await trackWarmingError(
+              wallet._id.toString(),
+              5,
+              sellError instanceof Error
+                ? sellError
+                : new Error(String(sellError)),
+              "sell",
+              platform,
+              `sellAmount: ${remainingTokens}, tokenBalance: ${remainingTokens}, token: ${data.warmingTokenAddress}`
+            );
+            throw sellError;
+          }
+
+          // Stage 6: Return funds to funding wallet using custom mixer
+          emitWorkerProgress(
+            jobId,
+            "wallet_warming",
+            "warming",
+            data.userId,
+            data.userChatId,
+            currentStep,
+            data.walletIds.length * 6 + 2,
+            `Returning Funds ${walletNum}/${wallets.length}`,
+            `Sending remaining SOL back to funding wallet`,
+            Math.floor((currentStep / (data.walletIds.length * 6 + 2)) * 100),
+            "in_progress"
+          );
+
+          logger.info(
+            `[jobs-wallet-warming]: Stage 6 - Returning funds to funding wallet`
+          );
+
+          const stage6StartTime = Date.now();
+          let returnAmount: number = 0;
+
+          try {
+            // Get current balance and return most of it (leave small amount for rent)
+            const currentBalance = await getWalletBalance(wallet.publicKey);
+            returnAmount = Math.max(0, currentBalance - 0.005); // Leave 0.005 SOL for rent
+
+            if (returnAmount > 0.001) {
+              await initializeMixerWithCustomAmounts(
+                wallet.privateKey,
+                wallet.privateKey,
+                [fundingWallet.publicKey],
+                [returnAmount],
+                loadingKey
+              );
+            }
+
+            // Track successful stage completion
+            await trackStageCompletion(
+              wallet._id.toString(),
+              6,
+              stage6StartTime
+            );
+
+            // Clear any warming errors since we completed successfully
+            await clearWarmingError(wallet._id.toString());
+
+            completedStages = 6;
+            currentStep++;
+
+            logger.info(
+              `[jobs-wallet-warming]: Stage 6 complete - Wallet ${wallet.publicKey.slice(0, 8)}... fully warmed!`
+            );
+          } catch (returnError) {
+            await trackWarmingError(
+              wallet._id.toString(),
+              6,
+              returnError instanceof Error
+                ? returnError
+                : new Error(String(returnError)),
+              "transfer",
+              platform,
+              `returnAmount: ${returnAmount}, fundingWallet: ${fundingWallet.publicKey}`
+            );
+            throw returnError;
+          }
 
           successCount++;
-          results.push({ walletId: wallet._id.toString(), success: true });
+          results.push({
+            walletId: wallet._id.toString(),
+            success: true,
+            completedStages: 6,
+          });
         } catch (walletError) {
           const errorMessage =
             walletError instanceof Error
@@ -3360,12 +3930,28 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             `[jobs-wallet-warming]: Failed to warm wallet ${wallet.publicKey}:`,
             walletError
           );
+
+          // Update database to reflect partial completion
+          await WalletModel.updateOne(
+            { _id: wallet._id },
+            {
+              $set: {
+                "warming.isWarming": false,
+                "warming.stage": 0, // Reset on failure
+              },
+            }
+          );
+
           failedCount++;
           results.push({
             walletId: wallet._id.toString(),
             success: false,
             error: errorMessage,
+            completedStages,
           });
+
+          // Still increment currentStep for remaining stages of this wallet
+          currentStep += 6 - completedStages;
         }
       }
 
@@ -3376,10 +3962,10 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
         "warming",
         data.userId,
         data.userChatId,
-        wallets.length + 2,
-        wallets.length + 2,
+        data.walletIds.length * 6 + 2,
+        data.walletIds.length * 6 + 2,
         "Warming Complete",
-        `Warmed ${successCount}/${wallets.length} wallets`,
+        `Successfully warmed ${successCount}/${wallets.length} wallets`,
         100,
         "completed",
         {
@@ -3387,6 +3973,8 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
           failedCount,
           total: wallets.length,
           results,
+          platform,
+          warmingToken: data.warmingTokenAddress,
         }
       );
 
@@ -3396,16 +3984,20 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
       await sendNotification(
         bot,
         data.userChatId,
-        `✅ <b>Wallet Warming Complete!</b>\n\n` +
+        `✅ <b>Comprehensive Wallet Warming Complete!</b>\n\n` +
           `<b>Results:</b>\n` +
-          `• Warmed: ${successCount} wallets\n` +
+          `• Successfully warmed: ${successCount} wallets\n` +
           `• Failed: ${failedCount} wallets\n` +
-          `• Total: ${wallets.length} wallets\n\n` +
-          `<i>Your buyer wallets now have transaction history!</i>`
+          `• Total processed: ${wallets.length} wallets\n\n` +
+          `<b>Warming Process:</b>\n` +
+          `• Platform: ${platform.toUpperCase()}\n` +
+          `• Token: ${data.warmingTokenAddress.slice(0, 8)}...\n` +
+          `• Each wallet completed: Fund → Buy → Sell → Buy → Sell → Return\n\n` +
+          `<i>Your buyer wallets now have comprehensive transaction history!</i>`
       );
 
       logger.info(
-        `[jobs-wallet-warming]: Warming completed for user ${data.userId}`
+        `[jobs-wallet-warming]: Comprehensive warming completed for user ${data.userId}`
       );
     } catch (error: unknown) {
       const errorMessage =
