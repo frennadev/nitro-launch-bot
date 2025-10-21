@@ -3634,7 +3634,10 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
           }
 
           // Wait between buy and sell - increased delay to ensure tokens are available
-          await new Promise((resolve) => setTimeout(resolve, 8000));
+          logger.info(
+            `[jobs-wallet-warming]: Waiting 12 seconds for first buy to settle before attempting sell...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 12000));
 
           // Stage 3: First Sell (50% of tokens)
           emitWorkerProgress(
@@ -3655,26 +3658,59 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             `[jobs-wallet-warming]: Stage 3 - First sell (50% of tokens)`
           );
 
-          // Get actual token balance for selling
+          // Get actual token balance for selling with retry mechanism
           const JupiterPumpswapService = (
             await import("../service/jupiter-pumpswap-service")
           ).default;
           const jupiterService = new JupiterPumpswapService();
           let tokenBalance = 0;
 
-          try {
-            tokenBalance = await jupiterService.checkTokenBalance(
-              data.warmingTokenAddress,
-              walletKeypair
-            );
-            logger.info(
-              `[jobs-wallet-warming]: Wallet token balance: ${tokenBalance}`
-            );
-          } catch {
-            // Fallback: Use estimated amount based on recent buy
-            tokenBalance = 50000; // Conservative estimate for 0.01 SOL buy
+          // Retry token balance check up to 3 times with increasing delays
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              logger.info(
+                `[jobs-wallet-warming]: Checking token balance (attempt ${attempt}/3)...`
+              );
+
+              tokenBalance = await jupiterService.checkTokenBalance(
+                data.warmingTokenAddress,
+                walletKeypair
+              );
+
+              logger.info(
+                `[jobs-wallet-warming]: Token balance found: ${tokenBalance}`
+              );
+
+              if (tokenBalance > 0) {
+                break; // Success, exit retry loop
+              } else {
+                logger.warn(
+                  `[jobs-wallet-warming]: Token balance is 0, waiting ${attempt * 3}s before retry...`
+                );
+                if (attempt < 3) {
+                  await new Promise((resolve) =>
+                    setTimeout(resolve, attempt * 3000)
+                  );
+                }
+              }
+            } catch (balanceError) {
+              logger.warn(
+                `[jobs-wallet-warming]: Balance check attempt ${attempt} failed:`,
+                balanceError
+              );
+              if (attempt < 3) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, attempt * 3000)
+                );
+              }
+            }
+          }
+
+          // If still no balance, use fallback estimate
+          if (tokenBalance === 0) {
+            tokenBalance = 100000; // Conservative estimate for 0.01 SOL buy (increased from 50000)
             logger.warn(
-              `[jobs-wallet-warming]: Could not get exact token balance, using estimate: ${tokenBalance}`
+              `[jobs-wallet-warming]: Could not get token balance after 3 attempts, using fallback estimate: ${tokenBalance}`
             );
           }
 
@@ -3798,7 +3834,10 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
           }
 
           // Wait between buy and sell - increased delay to ensure tokens are available
-          await new Promise((resolve) => setTimeout(resolve, 8000));
+          logger.info(
+            `[jobs-wallet-warming]: Waiting 12 seconds for second buy to settle before attempting sell...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 12000));
 
           // Stage 5: Second Sell (remaining tokens)
           emitWorkerProgress(
@@ -3819,21 +3858,55 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             `[jobs-wallet-warming]: Stage 5 - Second sell (remaining tokens)`
           );
 
-          // Get current token balance for final sell (sell all remaining tokens)
+          // Get current token balance for final sell with retry mechanism
           let remainingTokens = 0;
-          try {
-            remainingTokens = await jupiterService.checkTokenBalance(
-              data.warmingTokenAddress,
-              walletKeypair
-            );
-            logger.info(
-              `[jobs-wallet-warming]: Current token balance for final sell: ${remainingTokens}`
-            );
-          } catch {
-            // Fallback: Estimate remaining tokens (original balance + second buy - first sell)
-            remainingTokens = Math.floor(tokenBalance * 0.5) + 50000; // Remaining 50% + estimated second buy
+
+          // Retry token balance check for second sell
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              logger.info(
+                `[jobs-wallet-warming]: Checking remaining token balance (attempt ${attempt}/3)...`
+              );
+
+              remainingTokens = await jupiterService.checkTokenBalance(
+                data.warmingTokenAddress,
+                walletKeypair
+              );
+
+              logger.info(
+                `[jobs-wallet-warming]: Remaining token balance: ${remainingTokens}`
+              );
+
+              if (remainingTokens > 0) {
+                break; // Success, exit retry loop
+              } else {
+                logger.warn(
+                  `[jobs-wallet-warming]: Remaining token balance is 0, waiting ${attempt * 3}s before retry...`
+                );
+                if (attempt < 3) {
+                  await new Promise((resolve) =>
+                    setTimeout(resolve, attempt * 3000)
+                  );
+                }
+              }
+            } catch (balanceError) {
+              logger.warn(
+                `[jobs-wallet-warming]: Remaining balance check attempt ${attempt} failed:`,
+                balanceError
+              );
+              if (attempt < 3) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, attempt * 3000)
+                );
+              }
+            }
+          }
+
+          // If still no balance, use fallback estimate
+          if (remainingTokens === 0) {
+            remainingTokens = Math.floor(tokenBalance * 0.5) + 100000; // Remaining 50% + estimated second buy (increased)
             logger.warn(
-              `[jobs-wallet-warming]: Could not get exact remaining balance, using estimate: ${remainingTokens}`
+              `[jobs-wallet-warming]: Could not get remaining token balance after 3 attempts, using fallback estimate: ${remainingTokens}`
             );
           }
 
