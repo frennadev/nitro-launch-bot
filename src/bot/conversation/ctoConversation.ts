@@ -89,16 +89,18 @@ async function calculateExpectedMarketCap(
 }
 
 // Prefunded CTO operation function that bypasses the mixer
+// Note: totalAmount parameter is ignored - uses available buyer wallet balances
 export async function executePrefundedCTOOperation(
   tokenAddress: string,
   userId: string,
-  totalAmount: number,
+  totalAmount: number, // Ignored - kept for backward compatibility
   detectedPlatform?: string
 ): Promise<{
   success: boolean;
   error?: string;
   successfulBuys: number;
   failedBuys: number;
+  totalSpent?: number;
 }> {
   try {
     const { getAllTradingWallets } = await import(
@@ -107,7 +109,7 @@ export async function executePrefundedCTOOperation(
     const { logger } = await import("../../blockchain/common/logger");
 
     logger.info(
-      `[CTO-Prefunded] Starting prefunded CTO operation for token ${tokenAddress}, user ${userId}, amount ${totalAmount} SOL, platform: ${detectedPlatform || "auto-detected"}`
+      `[CTO-Prefunded] Starting prefunded CTO operation for token ${tokenAddress}, user ${userId}, using available buyer wallet balances, platform: ${detectedPlatform || "auto-detected"}`
     );
 
     // Get buyer wallets with private keys - these should already be funded
@@ -123,7 +125,7 @@ export async function executePrefundedCTOOperation(
 
     logger.info(`[CTO-Prefunded] Found ${buyerWallets.length} buyer wallets`);
 
-    // Check total available balance in buyer wallets
+    // Check available balance in buyer wallets (ignore totalAmount parameter)
     const { getWalletBalance } = await import("../../backend/functions");
     let totalAvailableBalance = 0;
     const walletBalances = [];
@@ -134,10 +136,14 @@ export async function executePrefundedCTOOperation(
       totalAvailableBalance += balance;
     }
 
-    if (totalAvailableBalance < totalAmount) {
+    logger.info(
+      `[CTO-Prefunded] Total available balance across ${buyerWallets.length} wallets: ${totalAvailableBalance.toFixed(6)} SOL`
+    );
+
+    if (totalAvailableBalance <= 0.01) {
       return {
         success: false,
-        error: `Insufficient balance in buyer wallets. Available: ${totalAvailableBalance.toFixed(6)} SOL, Required: ${totalAmount.toFixed(6)} SOL`,
+        error: `No significant balance available in buyer wallets. Total available: ${totalAvailableBalance.toFixed(6)} SOL`,
         successfulBuys: 0,
         failedBuys: 0,
       };
@@ -248,6 +254,7 @@ export async function executePrefundedCTOOperation(
       success: successfulBuys > 0,
       successfulBuys,
       failedBuys,
+      totalSpent,
       error: successfulBuys === 0 ? "All buy operations failed" : undefined,
     };
   } catch (error: unknown) {

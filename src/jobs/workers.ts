@@ -2311,7 +2311,9 @@ export const ctoWorker = new Worker<CTOJob>(
         4,
         5,
         "Executing Operation",
-        `Executing ${data.mode} CTO with ${data.buyAmount.toFixed(6)} SOL`,
+        data.mode === "prefunded"
+          ? "Executing prefunded CTO using available buyer wallet balances"
+          : `Executing ${data.mode} CTO with ${data.buyAmount.toFixed(6)} SOL`,
         70,
         "in_progress",
         data.mode,
@@ -2321,7 +2323,7 @@ export const ctoWorker = new Worker<CTOJob>(
         {
           currentOperation:
             data.mode === "prefunded"
-              ? "Direct wallet execution"
+              ? "Direct wallet execution using available balances"
               : "Mixer distribution and buys",
           estimatedTimeRemaining: data.mode === "prefunded" ? 15000 : 30000,
         }
@@ -2330,13 +2332,14 @@ export const ctoWorker = new Worker<CTOJob>(
       let result;
       if (data.mode === "prefunded") {
         // Use prefunded execution that bypasses mixer
+        // For prefunded mode, ignore buyAmount and use available buyer wallet balances
         const { executePrefundedCTOOperation } = await import(
           "../bot/conversation/ctoConversation"
         );
         result = await executePrefundedCTOOperation(
           data.tokenAddress,
           data.userId,
-          data.buyAmount,
+          0, // Ignore buyAmount for prefunded mode - use available balances
           data.platform
         );
       } else {
@@ -2372,19 +2375,24 @@ export const ctoWorker = new Worker<CTOJob>(
           {
             successfulBuys: result.successfulBuys || 0,
             failedBuys: result.failedBuys || 0,
-            totalSpent: data.buyAmount,
+            totalSpent:
+              data.mode === "prefunded"
+                ? (result as any).totalSpent || 0
+                : data.buyAmount,
             currentOperation: "Operation completed successfully",
             estimatedTimeRemaining: 0,
           }
         );
 
-        // Record final result
+        // Record final result with actual spent amount
         recordCTOResult(
           jobId,
           true,
           result.successfulBuys || 0,
           result.failedBuys || 0,
-          data.buyAmount,
+          data.mode === "prefunded"
+            ? (result as any).totalSpent || 0
+            : data.buyAmount, // Use actual spent amount for prefunded mode
           [], // Transaction signatures would come from result if available
           undefined,
           startTime
@@ -2429,10 +2437,12 @@ export const ctoWorker = new Worker<CTOJob>(
         // Record final result
         recordCTOResult(
           jobId,
-          isPartialSuccess,
+          Boolean(isPartialSuccess),
           result.successfulBuys || 0,
           result.failedBuys || 0,
-          data.buyAmount,
+          data.mode === "prefunded"
+            ? (result as any).totalSpent || 0
+            : data.buyAmount, // Use actual spent amount for prefunded mode
           [], // Transaction signatures would come from result if available
           result.error,
           startTime
@@ -2838,7 +2848,10 @@ export const premixFundsWorker = new Worker<PremixFundsJob>(
       // Use filtered wallets instead of all wallets
       const walletsNeeded =
         data.maxWallets || calculateRequiredWallets(data.mixAmount);
-      const actualWalletsToUse = Math.min(walletsNeeded, walletsNeedingFunding.length);
+      const actualWalletsToUse = Math.min(
+        walletsNeeded,
+        walletsNeedingFunding.length
+      );
 
       // Generate the proper 73-wallet distribution
       const distributionAmounts = generateBuyDistribution(
@@ -2943,7 +2956,8 @@ export const premixFundsWorker = new Worker<PremixFundsJob>(
       await completeLoadingState(loadingKey);
 
       // Send success notification
-      const alreadyFundedCount = buyerWallets.length - walletsNeedingFunding.length;
+      const alreadyFundedCount =
+        buyerWallets.length - walletsNeedingFunding.length;
       await sendNotification(
         bot,
         data.userChatId,
@@ -3033,10 +3047,9 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
       logger.info("[jobs]: Wallet Warming Job starting...");
       logger.info("[jobs-wallet-warming]: Job Data", data);
 
-      const {
-        getFundingWallet,
-        getWalletBalance,
-      } = await import("../backend/functions-main");
+      const { getFundingWallet, getWalletBalance } = await import(
+        "../backend/functions-main"
+      );
       const { hasSwapHistory } = await import("../backend/wallet-history");
       const { initializeMixerWithCustomAmounts } = await import(
         "../blockchain/mixer/init-mixer"
@@ -3088,7 +3101,11 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
 
       let successCount = 0;
       let failedCount = 0;
-      const results: Array<{ walletId: string; success: boolean; error?: string }> = [];
+      const results: Array<{
+        walletId: string;
+        success: boolean;
+        error?: string;
+      }> = [];
 
       // Process each wallet
       for (let i = 0; i < wallets.length; i++) {
