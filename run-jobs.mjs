@@ -8,8 +8,7 @@ const __dirname = dirname(__filename);
 // Run ts-node with proper ES module support
 const child = spawn('npx', ['tsx', 'src/jobs/index.ts'], {
   cwd: __dirname,
-  stdio: 'inherit',
-  env: { ...process.env, NODE_OPTIONS: '--loader tsx/esm' }
+  stdio: 'inherit'
 });
 
 child.on('close', (code) => {

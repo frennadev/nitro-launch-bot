@@ -3338,7 +3338,7 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
       const { getFundingWallet, getWalletBalance } = await import(
         "../backend/functions-main"
       );
-      const { hasSwapHistory } = await import("../backend/wallet-history");
+      // Note: Removed hasSwapHistory check - now using proper warming state tracking
       const { initializeMixerWithCustomAmounts } = await import(
         "../blockchain/mixer/init-mixer"
       );
@@ -3432,17 +3432,41 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             `[jobs-wallet-warming]: Processing wallet ${walletNum}/${wallets.length}: ${wallet.publicKey.slice(0, 8)}...`
           );
 
-          // Check if already warmed
-          const alreadyWarmed = await hasSwapHistory(wallet.publicKey);
-          if (alreadyWarmed) {
+          // Log current warming state for debugging
+          logger.info(
+            `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... current state: isWarming=${wallet.warming?.isWarming || false}, stage=${wallet.warming?.stage || 0}, completed=${wallet.warming?.warmingCompletedAt ? 'yes' : 'no'}, fundsReturned=${wallet.warming?.fundsReturned || false}`
+          );
+
+          // Check if already warmed using proper warming state tracking
+          const isAlreadyWarmed = wallet.warming?.warmingCompletedAt && 
+                                 !wallet.warming?.isWarming && 
+                                 wallet.warming?.stage === 0 &&
+                                 wallet.warming?.fundsReturned === true;
+          
+          if (isAlreadyWarmed) {
             logger.info(
-              `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... already warmed, skipping`
+              `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... already warmed (completed at ${wallet.warming?.warmingCompletedAt}), skipping`
             );
             successCount++;
             results.push({
               walletId: wallet._id.toString(),
               success: true,
               completedStages: 6,
+            });
+            currentStep += 6;
+            continue;
+          }
+
+          // Check if wallet is currently being warmed by another job
+          if (wallet.warming?.isWarming) {
+            logger.info(
+              `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... is currently being warmed (stage ${wallet.warming?.stage}), skipping`
+            );
+            successCount++;
+            results.push({
+              walletId: wallet._id.toString(),
+              success: true,
+              completedStages: wallet.warming?.stage || 0,
             });
             currentStep += 6;
             continue;

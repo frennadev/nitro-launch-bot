@@ -8,6 +8,8 @@ import {
   launchDappTokenQueue,
   ctoQueue,
   externalBuyQueue,
+  walletWarmingQueue,
+  premixFundsQueue,
 } from "./queues";
 import {
   launchTokenWorker,
@@ -19,13 +21,15 @@ import {
   executeLaunchWorker,
   ctoWorker,
   externalBuyWorker,
+  walletWarmingWorker,
+  premixFundsWorker,
 } from "./workers";
 import { connectDB, gracefulShutdown } from "./db";
 import { logger } from "./logger";
 
 connectDB()
   .then(() => {
-    logger.info("🚀  Jobs service online — all 9 workers registered:");
+    logger.info("🚀  Jobs service online — all 11 workers registered:");
     logger.info("   ✅ launchTokenWorker");
     logger.info("   ✅ sellDevWorker");
     logger.info("   ✅ sellWalletWorker");
@@ -35,6 +39,8 @@ connectDB()
     logger.info("   ✅ executeLaunchWorker");
     logger.info("   ✅ ctoWorker");
     logger.info("   ✅ externalBuyWorker");
+    logger.info("   ✅ walletWarmingWorker");
+    logger.info("   ✅ premixFundsWorker");
   })
   .catch(async (e) => {
     await onCloseSignal();
@@ -56,6 +62,8 @@ const onCloseSignal = async () => {
       executeLaunchWorker.close(),
       ctoWorker.close(),
       externalBuyWorker.close(),
+      walletWarmingWorker.close(),
+      premixFundsWorker.close(),
     ]);
 
     logger.info("Closing queues...");
@@ -69,6 +77,8 @@ const onCloseSignal = async () => {
       launchDappTokenQueue.close(),
       ctoQueue.close(),
       externalBuyQueue.close(),
+      walletWarmingQueue.close(),
+      premixFundsQueue.close(),
     ]);
 
     // Use the graceful shutdown for DB and Redis connections

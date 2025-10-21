@@ -1,10 +1,10 @@
 #!/usr/bin/env ts-node
 
-import { connectDB } from './src/jobs/db';
-import { WalletModel, UserModel } from './src/backend/models';
-import { walletWarmingQueue } from './src/jobs/queues';
-import { logger } from './src/jobs/logger';
-import type { WalletWarmingJob } from './src/jobs/types';
+import { connectDB } from './src/jobs/db.ts';
+import { WalletModel, UserModel } from './src/backend/models.ts';
+import { walletWarmingQueue } from './src/jobs/queues.ts';
+import { logger } from './src/jobs/logger.ts';
+import type { WalletWarmingJob } from './src/jobs/types.ts';
 
 async function testWalletWarming() {
   try {
