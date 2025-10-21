@@ -125,3 +125,11 @@ export type PremixFundsJob = {
   mode?: "standard" | "fast"; // Mixing mode (default: standard)
   socketUserId?: string;
 };
+
+export type WalletWarmingJob = {
+  userId: string;
+  userChatId: number;
+  walletIds: string[]; // Array of wallet IDs to warm
+  warmingTokenAddress: string; // PumpFun token to use for practice trades
+  socketUserId?: string;
+};

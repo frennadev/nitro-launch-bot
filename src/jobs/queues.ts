@@ -11,6 +11,7 @@ import type {
   CTOJob,
   ExternalBuyJob,
   PremixFundsJob,
+  WalletWarmingJob,
 } from "./types";
 
 export const tokenLaunchQueue = new Queue<LaunchTokenJob>(
@@ -69,6 +70,13 @@ export const externalBuyQueue = new Queue<ExternalBuyJob>(
 
 export const premixFundsQueue = new Queue<PremixFundsJob>(
   "nitro-premix-funds",
+  {
+    connection: redisClient,
+  }
+);
+
+export const walletWarmingQueue = new Queue<WalletWarmingJob>(
+  "nitro-wallet-warming",
   {
     connection: redisClient,
   }
