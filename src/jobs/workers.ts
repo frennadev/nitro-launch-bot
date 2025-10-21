@@ -3361,8 +3361,8 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
       }
 
       // Constants for wallet warming
-      const WARMING_AMOUNT = 0.015; // Fixed amount per wallet (reduced for testing)
-      const BUY_AMOUNT = 0.005; // SOL amount for each buy (reduced for testing)
+      const WARMING_AMOUNT = 0.04; // Fixed amount per wallet (increased for sufficient fees)
+      const BUY_AMOUNT = 0.01; // SOL amount for each buy (increased for better warming)
       const totalRequired = data.walletIds.length * WARMING_AMOUNT + 0.02; // + buffer for fees
 
       const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
