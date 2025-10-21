@@ -11,8 +11,14 @@ import { connection } from "../common/connection";
 import { secretKeyToKeypair } from "../common/utils";
 import { logger } from "../common/logger";
 import { buyInstruction, marketOrderBuyInstruction } from "./instructions";
-import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { formatMilliseconds, sendAndConfirmTransactionWithRetry } from "../common/utils";
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
+import {
+  formatMilliseconds,
+  sendAndConfirmTransactionWithRetry,
+} from "../common/utils";
 import { collectTransactionFee } from "../../backend/functions-main";
 import bs58 from "bs58";
 import {
@@ -20,9 +26,18 @@ import {
   getTransactionTypePriorityConfig,
   logPriorityFeeInfo,
 } from "../common/priority-fees";
-import { getBondingCurve, getBondingCurveData, quoteBuy, applySlippage } from "./utils";
+import {
+  getBondingCurve,
+  getBondingCurveData,
+  quoteBuy,
+  applySlippage,
+} from "./utils";
 
-export const executeFundingBuy = async (tokenAddress: string, devWallet: string, solAmount: number) => {
+export const executeFundingBuy = async (
+  tokenAddress: string,
+  devWallet: string,
+  solAmount: number
+) => {
   const logId = `buy-dev-${tokenAddress}`;
   console.log(`[${logId}]: Starting dev buy`);
   const start = performance.now();
@@ -35,35 +50,58 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
     console.log(`[${logId}]: Derived dev keypair`);
 
     // CRITICAL: Check wallet balance and reserve SOL for future sell transactions
-    const walletBalance = await connection.getBalance(devKeypair.publicKey, "confirmed");
+    const walletBalance = await connection.getBalance(
+      devKeypair.publicKey,
+      "confirmed"
+    );
     const walletBalanceSOL = walletBalance / LAMPORTS_PER_SOL;
-    
+
     // Reserve fees for buy transaction AND future sell transactions
     const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
     const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
     const sellFeeReserve = 0.01; // Reserve 0.01 SOL for future sell transaction fees
     const buyFeePercent = 0.01; // 1% buy fee
     const estimatedBuyFee = solAmount * buyFeePercent;
-    const totalFeeReserve = transactionFeeReserve + accountCreationReserve + sellFeeReserve + estimatedBuyFee;
+    const totalFeeReserve =
+      transactionFeeReserve +
+      accountCreationReserve +
+      sellFeeReserve +
+      estimatedBuyFee;
     const availableForTrade = walletBalanceSOL - totalFeeReserve;
-    
-    console.log(`[${logId}]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);
-    console.log(`[${logId}]: Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`);
-    console.log(`[${logId}]: Sell fee reserve: ${sellFeeReserve.toFixed(6)} SOL (for future sells)`);
-    console.log(`[${logId}]: Estimated 1% buy fee: ${estimatedBuyFee.toFixed(6)} SOL`);
-    console.log(`[${logId}]: Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`);
-    console.log(`[${logId}]: Available for trade: ${availableForTrade.toFixed(6)} SOL`);
-    
+
+    console.log(
+      `[${logId}]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`
+    );
+    console.log(
+      `[${logId}]: Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`
+    );
+    console.log(
+      `[${logId}]: Sell fee reserve: ${sellFeeReserve.toFixed(6)} SOL (for future sells)`
+    );
+    console.log(
+      `[${logId}]: Estimated 1% buy fee: ${estimatedBuyFee.toFixed(6)} SOL`
+    );
+    console.log(
+      `[${logId}]: Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`
+    );
+    console.log(
+      `[${logId}]: Available for trade: ${availableForTrade.toFixed(6)} SOL`
+    );
+
     // Validate we have enough balance
     if (availableForTrade <= 0) {
-      throw new Error(`Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${sellFeeReserve.toFixed(6)} SOL sell reserve + ${estimatedBuyFee.toFixed(6)} SOL buy fee)`);
+      throw new Error(
+        `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${sellFeeReserve.toFixed(6)} SOL sell reserve + ${estimatedBuyFee.toFixed(6)} SOL buy fee)`
+      );
     }
-    
+
     // Use the minimum of requested amount or available balance
     const actualTradeAmount = Math.min(solAmount, availableForTrade);
-    
+
     if (actualTradeAmount < solAmount) {
-      console.warn(`[${logId}]: Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations (keeping ${sellFeeReserve} SOL for future sells)`);
+      console.warn(
+        `[${logId}]: Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations (keeping ${sellFeeReserve} SOL for future sells)`
+      );
     }
 
     const { bondingCurve } = getBondingCurve(mintPk);
@@ -76,7 +114,14 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
     }
 
     const solLamports = BigInt(Math.ceil(actualTradeAmount * LAMPORTS_PER_SOL));
-    console.log(`[${logId}]: solLamports = ${solLamports} (adjusted from ${solAmount} SOL)`);
+    console.log(
+      `[${logId}]: solLamports = ${solLamports} (adjusted from ${solAmount} SOL)`
+    );
+
+    // Log bonding curve data for debugging
+    console.log(
+      `[${logId}]: bondingCurve reserves - virtual token: ${bondingCurveData.virtualTokenReserves}, virtual sol: ${bondingCurveData.virtualSolReserves}, real token: ${bondingCurveData.realTokenReserves}`
+    );
 
     const { tokenOut } = quoteBuy(
       solLamports,
@@ -86,8 +131,22 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
     );
     console.log(`[${logId}]: Quoted tokenOut = ${tokenOut.toString()}`);
 
+    if (tokenOut <= BigInt(0)) {
+      throw new Error(
+        `Invalid token output calculated: ${tokenOut.toString()}. This may indicate the token has graduated to Raydium or there are insufficient tokens available in the bonding curve.`
+      );
+    }
+
     const tokensWithSlippage = applySlippage(tokenOut, 1);
-    console.log(`[${logId}]: tokensWithSlippage = ${tokensWithSlippage.toString()}`);
+    console.log(
+      `[${logId}]: tokensWithSlippage = ${tokensWithSlippage.toString()}`
+    );
+
+    if (tokensWithSlippage <= BigInt(0)) {
+      throw new Error(
+        `Invalid tokens with slippage: ${tokensWithSlippage.toString()}. The trade amount may be too small or slippage calculation failed.`
+      );
+    }
 
     const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
       units: 151595,
@@ -142,7 +201,9 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
 
     console.log(`[${logId}]: Recording transaction`);
     try {
-      const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+      const { recordTransactionWithActualAmounts } = await import(
+        "../../backend/utils"
+      );
       await recordTransactionWithActualAmounts(
         tokenAddress,
         devKeypair.publicKey.toBase58(),
@@ -164,13 +225,19 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
 
     console.log(`[${logId}]: Collecting fee`);
     try {
-      const feeResult = await collectTransactionFee(bs58.encode(devKeypair.secretKey), actualTradeAmount, "buy");
+      const feeResult = await collectTransactionFee(
+        bs58.encode(devKeypair.secretKey),
+        actualTradeAmount,
+        "buy"
+      );
       console.log(`[${logId}]: Fee collection result =`, feeResult);
     } catch (err: any) {
       console.error(`[${logId}]: Fee collection error`, err);
     }
 
-    console.log(`[${logId}]: Dev buy completed in ${formatMilliseconds(performance.now() - start)}`);
+    console.log(
+      `[${logId}]: Dev buy completed in ${formatMilliseconds(performance.now() - start)}`
+    );
     return result;
   } catch (err: any) {
     console.error(`[${logId}]: Dev buy failed`, err);
@@ -179,7 +246,11 @@ export const executeFundingBuy = async (tokenAddress: string, devWallet: string,
 };
 
 // New function for buying external PumpFun tokens with funding wallet
-export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWallet: string, solAmount: number) => {
+export const executeExternalPumpFunBuy = async (
+  tokenAddress: string,
+  fundingWallet: string,
+  solAmount: number
+) => {
   const logId = `buy-external-pumpfun-${tokenAddress.substring(0, 8)}`;
   console.log(`[${logId}]: Starting external PumpFun buy`);
   const start = performance.now();
@@ -192,35 +263,58 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
     console.log(`[${logId}]: Derived funding keypair`);
 
     // CRITICAL: Check wallet balance and reserve SOL for future sell transactions
-    const walletBalance = await connection.getBalance(fundingKeypair.publicKey, "confirmed");
+    const walletBalance = await connection.getBalance(
+      fundingKeypair.publicKey,
+      "confirmed"
+    );
     const walletBalanceSOL = walletBalance / LAMPORTS_PER_SOL;
-    
+
     // Reserve fees for buy transaction AND future sell transactions
     const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
     const accountCreationReserve = 0.008; // ATA creation costs (WSOL + token accounts)
     const sellFeeReserve = 0.01; // Reserve 0.01 SOL for future sell transaction fees
     const buyFeePercent = 0.01; // 1% buy fee
     const estimatedBuyFee = solAmount * buyFeePercent;
-    const totalFeeReserve = transactionFeeReserve + accountCreationReserve + sellFeeReserve + estimatedBuyFee;
+    const totalFeeReserve =
+      transactionFeeReserve +
+      accountCreationReserve +
+      sellFeeReserve +
+      estimatedBuyFee;
     const availableForTrade = walletBalanceSOL - totalFeeReserve;
-    
-    console.log(`[${logId}]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`);
-    console.log(`[${logId}]: Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`);
-    console.log(`[${logId}]: Sell fee reserve: ${sellFeeReserve.toFixed(6)} SOL (for future sells)`);
-    console.log(`[${logId}]: Estimated 1% buy fee: ${estimatedBuyFee.toFixed(6)} SOL`);
-    console.log(`[${logId}]: Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`);
-    console.log(`[${logId}]: Available for trade: ${availableForTrade.toFixed(6)} SOL`);
-    
+
+    console.log(
+      `[${logId}]: Wallet balance: ${walletBalanceSOL.toFixed(6)} SOL`
+    );
+    console.log(
+      `[${logId}]: Transaction fee reserve: ${transactionFeeReserve.toFixed(6)} SOL`
+    );
+    console.log(
+      `[${logId}]: Sell fee reserve: ${sellFeeReserve.toFixed(6)} SOL (for future sells)`
+    );
+    console.log(
+      `[${logId}]: Estimated 1% buy fee: ${estimatedBuyFee.toFixed(6)} SOL`
+    );
+    console.log(
+      `[${logId}]: Total fee reserve: ${totalFeeReserve.toFixed(6)} SOL`
+    );
+    console.log(
+      `[${logId}]: Available for trade: ${availableForTrade.toFixed(6)} SOL`
+    );
+
     // Validate we have enough balance
     if (availableForTrade <= 0) {
-      throw new Error(`Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${sellFeeReserve.toFixed(6)} SOL sell reserve + ${estimatedBuyFee.toFixed(6)} SOL buy fee)`);
+      throw new Error(
+        `Insufficient balance: ${walletBalanceSOL.toFixed(6)} SOL available, need at least ${totalFeeReserve.toFixed(6)} SOL for fees (${transactionFeeReserve.toFixed(6)} SOL tx fees + ${sellFeeReserve.toFixed(6)} SOL sell reserve + ${estimatedBuyFee.toFixed(6)} SOL buy fee)`
+      );
     }
-    
+
     // Use the minimum of requested amount or available balance
     const actualTradeAmount = Math.min(solAmount, availableForTrade);
-    
+
     if (actualTradeAmount < solAmount) {
-      console.warn(`[${logId}]: Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations (keeping ${sellFeeReserve} SOL for future sells)`);
+      console.warn(
+        `[${logId}]: Adjusted trade amount from ${solAmount} SOL to ${actualTradeAmount.toFixed(6)} SOL due to fee reservations (keeping ${sellFeeReserve} SOL for future sells)`
+      );
     }
 
     const { bondingCurve } = getBondingCurve(mintPk);
@@ -247,7 +341,9 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
 
     // Use higher slippage for external tokens to account for market volatility
     const tokensWithSlippage = applySlippage(tokenOut, 25);
-    console.log(`[${logId}]: tokensWithSlippage = ${tokensWithSlippage.toString()}`);
+    console.log(
+      `[${logId}]: tokensWithSlippage = ${tokensWithSlippage.toString()}`
+    );
 
     const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
       units: 151595,
@@ -263,7 +359,10 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
     console.log(`[${logId}]: Latest blockhash = ${blockhash.blockhash}`);
 
     // Create ATA instruction for external token (same as launch process)
-    const buyerAta = getAssociatedTokenAddressSync(mintPk, fundingKeypair.publicKey);
+    const buyerAta = getAssociatedTokenAddressSync(
+      mintPk,
+      fundingKeypair.publicKey
+    );
     const createAtaIx = createAssociatedTokenAccountIdempotentInstruction(
       fundingKeypair.publicKey,
       buyerAta,
@@ -313,7 +412,9 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
 
     console.log(`[${logId}]: Recording transaction`);
     try {
-      const { recordTransactionWithActualAmounts } = await import("../../backend/utils");
+      const { recordTransactionWithActualAmounts } = await import(
+        "../../backend/utils"
+      );
       await recordTransactionWithActualAmounts(
         tokenAddress,
         fundingKeypair.publicKey.toBase58(),
@@ -335,13 +436,19 @@ export const executeExternalPumpFunBuy = async (tokenAddress: string, fundingWal
 
     console.log(`[${logId}]: Collecting fee`);
     try {
-      const feeResult = await collectTransactionFee(bs58.encode(fundingKeypair.secretKey), actualTradeAmount, "buy");
+      const feeResult = await collectTransactionFee(
+        bs58.encode(fundingKeypair.secretKey),
+        actualTradeAmount,
+        "buy"
+      );
       console.log(`[${logId}]: Fee collection result =`, feeResult);
     } catch (err: any) {
       console.error(`[${logId}]: Fee collection error`, err);
     }
 
-    console.log(`[${logId}]: External PumpFun buy completed in ${formatMilliseconds(performance.now() - start)}`);
+    console.log(
+      `[${logId}]: External PumpFun buy completed in ${formatMilliseconds(performance.now() - start)}`
+    );
     return result;
   } catch (err: any) {
     console.error(`[${logId}]: External PumpFun buy failed`, err);

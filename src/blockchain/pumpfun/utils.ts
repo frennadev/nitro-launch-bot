@@ -12,12 +12,12 @@ export const getBondingCurve = (mint: PublicKey) => {
       ]),
       mint.toBuffer(),
     ],
-    PUMPFUN_PROGRAM,
+    PUMPFUN_PROGRAM
   );
   const associatedBondingCurve = getAssociatedTokenAddressSync(
     mint,
     bondingCurve,
-    true,
+    true
   );
   return {
     bondingCurve,
@@ -36,7 +36,7 @@ export const getMetadataPDA = (mint: PublicKey) => {
       ]),
       mint.toBuffer(),
     ],
-    TOKEN_METADATA_PROGRAM,
+    TOKEN_METADATA_PROGRAM
   );
   return pda;
 };
@@ -49,7 +49,7 @@ export const getCreatorVault = (creator: PublicKey) => {
       ]),
       creator.toBuffer(),
     ],
-    PUMPFUN_PROGRAM,
+    PUMPFUN_PROGRAM
   );
   return vault;
 };
@@ -57,7 +57,7 @@ export const getCreatorVault = (creator: PublicKey) => {
 export const getGlobalSetting = async () => {
   const [setting] = PublicKey.findProgramAddressSync(
     [Buffer.from("global")],
-    PUMPFUN_PROGRAM,
+    PUMPFUN_PROGRAM
   );
   const info = await connection.getAccountInfo(setting);
   if (!info) throw new Error("Empty global settings data!!");
@@ -74,36 +74,89 @@ export const quoteBuy = (
   amountIn: bigint,
   virtualTokenReserve: bigint,
   virtualSolReserve: bigint,
-  realTokenReserve: bigint,
+  realTokenReserve: bigint
 ) => {
-  const virtualTokenAmount = virtualSolReserve * virtualTokenReserve;
-  const totalSolPlusAmount = virtualSolReserve + amountIn;
-  const currentTokenAmount =
-    virtualTokenAmount / totalSolPlusAmount + BigInt(1);
-  const tokenAmountLeft = virtualTokenReserve - currentTokenAmount;
-
-  let tokenOut = tokenAmountLeft;
-  if (tokenAmountLeft > realTokenReserve) {
-    tokenOut = realTokenReserve;
+  // Validate inputs to prevent edge cases
+  if (amountIn <= BigInt(0)) {
+    console.warn(`[quoteBuy] Invalid amountIn: ${amountIn}`);
+    return {
+      tokenOut: BigInt(0),
+      newVirtualTokenReserve: virtualTokenReserve,
+      newVirtualSOLReserve: virtualSolReserve,
+      newRealTokenReserve: realTokenReserve,
+    };
   }
 
-  const newVirtualSOLReserve = virtualSolReserve + amountIn;
-  const newRealTokenReserve = realTokenReserve - tokenOut;
-  const newVirtualTokenReserve = virtualTokenReserve - tokenOut;
+  if (
+    virtualTokenReserve <= BigInt(0) ||
+    virtualSolReserve <= BigInt(0) ||
+    realTokenReserve <= BigInt(0)
+  ) {
+    console.warn(
+      `[quoteBuy] Invalid reserves - virtualToken: ${virtualTokenReserve}, virtualSol: ${virtualSolReserve}, realToken: ${realTokenReserve}`
+    );
+    return {
+      tokenOut: BigInt(0),
+      newVirtualTokenReserve: virtualTokenReserve,
+      newVirtualSOLReserve: virtualSolReserve,
+      newRealTokenReserve: realTokenReserve,
+    };
+  }
 
-  return {
-    tokenOut,
-    newVirtualTokenReserve,
-    newVirtualSOLReserve,
-    newRealTokenReserve,
-  };
+  try {
+    // Use the standard bonding curve formula: x * y = k
+    const k = virtualSolReserve * virtualTokenReserve;
+    const newVirtualSOLReserve = virtualSolReserve + amountIn;
+
+    // Calculate new virtual token reserve from constant product formula
+    const newVirtualTokenReserve = k / newVirtualSOLReserve;
+
+    // Token output is the difference in virtual reserves
+    let tokenOut = virtualTokenReserve - newVirtualTokenReserve;
+
+    // Ensure we don't exceed real token reserves
+    if (tokenOut > realTokenReserve) {
+      tokenOut = realTokenReserve;
+    }
+
+    // Ensure tokenOut is positive
+    if (tokenOut <= BigInt(0)) {
+      console.warn(
+        `[quoteBuy] Calculated tokenOut is not positive: ${tokenOut}`
+      );
+      return {
+        tokenOut: BigInt(0),
+        newVirtualTokenReserve: virtualTokenReserve,
+        newVirtualSOLReserve: virtualSolReserve,
+        newRealTokenReserve: realTokenReserve,
+      };
+    }
+
+    const finalNewRealTokenReserve = realTokenReserve - tokenOut;
+    const finalNewVirtualTokenReserve = virtualTokenReserve - tokenOut;
+
+    return {
+      tokenOut,
+      newVirtualTokenReserve: finalNewVirtualTokenReserve,
+      newVirtualSOLReserve: newVirtualSOLReserve,
+      newRealTokenReserve: finalNewRealTokenReserve,
+    };
+  } catch (error) {
+    console.error(`[quoteBuy] Error in calculation:`, error);
+    return {
+      tokenOut: BigInt(0),
+      newVirtualTokenReserve: virtualTokenReserve,
+      newVirtualSOLReserve: virtualSolReserve,
+      newRealTokenReserve: realTokenReserve,
+    };
+  }
 };
 
 export const quoteSell = (
   tokenAmountIn: bigint,
   virtualTokenReserves: bigint,
   virtualSolReserves: bigint,
-  realTokenReserves: bigint,
+  realTokenReserves: bigint
 ) => {
   if (tokenAmountIn > realTokenReserves) {
     tokenAmountIn = realTokenReserves;
@@ -111,7 +164,8 @@ export const quoteSell = (
 
   const virtualTokenAmount = virtualSolReserves * virtualTokenReserves;
   const newVirtualTokenReserves = virtualTokenReserves + tokenAmountIn;
-  const newVirtualSolReserves = virtualTokenAmount / newVirtualTokenReserves + BigInt(1);
+  const newVirtualSolReserves =
+    virtualTokenAmount / newVirtualTokenReserves + BigInt(1);
   const solOut = virtualSolReserves - newVirtualSolReserves;
 
   return {

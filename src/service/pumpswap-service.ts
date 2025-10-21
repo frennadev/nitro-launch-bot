@@ -608,6 +608,51 @@ export default class PumpswapService {
 
     return tx;
   };
+
+  // 🚀 NEW: Add buyWithFeeCollection method for compatibility with existing services
+  buyWithFeeCollection = async (buyData: BuyData) => {
+    try {
+      const tx = await this.buyTx(buyData);
+      const signature = await connection.sendTransaction(tx, {
+        maxRetries: 3,
+        skipPreflight: false,
+        preflightCommitment: "confirmed",
+      });
+
+      // Confirm transaction
+      const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+      const confirmation = await connection.confirmTransaction({
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        signature: signature,
+      });
+
+      if (confirmation.value.err) {
+        throw new Error(
+          `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
+        );
+      }
+
+      return {
+        success: true,
+        signature,
+      };
+    } catch (error) {
+      console.error("PumpSwap buy with fee collection failed:", error);
+
+      // Check if this is the graduated token error (6005)
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes("6005") ||
+        errorMessage.includes("BondingCurveComplete")
+      ) {
+        throw new Error("BONDING_CURVE_COMPLETE"); // Special error code for fallback
+      }
+
+      throw error;
+    }
+  };
 }
 
 function buildAssociatedTokenAccountInstruction(
