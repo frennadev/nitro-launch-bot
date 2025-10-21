@@ -19,8 +19,8 @@ async function addWalletWarmingJobTest() {
       warmingTokenAddress: "Hcekdr1nt43jvAi9aznxM2jrxGNBEVK8GWnwTHoVpump",
     };
 
-    const job = await walletWarmingQueue.add("warm-wallets-2", jobData, {
-      attempts: 3,
+    const job = await walletWarmingQueue.add("warm-wallets-3", jobData, {
+      attempts: 1, // Reduce attempts for testing
       backoff: {
         type: "exponential",
         delay: 2000,

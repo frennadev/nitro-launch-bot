@@ -3362,9 +3362,9 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
       }
 
       // Constants for wallet warming
-      const WARMING_AMOUNT = 0.05; // Fixed amount per wallet
-      const BUY_AMOUNT = 0.01; // SOL amount for each buy
-      const totalRequired = data.walletIds.length * WARMING_AMOUNT + 0.05; // + buffer for fees
+      const WARMING_AMOUNT = 0.015; // Fixed amount per wallet (reduced for testing)
+      const BUY_AMOUNT = 0.005; // SOL amount for each buy (reduced for testing)
+      const totalRequired = data.walletIds.length * WARMING_AMOUNT + 0.02; // + buffer for fees
 
       const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
       if (fundingBalance < totalRequired) {
@@ -3434,15 +3434,16 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
 
           // Log current warming state for debugging
           logger.info(
-            `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... current state: isWarming=${wallet.warming?.isWarming || false}, stage=${wallet.warming?.stage || 0}, completed=${wallet.warming?.warmingCompletedAt ? 'yes' : 'no'}, fundsReturned=${wallet.warming?.fundsReturned || false}`
+            `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... current state: isWarming=${wallet.warming?.isWarming || false}, stage=${wallet.warming?.stage || 0}, completed=${wallet.warming?.warmingCompletedAt ? "yes" : "no"}, fundsReturned=${wallet.warming?.fundsReturned || false}`
           );
 
           // Check if already warmed using proper warming state tracking
-          const isAlreadyWarmed = wallet.warming?.warmingCompletedAt && 
-                                 !wallet.warming?.isWarming && 
-                                 wallet.warming?.stage === 0 &&
-                                 wallet.warming?.fundsReturned === true;
-          
+          const isAlreadyWarmed =
+            wallet.warming?.warmingCompletedAt &&
+            !wallet.warming?.isWarming &&
+            wallet.warming?.stage === 0 &&
+            wallet.warming?.fundsReturned === true;
+
           if (isAlreadyWarmed) {
             logger.info(
               `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... already warmed (completed at ${wallet.warming?.warmingCompletedAt}), skipping`
