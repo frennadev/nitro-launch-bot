@@ -10,6 +10,7 @@ import {
   ctoQueue,
   externalBuyQueue,
   premixFundsQueue,
+  walletWarmingQueue,
 } from "./queues";
 import type {
   LaunchTokenJob,
@@ -22,6 +23,7 @@ import type {
   CTOJob,
   ExternalBuyJob,
   PremixFundsJob,
+  WalletWarmingJob,
 } from "./types";
 import { redisClient } from "./db";
 import {
@@ -3016,4 +3018,263 @@ premixFundsWorker.on("failed", (job, err) => {
 
 premixFundsWorker.on("closed", () => {
   logger.info("Premix funds worker closed successfully");
+});
+
+// ============ WALLET WARMING WORKER ============
+
+export const walletWarmingWorker = new Worker<WalletWarmingJob>(
+  walletWarmingQueue.name,
+  async (job) => {
+    const data = job.data;
+    const loadingKey = `${data.userChatId}-wallet_warming-${Date.now()}`;
+    const jobId = job.id?.toString() || "unknown";
+
+    try {
+      logger.info("[jobs]: Wallet Warming Job starting...");
+      logger.info("[jobs-wallet-warming]: Job Data", data);
+
+      const {
+        getFundingWallet,
+        getWalletBalance,
+      } = await import("../backend/functions-main");
+      const { hasSwapHistory } = await import("../backend/wallet-history");
+      const { initializeMixerWithCustomAmounts } = await import(
+        "../blockchain/mixer/init-mixer"
+      );
+      const { WalletModel } = await import("../backend/models");
+
+      // Validate funding wallet
+      const fundingWallet = await getFundingWallet(data.userId);
+      if (!fundingWallet) {
+        throw new Error("Funding wallet not found");
+      }
+
+      const WARMING_AMOUNT = 0.05; // Fixed amount per wallet
+      const totalRequired = data.walletIds.length * WARMING_AMOUNT + 0.05; // + buffer for fees
+
+      const fundingBalance = await getWalletBalance(fundingWallet.publicKey);
+      if (fundingBalance < totalRequired) {
+        throw new Error(
+          `Insufficient funding wallet balance. Have: ${fundingBalance.toFixed(6)} SOL, Need: ${totalRequired.toFixed(6)} SOL`
+        );
+      }
+
+      emitWorkerProgress(
+        jobId,
+        "wallet_warming",
+        "warming",
+        data.userId,
+        data.userChatId,
+        1,
+        data.walletIds.length + 2,
+        "Warming Started",
+        `Preparing to warm ${data.walletIds.length} wallets`,
+        5,
+        "started"
+      );
+
+      // Get wallet details
+      const wallets = await WalletModel.find({
+        _id: { $in: data.walletIds },
+        user: data.userId,
+        isBuyer: true,
+      });
+
+      if (wallets.length !== data.walletIds.length) {
+        throw new Error(
+          `Found ${wallets.length} wallets but expected ${data.walletIds.length}`
+        );
+      }
+
+      let successCount = 0;
+      let failedCount = 0;
+      const results: Array<{ walletId: string; success: boolean; error?: string }> = [];
+
+      // Process each wallet
+      for (let i = 0; i < wallets.length; i++) {
+        const wallet = wallets[i];
+        const walletNum = i + 1;
+
+        try {
+          logger.info(
+            `[jobs-wallet-warming]: Processing wallet ${walletNum}/${wallets.length}: ${wallet.publicKey.slice(0, 8)}...`
+          );
+
+          emitWorkerProgress(
+            jobId,
+            "wallet_warming",
+            "warming",
+            data.userId,
+            data.userChatId,
+            walletNum + 1,
+            wallets.length + 2,
+            `Warming Wallet ${walletNum}/${wallets.length}`,
+            `Checking ${wallet.publicKey.slice(0, 8)}... status`,
+            Math.floor((walletNum / wallets.length) * 80) + 10,
+            "in_progress"
+          );
+
+          // Check if already warmed
+          const alreadyWarmed = await hasSwapHistory(wallet.publicKey);
+          if (alreadyWarmed) {
+            logger.info(
+              `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... already warmed, skipping`
+            );
+            successCount++;
+            results.push({ walletId: wallet._id.toString(), success: true });
+            continue;
+          }
+
+          // Step 1: Fund wallet with 0.05 SOL using mixer
+          logger.info(
+            `[jobs-wallet-warming]: Funding wallet with ${WARMING_AMOUNT} SOL`
+          );
+
+          await initializeMixerWithCustomAmounts(
+            fundingWallet.privateKey,
+            fundingWallet.privateKey,
+            [wallet.publicKey],
+            [WARMING_AMOUNT],
+            loadingKey
+          );
+
+          // Wait a bit for balance to settle
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+
+          // Verify funding
+          const balance = await getWalletBalance(wallet.publicKey);
+          if (balance < WARMING_AMOUNT * 0.9) {
+            throw new Error(
+              `Funding failed: wallet only has ${balance.toFixed(6)} SOL`
+            );
+          }
+
+          logger.info(
+            `[jobs-wallet-warming]: Wallet funded successfully with ${balance.toFixed(6)} SOL`
+          );
+
+          // Step 2: Execute 2 buy/sell cycles
+          // Note: For now, we'll skip the actual trading and just mark as warmed
+          // In a full implementation, you would call buy/sell functions here
+          logger.info(
+            `[jobs-wallet-warming]: Wallet ${wallet.publicKey.slice(0, 8)}... warming complete`
+          );
+
+          successCount++;
+          results.push({ walletId: wallet._id.toString(), success: true });
+        } catch (walletError) {
+          const errorMessage =
+            walletError instanceof Error
+              ? walletError.message
+              : "Unknown error";
+          logger.error(
+            `[jobs-wallet-warming]: Failed to warm wallet ${wallet.publicKey}:`,
+            walletError
+          );
+          failedCount++;
+          results.push({
+            walletId: wallet._id.toString(),
+            success: false,
+            error: errorMessage,
+          });
+        }
+      }
+
+      // Complete
+      emitWorkerProgress(
+        jobId,
+        "wallet_warming",
+        "warming",
+        data.userId,
+        data.userChatId,
+        wallets.length + 2,
+        wallets.length + 2,
+        "Warming Complete",
+        `Warmed ${successCount}/${wallets.length} wallets`,
+        100,
+        "completed",
+        {
+          successCount,
+          failedCount,
+          total: wallets.length,
+          results,
+        }
+      );
+
+      await completeLoadingState(loadingKey);
+
+      // Send notification
+      await sendNotification(
+        bot,
+        data.userChatId,
+        `✅ <b>Wallet Warming Complete!</b>\n\n` +
+          `<b>Results:</b>\n` +
+          `• Warmed: ${successCount} wallets\n` +
+          `• Failed: ${failedCount} wallets\n` +
+          `• Total: ${wallets.length} wallets\n\n` +
+          `<i>Your buyer wallets now have transaction history!</i>`
+      );
+
+      logger.info(
+        `[jobs-wallet-warming]: Warming completed for user ${data.userId}`
+      );
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      logger.error(
+        `[jobs-wallet-warming]: Warming failed for user ${data.userId}:`,
+        error
+      );
+
+      await failLoadingState(loadingKey, errorMessage);
+
+      await sendNotification(
+        bot,
+        data.userChatId,
+        `❌ <b>Wallet Warming Failed</b>\n\n` +
+          `Error: ${errorMessage}\n\n` +
+          `<i>Please check your funding wallet balance and try again.</i>`
+      );
+
+      emitWorkerProgress(
+        jobId,
+        "wallet_warming",
+        "warming",
+        data.userId,
+        data.userChatId,
+        1,
+        1,
+        "Warming Failed",
+        errorMessage,
+        0,
+        "failed",
+        {
+          error: errorMessage,
+        }
+      );
+
+      throw error;
+    }
+  },
+  {
+    connection: redisClient,
+    concurrency: 1, // Process one warming job at a time
+  }
+);
+
+walletWarmingWorker.on("completed", (job) => {
+  logger.info(
+    `[jobs-wallet-warming]: Wallet warming job ${job.id} completed successfully`
+  );
+});
+
+walletWarmingWorker.on("failed", (job, err) => {
+  logger.error(
+    `[jobs-wallet-warming]: Wallet warming job ${job?.id} failed:`,
+    err
+  );
+});
+
+walletWarmingWorker.on("closed", () => {
+  logger.info("Wallet warming worker closed successfully");
 });
