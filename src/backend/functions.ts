@@ -2624,6 +2624,11 @@ export const calculateRequiredWallets = (buyAmount: number): number => {
     throw new Error(`Buy amount exceeds maximum of ${MAX_BUY_AMOUNT} SOL`);
   }
 
+  // ✅ NEW: For amounts ≥40 SOL, use all 73 wallets for better distribution
+  if (buyAmount >= 40) {
+    return 73;
+  }
+
   // First 7 wallets (reduced by 18%)
   const firstSevenReduced = [0.41, 0.574, 0.738, 0.82, 0.902, 0.984, 1.066];
   const firstSevenTotal = firstSevenReduced.reduce(
