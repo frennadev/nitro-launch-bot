@@ -263,6 +263,7 @@ export async function runMixer(
 
 /**
  * Create custom mixing routes with specific amounts for each destination
+ * NOW USES ATOMIC WALLET RESERVATION to prevent wallet reuse across routes
  */
 async function createCustomMixingRoutes(
   mixer: any,
@@ -270,9 +271,8 @@ async function createCustomMixingRoutes(
   destinationWallets: PublicKey[],
   amounts: number[]
 ) {
-  const routes = [];
-
-  // Only create routes for destinations that have amounts (non-zero and non-undefined)
+  // Filter out invalid destinations/amounts first
+  const validRouteData = [];
   for (let i = 0; i < amounts.length && i < destinationWallets.length; i++) {
     const destination = destinationWallets[i];
     const amount = amounts[i];
@@ -283,17 +283,37 @@ async function createCustomMixingRoutes(
       continue;
     }
 
-    // Get intermediate wallets from the mixer's pool
-    const intermediateWallets = await mixer.walletManager.getAvailableWallets(
-      mixer.config.intermediateWalletCount
-    );
+    validRouteData.push({ destination, amount });
+  }
 
-    // CRITICAL CHECK: Ensure we have enough valid intermediate wallets
-    if (!intermediateWallets || intermediateWallets.length < mixer.config.intermediateWalletCount) {
-      console.error(`❌ CRITICAL: Insufficient intermediate wallets! Need ${mixer.config.intermediateWalletCount}, got ${intermediateWallets?.length || 0}`);
-      console.error(`   This means NO PRIVACY MIXING will occur - funds will go direct!`);
-      throw new Error(`Insufficient intermediate wallets for privacy mixing. Need ${mixer.config.intermediateWalletCount}, got ${intermediateWallets?.length || 0}. Cannot proceed without proper privacy protection.`);
-    }
+  if (validRouteData.length === 0) {
+    throw new Error("No valid routes to create");
+  }
+
+  // ATOMIC RESERVATION: Reserve ALL wallets needed upfront to prevent reuse
+  const totalWalletsNeeded = validRouteData.length * mixer.config.intermediateWalletCount;
+  console.log(`🔍 Atomically reserving ${totalWalletsNeeded} unique intermediate wallets...`);
+
+  const reservedWallets = await mixer.walletManager.reserveWalletsForMixing(
+    totalWalletsNeeded,
+    [] // No exclusions for first reservation
+  );
+
+  if (reservedWallets.length < totalWalletsNeeded) {
+    throw new Error(
+      `Insufficient intermediate wallets for privacy mixing. Need ${totalWalletsNeeded}, got ${reservedWallets.length}. Cannot proceed without proper privacy protection.`
+    );
+  }
+
+  // Now distribute the unique wallets across routes
+  const routes = [];
+  for (let i = 0; i < validRouteData.length; i++) {
+    const { destination, amount } = validRouteData[i];
+    
+    // Get this route's unique set of intermediate wallets
+    const startIdx = i * mixer.config.intermediateWalletCount;
+    const endIdx = startIdx + mixer.config.intermediateWalletCount;
+    const routeIntermediateWallets = reservedWallets.slice(startIdx, endIdx);
 
     const route = {
       source: {
@@ -301,7 +321,7 @@ async function createCustomMixingRoutes(
         keypair: fundingWallet,
         balance: amount + 0.006, // Add buffer for fees
       },
-      intermediates: intermediateWallets.map((wallet: any) => {
+      intermediates: routeIntermediateWallets.map((wallet: any) => {
         try {
           const keypair = mixer.walletManager.getKeypairFromStoredWallet(wallet);
           return {
@@ -322,7 +342,7 @@ async function createCustomMixingRoutes(
   }
 
   console.log(
-    `🎯 Created ${routes.length} routes for ${amounts.length} amounts`
+    `🎯 Created ${routes.length} routes with ${totalWalletsNeeded} unique intermediate wallets (atomically reserved)`
   );
   return routes;
 }
@@ -330,43 +350,71 @@ async function createCustomMixingRoutes(
 /**
  * Execute custom mixing with pre-defined routes and amounts
  * Uses the new smart balance checking system for better reliability
+ * NOW PROPERLY RELEASES WALLETS after execution
  */
 async function executeCustomMixing(mixer: any, routes: any[]) {
   const results = [];
+  const allUsedWalletIds: string[] = [];
 
-  for (const route of routes) {
-    try {
-      // Use the parallel execution method which has the new smart balance checking
-      const result = await mixer.executeSingleRouteParallel(
-        route,
-        0, // No delays in parallel mode
-        0, // currentTransactionIndex
-        routes.length - 1, // totalDelays
-        0  // remainingTime
-      );
-      results.push(result);
-    } catch (error) {
-      console.warn(`⚠️ Parallel execution failed for route, falling back to optimized: ${error instanceof Error ? error.message : String(error)}`);
-      
-      // Fallback to optimized method if parallel fails
+  try {
+    for (const route of routes) {
       try {
-        const result = await mixer.executeSingleRouteOptimized(
+        // Use the parallel execution method which has the new smart balance checking
+        const result = await mixer.executeSingleRouteParallel(
           route,
-          1000,
-          0,
-          routes.length - 1,
-          0
+          0, // No delays in parallel mode
+          0, // currentTransactionIndex
+          routes.length - 1, // totalDelays
+          0  // remainingTime
         );
         results.push(result);
-      } catch (fallbackError) {
-        results.push({
-          success: false,
-          error: fallbackError instanceof Error ? fallbackError.message : "Unknown error",
-          signatures: [],
-        });
+        
+        // Track wallets used in this route
+        if (result.usedWalletIds) {
+          allUsedWalletIds.push(...result.usedWalletIds);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Parallel execution failed for route, falling back to optimized: ${error instanceof Error ? error.message : String(error)}`);
+        
+        // Fallback to optimized method if parallel fails
+        try {
+          const result = await mixer.executeSingleRouteOptimized(
+            route,
+            1000,
+            0,
+            routes.length - 1,
+            0
+          );
+          results.push(result);
+          
+          // Track wallets used in fallback
+          if (result.usedWalletIds) {
+            allUsedWalletIds.push(...result.usedWalletIds);
+          }
+        } catch (fallbackError) {
+          results.push({
+            success: false,
+            error: fallbackError instanceof Error ? fallbackError.message : "Unknown error",
+            signatures: [],
+          });
+          
+          // Even on failure, track the wallets that were attempted
+          const routeWalletIds = route.intermediates.map((w: any) => w.publicKey.toString());
+          allUsedWalletIds.push(...routeWalletIds);
+        }
+      }
+    }
+
+    return results;
+  } finally {
+    // CRITICAL: Release all used wallets back to pool, even if execution fails
+    if (allUsedWalletIds.length > 0) {
+      try {
+        await mixer.walletManager.releaseWallets(allUsedWalletIds);
+        console.log(`🔄 Released ${allUsedWalletIds.length} wallets back to pool`);
+      } catch (releaseError) {
+        console.error(`❌ Failed to release wallets:`, releaseError);
       }
     }
   }
-
-  return results;
 }

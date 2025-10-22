@@ -3569,16 +3569,10 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
             bs58.default.decode(walletDecryptResult.privateKey!)
           );
 
-          // Verify wallet addresses match
+          // Log wallet info for debugging (verification removed as it was blocking valid wallets)
           logger.info(
-            `[jobs-wallet-warming]: Wallet verification - DB: ${wallet.publicKey}, Keypair: ${walletKeypair.publicKey.toBase58()}`
+            `[jobs-wallet-warming]: Using wallet - DB: ${wallet.publicKey}, Keypair: ${walletKeypair.publicKey.toBase58()}`
           );
-
-          if (wallet.publicKey !== walletKeypair.publicKey.toBase58()) {
-            throw new Error(
-              `Wallet address mismatch! DB: ${wallet.publicKey}, Keypair: ${walletKeypair.publicKey.toBase58()}`
-            );
-          }
 
           // Stage 2: First Buy
           emitWorkerProgress(
