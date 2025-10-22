@@ -2169,12 +2169,18 @@ launchTokenWorker.on("failed", async (job) => {
   await handleTokenLaunchFailure(job!.data.tokenAddress, job?.failedReason);
 
   const token = job!.data;
-  await sendLaunchFailureNotification(
-    job!.data.userChatId,
-    token.tokenAddress,
-    token.tokenName,
-    token.tokenSymbol
-  );
+  
+  // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
+  try {
+    await sendLaunchFailureNotification(
+      job!.data.userChatId,
+      token.tokenAddress,
+      token.tokenName,
+      token.tokenSymbol
+    );
+  } catch (error) {
+    logger.warn(`Failed to send Telegram launch failure notification: ${error instanceof Error ? error.message : String(error)}`);
+  }
 });
 launchTokenWorker.on("closed", () => {
   logger.info("Launch Token worker closed successfully");
@@ -2191,11 +2197,17 @@ sellDevWorker.on("error", async (error) => {
 });
 sellDevWorker.on("failed", async (job) => {
   await releaseDevSellLock(job!.data.tokenAddress);
-  await sendNotification(
-    bot,
-    job!.data.userChatId,
-    "❌ <b>Dev Wallet Sell Failed</b>\n\n🔄 <i>Please try again from your tokens list.</i>"
-  );
+  
+  // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
+  try {
+    await sendNotification(
+      bot,
+      job!.data.userChatId,
+      "❌ <b>Dev Wallet Sell Failed</b>\n\n🔄 <i>Please try again from your tokens list.</i>"
+    );
+  } catch (error) {
+    logger.warn(`Failed to send Telegram notification for failed dev sell job: ${error instanceof Error ? error.message : String(error)}`);
+  }
 });
 sellDevWorker.on("closed", () => {
   logger.info("Dev Sell Worker closed successfully");
@@ -2212,11 +2224,17 @@ sellWalletWorker.on("error", async (error) => {
 });
 sellWalletWorker.on("failed", async (job) => {
   await releaseWalletSellLock(job!.data.tokenAddress);
-  await sendNotification(
-    bot,
-    job!.data.userChatId,
-    "❌ <b>Wallet Sells Failed</b>\n\n🔄 <i>Please try again from your tokens list.</i>"
-  );
+  
+  // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
+  try {
+    await sendNotification(
+      bot,
+      job!.data.userChatId,
+      "❌ <b>Wallet Sells Failed</b>\n\n🔄 <i>Please try again from your tokens list.</i>"
+    );
+  } catch (error) {
+    logger.warn(`Failed to send Telegram notification for failed sell job: ${error instanceof Error ? error.message : String(error)}`);
+  }
 });
 sellWalletWorker.on("closed", async () => {
   logger.info("Wallet Sell worker closed successfully");
@@ -2239,11 +2257,17 @@ prepareLaunchWorker.on("failed", async (job) => {
   );
 
   const token = job!.data;
-  await sendNotification(
-    bot,
-    job!.data.userChatId,
-    `❌ <b>Token preparation failed</b>\n\nToken: ${token.tokenName} ($${token.tokenSymbol})\n\n🔄 You can try again from your tokens list.`
-  );
+  
+  // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
+  try {
+    await sendNotification(
+      bot,
+      job!.data.userChatId,
+      `❌ <b>Token preparation failed</b>\n\nToken: ${token.tokenName} ($${token.tokenSymbol})\n\n🔄 You can try again from your tokens list.`
+    );
+  } catch (error) {
+    logger.warn(`Failed to send Telegram notification for failed prepare launch job: ${error instanceof Error ? error.message : String(error)}`);
+  }
 });
 prepareLaunchWorker.on("closed", () => {
   logger.info("Prepare Launch worker closed successfully");
@@ -2260,12 +2284,18 @@ launchTokenFromDappWorker.on("error", async (error) => {
 });
 launchTokenFromDappWorker.on("failed", async (job) => {
   const token = job!.data;
-  await sendLaunchFailureNotification(
-    job!.data.userChatId,
-    token.tokenId,
-    token.tokenName,
-    job?.failedReason || "Launch failed"
-  );
+  
+  // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
+  try {
+    await sendLaunchFailureNotification(
+      job!.data.userChatId,
+      token.tokenId,
+      token.tokenName,
+      job?.failedReason || "Launch failed"
+    );
+  } catch (error) {
+    logger.warn(`Failed to send Telegram dapp launch failure notification: ${error instanceof Error ? error.message : String(error)}`);
+  }
 });
 launchTokenFromDappWorker.on("closed", () => {
   logger.info("Launch Token From Dapp worker closed successfully");
@@ -2291,12 +2321,18 @@ executeLaunchWorker.on("failed", async (job) => {
   await handleTokenLaunchFailure(job!.data.tokenAddress, job?.failedReason);
 
   const token = job!.data;
-  await sendLaunchFailureNotification(
-    job!.data.userChatId,
-    token.tokenAddress,
-    token.tokenName,
-    token.tokenSymbol
-  );
+  
+  // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
+  try {
+    await sendLaunchFailureNotification(
+      job!.data.userChatId,
+      token.tokenAddress,
+      token.tokenName,
+      token.tokenSymbol
+    );
+  } catch (error) {
+    logger.warn(`Failed to send Telegram execute launch failure notification: ${error instanceof Error ? error.message : String(error)}`);
+  }
 });
 executeLaunchWorker.on("closed", () => {
   logger.info("Execute launch worker closed successfully");
