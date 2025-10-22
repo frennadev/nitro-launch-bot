@@ -479,5 +479,29 @@ export const sendNotification = async (
   chatId: number,
   message: string
 ) => {
-  await bot.api.sendMessage(chatId, message, { parse_mode: "HTML" });
+  try {
+    await bot.api.sendMessage(chatId, message, { parse_mode: "HTML" });
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      // Handle specific Telegram API errors
+      if (
+        error.message.includes("chat not found") ||
+        error.message.includes("Bad Request: chat not found")
+      ) {
+        console.warn(`Chat ${chatId} not found, skipping notification`);
+        return; // Silently skip notification for invalid chats
+      }
+      if (
+        error.message.includes("user is deactivated") ||
+        error.message.includes("bot was blocked by the user")
+      ) {
+        console.warn(
+          `User ${chatId} has blocked the bot, skipping notification`
+        );
+        return; // Silently skip for blocked users
+      }
+    }
+    // Re-throw other errors
+    throw error;
+  }
 };

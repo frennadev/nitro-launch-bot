@@ -26,7 +26,7 @@ import type {
   PremixFundsJob,
   WalletWarmingJob,
 } from "./types";
-import { redisClient } from "./db";
+import { redisClient, ensureDBConnection } from "./db";
 import {
   releaseDevSellLock,
   releaseWalletSellLock,
@@ -427,6 +427,9 @@ export const sellDevWorker = new Worker<SellDevJob>(
     const jobId = job.id?.toString() || "unknown";
 
     try {
+      // Ensure database connection before operations
+      await ensureDBConnection();
+
       logger.info("[jobs]: Sell Dev Job starting...");
       logger.info("[jobs-sell-dev]: Job Data", data);
 
@@ -690,6 +693,9 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
     const jobId = job.id?.toString() || "unknown";
 
     try {
+      // Ensure database connection before operations
+      await ensureDBConnection();
+
       logger.info("[jobs]: Wallet Sell Job starting...");
       logger.info("[jobs-sell-wallet]: Job Data", data);
 
@@ -2693,6 +2699,9 @@ export const externalBuyWorker = new Worker<ExternalBuyJob>(
     const startTime = Date.now();
 
     try {
+      // Ensure database connection before operations
+      await ensureDBConnection();
+
       logger.info("[jobs]: External Buy Job starting...");
       logger.info("[jobs-external-buy]: Job Data", {
         userId: data.userId,
@@ -2871,6 +2880,12 @@ export const externalBuyWorker = new Worker<ExternalBuyJob>(
   {
     connection: redisClient,
     concurrency: 3, // Allow multiple external buys in parallel
+    removeOnComplete: {
+      count: 100, // Keep last 100 completed jobs
+    },
+    removeOnFail: {
+      count: 50, // Keep last 50 failed jobs for debugging
+    },
   }
 );
 
@@ -3328,6 +3343,9 @@ export const walletWarmingWorker = new Worker<WalletWarmingJob>(
     const jobId = job.id?.toString() || "unknown";
 
     try {
+      // Ensure database connection before operations
+      await ensureDBConnection();
+
       logger.info("[jobs]: Comprehensive Wallet Warming Job starting...");
       logger.info("[jobs-wallet-warming]: Job Data", data);
 
