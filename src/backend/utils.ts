@@ -1,4 +1,9 @@
-import { LAMPORTS_PER_SOL, PublicKey, Connection } from "@solana/web3.js";
+import {
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  Connection,
+  Keypair,
+} from "@solana/web3.js";
 import { connection } from "../blockchain/common/connection";
 import { logger } from "../blockchain/common/logger";
 import type { Bot, Context } from "grammy";
@@ -16,6 +21,8 @@ import {
 import { redisClient } from "../jobs/db";
 import { DexscreenerTokenResponse } from "./types";
 import { Types } from "mongoose";
+import bs58 from "bs58";
+import * as CryptoJS from "crypto-js";
 
 export function encryptPrivateKey(privateKey: string): string {
   const SECRET_KEY = crypto.scryptSync(
@@ -105,7 +112,311 @@ export function decryptPrivateKey(encryptedPrivateKey: string): string {
     throw new Error("Invalid encrypted data format - unrecognized format");
   } catch (error) {
     console.error("Decryption error:", error);
-    throw new Error(`Decryption failed: ${(error as Error).message}`);
+    // Try the bot-style fallback decryption before completely failing
+    try {
+      logger.info("Attempting bot-style fallback decryption...");
+      return decryptPrivateKeyBot(encryptedPrivateKey);
+    } catch (fallbackError) {
+      logger.error("Bot-style fallback also failed:", fallbackError);
+      throw new Error(`Decryption failed: ${(error as Error).message}`);
+    }
+  }
+}
+
+/**
+ * Bot-style decryption fallback function
+ */
+export function decryptPrivateKeyBot(encryptedPrivateKey: string): string {
+  try {
+    console.log("🔓 Starting bot-style private key decryption");
+    console.log("Encrypted data length:", encryptedPrivateKey.length);
+    console.log(
+      "Encrypted data (first 50 chars):",
+      encryptedPrivateKey.substring(0, 50)
+    );
+
+    // Generate the same secret key as the bot
+    const SECRET_KEY = crypto.scryptSync(
+      env.ENCRYPTION_SECRET as string,
+      "salt",
+      ENCRYPTION_IV_LENGTH * 2
+    );
+    console.log("✅ Secret key derived using scrypt");
+
+    // Parse the IV and encrypted data (format: "iv:encryptedData")
+    const [ivHex, encryptedData] = encryptedPrivateKey.split(":");
+    console.log("IV hex:", ivHex);
+    console.log("Encrypted data:", encryptedData);
+
+    if (!ivHex || !encryptedData) {
+      console.log("❌ Bot format failed, trying CryptoJS dapp-wallet fallback");
+      // Fallback to CryptoJS decryption for dapp-created wallets
+      console.log("🔄 Attempting dapp-wallet CryptoJS decryption as fallback");
+
+      try {
+        // This is how dapp wallets are encrypted: keypair.secretKey -> base64 -> CryptoJS.AES.encrypt
+        // So we need to: CryptoJS.AES.decrypt -> base64 string -> Buffer -> base58
+
+        const bytes = CryptoJS.AES.decrypt(
+          encryptedPrivateKey,
+          env.ENCRYPTION_SECRET as string
+        );
+        const decryptedBase64String = bytes.toString(CryptoJS.enc.Utf8);
+
+        if (!decryptedBase64String) {
+          throw new Error("CryptoJS decryption returned empty result");
+        }
+
+        console.log(
+          "✅ CryptoJS decryption successful, decrypted base64 length:",
+          decryptedBase64String.length
+        );
+
+        // Convert the base64 string back to the original keypair secret key buffer
+        const secretKeyBuffer = Buffer.from(decryptedBase64String, "base64");
+        console.log("📏 Secret key buffer length:", secretKeyBuffer.length);
+
+        // Solana keypair secret keys should be exactly 64 bytes
+        let finalSecretKeyBuffer: Buffer;
+
+        if (secretKeyBuffer.length === 64) {
+          // Perfect length - this is the standard case
+          finalSecretKeyBuffer = secretKeyBuffer;
+          console.log("✅ Perfect 64-byte secret key buffer");
+        } else if (secretKeyBuffer.length === 66) {
+          // Sometimes there might be 2 extra bytes, trim them
+          finalSecretKeyBuffer = secretKeyBuffer.slice(0, 64);
+          console.log("✂️ Trimmed buffer from 66 to 64 bytes");
+        } else if (secretKeyBuffer.length > 64) {
+          // Take the last 64 bytes if there's prefix padding
+          finalSecretKeyBuffer = secretKeyBuffer.slice(-64);
+          console.log(
+            `✂️ Trimmed buffer from ${secretKeyBuffer.length} to 64 bytes (took last 64)`
+          );
+        } else {
+          throw new Error(
+            `Secret key buffer too short: ${secretKeyBuffer.length} bytes, expected 64`
+          );
+        }
+
+        // For dapp wallets, we need to return the buffer as base58 to match the bot format expectation
+        // The secretKey buffer IS the private key, so we encode it directly
+        const privateKeyBase58 = bs58.encode(finalSecretKeyBuffer);
+
+        console.log("✅ Dapp-wallet CryptoJS fallback successful");
+        console.log("Private key base58 length:", privateKeyBase58.length);
+        console.log(
+          "Private key (first 10 chars):",
+          privateKeyBase58.substring(0, 10)
+        );
+
+        return privateKeyBase58;
+      } catch (cryptoError) {
+        console.error("🔴 Dapp-wallet CryptoJS fallback failed:", cryptoError);
+        throw new Error(
+          "Invalid encrypted data format - expected 'iv:encryptedData' or dapp CryptoJS AES format"
+        );
+      }
+    }
+
+    const iv = Buffer.from(ivHex, "hex");
+    console.log("✅ IV parsed, length:", iv.length);
+
+    // Create decipher with the same algorithm as the bot
+    const decipher = crypto.createDecipheriv(
+      ENCRYPTION_ALGORITHM,
+      SECRET_KEY,
+      iv
+    );
+
+    let decrypted = decipher.update(encryptedData, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+
+    console.log("✅ Bot-style decryption successful");
+    console.log("Decrypted private key length:", decrypted.length);
+    console.log(
+      "Decrypted private key (first 10 chars):",
+      decrypted.substring(0, 10)
+    );
+
+    return decrypted;
+  } catch (error) {
+    console.error("🔴 Bot-style decryption failed:", error);
+    throw error;
+  }
+}
+
+/**
+ * Decrypt private key and create Solana Keypair using bot-compatible method
+ */
+export function decryptKeypairBot(encryptedPrivateKey: string): Keypair {
+  try {
+    console.log("🔐 Starting bot-style keypair decryption");
+
+    // Check if this is bot format (iv:encryptedData) or dapp format (CryptoJS)
+    const [ivHex, encryptedData] = encryptedPrivateKey.split(":");
+
+    if (ivHex && encryptedData) {
+      console.log("🤖 Detected bot format, using bot decryption");
+      // This is bot format - decrypt to get base58 private key
+      const decryptedPrivateKey = decryptPrivateKeyBot(encryptedPrivateKey);
+      const keypair = Keypair.fromSecretKey(bs58.decode(decryptedPrivateKey));
+
+      console.log("✅ Bot-style keypair creation successful");
+      console.log("Public key:", keypair.publicKey.toString());
+      return keypair;
+    } else {
+      console.log("📱 Detected dapp format, using dapp decryption");
+      // This is dapp format - decrypt to get secret key buffer directly
+      const bytes = CryptoJS.AES.decrypt(
+        encryptedPrivateKey,
+        env.ENCRYPTION_SECRET as string
+      );
+      const decryptedBase64String = bytes.toString(CryptoJS.enc.Utf8);
+
+      if (!decryptedBase64String) {
+        throw new Error("Dapp CryptoJS decryption returned empty result");
+      }
+
+      console.log(
+        "✅ Dapp CryptoJS decryption successful, decrypted string length:",
+        decryptedBase64String.length
+      );
+
+      // The decrypted string might be base58 encoded private key, not base64!
+      console.log("🔍 Analyzing decrypted string format");
+      console.log(
+        "Decrypted string (first 20 chars):",
+        decryptedBase64String.substring(0, 20)
+      );
+
+      // Try treating the decrypted string as base58 first (like bot format)
+      if (
+        decryptedBase64String.length >= 80 &&
+        decryptedBase64String.length <= 90
+      ) {
+        console.log(
+          "🎯 Decrypted string length suggests base58 format, trying direct base58 decode"
+        );
+        try {
+          const directBase58Buffer = bs58.decode(decryptedBase64String);
+          if (directBase58Buffer.length === 64) {
+            console.log(
+              "✅ Direct base58 decode produced perfect 64-byte buffer!"
+            );
+            const keypair = Keypair.fromSecretKey(directBase58Buffer);
+            console.log(
+              "✅ Dapp-style keypair creation successful (base58 path)"
+            );
+            console.log("Public key:", keypair.publicKey.toString());
+            return keypair;
+          }
+        } catch (base58Error) {
+          console.log(
+            "❌ Direct base58 decode failed:",
+            base58Error instanceof Error
+              ? base58Error.message
+              : String(base58Error)
+          );
+        }
+      }
+
+      // Fallback to base64 approach if base58 didn't work
+      console.log("🔄 Falling back to base64 buffer approach");
+      const secretKeyBuffer = Buffer.from(decryptedBase64String, "base64");
+      console.log("📏 Secret key buffer length:", secretKeyBuffer.length);
+
+      // Handle different buffer lengths and try multiple approaches
+      let finalSecretKeyBuffer: Buffer;
+      if (secretKeyBuffer.length === 64) {
+        finalSecretKeyBuffer = secretKeyBuffer;
+        console.log("✅ Perfect 64-byte secret key buffer");
+      } else if (secretKeyBuffer.length === 66) {
+        // Try different trimming approaches for 66-byte buffers
+        console.log("🔍 Analyzing 66-byte buffer structure");
+        console.log(
+          "First 10 bytes (hex):",
+          secretKeyBuffer.slice(0, 10).toString("hex")
+        );
+        console.log(
+          "Last 10 bytes (hex):",
+          secretKeyBuffer.slice(-10).toString("hex")
+        );
+
+        // Try trimming from the end first (original approach)
+        const trimFromEnd = secretKeyBuffer.slice(0, 64);
+        console.log("✂️ Trying: trim 2 bytes from end");
+
+        try {
+          Keypair.fromSecretKey(trimFromEnd); // Test if this works
+          finalSecretKeyBuffer = trimFromEnd;
+          console.log("✅ Trim from end worked!");
+        } catch (endError: unknown) {
+          const endErrorMsg =
+            endError instanceof Error ? endError.message : String(endError);
+          console.log("❌ Trim from end failed:", endErrorMsg);
+
+          // Try trimming from the beginning
+          const trimFromStart = secretKeyBuffer.slice(2, 66);
+          console.log("✂️ Trying: trim 2 bytes from start");
+
+          try {
+            Keypair.fromSecretKey(trimFromStart); // Test if this works
+            finalSecretKeyBuffer = trimFromStart;
+            console.log("✅ Trim from start worked!");
+          } catch (startError: unknown) {
+            const startErrorMsg =
+              startError instanceof Error
+                ? startError.message
+                : String(startError);
+            console.log("❌ Trim from start failed:", startErrorMsg);
+
+            // Try taking middle 64 bytes (skip 1 byte on each side)
+            const trimMiddle = secretKeyBuffer.slice(1, 65);
+            console.log(
+              "✂️ Trying: take middle 64 bytes (skip 1 on each side)"
+            );
+
+            try {
+              Keypair.fromSecretKey(trimMiddle); // Test if this works
+              finalSecretKeyBuffer = trimMiddle;
+              console.log("✅ Middle 64 bytes worked!");
+            } catch (middleError: unknown) {
+              const middleErrorMsg =
+                middleError instanceof Error
+                  ? middleError.message
+                  : String(middleError);
+              console.log("❌ Middle 64 bytes failed:", middleErrorMsg);
+              throw new Error(
+                `All trimming approaches failed for 66-byte buffer. End: ${endErrorMsg}, Start: ${startErrorMsg}, Middle: ${middleErrorMsg}`
+              );
+            }
+          }
+        }
+      } else if (secretKeyBuffer.length > 64) {
+        finalSecretKeyBuffer = secretKeyBuffer.slice(-64);
+        console.log(
+          `✂️ Trimmed buffer from ${secretKeyBuffer.length} to 64 bytes (took last 64)`
+        );
+      } else {
+        throw new Error(
+          `Secret key buffer too short: ${secretKeyBuffer.length} bytes, expected 64`
+        );
+      }
+
+      // Create keypair directly from the secret key buffer (no base58 conversion needed)
+      const keypair = Keypair.fromSecretKey(finalSecretKeyBuffer);
+      console.log("✅ Dapp-style keypair creation successful");
+      console.log("Public key:", keypair.publicKey.toString());
+      return keypair;
+    }
+  } catch (error) {
+    console.error("🔴 Bot-style keypair decryption failed:", error);
+    throw new Error(
+      `Failed to decrypt keypair: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
