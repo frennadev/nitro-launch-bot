@@ -264,6 +264,7 @@ export async function runMixer(
 /**
  * Create custom mixing routes with specific amounts for each destination
  * NOW USES ATOMIC WALLET RESERVATION to prevent wallet reuse across routes
+ * 🛡️ SECURITY: Validates all destinations have < 0.1 SOL
  */
 async function createCustomMixingRoutes(
   mixer: any,
@@ -271,8 +272,12 @@ async function createCustomMixingRoutes(
   destinationWallets: PublicKey[],
   amounts: number[]
 ) {
-  // Filter out invalid destinations/amounts first
+  const MAX_ALLOWED_BALANCE = 0.1 * 1_000_000_000; // 0.1 SOL in lamports
+  
+  // Filter out invalid destinations/amounts AND validate security requirements
+  console.log(`🛡️ SECURITY: Validating ${destinationWallets.length} destination wallets (must have < 0.1 SOL)...`);
   const validRouteData = [];
+  
   for (let i = 0; i < amounts.length && i < destinationWallets.length; i++) {
     const destination = destinationWallets[i];
     const amount = amounts[i];
@@ -283,12 +288,36 @@ async function createCustomMixingRoutes(
       continue;
     }
 
+    // 🛡️ CRITICAL SECURITY: Validate destination has < 0.1 SOL
+    try {
+      const balance = await mixer.connectionManager.getBalance(destination);
+      
+      if (balance >= MAX_ALLOWED_BALANCE) {
+        console.error(
+          `❌ SECURITY VIOLATION: Skipping destination ${i + 1} (${destination.toString().slice(0, 8)}...): ` +
+          `Has ${(balance / 1_000_000_000).toFixed(6)} SOL (>= 0.1 SOL). ` +
+          `Mixer can only send to wallets with less than 0.1 SOL.`
+        );
+        continue; // Skip this destination
+      }
+      
+      console.log(`✅ Destination ${i + 1} (${destination.toString().slice(0, 8)}...) validated: ${(balance / 1_000_000_000).toFixed(6)} SOL`);
+    } catch (error) {
+      // If balance check fails (wallet doesn't exist), that's acceptable (balance = 0)
+      console.log(`✅ Destination ${i + 1} (${destination.toString().slice(0, 8)}...) validated: New wallet (no balance)`);
+    }
+
     validRouteData.push({ destination, amount });
   }
 
   if (validRouteData.length === 0) {
-    throw new Error("No valid routes to create");
+    throw new Error(
+      "No valid routes to create. All destinations must have less than 0.1 SOL. " +
+      "This is a security requirement and cannot be bypassed."
+    );
   }
+  
+  console.log(`✅ SECURITY: ${validRouteData.length}/${destinationWallets.length} destinations passed validation`);
 
   // ATOMIC RESERVATION: Reserve ALL wallets needed upfront to prevent reuse
   const totalWalletsNeeded = validRouteData.length * mixer.config.intermediateWalletCount;
