@@ -6,6 +6,7 @@ import { sellInstruction } from "./instructions";
 import { connection } from "../common/connection";
 import { executeExternalSell } from "./externalSell";
 import { Context } from "grammy";
+import { decryptKeypairBot } from "../../backend/utils";
 
 /**
  * Enhanced dev sell using external sell mechanism with platform detection
@@ -26,7 +27,8 @@ export const executeDevSell = async (tokenAddress: string, devWallet: string, se
 
   try {
     const mintPublicKey = new PublicKey(tokenAddress);
-    const devKeypair = secretKeyToKeypair(devWallet);
+    // Use bot decryption method (handles encrypted wallet keys)
+    const devKeypair = decryptKeypairBot(devWallet);
     
     // Get the current token balance to calculate amount to sell
     const ata = getAssociatedTokenAddressSync(mintPublicKey, devKeypair.publicKey);
@@ -117,7 +119,16 @@ export const executeWalletSell = async (
 
   try {
     const mintPublicKey = new PublicKey(tokenAddress);
-    const buyKeypairs = buyWallets.map((w) => secretKeyToKeypair(w));
+    
+    // Use bot decryption method (handles encrypted wallet keys)
+    const buyKeypairs = buyWallets.map((w, index) => {
+      try {
+        return decryptKeypairBot(w);
+      } catch (error) {
+        logger.error(`[${logIdentifier}] Failed to decrypt wallet ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
+      }
+    });
 
     // Get wallet balances efficiently
     const walletBalances = (
