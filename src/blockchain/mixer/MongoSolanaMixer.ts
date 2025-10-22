@@ -291,6 +291,33 @@ export class MongoSolanaMixer {
   }
 
   /**
+   * CRITICAL SAFETY: Validate that destination wallet has less than 0.1 SOL
+   * This is a hard requirement that cannot be bypassed
+   */
+  private async validateDestinationBalance(destination: PublicKey): Promise<void> {
+    const MAX_ALLOWED_BALANCE = 0.1 * 1_000_000_000; // 0.1 SOL in lamports
+    
+    try {
+      const balance = await this.connectionManager.getBalance(destination);
+      
+      if (balance >= MAX_ALLOWED_BALANCE) {
+        throw new Error(
+          `SECURITY VIOLATION: Destination wallet ${destination.toString()} has ${(balance / 1_000_000_000).toFixed(6)} SOL (>= 0.1 SOL). ` +
+          `Mixer can only send to wallets with less than 0.1 SOL. This is a security requirement and cannot be bypassed.`
+        );
+      }
+      
+      console.log(`✅ Destination ${destination.toString().slice(0, 8)}... validated: ${(balance / 1_000_000_000).toFixed(6)} SOL (< 0.1 SOL limit)`);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('SECURITY VIOLATION')) {
+        throw error; // Re-throw security violations
+      }
+      // If balance check fails (wallet doesn't exist yet), that's acceptable (balance = 0)
+      console.log(`✅ Destination ${destination.toString().slice(0, 8)}... validated: New wallet (no balance)`);
+    }
+  }
+
+  /**
    * Create mixing routes using MongoDB wallets with proper 73-wallet distribution
    */
   private async createMixingRoutesWithMongo(
@@ -300,8 +327,41 @@ export class MongoSolanaMixer {
     excludeWalletIds: string[] = []
   ): Promise<MixingRoute[]> {
     const routes: MixingRoute[] = [];
-    const totalWalletsNeeded = destinationWallets.length * this.config.intermediateWalletCount;
+    
+    // 🛡️ CRITICAL SECURITY: Pre-validate all destination wallets before creating any routes
+    console.log(`🛡️ SECURITY: Validating ${destinationWallets.length} destination wallets (must have < 0.1 SOL)...`);
+    const validDestinations: Array<{ destination: PublicKey; amount: number; index: number }> = [];
+    
+    for (let i = 0; i < destinationWallets.length; i++) {
+      const destination = destinationWallets[i];
+      const amount = distributionAmounts[i] || 0;
 
+      if (amount <= 0) {
+        console.log(`⚠️ Skipping destination ${i + 1}: amount is ${amount} lamports`);
+        continue;
+      }
+
+      try {
+        // 🛡️ SECURITY CHECK: Validate destination has < 0.1 SOL
+        await this.validateDestinationBalance(destination);
+        validDestinations.push({ destination, amount, index: i });
+      } catch (error) {
+        // If validation fails, skip this destination and log the security violation
+        console.error(`❌ SECURITY: Skipping destination ${i + 1} (${destination.toString().slice(0, 8)}...): ${error instanceof Error ? error.message : String(error)}`);
+        // Do NOT add this destination to routes - it fails security requirements
+      }
+    }
+
+    if (validDestinations.length === 0) {
+      throw new Error(
+        `No valid destination wallets found. All destinations must have less than 0.1 SOL. ` +
+        `This is a security requirement and cannot be bypassed.`
+      );
+    }
+
+    console.log(`✅ SECURITY: ${validDestinations.length}/${destinationWallets.length} destinations passed validation`);
+    
+    const totalWalletsNeeded = validDestinations.length * this.config.intermediateWalletCount;
     console.log(`🔍 Reserving ${totalWalletsNeeded} intermediate wallets from MongoDB...`);
 
     // Reserve wallets from MongoDB, excluding already used ones
@@ -315,16 +375,7 @@ export class MongoSolanaMixer {
 
     let walletIndex = 0;
 
-    for (let i = 0; i < destinationWallets.length; i++) {
-      const destination = destinationWallets[i];
-      // Use exact amount from 73-wallet distribution (no random variation)
-      const amount = distributionAmounts[i] || 0;
-
-      if (amount <= 0) {
-        console.log(`⚠️ Skipping destination ${i + 1}: amount is ${amount} lamports`);
-        continue;
-      }
-
+    for (const { destination, amount } of validDestinations) {
       // Get intermediate wallets for this route
       const intermediates: WalletInfo[] = [];
       for (let j = 0; j < this.config.intermediateWalletCount; j++) {
@@ -351,7 +402,7 @@ export class MongoSolanaMixer {
       routes.push(route);
     }
 
-    console.log(`🎯 Created ${routes.length} routes with 73-wallet distribution amounts`);
+    console.log(`🎯 Created ${routes.length} routes with 73-wallet distribution amounts (all security-validated)`);
     
     // Shuffle routes to randomize execution order
     return cryptoShuffle(routes);
@@ -593,6 +644,17 @@ export class MongoSolanaMixer {
           `Only ${(remainingAmount / 1e9).toFixed(6)} SOL remaining but expected ${(route.amount / 1e9).toFixed(6)} SOL. ` +
           `Need at least ${(expectedMinimumBeforeFinal / 1e9).toFixed(6)} SOL (80% of route amount). ` +
           `Route has lost too much value - likely due to failed intermediate transfers. ABORTING to prevent sending dust to destination.`
+        );
+      }
+
+      // 🛡️ CRITICAL SECURITY: Final validation before sending funds to destination
+      console.log(`🛡️ SECURITY: Final validation of destination wallet before transfer...`);
+      try {
+        await this.validateDestinationBalance(route.destination);
+      } catch (error) {
+        throw new Error(
+          `SECURITY VIOLATION - Final transfer blocked: ${error instanceof Error ? error.message : String(error)}. ` +
+          `Route execution aborted to prevent funds being sent to invalid destination.`
         );
       }
 
@@ -899,6 +961,17 @@ export class MongoSolanaMixer {
             // Continue anyway - we did our best to ensure success
           }
         } else {
+          // 🛡️ CRITICAL SECURITY: Final validation before sending funds to destination
+          console.log(`🛡️ SECURITY: Final validation of destination wallet before transfer...`);
+          try {
+            await this.validateDestinationBalance(destination);
+          } catch (error) {
+            throw new Error(
+              `SECURITY VIOLATION - Final transfer blocked: ${error instanceof Error ? error.message : String(error)}. ` +
+              `Route execution aborted to prevent funds being sent to invalid destination.`
+            );
+          }
+
           // For the final transaction, use smart balance checking with retry logic
           console.log(`🎯 Final transfer: ${currentWallet.publicKey.toString().slice(0, 8)}... → ${destination.toString().slice(0, 8)}...`);
           
