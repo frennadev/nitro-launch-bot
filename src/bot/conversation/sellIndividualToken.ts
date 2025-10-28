@@ -14,6 +14,7 @@ import { sendMessage } from "../../backend/sender";
 import { sendErrorWithAutoDelete } from "../utils";
 import { CallBackQueries } from "../types";
 import { compressCallbackData } from "../utils";
+import { logger } from "../../blockchain/common/logger";
 
 type WalletHolder = {
   pubkey: string;
@@ -446,6 +447,16 @@ async function handleWalletSellAction(
         sellPercent === 100
           ? tokenBalance
           : Math.floor(tokenBalance * (sellPercent / 100));
+
+      // DEBUG LOGGING
+      logger.info(`[SellIndividual] DEBUG - sellPercent: ${sellPercent}`);
+      logger.info(`[SellIndividual] DEBUG - tokenBalance: ${tokenBalance}`);
+      logger.info(
+        `[SellIndividual] DEBUG - tokensToSell calculated: ${tokensToSell}`
+      );
+      logger.info(
+        `[SellIndividual] DEBUG - Calculation: Math.floor(${tokenBalance} * (${sellPercent} / 100)) = ${tokensToSell}`
+      );
 
       if (tokensToSell <= 0) {
         await sendMessage(ctx, "No tokens to sell ⚡");

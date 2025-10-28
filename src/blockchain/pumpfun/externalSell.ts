@@ -405,6 +405,9 @@ async function executeNativePumpFunSell(
   logger.info(
     `[${logIdentifier}]: Starting native PumpFun sell for ${tokenAmount} tokens`
   );
+  logger.info(
+    `[${logIdentifier}]: DEBUG - tokenAmount parameter received: ${tokenAmount}`
+  );
 
   const start = performance.now();
 
@@ -454,6 +457,13 @@ async function executeNativePumpFunSell(
     const tokensToSell =
       BigInt(tokenAmount) > balance ? balance : BigInt(tokenAmount);
 
+    logger.info(
+      `[${logIdentifier}]: DEBUG - tokenAmount (raw): ${tokenAmount}`
+    );
+    logger.info(
+      `[${logIdentifier}]: DEBUG - BigInt(tokenAmount): ${BigInt(tokenAmount)}`
+    );
+    logger.info(`[${logIdentifier}]: DEBUG - balance: ${balance}`);
     logger.info(
       `[${logIdentifier}]: Selling ${tokensToSell} tokens (balance: ${balance})`
     );
