@@ -79,6 +79,7 @@ interface BuyData {
 interface SellData {
   mint: PublicKey;
   privateKey: string;
+  amount?: number; // Optional: specific amount to sell. If not provided, sells all
   slippage?: number; // 🚀 NITRO: User-configurable slippage
   priorityFee?: number; // 🚀 NITRO: User-configurable priority fee in microLamports
 }
@@ -491,6 +492,7 @@ export default class PumpswapService {
     const {
       mint,
       privateKey,
+      amount: specifiedAmount, // Optional amount to sell
       slippage = 5,
       priorityFee = 1_100_100,
     } = sellData;
@@ -533,13 +535,35 @@ export default class PumpswapService {
     const userBaseTokenBalanceInfo = await connection.getTokenAccountBalance(
       baseTokenAta.address
     );
-    const amount = BigInt(userBaseTokenBalanceInfo.value.amount || 0);
+    const totalBalance = BigInt(userBaseTokenBalanceInfo.value.amount || 0);
 
-    if (amount === BigInt(0)) {
+    if (totalBalance === BigInt(0)) {
       throw new Error("No tokens to sell");
     }
 
-    const minQuoteOut = await getSellAmountOut(poolInfo, amount, slippage);
+    // Use specified amount if provided, otherwise sell all
+    const amount = specifiedAmount ? BigInt(specifiedAmount) : totalBalance;
+
+    // Ensure we don't try to sell more than we have
+    const amountToSell = amount > totalBalance ? totalBalance : amount;
+
+    console.log(
+      `🎯 Selling ${amountToSell} tokens out of ${totalBalance} total balance`
+    );
+
+    if (amountToSell === BigInt(0)) {
+      throw new Error("Amount to sell is zero");
+    }
+
+    if (amountToSell === BigInt(0)) {
+      throw new Error("Amount to sell is zero");
+    }
+
+    const minQuoteOut = await getSellAmountOut(
+      poolInfo,
+      amountToSell,
+      slippage
+    );
     const ixData: CreateSellIXParams = {
       pool: poolId,
       user: payer.publicKey,
@@ -550,7 +574,7 @@ export default class PumpswapService {
       pool_base_token_ata: poolBaseTokenAccount,
       pool_quote_token_ata: poolQuoteTokenAccount,
       protocol_fee_ata,
-      base_amount_in: amount,
+      base_amount_in: amountToSell,
       min_quote_amount_out: minQuoteOut,
       poolInfo, // 🎯 CRITICAL: Add poolInfo for correct creator vault authority derivation
       // 🚀 SELL: 21 accounts needed (includes fee accounts but no volume accumulators)

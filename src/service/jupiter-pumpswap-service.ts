@@ -840,6 +840,7 @@ export class JupiterPumpswapService {
         const sellData = {
           mint: new PublicKey(tokenAddress),
           privateKey: bs58.encode(sellerKeypair.secretKey),
+          amount: sellAmount, // Pass the specific amount to sell
         };
 
         // Use sellWithFeeCollection for proper fee handling
