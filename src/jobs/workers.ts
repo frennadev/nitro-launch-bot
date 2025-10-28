@@ -785,11 +785,9 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         const { executeBonkSell } = await import(
           "../service/bonk-transaction-handler"
         );
-        const { recordTransactionWithActualAmounts } = await import(
+        const { recordTransactionWithActualAmounts, decryptKeypairBot } = await import(
           "../backend/utils"
         );
-        const { Keypair } = await import("@solana/web3.js");
-        const bs58 = await import("bs58");
 
         // Execute Bonk sells for each wallet
         const sellPromises = data.buyerWallets.map(
@@ -803,9 +801,9 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
               // Record the transaction with actual SOL received
               let walletPubkey = "unknown";
               try {
-                walletPubkey = Keypair.fromSecretKey(
-                  bs58.default.decode(walletPrivateKey)
-                ).publicKey.toBase58();
+                // Use bot decryption to get keypair from encrypted private key
+                const keypair = decryptKeypairBot(walletPrivateKey);
+                walletPubkey = keypair.publicKey.toBase58();
               } catch {}
               if (result && result.success && result.signature) {
                 await recordTransactionWithActualAmounts(

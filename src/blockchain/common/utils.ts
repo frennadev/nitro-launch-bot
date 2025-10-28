@@ -109,6 +109,7 @@ export function secretKeyToKeypair(secretKey: string) {
     try {
       // Use the local decryption utility
       finalKey = decryptWalletKey(cleanKey);
+      logger.info(`Decrypted key length: ${finalKey.length}, first 10 chars: ${finalKey.substring(0, 10)}`);
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -118,6 +119,7 @@ export function secretKeyToKeypair(secretKey: string) {
 
   // Verify the final key is in base58 format
   if (!isBase58Key(finalKey)) {
+    logger.error(`Key verification failed. Length: ${finalKey.length}, First 20 chars: ${finalKey.substring(0, 20)}, Is encrypted format: ${isEncryptedKey(finalKey)}`);
     throw new Error(
       `Invalid secret key format: Key is not in valid base58 format`
     );
