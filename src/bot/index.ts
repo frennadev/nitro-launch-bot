@@ -1388,8 +1388,8 @@ bot.callbackQuery(CallBackQueries.PREDICT_MC, async (ctx) => {
 });
 
 // Callback handlers for token CA sell buttons
-bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
-  const sellPercent = parseInt(ctx.match![1]);
+bot.callbackQuery(/^sell_ca_([\d.]+)_(.+)$/, async (ctx) => {
+  const sellPercent = parseFloat(ctx.match![1]);
   const tokenAddress = ctx.match![2];
 
   // Answer callback query immediately with feedback
@@ -1550,11 +1550,16 @@ bot.callbackQuery(/^sellPct_([^_]+)_([^_]+)$/, async (ctx) => {
 
       // Show percentage selection for external tokens
       const keyboard = new InlineKeyboard()
-        .text("💸 Sell 25%", `sell_ca_25_${fullTokenAddress}`)
-        .text("💸 Sell 50%", `sell_ca_50_${fullTokenAddress}`)
+        .text("💸 0.5%", `sell_ca_0.5_${fullTokenAddress}`)
+        .text("💸 1%", `sell_ca_1_${fullTokenAddress}`)
+        .text("💸 5%", `sell_ca_5_${fullTokenAddress}`)
         .row()
-        .text("💸 Sell 75%", `sell_ca_75_${fullTokenAddress}`)
-        .text("💸 Sell 100%", `sell_ca_100_${fullTokenAddress}`)
+        .text("💸 10%", `sell_ca_10_${fullTokenAddress}`)
+        .text("💸 25%", `sell_ca_25_${fullTokenAddress}`)
+        .text("💸 50%", `sell_ca_50_${fullTokenAddress}`)
+        .row()
+        .text("💸 75%", `sell_ca_75_${fullTokenAddress}`)
+        .text("💸 100%", `sell_ca_100_${fullTokenAddress}`)
         .row()
         .text("❌ Cancel", CallBackQueries.CANCEL);
 
@@ -1867,7 +1872,7 @@ bot.callbackQuery(/^refresh_cto_monitor_(.+)$/, async (ctx) => {
 });
 
 // Callback handler for CTO sell buttons
-bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
+bot.callbackQuery(/^sell_ca_([\d.]+)_(.+)$/, async (ctx) => {
   const [, sellPercent, tokenAddress] = ctx.match!;
   await safeAnswerCallbackQuery(ctx, `💸 Selling ${sellPercent}%...`);
 
@@ -1879,7 +1884,7 @@ bot.callbackQuery(/^sell_ca_(\d+)_(.+)$/, async (ctx) => {
   await ctx.conversation.enter(
     "externalTokenSellConversation",
     tokenAddress,
-    parseInt(sellPercent)
+    parseFloat(sellPercent)
   );
 });
 
@@ -2837,8 +2842,14 @@ bot.callbackQuery(
             .url("📊 Chart", `https://dexscreener.com/solana/${tokenAddress}`)
             .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
             .row()
+            .text("💸 0.5%", `sell_ca_0.5_${tokenAddress}`)
+            .text("💸 1%", `sell_ca_1_${tokenAddress}`)
+            .text("💸 5%", `sell_ca_5_${tokenAddress}`)
+            .row()
+            .text("💸 10%", `sell_ca_10_${tokenAddress}`)
             .text("💸 25%", `sell_ca_25_${tokenAddress}`)
             .text("💸 50%", `sell_ca_50_${tokenAddress}`)
+            .row()
             .text("💸 75%", `sell_ca_75_${tokenAddress}`)
             .text("💸 100%", `sell_ca_100_${tokenAddress}`)
             .row()
@@ -3199,8 +3210,14 @@ bot.callbackQuery(/^remonitor_data_(.+)$/, async (ctx) => {
         .url("📊 Chart", `https://dexscreener.com/solana/${tokenAddress}`)
         .text("📈 CTO", `${CallBackQueries.CTO}_${tokenAddress}`)
         .row()
+        .text("💸 0.5%", `sell_ca_0.5_${tokenAddress}`)
+        .text("💸 1%", `sell_ca_1_${tokenAddress}`)
+        .text("💸 5%", `sell_ca_5_${tokenAddress}`)
+        .row()
+        .text("💸 10%", `sell_ca_10_${tokenAddress}`)
         .text("💸 25%", `sell_ca_25_${tokenAddress}`)
         .text("💸 50%", `sell_ca_50_${tokenAddress}`)
+        .row()
         .text("💸 75%", `sell_ca_75_${tokenAddress}`)
         .text("💸 100%", `sell_ca_100_${tokenAddress}`)
         .row()
@@ -4335,6 +4352,10 @@ bot.on("callback_query:data", async (ctx) => {
         const sellKb = new InlineKeyboard()
           .text("← Back", `back-_${address}`)
           .text("↻ Refresh", `refresh_sell_${address}`)
+          .row()
+          .text("0.5%", `sell_ca_0.5_${address}`)
+          .text("1%", `sell_ca_1_${address}`)
+          .text("5%", `sell_ca_5_${address}`)
           .row()
           .text("10%", `sell_ca_10_${address}`)
           .text("25%", `sell_ca_25_${address}`)

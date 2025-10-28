@@ -58,25 +58,32 @@ export const sellIndividualToken = async (
   // Get token info for price calculation using Solana Tracker
   const tokenInfo = await getTokenInfo(address);
   let tokenPrice = tokenInfo?.priceUsd ? parseFloat(tokenInfo.priceUsd) : 0;
-  
+
   // If price is still 0, try direct Solana Tracker service as fallback
   if (tokenPrice === 0) {
-    console.log(`[sellIndividualToken] Price is 0, trying direct Solana Tracker for ${address}`);
+    console.log(
+      `[sellIndividualToken] Price is 0, trying direct Solana Tracker for ${address}`
+    );
     try {
       const directTokenInfo = await solanaTrackerService.getTokenInfo(address);
       if (directTokenInfo?.price) {
         tokenPrice = directTokenInfo.price;
-        console.log(`[sellIndividualToken] Direct Solana Tracker price: $${tokenPrice}`);
+        console.log(
+          `[sellIndividualToken] Direct Solana Tracker price: $${tokenPrice}`
+        );
       }
     } catch (error) {
-      console.error(`[sellIndividualToken] Direct Solana Tracker failed:`, error);
+      console.error(
+        `[sellIndividualToken] Direct Solana Tracker failed:`,
+        error
+      );
     }
   }
-  
+
   console.log(`[sellIndividualToken] Final token ${address} price info:`, {
     priceUsd: tokenInfo?.priceUsd,
     finalPrice: tokenPrice,
-    tokenInfo: tokenInfo ? 'found' : 'not found'
+    tokenInfo: tokenInfo ? "found" : "not found",
   });
 
   // If a specific wallet is provided, filter to only that wallet
@@ -197,6 +204,25 @@ ${walletDetails}
     });
 
     kb.row(
+      {
+        text: `📈 Sell 0.5% (${((wallet.balance * 0.005) / 1e6).toFixed(2)} tokens)`,
+        callback_data: `s0.5_${shortWalletAddr}_${shortTokenAddr}`,
+      },
+      {
+        text: `📈 Sell 1% (${((wallet.balance * 0.01) / 1e6).toFixed(2)} tokens)`,
+        callback_data: `s1_${shortWalletAddr}_${shortTokenAddr}`,
+      },
+      {
+        text: `📈 Sell 5% (${((wallet.balance * 0.05) / 1e6).toFixed(2)} tokens)`,
+        callback_data: `s5_${shortWalletAddr}_${shortTokenAddr}`,
+      }
+    );
+
+    kb.row(
+      {
+        text: `📈 Sell 10% (${((wallet.balance * 0.1) / 1e6).toFixed(2)} tokens)`,
+        callback_data: `s10_${shortWalletAddr}_${shortTokenAddr}`,
+      },
       {
         text: `📈 Sell 25% (${((wallet.balance * 0.25) / 1e6).toFixed(2)} tokens)`,
         callback_data: `s25_${shortWalletAddr}_${shortTokenAddr}`,
@@ -353,6 +379,10 @@ async function handleWalletSellAction(
   fullWalletAddress = targetWallet.publicKey;
 
   if (
+    action === "s0.5" ||
+    action === "s1" ||
+    action === "s5" ||
+    action === "s10" ||
     action === "s25" ||
     action === "s50" ||
     action === "s75" ||
@@ -361,6 +391,18 @@ async function handleWalletSellAction(
     let sellPercent = 0;
 
     switch (action) {
+      case "s0.5":
+        sellPercent = 0.5;
+        break;
+      case "s1":
+        sellPercent = 1;
+        break;
+      case "s5":
+        sellPercent = 5;
+        break;
+      case "s10":
+        sellPercent = 10;
+        break;
       case "s25":
         sellPercent = 25;
         break;
@@ -476,6 +518,24 @@ ${tokenPrice > 0 ? `💵 Token Price: $${tokenPrice.toFixed(8)}` : ""}
 
     const detailsKb = new InlineKeyboard()
       .row(
+        {
+          text: "📈 Sell 0.5%",
+          callback_data: `s0.5_${shortWalletAddr}_${shortTokenAddr}`,
+        },
+        {
+          text: "📈 Sell 1%",
+          callback_data: `s1_${shortWalletAddr}_${shortTokenAddr}`,
+        },
+        {
+          text: "📈 Sell 5%",
+          callback_data: `s5_${shortWalletAddr}_${shortTokenAddr}`,
+        }
+      )
+      .row(
+        {
+          text: "📈 Sell 10%",
+          callback_data: `s10_${shortWalletAddr}_${shortTokenAddr}`,
+        },
         {
           text: "📈 Sell 25%",
           callback_data: `s25_${shortWalletAddr}_${shortTokenAddr}`,
