@@ -36,6 +36,14 @@ export const sendLaunchSuccessNotification = async (
     },
   });
 
+  // Validate chatId before sending
+  if (!chatId || chatId === null || chatId === undefined || isNaN(chatId)) {
+    console.warn(
+      `[sendLaunchSuccessNotification]: Invalid chatId: ${chatId}. Skipping message send.`
+    );
+    return;
+  }
+
   const messageData = await buildLaunchSuccessMessage(
     tokenAddress,
     tokenName,
@@ -67,6 +75,14 @@ export const sendBonkLaunchSuccessNotification = async (
   tokenName: string,
   symbol: string
 ) => {
+  // Validate chatId before sending
+  if (!chatId || chatId === null || chatId === undefined || isNaN(chatId)) {
+    console.warn(
+      `[sendBonkLaunchSuccessNotification]: Invalid chatId: ${chatId}. Skipping message send.`
+    );
+    return;
+  }
+
   try {
     const messageData = await buildBonkLaunchSuccessMessage(
       tokenAddress,
@@ -361,6 +377,14 @@ export const handleLaunchDataRefresh = async (
   tokenName: string,
   symbol: string
 ) => {
+  // Validate chatId before sending
+  if (!chatId || chatId === null || chatId === undefined || isNaN(chatId)) {
+    console.warn(
+      `[handleLaunchDataRefresh]: Invalid chatId: ${chatId}. Skipping message send.`
+    );
+    return;
+  }
+
   try {
     const messageData = await buildLaunchSuccessMessage(
       tokenAddress,
@@ -405,6 +429,14 @@ export const handleBonkLaunchDataRefresh = async (
   tokenName: string,
   symbol: string
 ) => {
+  // Validate chatId before sending
+  if (!chatId || chatId === null || chatId === undefined || isNaN(chatId)) {
+    console.warn(
+      `[handleBonkLaunchDataRefresh]: Invalid chatId: ${chatId}. Skipping message send.`
+    );
+    return;
+  }
+
   try {
     const messageData = await buildBonkLaunchSuccessMessage(
       tokenAddress,
@@ -447,6 +479,14 @@ export const sendLaunchFailureNotification = async (
   tokenName: string,
   symbol: string
 ) => {
+  // Validate chatId before sending
+  if (!chatId || chatId === null || chatId === undefined || isNaN(chatId)) {
+    console.warn(
+      `[sendLaunchFailureNotification]: Invalid chatId: ${chatId}. Skipping message send.`
+    );
+    return;
+  }
+
   const msg = [
     `❌ <b>Token Launch Failed</b>`,
     ``,
