@@ -1,5 +1,6 @@
 import bot from ".";
 import type { Context } from "grammy";
+import { logger } from "../blockchain/common/logger";
 
 export interface LoadingState {
   chatId: number;
@@ -156,6 +157,24 @@ export async function createBackgroundLoadingState(
 
   const config = operationMessages[operation];
 
+  // Validate chatId before sending message
+  if (!chatId || chatId === null || chatId === undefined || isNaN(chatId)) {
+    logger.warn(
+      `[createBackgroundLoadingState]: Invalid chatId: ${chatId}. Skipping message send.`
+    );
+
+    // Create a dummy loading state without sending message
+    const loadingState: LoadingState = {
+      chatId: 0, // Use 0 for invalid chatId
+      messageId: 0, // Use 0 for no message
+      operation,
+      startTime: Date.now(),
+    };
+
+    activeLoadingStates.set(loadingKey, loadingState);
+    return loadingKey;
+  }
+
   // Send initial message to user
   const message = await bot.api.sendMessage(chatId, config.initial, {
     parse_mode: "HTML",
@@ -194,6 +213,14 @@ export async function updateLoadingState(
   const state = activeLoadingStates.get(loadingKey);
   if (!state) return;
 
+  // Skip sending messages if chatId is invalid
+  if (!state.chatId || state.chatId === 0) {
+    logger.warn(
+      `[updateLoadingState]: Invalid chatId: ${state.chatId}. Skipping message send.`
+    );
+    return;
+  }
+
   const config =
     operationMessages[state.operation as keyof typeof operationMessages];
   const phaseMessage = customMessage || config.phases[phase] || "Processing...";
@@ -211,7 +238,9 @@ export async function updateLoadingState(
     });
   } catch (error) {
     // Message might be too old to edit, ignore
-    console.warn("Failed to update loading message:", error);
+    logger.warn(
+      `[updateLoadingState]: Failed to update loading message for chatId ${state.chatId}: ${error}`
+    );
   }
 }
 
@@ -225,6 +254,15 @@ export async function completeLoadingState(
 ): Promise<void> {
   const state = activeLoadingStates.get(loadingKey);
   if (!state) return;
+
+  // Skip sending messages if chatId is invalid
+  if (!state.chatId || state.chatId === 0) {
+    logger.warn(
+      `[completeLoadingState]: Invalid chatId: ${state.chatId}. Skipping message send.`
+    );
+    activeLoadingStates.delete(loadingKey);
+    return;
+  }
 
   const config =
     operationMessages[state.operation as keyof typeof operationMessages];
@@ -242,9 +280,15 @@ export async function completeLoadingState(
     });
   } catch (error) {
     // If editing fails, send a new message
-    await bot.api.sendMessage(state.chatId, message, {
-      parse_mode: "HTML",
-    });
+    try {
+      await bot.api.sendMessage(state.chatId, message, {
+        parse_mode: "HTML",
+      });
+    } catch (sendError) {
+      logger.warn(
+        `[completeLoadingState]: Failed to send message to chatId ${state.chatId}: ${sendError}`
+      );
+    }
   }
 
   activeLoadingStates.delete(loadingKey);
@@ -261,11 +305,18 @@ export async function failLoadingState(
   const state = activeLoadingStates.get(loadingKey);
   if (!state) return;
 
+  // Skip sending messages if chatId is invalid
+  if (!state.chatId || state.chatId === 0) {
+    logger.warn(
+      `[failLoadingState]: Invalid chatId: ${state.chatId}. Skipping message send.`
+    );
+    activeLoadingStates.delete(loadingKey);
+    return;
+  }
+
   const config =
     operationMessages[state.operation as keyof typeof operationMessages];
-  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-
-  let message = customFailMessage || config.error;
+  const message = customFailMessage || config.error;
 
   try {
     await bot.api.editMessageText(state.chatId, state.messageId, message, {
@@ -273,9 +324,15 @@ export async function failLoadingState(
     });
   } catch (error) {
     // If editing fails, send a new message
-    await bot.api.sendMessage(state.chatId, message, {
-      parse_mode: "HTML",
-    });
+    try {
+      await bot.api.sendMessage(state.chatId, message, {
+        parse_mode: "HTML",
+      });
+    } catch (sendError) {
+      logger.warn(
+        `[failLoadingState]: Failed to send message to chatId ${state.chatId}: ${sendError}`
+      );
+    }
   }
 
   activeLoadingStates.delete(loadingKey);
@@ -303,6 +360,12 @@ function startLoadingAnimation(loadingKey: string): void {
 
     if (state.operation === "token_launch") {
       message += `\n\n💡 <i>May take up to a minute dependent on your buy amount, we're trying to mix the funds and ensure it is untraceable</i>`;
+    }
+
+    // Skip animation if chatId is invalid
+    if (!state.chatId || state.chatId === 0) {
+      clearInterval(animationInterval);
+      return;
     }
 
     try {

@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import { InlineKeyboardMarkup } from "grammy/types";
 import bot from "../bot";
+import { logger } from "../blockchain/common/logger";
 
 interface EditOptions {
   parse_mode?: "MarkdownV2" | "Markdown" | "HTML";
@@ -108,6 +109,14 @@ export const sendNotification = async (
   message: string,
   keyboard?: InlineKeyboardMarkup
 ) => {
+  // Validate chatId before sending
+  if (!chatId || chatId === null || chatId === undefined || isNaN(chatId)) {
+    logger.warn(
+      `[sendNotification]: Invalid chatId: ${chatId}. Skipping message send.`
+    );
+    return;
+  }
+
   await bot.api.sendMessage(chatId, message, {
     parse_mode: "HTML",
     reply_markup: keyboard || { remove_keyboard: true },

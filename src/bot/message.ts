@@ -479,6 +479,14 @@ export const sendNotification = async (
   chatId: number,
   message: string
 ) => {
+  // Validate chatId before sending
+  if (!chatId || chatId === null || chatId === undefined || isNaN(chatId)) {
+    console.warn(
+      `[sendNotification]: Invalid chatId: ${chatId}. Skipping message send.`
+    );
+    return;
+  }
+
   try {
     await bot.api.sendMessage(chatId, message, { parse_mode: "HTML" });
   } catch (error: unknown) {

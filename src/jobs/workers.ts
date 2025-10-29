@@ -785,9 +785,8 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         const { executeBonkSell } = await import(
           "../service/bonk-transaction-handler"
         );
-        const { recordTransactionWithActualAmounts, decryptKeypairBot } = await import(
-          "../backend/utils"
-        );
+        const { recordTransactionWithActualAmounts, decryptKeypairBot } =
+          await import("../backend/utils");
 
         // Execute Bonk sells for each wallet
         const sellPromises = data.buyerWallets.map(
@@ -876,13 +875,31 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         `${failedSells.length > 0 ? `⚠️ ${failedSells.length} wallet(s) failed to sell\n\n` : ""}` +
         `⏳ <b>Fetching detailed transaction data...</b>`;
 
-      const initialNotification = await bot.api.sendMessage(
-        data.userChatId,
-        initialMessage,
-        {
-          parse_mode: "HTML",
+      // Only send notification if userChatId is valid
+      let initialNotification = null;
+      if (
+        data.userChatId &&
+        !isNaN(data.userChatId) &&
+        data.userChatId !== null
+      ) {
+        try {
+          initialNotification = await bot.api.sendMessage(
+            data.userChatId,
+            initialMessage,
+            {
+              parse_mode: "HTML",
+            }
+          );
+        } catch (msgError: any) {
+          logger.warn(
+            `[${logIdentifier}] Failed to send initial notification to chatId ${data.userChatId}: ${msgError.message}`
+          );
         }
-      );
+      } else {
+        logger.warn(
+          `[${logIdentifier}] Invalid userChatId: ${data.userChatId}. Skipping notification.`
+        );
+      }
 
       // Wait for transaction confirmation and parsing (3-5 seconds)
       logger.info(
@@ -944,25 +961,40 @@ export const sellWalletWorker = new Worker<SellWalletJob>(
         `${sellSummary.failedWallets > 0 ? `⚠️ <i>${sellSummary.failedWallets} wallet(s) failed to sell</i>\n\n` : ""}` +
         `💡 <i>View individual transactions in your token list for more details.</i>`;
 
-      try {
-        await bot.api.editMessageText(
-          data.userChatId,
-          initialNotification.message_id,
-          finalMessage,
-          {
-            parse_mode: "HTML",
+      // Only update notification if initial notification was sent successfully
+      if (initialNotification && data.userChatId && !isNaN(data.userChatId)) {
+        try {
+          await bot.api.editMessageText(
+            data.userChatId,
+            initialNotification.message_id,
+            finalMessage,
+            {
+              parse_mode: "HTML",
+            }
+          );
+          logger.info(
+            `[${logIdentifier}] Updated notification with accurate transaction data`
+          );
+        } catch (error) {
+          logger.warn(
+            `[${logIdentifier}] Failed to edit notification, sending new message:`,
+            error
+          );
+          // Fallback: send new message if editing fails - but only if chatId is valid
+          if (data.userChatId && !isNaN(data.userChatId)) {
+            try {
+              await sendNotification(bot, data.userChatId, finalMessage);
+            } catch (sendError) {
+              logger.warn(
+                `[${logIdentifier}] Failed to send fallback notification: ${sendError}`
+              );
+            }
           }
-        );
-        logger.info(
-          `[${logIdentifier}] Updated notification with accurate transaction data`
-        );
-      } catch (error) {
+        }
+      } else {
         logger.warn(
-          `[${logIdentifier}] Failed to edit notification, sending new message:`,
-          error
+          `[${logIdentifier}] No initial notification to update (invalid chatId: ${data.userChatId})`
         );
-        // Fallback: send new message if editing fails
-        await sendNotification(bot, data.userChatId, finalMessage);
       }
 
       // Phase 5: Wallet Sell Completed
@@ -2167,7 +2199,7 @@ launchTokenWorker.on("failed", async (job) => {
   await handleTokenLaunchFailure(job!.data.tokenAddress, job?.failedReason);
 
   const token = job!.data;
-  
+
   // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
   try {
     await sendLaunchFailureNotification(
@@ -2177,7 +2209,9 @@ launchTokenWorker.on("failed", async (job) => {
       token.tokenSymbol
     );
   } catch (error) {
-    logger.warn(`Failed to send Telegram launch failure notification: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn(
+      `Failed to send Telegram launch failure notification: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 });
 launchTokenWorker.on("closed", () => {
@@ -2195,7 +2229,7 @@ sellDevWorker.on("error", async (error) => {
 });
 sellDevWorker.on("failed", async (job) => {
   await releaseDevSellLock(job!.data.tokenAddress);
-  
+
   // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
   try {
     await sendNotification(
@@ -2204,7 +2238,9 @@ sellDevWorker.on("failed", async (job) => {
       "❌ <b>Dev Wallet Sell Failed</b>\n\n🔄 <i>Please try again from your tokens list.</i>"
     );
   } catch (error) {
-    logger.warn(`Failed to send Telegram notification for failed dev sell job: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn(
+      `Failed to send Telegram notification for failed dev sell job: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 });
 sellDevWorker.on("closed", () => {
@@ -2222,7 +2258,7 @@ sellWalletWorker.on("error", async (error) => {
 });
 sellWalletWorker.on("failed", async (job) => {
   await releaseWalletSellLock(job!.data.tokenAddress);
-  
+
   // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
   try {
     await sendNotification(
@@ -2231,7 +2267,9 @@ sellWalletWorker.on("failed", async (job) => {
       "❌ <b>Wallet Sells Failed</b>\n\n🔄 <i>Please try again from your tokens list.</i>"
     );
   } catch (error) {
-    logger.warn(`Failed to send Telegram notification for failed sell job: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn(
+      `Failed to send Telegram notification for failed sell job: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 });
 sellWalletWorker.on("closed", async () => {
@@ -2255,7 +2293,7 @@ prepareLaunchWorker.on("failed", async (job) => {
   );
 
   const token = job!.data;
-  
+
   // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
   try {
     await sendNotification(
@@ -2264,7 +2302,9 @@ prepareLaunchWorker.on("failed", async (job) => {
       `❌ <b>Token preparation failed</b>\n\nToken: ${token.tokenName} ($${token.tokenSymbol})\n\n🔄 You can try again from your tokens list.`
     );
   } catch (error) {
-    logger.warn(`Failed to send Telegram notification for failed prepare launch job: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn(
+      `Failed to send Telegram notification for failed prepare launch job: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 });
 prepareLaunchWorker.on("closed", () => {
@@ -2282,7 +2322,7 @@ launchTokenFromDappWorker.on("error", async (error) => {
 });
 launchTokenFromDappWorker.on("failed", async (job) => {
   const token = job!.data;
-  
+
   // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
   try {
     await sendLaunchFailureNotification(
@@ -2292,7 +2332,9 @@ launchTokenFromDappWorker.on("failed", async (job) => {
       job?.failedReason || "Launch failed"
     );
   } catch (error) {
-    logger.warn(`Failed to send Telegram dapp launch failure notification: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn(
+      `Failed to send Telegram dapp launch failure notification: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 });
 launchTokenFromDappWorker.on("closed", () => {
@@ -2319,7 +2361,7 @@ executeLaunchWorker.on("failed", async (job) => {
   await handleTokenLaunchFailure(job!.data.tokenAddress, job?.failedReason);
 
   const token = job!.data;
-  
+
   // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
   try {
     await sendLaunchFailureNotification(
@@ -2329,7 +2371,9 @@ executeLaunchWorker.on("failed", async (job) => {
       token.tokenSymbol
     );
   } catch (error) {
-    logger.warn(`Failed to send Telegram execute launch failure notification: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn(
+      `Failed to send Telegram execute launch failure notification: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 });
 executeLaunchWorker.on("closed", () => {
