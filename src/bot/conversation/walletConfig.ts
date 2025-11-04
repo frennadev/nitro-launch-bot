@@ -44,6 +44,7 @@ const walletConfigConversation = async (
     .text("👥 Buyer Wallets", CallBackQueries.MANAGE_BUYER_WALLETS)
     .row()
     .text("🔀 Mix Funds", CallBackQueries.MIX_FUNDS)
+    .text("📤 Export Funding", CallBackQueries.EXPORT_FUNDING_WALLET)
     .row()
     .text("💸 Withdraw Dev", CallBackQueries.WITHDRAW_DEV_WALLET)
     .text("💸 Withdraw Funding", CallBackQueries.WITHDRAW_FUNDING_WALLET)
@@ -85,6 +86,37 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
     // Import and start main menu conversation
     const mainMenuConversation = await import("./mainMenu");
     return await mainMenuConversation.default(conversation, next);
+  }
+
+  if (data === CallBackQueries.EXPORT_FUNDING_WALLET) {
+    try {
+      const { getFundingWallet } = await import("../../backend/functions");
+      const fundingWallet = await getFundingWallet(String(user.id));
+
+      if (!fundingWallet) {
+        await sendMessage(next, "❌ Funding wallet not found.");
+        return conversation.halt();
+      }
+
+      await sendMessage(
+        next,
+        `🔐 <b>Funding Wallet Export</b>\n\n` +
+          `<b>Public Address:</b>\n<code>${fundingWallet.publicKey}</code>\n\n` +
+          `<b>Private Key:</b>\n<code>${fundingWallet.privateKey}</code>\n\n` +
+          `<b>⚠️ SECURITY WARNING:</b>\n` +
+          `• Never share your private key with anyone\n` +
+          `• Store it in a secure location\n` +
+          `• Delete this message after saving\n` +
+          `• Anyone with this key can access your funds\n\n` +
+          `<i>💡 You can import this wallet into Phantom, Solflare, or any Solana wallet.</i>`,
+        { parse_mode: "HTML" }
+      );
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      await sendMessage(next, `❌ Error exporting wallet: ${errorMessage}`);
+    }
+    return conversation.halt();
   }
 
   if (data === CallBackQueries.GENERATE_FUNDING_WALLET) {
@@ -158,19 +190,12 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
   if (data === CallBackQueries.MIX_FUNDS) {
     // Check if user has buyer wallets and funding wallet balance
     if (buyerWallets.length === 0) {
-      await sendMessage(
-        next,
-        "Create buyer wallets first ⚡",
-        {
-          reply_markup: new InlineKeyboard()
-            .text(
-              "👥 Create Buyer Wallets",
-              CallBackQueries.MANAGE_BUYER_WALLETS
-            )
-            .row()
-            .text("← Back", CallBackQueries.BACK),
-        }
-      );
+      await sendMessage(next, "Create buyer wallets first ⚡", {
+        reply_markup: new InlineKeyboard()
+          .text("👥 Create Buyer Wallets", CallBackQueries.MANAGE_BUYER_WALLETS)
+          .row()
+          .text("← Back", CallBackQueries.BACK),
+      });
       return conversation.halt();
     }
 
@@ -202,24 +227,27 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
     }
 
     // Use the new 73-wallet distribution system for proper randomized amounts
-    const { generateBuyDistribution, calculateRequiredWallets } = await import("../../backend/functions");
-    
+    const { generateBuyDistribution, calculateRequiredWallets } = await import(
+      "../../backend/functions"
+    );
+
     // Calculate the total amount available for distribution
     const totalAmountForDistribution = availableForMixing;
-    
+
     // ✅ FIXED: Calculate how many wallets are actually needed for this amount
     const walletsNeeded = calculateRequiredWallets(totalAmountForDistribution);
     const actualWalletsToUse = Math.min(walletsNeeded, buyerWallets.length);
-    
+
     // Generate the proper 73-wallet distribution using only the needed wallets
     const distributionAmounts = generateBuyDistribution(
       totalAmountForDistribution,
       actualWalletsToUse, // ✅ Use calculated wallet count, not all wallets!
       0.01 // randomSeed (optional)
     );
-    
+
     // Calculate average amount for display (based on actual wallets used)
-    const averageAmountPerWallet = totalAmountForDistribution / actualWalletsToUse;
+    const averageAmountPerWallet =
+      totalAmountForDistribution / actualWalletsToUse;
     const totalBuyerWallets = buyerWallets.length;
 
     // Show confirmation with details
@@ -232,8 +260,8 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
         `<b>Total Buyer Wallets:</b> ${totalBuyerWallets}\n` +
         `<b>Wallets Needed for Amount:</b> ${actualWalletsToUse} wallets\n` +
         `<b>Average per Used Wallet:</b> ~${averageAmountPerWallet.toFixed(6)} SOL\n` +
-        `<b>Distribution:</b> Tiered (${actualWalletsToUse <= 15 ? 'Tier 1' : actualWalletsToUse <= 25 ? 'Tier 1-2' : actualWalletsToUse <= 39 ? 'Tier 1-3' : actualWalletsToUse <= 58 ? 'Tier 1-4' : 'All Tiers'})\n` +
-        `<b>Large buys (≥2.0 SOL):</b> ${actualWalletsToUse >= 40 ? 'Yes (Wallets 40+)' : 'No (Amount too small)'}\n\n` +
+        `<b>Distribution:</b> Tiered (${actualWalletsToUse <= 15 ? "Tier 1" : actualWalletsToUse <= 25 ? "Tier 1-2" : actualWalletsToUse <= 39 ? "Tier 1-3" : actualWalletsToUse <= 58 ? "Tier 1-4" : "All Tiers"})\n` +
+        `<b>Large buys (≥2.0 SOL):</b> ${actualWalletsToUse >= 40 ? "Yes (Wallets 40+)" : "No (Amount too small)"}\n\n` +
         `<i>🎯 Smart wallet selection: Only uses ${actualWalletsToUse} of your ${totalBuyerWallets} wallets based on the amount being mixed.</i>\n\n` +
         `Are you sure you want to proceed?`,
       {
@@ -277,7 +305,7 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
         if (totalAmountForMixer <= 0) {
           await sendMessage(
             confirmCtx,
-            `❌ Insufficient funds for mixer operation.\n\nNeed: ${(totalAmountForDistribution + (totalTransferFees / 1e9)).toFixed(6)} SOL minimum\nHave: ${fundingBalance.toFixed(6)} SOL`
+            `❌ Insufficient funds for mixer operation.\n\nNeed: ${(totalAmountForDistribution + totalTransferFees / 1e9).toFixed(6)} SOL minimum\nHave: ${fundingBalance.toFixed(6)} SOL`
           );
           return conversation.halt();
         }
@@ -312,8 +340,8 @@ Status: ${buyerWallets.length > 0 ? "✅ Ready" : "⚠️ Not configured"}
               `✅ <b>Smart Wallet Distribution Complete!</b>\n\n` +
                 `Mixed ${totalAmountForDistribution.toFixed(6)} SOL (90% of funding wallet) across ${actualWalletsToUse} of ${buyerWallets.length} buyer wallets.\n\n` +
                 `<b>Successful transfers:</b> ${mixerResult.successCount}/${mixerResult.totalRoutes || actualWalletsToUse}\n` +
-                `<b>Distribution:</b> Tiered amounts (${actualWalletsToUse <= 15 ? 'Tier 1' : actualWalletsToUse <= 25 ? 'Tier 1-2' : actualWalletsToUse <= 39 ? 'Tier 1-3' : actualWalletsToUse <= 58 ? 'Tier 1-4' : 'All Tiers'})\n` +
-                `<b>Large buys (≥2.0 SOL):</b> ${actualWalletsToUse >= 40 ? 'Yes (Wallets 40+)' : 'No (Amount too small)'}\n` +
+                `<b>Distribution:</b> Tiered amounts (${actualWalletsToUse <= 15 ? "Tier 1" : actualWalletsToUse <= 25 ? "Tier 1-2" : actualWalletsToUse <= 39 ? "Tier 1-3" : actualWalletsToUse <= 58 ? "Tier 1-4" : "All Tiers"})\n` +
+                `<b>Large buys (≥2.0 SOL):</b> ${actualWalletsToUse >= 40 ? "Yes (Wallets 40+)" : "No (Amount too small)"}\n` +
                 `<b>Unused wallets:</b> ${buyerWallets.length - actualWalletsToUse} (kept clean for future use)\n` +
                 `<b>Reserve remaining:</b> ${(fundingBalance * 0.1).toFixed(6)} SOL\n\n` +
                 `<i>🎯 Smart selection: Only used the exact number of wallets needed for optimal distribution</i>`,

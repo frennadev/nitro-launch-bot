@@ -6,6 +6,7 @@ export enum CallBackQueries {
   GENERATE_WALLET = "generate_wallets",
   UPDATE_DEV_WALLET = "update_dev_wallet",
   EXPORT_DEV_WALLET = "export_dev_wallet",
+  EXPORT_FUNDING_WALLET = "export_funding_wallet",
   SELL_ALL = "sell_all",
   SELL_DEV = "sell_dev",
   SELL_PERCENT = "sell_percent",
