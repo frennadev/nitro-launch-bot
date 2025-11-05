@@ -1920,6 +1920,7 @@ export const launchTokenFromDappWorker = new Worker<LaunchDappTokenJob>(
             +userChatId,
             actualTokenAddress || data.tokenId,
             data.tokenName || "Unknown Token",
+            data.tokenSymbol || "TOKEN",
             errorMessage
           );
         } catch (notifError) {
@@ -2202,11 +2203,15 @@ launchTokenWorker.on("failed", async (job) => {
 
   // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
   try {
+    // Extract error message for user notification
+    const errorMessage = job?.failedReason || "Unknown error occurred";
+
     await sendLaunchFailureNotification(
       job!.data.userChatId,
       token.tokenAddress,
       token.tokenName,
-      token.tokenSymbol
+      token.tokenSymbol,
+      errorMessage
     );
   } catch (error) {
     logger.warn(
@@ -2329,6 +2334,7 @@ launchTokenFromDappWorker.on("failed", async (job) => {
       job!.data.userChatId,
       token.tokenId,
       token.tokenName,
+      token.tokenSymbol || "TOKEN",
       job?.failedReason || "Launch failed"
     );
   } catch (error) {
@@ -2364,11 +2370,15 @@ executeLaunchWorker.on("failed", async (job) => {
 
   // Try to send Telegram notification, but don't fail if it doesn't work (e.g., for UI-only users)
   try {
+    // Extract error message for user notification
+    const errorMessage = job?.failedReason || "Unknown error occurred";
+
     await sendLaunchFailureNotification(
       job!.data.userChatId,
       token.tokenAddress,
       token.tokenName,
-      token.tokenSymbol
+      token.tokenSymbol,
+      errorMessage
     );
   } catch (error) {
     logger.warn(

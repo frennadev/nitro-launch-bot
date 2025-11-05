@@ -477,7 +477,8 @@ export const sendLaunchFailureNotification = async (
   chatId: number,
   tokenAddress: string,
   tokenName: string,
-  symbol: string
+  symbol: string,
+  errorMessage?: string
 ) => {
   // Validate chatId before sending
   if (!chatId || chatId === null || chatId === undefined || isNaN(chatId)) {
@@ -487,13 +488,57 @@ export const sendLaunchFailureNotification = async (
     return;
   }
 
+  // Parse error message to provide user-friendly explanations
+  let userFriendlyError = "";
+  let actionableAdvice = "";
+
+  if (errorMessage) {
+    if (errorMessage.includes("Dev wallet insufficient balance")) {
+      // Extract balance information from error message
+      const balanceMatch = errorMessage.match(
+        /Available: ([\d.]+) SOL.*need ([\d.]+) SOL/
+      );
+      if (balanceMatch) {
+        const [, available, needed] = balanceMatch;
+        const shortfall = (parseFloat(needed) - parseFloat(available)).toFixed(
+          6
+        );
+        userFriendlyError = `💰 <b>Insufficient Developer Wallet Balance</b>`;
+        actionableAdvice = [
+          `<b>Current Balance:</b> ${available} SOL`,
+          `<b>Required:</b> ${needed} SOL`,
+          `<b>Shortfall:</b> ${shortfall} SOL`,
+          ``,
+          `💡 <b>How to fix:</b>`,
+          `• Add ${shortfall}+ SOL to your developer wallet`,
+          `• Or reduce your buy amount in launch settings`,
+          `• Use "💸 Withdraw Funding" to transfer SOL from funding wallet`,
+        ].join("\n");
+      } else {
+        userFriendlyError = `💰 <b>Insufficient Developer Wallet Balance</b>`;
+        actionableAdvice = `💡 Please add more SOL to your developer wallet and try again.`;
+      }
+    } else if (errorMessage.includes("insufficient funds")) {
+      userFriendlyError = `� <b>Insufficient Funds</b>`;
+      actionableAdvice = `💡 Please check your wallet balances and add more SOL if needed.`;
+    } else {
+      userFriendlyError = `⚠️ <b>Launch Error</b>`;
+      actionableAdvice = `💡 <i>Something went wrong during the launch process.</i>`;
+    }
+  } else {
+    userFriendlyError = `⚠️ <b>Launch Error</b>`;
+    actionableAdvice = `💡 <i>Something went wrong during the launch process.</i>`;
+  }
+
   const msg = [
     `❌ <b>Token Launch Failed</b>`,
     ``,
     `🪙 <b>${tokenName}</b> (${symbol})`,
     `📍 <code>${tokenAddress}</code>`,
     ``,
-    `💡 <i>Something went wrong during the launch process.</i>`,
+    userFriendlyError,
+    actionableAdvice,
+    ``,
     `🔄 <i>You can retry using the buttons below:</i>`,
   ]
     .filter(Boolean)
