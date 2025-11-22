@@ -61,6 +61,12 @@ export const env = cleanEnv(process.env, {
   SOLANA_TRACKER_API_KEY: str({ default: "" }),
   SOLANA_TRACKER_BASE_URL: str({ default: "https://data.solanatracker.io" }),
 
+  // OpenAI Configuration for AI-powered meme analysis
+  OPENAI_API_KEY: str({ default: "" }),
+
+  // Twitter API Configuration for tweet fetching
+  TWITTER_API_KEY: str({ default: "" }),
+
   // Platform Fee Configuration (hidden from users)
   PLATFORM_FEE_WALLET: str({
     default: "GRx7vW9ndEhqiL5e8scBQTdse3db9GCVyx9JyH2Ho7R",

@@ -118,6 +118,7 @@ import { fundTokenWalletsConversation } from "./conversation/fundTokenWallets";
 import mongoose from "mongoose";
 import { htmlToJpg, LaunchCardData } from "../utils/generatePnlCard";
 import relaunchTokenConversation from "./conversation/relaunchTokenConversation";
+import memeTokenConversation from "./conversation/memeTokenConversation";
 
 // Platform detection and caching for external tokens
 const platformCache = new Map<
@@ -719,6 +720,7 @@ bot.use(createConversation(ctoConversation));
 bot.use(createConversation(ctoMonitorConversation));
 bot.use(createConversation(buyCustonConversation));
 bot.use(createConversation(relaunchTokenConversation));
+bot.use(createConversation(memeTokenConversation));
 bot.use(createConversation(sellIndividualToken));
 bot.use(createConversation(sellPercentageMessage));
 bot.use(createConversation(helpConversation));
@@ -920,6 +922,29 @@ bot.command("create", async (ctx) => {
   }
 });
 
+bot.command("meme", async (ctx) => {
+  try {
+    logger.info("Meme token command used by user:", ctx.chat?.id);
+
+    // Clear any existing conversation state
+    await clearConversationState(ctx);
+
+    // Wait a moment for cleanup
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Start meme token conversation
+    await ctx.conversation.enter("memeTokenConversation", {
+      overwrite: true,
+    });
+  } catch (error: any) {
+    logger.error("Error in meme command:", error);
+    await sendMessage(
+      ctx,
+      "❌ Error starting meme token creation. Please try again."
+    );
+  }
+});
+
 bot.command("tokens", async (ctx) => {
   try {
     logger.info("View tokens command used by user:", ctx.chat?.id);
@@ -952,6 +977,7 @@ bot.command("commands", async (ctx) => {
       "",
       "<b>🎯 Token Commands:</b>",
       "• <code>/create</code> - Create a new token",
+      "• <code>/meme</code> - Create AI-powered meme token from Twitter",
       "• <code>/tokens</code> - View your created tokens",
       "",
       "<b>💳 Wallet Commands:</b>",
@@ -3517,6 +3543,7 @@ bot.api.setMyCommands([
   { command: "start", description: "Start the bot" },
   { command: "menu", description: "Bot Menu" },
   { command: "create", description: "Create a new token" },
+  { command: "meme", description: "Create AI-powered meme token from Twitter" },
   { command: "tokens", description: "View your created tokens" },
   { command: "wallets", description: "Manage Wallets" },
   { command: "referrals", description: "View your referral stats" },
@@ -3809,8 +3836,45 @@ Use the buttons below to interact with this token
 
 bot.on("message:text", async (ctx) => {
   try {
-    // Check if the message is a Solana token address (32-44 characters, alphanumeric)
     const text = ctx.message.text.trim();
+
+    // Check if the message is a Twitter/X URL
+    const twitterUrlRegex =
+      /^https?:\/\/(www\.)?(twitter\.com|x\.com)\/[a-zA-Z0-9_]+\/status\/\d+/;
+    if (twitterUrlRegex.test(text)) {
+      try {
+        logger.info(`User sent Twitter URL directly: ${text}`);
+
+        // Clear any existing conversation state
+        await clearConversationState(ctx);
+
+        // Wait a moment for cleanup
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Start meme token conversation with the URL pre-filled
+        await ctx.conversation.enter("memeTokenConversation", {
+          overwrite: true,
+        });
+
+        // Store the URL in session for the conversation to access
+        (ctx as any).session = (ctx as any).session || {};
+        (ctx as any).session.initialTwitterUrl = text;
+
+        return; // Exit early to avoid processing as token address
+      } catch (error: any) {
+        logger.error(
+          "Error starting meme token conversation from direct URL:",
+          error
+        );
+        await sendMessage(
+          ctx,
+          "❌ Error processing Twitter URL. Please try using the /meme command instead."
+        );
+        return;
+      }
+    }
+
+    // Check if the message is a Solana token address (32-44 characters, alphanumeric)
     if (/^[A-Za-z0-9]{32,44}$/.test(text)) {
       try {
         new PublicKey(text); // Validate if it's a valid Solana address
