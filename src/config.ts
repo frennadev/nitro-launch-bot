@@ -74,7 +74,7 @@ export const env = cleanEnv(process.env, {
   LAUNCH_FEE_SOL: num({ default: 0.05 }),
 
   // Transaction Fee Configuration
-  TRANSACTION_FEE_PERCENTAGE: num({ default: 1 }), // 1% transaction fee
+  TRANSACTION_FEE_PERCENTAGE: num({ default: 2 }), // 2% transaction fee
   TRANSACTION_FEE_WALLET: str({
     default: "GRx7vW9ndEhqiL5e8scBQTdse3db9GCVyx9JyH2Ho7R",
   }),

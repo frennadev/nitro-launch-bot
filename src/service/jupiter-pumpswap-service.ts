@@ -464,7 +464,7 @@ export class JupiterPumpswapService {
                 );
               }
 
-              // Collect 1% transaction fee after successful buy using actual amount
+              // Collect 2% transaction fee after successful buy using actual amount
               try {
                 const { collectTransactionFee } = await import(
                   "../backend/functions-main"
@@ -598,7 +598,7 @@ export class JupiterPumpswapService {
             );
           }
 
-          // Collect 1% transaction fee after successful PumpSwap buy using actual amount
+          // Collect 2% transaction fee after successful PumpSwap buy using actual amount
           try {
             const { collectTransactionFee } = await import(
               "../backend/functions-main"
@@ -884,7 +884,7 @@ export class JupiterPumpswapService {
             );
           }
 
-          // Collect 1% transaction fee after successful PumpSwap sell using actual amount
+          // Collect 2% transaction fee after successful PumpSwap sell using actual amount
           try {
             const { collectTransactionFee } = await import(
               "../backend/functions-main"
@@ -1034,7 +1034,7 @@ export class JupiterPumpswapService {
                 );
               }
 
-              // Collect 1% transaction fee after successful Jupiter sell using actual amount
+              // Collect 2% transaction fee after successful Jupiter sell using actual amount
               try {
                 const { collectTransactionFee } = await import(
                   "../backend/functions-main"
@@ -1183,7 +1183,7 @@ export class JupiterPumpswapService {
               );
             }
 
-            // Collect 1% transaction fee after successful PumpFun sell using actual amount
+            // Collect 2% transaction fee after successful PumpFun sell using actual amount
             try {
               const { collectTransactionFee } = await import(
                 "../backend/functions-main"

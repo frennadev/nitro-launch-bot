@@ -122,7 +122,8 @@ async function executeBonkBuy(
     const transactionFeeReserve = 0.012; // Priority fees + base fees (increased buffer)
     const accountCreationReserve = 0.005; // ATA creation costs (WSOL + token accounts)
     const safetyBuffer = 0.005; // Additional safety buffer for gas price variations
-    const totalFeeReserve = transactionFeeReserve + accountCreationReserve + safetyBuffer;
+    const totalFeeReserve =
+      transactionFeeReserve + accountCreationReserve + safetyBuffer;
     const availableForTrade = walletBalanceSOL - totalFeeReserve;
 
     logger.info(
@@ -207,7 +208,7 @@ async function executeBonkBuy(
 
     logger.info(`[${logId}] Bonk buy successful: ${signature}`);
 
-    // Collect 1% transaction fee after successful buy
+    // Collect 2% transaction fee after successful buy
     try {
       const { collectTransactionFee } = await import(
         "../../backend/functions-main"
@@ -330,7 +331,7 @@ async function executeCpmmBuy(
 
     logger.info(`[${logId}] CPMM buy successful: ${signature}`);
 
-    // Collect 1% transaction fee after successful buy
+    // Collect 2% transaction fee after successful buy
     try {
       const { collectTransactionFee } = await import(
         "../../backend/functions-main"
