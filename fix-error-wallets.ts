@@ -9,11 +9,15 @@ config();
 async function fixErrorWallets() {
   console.log("🔧 Fixing Falsely Marked ERROR Wallets...\n");
 
-  const mongoUri =
-    "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/?retryWrites=true&w=majority&appName=NitroLaunch";
-  const encryptionKey =
-    "294f6d574446132dcb92d050612dea7aa8cdfe918f29adc9681e1cdf75ad42bb";
-  const databaseName = "test";
+  const mongoUri = process.env.MONGODB_URI;
+  const encryptionKey = process.env.ENCRYPTION_SECRET;
+  const databaseName = process.env.MONGODB_DATABASE || "nitro_launch";
+
+  if (!mongoUri || !encryptionKey) {
+    throw new Error(
+      "MONGODB_URI and ENCRYPTION_SECRET environment variables are required"
+    );
+  }
 
   try {
     console.log("🔧 Connecting to production database...");

@@ -9,14 +9,16 @@ config();
 async function findProductionKey() {
   console.log("🔍 EMERGENCY: Finding Production Encryption Key...\n");
 
-  const mongoUri =
-    "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/?retryWrites=true&w=majority&appName=NitroLaunch";
-  const databaseName = "test";
+  const mongoUri = process.env.MONGODB_URI;
+  const databaseName = process.env.MONGODB_DATABASE || "nitro_launch";
+
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI environment variable is required");
+  }
 
   // Test different possible keys
   const possibleKeys = [
-    "294f6d574446132dcb92d050612dea7aa8cdfe918f29adc9681e1cdf75ad42bb", // Our working key
-    process.env.ENCRYPTION_SECRET, // Local env key
+    process.env.ENCRYPTION_SECRET, // Primary encryption key
     // Add more possible keys here if you have any ideas
   ];
 

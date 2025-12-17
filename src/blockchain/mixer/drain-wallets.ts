@@ -15,22 +15,25 @@ export async function drainAllMixerWallets(destinationAddress: string) {
 
   // Initialize wallet manager
   const walletManager = new MongoWalletManager(
-    "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/test?appName=NitroLaunch",
-    "test",
-    "294f6d574446132dcb92d050612dea7aa8cdfe918f29adc9681e1cdf75ad42bb"
+    env.MONGODB_URI,
+    env.MONGODB_DATABASE,
+    env.ENCRYPTION_SECRET
   );
 
   // Initialize connection manager with backup RPC
   const connectionManager = new SolanaConnectionManager(
-    "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e",
+    env.HELIUS_MIXER_RPC_URL,
     2000 // Priority fee
   );
 
   // Initialize fee funding wallet
+  if (!env.MIXER_FEE_FUNDING_WALLET_PRIVATE_KEY) {
+    throw new Error(
+      "MIXER_FEE_FUNDING_WALLET_PRIVATE_KEY environment variable is required"
+    );
+  }
   const feeFundingWallet = Keypair.fromSecretKey(
-    bs58.decode(
-      "3gz5oVCp6KguoJ5snnugBnK4nEhMGXdK2fpLizqRTJDg4eAVJnPztMePDethKuyqhYFuZThaa5KZwZ4CofvohDb3"
-    )
+    bs58.decode(env.MIXER_FEE_FUNDING_WALLET_PRIVATE_KEY)
   );
   console.log(
     `💳 Fee funding wallet: ${feeFundingWallet.publicKey.toString()}`

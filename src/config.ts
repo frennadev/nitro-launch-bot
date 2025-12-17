@@ -28,24 +28,16 @@ export const env = cleanEnv(process.env, {
     choices: ["development", "production"],
   }),
   TELEGRAM_BOT_TOKEN: validStr(),
-  MONGODB_URI: str({
-    default:
-      "mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/nitro_launch",
-  }),
+  MONGODB_URI: validStr(),
+  MONGODB_DATABASE: str({ default: "nitro_launch" }),
   REDIS_URI: validStr(),
   ENCRYPTION_SECRET: validStr(),
   PINATA_GATEWAY_URL: validStr(),
   PINATA_JWT: validStr(),
   PINATA_API_URL: validStr(),
   HELIUS_RPC_URL: validStr(),
-  HELIUS_MIXER_RPC_URL: str({
-    default:
-      "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e",
-  }),
-  HELIUS_BACKUP_RPC_URL: str({
-    default:
-      "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e",
-  }),
+  HELIUS_MIXER_RPC_URL: validStr(),
+  HELIUS_BACKUP_RPC_URL: validStr(),
   TRADING_HELIUS_RPC: validStr(),
   MIXER_HELIUS_RPC: validStr(),
   UTILS_HELIUS_RPC: validStr(),
@@ -81,6 +73,9 @@ export const env = cleanEnv(process.env, {
   MIXER_FEE_WALLET: str({
     default: "GRx7vW9ndEhqiL5e8scBQTdse3db9GCVyx9JyH2Ho7R",
   }),
+
+  // Mixer configuration
+  MIXER_FEE_FUNDING_WALLET_PRIVATE_KEY: str({ default: "" }),
 });
 
 // Performance and resource management
