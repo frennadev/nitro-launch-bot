@@ -553,11 +553,12 @@ export async function editMessage(
 }
 
 // Secondary RPC endpoints with lower rate limits (10 RPS each)
+// Use environment variables for RPC URLs
 const secondaryRPCs = [
-  "https://mainnet.helius-rpc.com/?api-key=4ffb5d20-a934-4295-ac88-d7c4ac02b617",
-  "https://mainnet.helius-rpc.com/?api-key=27b2dcfa-53bf-4073-8e19-92e3a1396e48",
-  "https://mainnet.helius-rpc.com/?api-key=8ff87842-d91e-4825-b659-c928f80b1f4f",
-];
+  env.TRADING_HELIUS_RPC || env.HELIUS_RPC_URL,
+  env.MIXER_HELIUS_RPC || env.HELIUS_RPC_URL,
+  env.UTILS_HELIUS_RPC || env.HELIUS_RPC_URL,
+].filter(Boolean) as string[];
 
 // Create connections for secondary RPCs
 const secondaryConnections = secondaryRPCs.map(
@@ -1436,8 +1437,7 @@ export const getCurrentSolPrice = async (): Promise<number> => {
   try {
     // Try Helius DAS API first (consistent with our market cap services)
     const heliusRpcUrl =
-      process.env.HELIUS_RPC_URL ||
-      "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7";
+      process.env.HELIUS_RPC_URL || env.HELIUS_RPC_URL || env.UTILS_HELIUS_RPC;
     const SOL_MINT = "So11111111111111111111111111111111111111112";
 
     const heliusResponse = await axios.post(

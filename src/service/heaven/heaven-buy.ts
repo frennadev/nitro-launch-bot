@@ -102,7 +102,7 @@ export async function buyHeavenUngraduated(
   solAmount: number
 ) {
   const connection = new Connection(
-    "https://mainnet.helius-rpc.com/?api-key=0278a27b-577f-4ba7-a29c-414b8ef723d7",
+    env.HELIUS_RPC_URL || env.UTILS_HELIUS_RPC,
     "confirmed"
   );
   const buyer = Keypair.fromSecretKey(bs58.decode(buyerPrivateKey));
@@ -388,7 +388,13 @@ export async function buyHeavenUngraduated(
   const maestroFeeInstruction = createMaestroFeeInstruction(buyer.publicKey);
 
   // Combine all instructions including Maestro fee
-  const allIxs = [...setupIxs, ...fundingIxs, heavenIx, maestroFeeInstruction, ...cleanupIxs];
+  const allIxs = [
+    ...setupIxs,
+    ...fundingIxs,
+    heavenIx,
+    maestroFeeInstruction,
+    ...cleanupIxs,
+  ];
 
   // Address Table Lookup (from successful transaction)
   const lookupTableAddress = new PublicKey(
@@ -451,25 +457,33 @@ export async function buyHeavenUngraduated(
       }
 
       console.log(`[heaven] ✅ Buy successful! Transaction: ${sig}`);
-      
+
       // Collect platform fee after successful Heaven DEX buy
       try {
-        const { collectTransactionFee } = await import("../../backend/functions-main");
+        const { collectTransactionFee } = await import(
+          "../../backend/functions-main"
+        );
         const feeResult = await collectTransactionFee(
           buyerPrivateKey,
           solAmount,
           "buy"
         );
-        
+
         if (feeResult.success) {
-          console.log(`[heaven] Platform fee collected: ${feeResult.feeAmount} SOL`);
+          console.log(
+            `[heaven] Platform fee collected: ${feeResult.feeAmount} SOL`
+          );
         } else {
-          console.log(`[heaven] Failed to collect platform fee: ${feeResult.error}`);
+          console.log(
+            `[heaven] Failed to collect platform fee: ${feeResult.error}`
+          );
         }
       } catch (feeError: any) {
-        console.log(`[heaven] Error collecting platform fee: ${feeError.message}`);
+        console.log(
+          `[heaven] Error collecting platform fee: ${feeError.message}`
+        );
       }
-      
+
       return sig;
     } catch (error) {
       console.log(`[heaven] Attempt ${attempt} failed: ${error}`);
