@@ -165,7 +165,12 @@ async function investigateBonkTokens() {
   console.log("🔍 INVESTIGATING BONK TOKENS\n");
 
   const heliusRpcUrl =
-    "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e";
+    process.env.HELIUS_RPC_URL || process.env.UTILS_HELIUS_RPC;
+  if (!heliusRpcUrl) {
+    throw new Error(
+      "HELIUS_RPC_URL or UTILS_HELIUS_RPC environment variable is required"
+    );
+  }
   const connection = new Connection(heliusRpcUrl, "confirmed");
 
   for (const mintAddress of TOKENS_TO_INVESTIGATE) {

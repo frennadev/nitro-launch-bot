@@ -85,7 +85,12 @@ async function checkSingleToken() {
   console.log("🔍 CHECKING TOKEN MARKET CAP");
 
   const heliusRpcUrl =
-    "https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e";
+    process.env.HELIUS_RPC_URL || process.env.UTILS_HELIUS_RPC;
+  if (!heliusRpcUrl) {
+    throw new Error(
+      "HELIUS_RPC_URL or UTILS_HELIUS_RPC environment variable is required"
+    );
+  }
   const service = new UnifiedMarketCapService(heliusRpcUrl);
   const mint = "SesmzykXQ6PDVa7xnuZN7K4pUpE7dKUUdjwBnogUSDH";
 

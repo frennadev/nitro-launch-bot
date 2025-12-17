@@ -20,18 +20,18 @@ Copy the configuration from `config/production.env` to your `.env` file:
 cp config/production.env .env
 ```
 
-### **2. Your Current Configuration**
+### **2. Example Configuration (DO NOT USE THESE VALUES - THEY ARE EXAMPLES ONLY)**
 
 ```env
 # Helius RPC (High-performance Solana RPC)
-HELIUS_RPC_URL="https://mainnet.helius-rpc.com/?api-key=417b1887-2994-4d66-a5db-a30a372b7c8e"
+HELIUS_RPC_URL="https://mainnet.helius-rpc.com/?api-key=your-helius-api-key-here"
 
 # Database & Cache
-MONGODB_URI="mongodb+srv://nitro-launch:LFJ7WFVPyKIKKspK@bundler.bladbsz.mongodb.net/?retryWrites=true&w=majority&appName=NitroLaunch"
-REDIS_URL=redis://default:tWg8BpXi3cyJmxM2xKoWl5tEysJBT50v@redis-18464.fcrce190.us-east-1-1.ec2.redns.redis-cloud.com:18464
+MONGODB_URI="mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority&appName=YourAppName"
+REDIS_URL=redis://default:your-redis-password@your-redis-host:port
 
 # SolanaTracker API (Replacing Birdeye)
-SOLANA_TRACKER_API_KEY=c9d677b6-841b-4a5f-bbc5-4c19d17c7659
+SOLANA_TRACKER_API_KEY=your-solana-tracker-api-key-here
 SOLANA_TRACKER_BASE_URL=https://data.solanatracker.io
 
 # Telegram Integration
